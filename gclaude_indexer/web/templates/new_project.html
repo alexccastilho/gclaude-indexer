@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('new_project.title') }} — {{ t('app.name') }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<h1>{{ t('new_project.title') }}</h1>
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('new_project.back') }}</a></p>
+
+{% if existing_project %}
+{# Not an error: this is the reopen gesture arriving at the create form,
+   which is the only route it ever had. Creating here would put a second
+   configuration into that project's own database and replace its saved
+   settings with this form's. #}
+<div class="errors">
+  {{ m.icon('warning') }}
+  <div>
+    <strong>{{ t('new_project.folder_in_use_title', name=existing_project.name) }}</strong>
+    <p>{{ t('new_project.folder_in_use_body',
+            files=existing_project.files, pages=existing_project.pages, items=existing_project.items) }}</p>
+    <p class="actions">
+      <a class="button button-primary"
+         href="/projects/open?folder={{ existing_project.output_folder | urlencode }}">
+        {{ t('new_project.folder_in_use_open') }}
+      </a>
+      <span class="help">{{ t('new_project.folder_in_use_or') }}</span>
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="errors">
+  {{ m.icon('warning') }}
+  <div>
+    <strong>{{ t('new_project.errors_title') }}</strong>
+    <ul>
+      {% for error in errors %}<li>{{ t(error.key, **error.params) }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="/projects/new" class="form">
+
+  <fieldset>
+    <legend>{{ t('new_project.section_identification') }}</legend>
+
+    <label for="name">{{ t('new_project.name') }} {{ m.tooltip(t, 'hint.name') }}</label>
+    <input type="text" id="name" name="name" value="{{ values.name }}" required>
+
+    <label for="subject">{{ t('new_project.subject') }} {{ m.tooltip(t, 'hint.subject') }}</label>
+    <textarea id="subject" name="subject" rows="2">{{ values.subject }}</textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('new_project.section_folders') }}</legend>
+
+    <label for="source_folder">{{ t('new_project.source_folder') }} {{ m.tooltip(t, 'hint.source_folder') }}</label>
+    <div id="source_folder_group" class="folder-field">
+      <input type="text" id="source_folder" name="source_folder" value="{{ values.source_folder }}"
+             oninput="adjustDefaultOutputFolder()" required>
+      <button type="button"
+              hx-post="/select-folder" hx-target="#source_folder_group" hx-swap="innerHTML"
+              hx-vals='{"field": "source_folder"}'
+              hx-include="#source_folder">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>
+    </div>
+
+    <label for="output_folder">{{ t('new_project.output_folder') }} {{ m.tooltip(t, 'hint.output_folder') }}</label>
+    <div id="output_folder_group" class="folder-field">
+      <input type="text" id="output_folder" name="output_folder" value="{{ values.output_folder }}" required>
+      <button type="button"
+              hx-post="/select-folder" hx-target="#output_folder_group" hx-swap="innerHTML"
+              hx-vals='{"field": "output_folder"}'
+              hx-include="#output_folder">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>
+    </div>
+    <p class="help">{{ t('new_project.help_output_folder') }}</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('new_project.section_collection') }}</legend>
+
+    <label for="collection_type">{{ t('new_project.collection_type') }} {{ m.tooltip(t, 'hint.collection_type') }}</label>
+    <select id="collection_type" name="collection_type">
+      <option value="processo" {% if values.collection_type == "processo" %}selected{% endif %}>{{ t('new_project.collection_type_case_file') }}</option>
+      <option value="biblioteca" {% if values.collection_type == "biblioteca" %}selected{% endif %}>{{ t('new_project.collection_type_library') }}</option>
+    </select>
+
+    <label for="group_mode">{{ t('new_project.group_mode') }} {{ m.tooltip(t, 'hint.group_mode') }}</label>
+    <select id="group_mode" name="group_mode">
+      <option value="subfolder" {% if values.group_mode == "subfolder" %}selected{% endif %}>{{ t('new_project.group_by_subfolder') }}</option>
+      <option value="name_pattern" {% if values.group_mode == "name_pattern" %}selected{% endif %}>{{ t('new_project.group_by_name_pattern') }}</option>
+      <option value="all_together" {% if values.group_mode == "all_together" %}selected{% endif %}>{{ t('new_project.group_all_together') }}</option>
+    </select>
+
+    <label for="group_pattern">{{ t('new_project.group_pattern') }} {{ m.tooltip(t, 'hint.group_pattern') }}</label>
+    <input type="text" id="group_pattern" name="group_pattern" value="{{ values.group_pattern }}"
+           placeholder="{{ t('new_project.group_pattern_placeholder') }}">
+
+    <label>{{ t('new_project.extensions') }} {{ m.tooltip(t, 'hint.extensions') }}</label>
+    {% for familia, itens in familias %}
+    <fieldset class="extension-family">
+      <legend>{{ t('new_project.family.' + familia) }}</legend>
+      {% for item in itens %}
+      <label class="checkbox-inline">
+        <input type="checkbox" name="extensions" value="{{ item.categoria }}"
+               {% if item.categoria in values.extensions %}checked{% endif %}>
+        <span class="category-name">{{ t('new_project.category.' + item.categoria) }}</span>
+        <span class="extension-category">{{ item.extensoes | join(' ') }}</span>
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+    <label class="checkbox-inline category-all">
+      <input type="checkbox" name="extensions" value="{{ category_all }}" data-all-category
+             {% if category_all in values.extensions %}checked{% endif %}>
+      <span class="category-name">{{ t('new_project.category.' + category_all) }}</span>
+    </label>
+    <p class="help">{{ t('new_project.extensions_help_all') }}</p>
+    <script>
+    (function () {
+      // "all" and the specific categories are mutually exclusive:
+      // `is_extension_allowed` ignores the others when "all" is checked,
+      // so leaving them checked would show a state the scan does not honor.
+      var all = document.querySelector('input[data-all-category]');
+      if (!all) return;
+      var specific = [].slice.call(
+        document.querySelectorAll('input[name="extensions"]:not([data-all-category])')
+      );
+      all.addEventListener('change', function () {
+        if (all.checked) specific.forEach(function (c) { c.checked = false; });
+      });
+      specific.forEach(function (c) {
+        c.addEventListener('change', function () {
+          if (c.checked) all.checked = false;
+        });
+      });
+    })();
+    </script>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('new_project.section_slicing') }}</legend>
+
+    <label for="pages_per_block">{{ t('new_project.pages_per_block') }} {{ m.tooltip(t, 'hint.pages_per_block') }}</label>
+    <input type="number" id="pages_per_block" name="pages_per_block" min="1" value="{{ values.pages_per_block }}">
+
+    <label for="pages_per_window">{{ t('new_project.pages_per_window') }} {{ m.tooltip(t, 'hint.pages_per_window') }}</label>
+    <input type="number" id="pages_per_window" name="pages_per_window" min="1" value="{{ values.pages_per_window }}">
+
+    <label for="overlap">{{ t('new_project.overlap') }} {{ m.tooltip(t, 'hint.overlap') }}</label>
+    <input type="number" id="overlap" name="overlap" min="0" value="{{ values.overlap }}">
+
+    <label for="chars_per_page">{{ t('new_project.chars_per_page') }} {{ m.tooltip(t, 'hint.chars_per_page') }}</label>
+    <input type="number" id="chars_per_page" name="chars_per_page" min="1" value="{{ values.chars_per_page }}">
+
+    <label for="ocr_language">{{ t('new_project.ocr_language') }} {{ m.tooltip(t, 'hint.ocr_language') }}</label>
+    <input type="text" id="ocr_language" name="ocr_language" value="{{ values.ocr_language }}">
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('new_project.section_classification') }}</legend>
+
+    <label for="classification_engine">{{ t('new_project.classification_engine') }} {{ m.tooltip(t, 'hint.classification_engine') }}</label>
+    <select id="classification_engine" name="classification_engine">
+      {% for engine in engines %}
+      <option value="{{ engine }}" {% if values.classification_engine == engine %}selected{% endif %}>{{ t('engine.' + engine + '.name') }}</option>
+      {% endfor %}
+    </select>
+    <ul class="engine-descriptions">
+      {% for engine in engines %}
+      <li><strong>{{ t('engine.' + engine + '.name') }}</strong> — {{ t('engine.' + engine + '.description') }}</li>
+      {% endfor %}
+    </ul>
+    <p class="help">{{ t('new_project.help_engine') }}</p>
+
+    <label for="local_model">{{ t('new_project.local_model') }} {{ m.tooltip(t, 'hint.local_model') }}</label>
+    {% if local_models %}
+    <select id="local_model" name="local_model">
+      {% for model in local_models %}
+      <option value="{{ model }}" {% if (values.local_model or default_local_model) == model %}selected{% endif %}>{{ model }}</option>
+      {% endfor %}
+    </select>
+    <p class="help">{{ t('new_project.help_local_model') }}</p>
+    {% else %}
+    <input type="text" id="local_model" name="local_model" value="{{ default_local_model }}">
+    <p class="help notice-inline">{{ t('new_project.local_model_no_ollama', default=default_local_model) }}</p>
+    {% endif %}
+
+    <label for="processing_mode">{{ t('new_project.processing_mode') }} {{ m.tooltip(t, 'hint.processing_mode') }}</label>
+    <select id="processing_mode" name="processing_mode">
+      <option value="automatic" {% if values.processing_mode == "automatic" %}selected{% endif %}>{{ t('new_project.processing_mode_automatic') }}</option>
+      <option value="gpu" {% if values.processing_mode == "gpu" %}selected{% endif %}>{{ t('new_project.processing_mode_gpu') }}</option>
+      <option value="cpu" {% if values.processing_mode == "cpu" %}selected{% endif %}>{{ t('new_project.processing_mode_cpu') }}</option>
+    </select>
+    <p class="help">{{ t('new_project.help_processing_mode') }}</p>
+
+    <label for="parallelism">{{ t('new_project.parallelism') }} {{ m.tooltip(t, 'hint.parallelism') }}</label>
+    <select id="parallelism" name="parallelism">
+      <option value="economy" {% if values.parallelism == "economy" %}selected{% endif %}>{{ t('new_project.parallelism_economical') }}</option>
+      <option value="automatic" {% if values.parallelism == "automatic" %}selected{% endif %}>{{ t('new_project.parallelism_automatic') }}</option>
+      <option value="maximum" {% if values.parallelism == "maximum" %}selected{% endif %}>{{ t('new_project.parallelism_maximum') }}</option>
+    </select>
+    <p class="help">{{ t('new_project.help_parallelism') }}</p>
+
+    <label class="checkbox-inline">
+      <input type="checkbox" name="review_low_confidence" {% if values.review_low_confidence %}checked{% endif %}>
+      {{ t('new_project.review_low_confidence') }}
+      {{ m.tooltip(t, 'hint.review_low_confidence') }}
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('new_project.section_instructions') }}</legend>
+
+    <label for="role_instructions">{{ t('new_project.instructions_role') }} {{ m.tooltip(t, 'hint.instructions_role') }}</label>
+    <textarea id="role_instructions" name="role_instructions" rows="3"
+              placeholder="{{ t('new_project.instructions_role_placeholder') }}">{{ values.role_instructions }}</textarea>
+
+    <label for="extra_rules">{{ t('new_project.extra_rules') }} {{ m.tooltip(t, 'hint.extra_rules') }}</label>
+    <textarea id="extra_rules" name="extra_rules" rows="3">{{ values.extra_rules }}</textarea>
+  </fieldset>
+
+  <button type="submit" class="button button-primary">{{ m.icon('check') }} {{ t('new_project.create') }}</button>
+</form>
+
+<script>
+function adjustDefaultOutputFolder() {
+  var source = document.getElementById("source_folder").value;
+  var output = document.getElementById("output_folder");
+  if (!output.dataset.manuallyEdited && source) {
+    output.value = source.replace(/[\\\/]+$/, "") + "\\_indexado";
+  }
+}
+document.getElementById("output_folder").addEventListener("input", function () {
+  this.dataset.manuallyEdited = "1";
+});
+</script>
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.new_project.title', ['help.new_project.p1', 'help.new_project.p2', 'help.new_project.p3']) }}{% endblock %}

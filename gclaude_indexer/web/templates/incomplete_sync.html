@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ t('sync.title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('sync.title') }}</h1>
+<div class="errors">
+  <p>{{ t(message_key, **message_params) }}</p>
+</div>
+<form method="post" action="/projects/{{ project.id }}/continue-anyway">
+  <button type="submit" class="button button-primary">{{ t('sync.continue_anyway') }}</button>
+</form>
+<p><a href="/projects" class="button">&larr; {{ t('sync.back_and_wait') }}</a></p>
+{% endblock %}

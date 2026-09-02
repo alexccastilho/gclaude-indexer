@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Machine-local development history (not part of the product)
+.remember/
+.superpowers/
+
+# Test and tooling artifacts
+.playwright-mcp/
+*.log
+_tmp_*/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Project output — never commit a processed collection.
+# Both the current names and the pre-Phase-14 Portuguese ones: a folder
+# processed by an older version still carries the old names.
+converted/
+blocks/
+windows/
+convertidos/
+blocos/
+janelas/
+logs/
+*.db
+*.lock
+raw_items.jsonl
+pecas_brutas.jsonl
+
+# The four generated artifacts (index.md, timeline.md, review.md,
+# project_instructions.md) are deliberately NOT listed: they only ever
+# appear inside a project's output folder, which lives outside this
+# repository, and listing them here would silently swallow a legitimate
+# docs/index.md later.

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('about.title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a></p>
+
+<div class="card about-header">
+  <img src="/static/logo.jpg" alt="{{ t('app.name') }}">
+  <div>
+    <h1 style="margin-bottom:0.2rem">{{ t('app.name') }}</h1>
+    <span class="about-version">{{ t('about.version_label') }} {{ system_version }}</span>
+  </div>
+</div>
+
+<p>{{ t('about.description') }}</p>
+<p class="help">{{ t('about.technology') }}</p>
+
+<p>{{ t('about.author_label') }}: <strong>{{ autor }}</strong></p>
+
+<h2>{{ t('diagnostics.title') }}</h2>
+<div class="table-scrollable">
+  <table class="install-diagnostics">
+    <thead>
+      <tr>
+        <th>{{ t('diagnostics.dependency') }}</th>
+        <th>{{ t('diagnostics.status') }}</th>
+        <th>{{ t('diagnostics.version') }}</th>
+        <th>{{ t('diagnostics.command') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in diagnostico %}
+      <tr class="diagnostico-{{ 'presente' if item.present else 'ausente' }}">
+        <td>
+          {{ t('diagnostics.key.' ~ item.key) }}
+          <span class="help">({{ t('diagnostics.required' if item.required else 'diagnostics.optional') }})</span>
+        </td>
+        <td>{{ t('diagnostics.present' if item.present else 'diagnostics.missing') }}</td>
+        <td>{{ item.version or '—' }}</td>
+        <td>
+          {% if item.install_command %}
+          <input type="text" readonly value="{{ item.install_command }}" onclick="this.select()">
+          {% else %}
+          —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

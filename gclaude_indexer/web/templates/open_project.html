@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('open_project.title') }} — {{ t('app.name') }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<h1>{{ t('open_project.title') }}</h1>
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('new_project.back') }}</a></p>
+
+<p class="help">{{ t('open_project.intro') }}</p>
+
+{% if error %}
+<div class="errors">
+  {{ m.icon('warning') }}
+  <div><strong>{{ t(error) }}</strong></div>
+</div>
+{% endif %}
+
+<form method="post" action="/projects/open" class="form">
+  <label for="existing_output_folder">{{ t('open_project.folder_label') }}</label>
+  <div id="existing_output_folder_group" class="field-with-button">
+    <input type="text" id="existing_output_folder" name="existing_output_folder"
+           value="{{ value }}" required>
+    <button type="button"
+            hx-post="/select-folder" hx-target="#existing_output_folder_group" hx-swap="innerHTML"
+            hx-vals='{"field": "existing_output_folder"}'
+            hx-include="#existing_output_folder">{{ t('new_project.browse') }}</button>
+  </div>
+
+  {% if summary %}
+  {# What was found, before anything is done with it. Reopening a project
+     is cheap to undo but the user still has to be able to see they picked
+     the right folder — the counts are what identify it at a glance. #}
+  <div class="found-project">
+    <h2>{{ m.icon('open') }} {{ t('open_project.found_title') }}</h2>
+    <p class="found-name">{{ summary.name }}</p>
+    {% if summary.subject %}<p class="help">{{ summary.subject }}</p>{% endif %}
+    <dl class="found-details">
+      <dt>{{ t('open_project.created_at') }}</dt><dd>{{ datetime(summary.created_at) }}</dd>
+      <dt>{{ t('open_project.source_folder') }}</dt><dd>{{ summary.source_folder }}</dd>
+      <dt>{{ t('open_project.counts') }}</dt>
+      <dd>{{ t('open_project.counts_value', files=summary.files, pages=summary.pages, items=summary.items) }}</dd>
+    </dl>
+    {% if summary.config_rows > 1 %}
+    <p class="help warning-text">{{ t('open_project.duplicate_config', count=summary.config_rows) }}</p>
+    {% endif %}
+    <button type="submit" name="confirm" value="1" class="button-primary">
+      {{ t('open_project.confirm') }}
+    </button>
+  </div>
+  {% else %}
+  <button type="submit" class="button-primary">{{ t('open_project.inspect') }}</button>
+  {% endif %}
+</form>
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.open_project.title', ['help.open_project.p1', 'help.open_project.p2']) }}{% endblock %}

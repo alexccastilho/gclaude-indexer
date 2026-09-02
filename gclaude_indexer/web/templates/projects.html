@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('projects.title') }} — {{ t('app.name') }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ t('projects.title') }}</h1>
+</div>
+<p class="actions">
+  <a href="/projects/new" class="button button-primary">{{ m.icon('plus') }} {{ t('nav.new_project') }}</a>
+  {# For a project this machine's catalog does not know about: a reinstall,
+     a reformat, another account, a folder that moved or arrived from
+     someone else. The project itself is whole — it is the list that was
+     missing it. #}
+  <a href="/projects/open" class="button">{{ m.icon('open') }} {{ t('nav.open_project') }}</a>
+</p>
+
+<table class="table">
+  <thead>
+    <tr><th>{{ t('projects.column_name') }}</th><th>{{ t('projects.column_created_at') }}</th><th>{{ t('projects.column_status') }}</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for p in projects %}
+    <tr{% if not p.available %} class="project-unavailable"{% endif %}>
+      <td>{{ p.name }}</td>
+      <td>{{ datetime(p.created_at) }}</td>
+      <td>{{ t('project.status.' + p.status_key, **p.status_vars) }}</td>
+      <td class="col-actions">
+        {% if p.available %}
+        <a href="/projects/{{ p.id }}/run" class="button button-small">{{ m.icon('open') }} {{ t('projects.open') }}</a>
+        {% endif %}
+        <a href="/projects/{{ p.id }}/delete" class="button button-small button-danger">{{ m.icon('trash') }} {{ t('projects.delete') }}</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">{{ t('projects.empty') }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# Shared catalog. The projects themselves already sync through Drive; it
+   was the *list* of them that stayed on one machine, so a second computer
+   opened on an empty screen with every project sitting right there on
+   disk. Pointing this at a folder inside the Drive is what makes the same
+   projects appear, open and delete from any computer signed into it. #}
+<details class="shared-catalog" {% if not shared_catalog_folder %}{% else %}open{% endif %}>
+  <summary>{{ t('projects.shared_catalog_title') }}</summary>
+  <p class="help">{{ t('projects.shared_catalog_help') }}</p>
+  <form method="post" action="/projects/shared-catalog" class="shared-catalog-form">
+    <label for="shared_catalog_folder">{{ t('projects.shared_catalog_label') }}</label>
+    <div id="shared_catalog_folder_group" class="field-with-button">
+      <input type="text" id="shared_catalog_folder" name="shared_catalog_folder"
+             value="{{ shared_catalog_folder }}" placeholder="{{ t('projects.shared_catalog_placeholder') }}">
+      <button type="button"
+              hx-post="/select-folder" hx-target="#shared_catalog_folder_group" hx-swap="innerHTML"
+              hx-vals='{"field": "shared_catalog_folder"}'
+              hx-include="#shared_catalog_folder">{{ t('new_project.browse') }}</button>
+    </div>
+    <button type="submit" class="button-primary">{{ t('projects.shared_catalog_save') }}</button>
+  </form>
+  {% if shared_catalog_folder and not shared_catalog_active %}
+  <p class="help warning-text">{{ t('projects.shared_catalog_unreachable') }}</p>
+  {% elif shared_catalog_active %}
+  <p class="help">{{ t('projects.shared_catalog_in_use') }}</p>
+  {% endif %}
+</details>
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.projects.title', ['help.projects.p1', 'help.projects.p2', 'help.projects.p3', 'help.projects.p4']) }}{% endblock %}

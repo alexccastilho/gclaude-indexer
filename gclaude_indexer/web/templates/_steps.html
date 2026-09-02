@@ -1,0 +1,37 @@
+{% import "_macros.html" as m %}
+<table class="table">
+  <thead>
+    <tr><th>{{ t('run.column_step') }}</th><th>{{ t('run.column_status') }}</th><th>{{ t('run.column_count') }}</th></tr>
+  </thead>
+  <tbody>
+    {% for step in steps %}
+    <tr>
+      <td>{{ t('step.' + step.chave + '.title') }}</td>
+      <td><span class="status status-{{ step.status }}">{{ t('status.' + step.status) }}</span></td>
+      <td>{{ t('step.' + step.chave + '.count', **step.vars) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if show_done_notice %}
+<div class="completion-notice">
+  {{ m.icon('check') }}
+  <span>{{ t('run.finished_notice', items=qualidade.total_items, score=qualidade.score) }}</span>
+  <a href="/projects/{{ project.id }}/result">{{ t('run.finished_view_result') }} {{ m.icon('open') }}</a>
+</div>
+{% endif %}
+
+{% if show_claude_code %}
+<div class="claude-code-box">
+  <h3>{{ t('run.claude_code_title') }}</h3>
+  <p>{{ t('run.claude_code_instruction') }}</p>
+  <input type="text" readonly value="{{ claude_code_command }}" onclick="this.select()" class="copyable">
+  <button hx-post="/projects/{{ project.id }}/claude-code/recheck" hx-target="#steps" hx-swap="innerHTML">
+    {{ m.icon('refresh') }} {{ t('run.claude_code_recheck') }}
+  </button>
+  {% if claude_code_status %}
+  <p class="help">{{ t('run.claude_code_windows_status', done=claude_code_status.windows_done, pending=claude_code_status.windows_pending) }}</p>
+  {% endif %}
+</div>
+{% endif %}

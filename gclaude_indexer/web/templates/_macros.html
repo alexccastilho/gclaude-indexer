@@ -1,0 +1,30 @@
+{% macro icon(name, css_class='') -%}
+<svg class="icon {{ css_class }}" aria-hidden="true"><use href="#icon-{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro help_button(t) -%}
+<button type="button" class="header-button" onclick="document.getElementById('modal-help').showModal()">
+  {{ icon('help') }} {{ t('nav.help') }}
+</button>
+{%- endmacro %}
+
+{% macro tooltip(t, key) -%}
+<span class="tooltip" tabindex="0">{{ icon('help') }}<span class="tooltip-bubble">{{ t(key) }}</span></span>
+{%- endmacro %}
+
+{% macro help_modal(t, title_key, paragraph_keys) -%}
+<dialog id="modal-help" class="modal">
+  <div class="modal-header">
+    <h2>{{ icon('help') }} {{ t(title_key) }}</h2>
+    <button type="button" class="modal-close" onclick="document.getElementById('modal-help').close()" aria-label="{{ t('general.close') }}">&times;</button>
+  </div>
+  <div class="modal-body">
+    {% for key in paragraph_keys %}
+    <p>{{ t(key) }}</p>
+    {% endfor %}
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="button-primary" onclick="document.getElementById('modal-help').close()">{{ t('general.close') }}</button>
+  </div>
+</dialog>
+{%- endmacro %}

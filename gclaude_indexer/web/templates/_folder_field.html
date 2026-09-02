@@ -1,0 +1,11 @@
+{# `required` only on the New project form's own fields. The shared
+   catalog folder reuses this same fragment and must stay clearable: an
+   empty value there means "go back to the machine-local catalog", and a
+   `required` input would refuse to submit it. #}
+<input type="text" id="{{ field }}" name="{{ form_field_name }}" value="{{ value }}"
+       {% if field == "source_folder" %}oninput="adjustDefaultOutputFolder()"{% endif %}
+       {% if field != "shared_catalog_folder" %}required{% endif %}>
+<button type="button"
+        hx-post="/select-folder" hx-target="#{{ field }}_group" hx-swap="innerHTML"
+        hx-vals='{"field": "{{ field }}"}'
+        hx-include="#{{ field }}">{{ t('new_project.browse') }}</button>

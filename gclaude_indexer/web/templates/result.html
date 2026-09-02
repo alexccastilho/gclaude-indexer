@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('result.title') }} — {{ config.name }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<h1>{{ t('result.title') }} — {{ config.name }}</h1>
+<p class="breadcrumb">
+  <a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a>
+  <span>&middot;</span>
+  <a href="/projects/{{ project.id }}/run">{{ m.icon('back') }} {{ t('result.back_to_run') }}</a>
+</p>
+
+<form method="post" action="/projects/{{ project.id }}/open-folder" style="display:inline">
+  <button type="submit">{{ m.icon('explorer') }} {{ t('result.open_folder') }}</button>
+</form>
+
+<div class="claude-package">
+  <div>
+    <strong>{{ m.icon('download') }} {{ t('result.package_title') }}</strong>
+    <p>{{ t('result.package_text') }}</p>
+  </div>
+  <a class="button button-primary" href="/projects/{{ project.id }}/result/claude-package">
+    {{ m.icon('download') }} {{ t('result.package_download') }}
+  </a>
+</div>
+
+<div class="cleanup-box">
+  <div>
+    <strong>{{ t('result.cleanup_title') }}</strong>
+    <p>{{ t('result.cleanup_text') }}</p>
+    <p class="help">{{ t('result.cleanup_used', mb=(tamanho_intermediarios / 1048576) | round(1)) }}</p>
+    {% if step_in_progress %}
+    <p class="help">{{ t('result.cleanup_in_progress') }}</p>
+    {% endif %}
+  </div>
+  <form method="post" action="/projects/{{ project.id }}/clear-intermediates">
+    <button type="submit" {% if tamanho_intermediarios == 0 or step_in_progress %}disabled{% endif %}>
+      {{ m.icon('trash') }} {{ t('result.cleanup_button') }}
+    </button>
+  </form>
+</div>
+
+<h2>{{ t('result.quality_title') }}</h2>
+<div class="quality-box">
+  <div class="quality-header">
+    <span class="quality-run">{{ t('result.quality_run', engine=qualidade.engine, model=qualidade.model) }}</span>
+    <span class="quality-score" title="{{ t('result.quality_score_label') }}">{{ qualidade.score }}<small>/100</small></span>
+  </div>
+  {% if qualidade.total_items == 0 %}
+  <p class="help">{{ t('result.quality_empty') }}</p>
+  {% else %}
+  <p>{{ t('result.quality_total_items', total=qualidade.total_items) }}</p>
+  <div class="quality-bars">
+    {% for nivel in ('high', 'medium', 'low') %}
+    <div class="quality-bar-row">
+      <span class="quality-bar-label">{{ t('result.quality_confidence_' + nivel) }}</span>
+      <div class="quality-bar">
+        <div class="quality-bar-fill qualidade-barra-{{ nivel }}"
+             style="width: {{ ((qualidade.confidence[nivel] / qualidade.total_items) * 100) | round(1) }}%"></div>
+      </div>
+      <span class="quality-bar-value">{{ qualidade.confidence[nivel] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <ul class="quality-fields">
+    <li>{{ t('result.quality_missing_type', n=qualidade.missing_type) }}</li>
+    <li>{{ t('result.quality_missing_date', n=qualidade.missing_date) }}</li>
+    <li>{{ t('result.quality_missing_summary', n=qualidade.missing_summary) }}</li>
+  </ul>
+  {% endif %}
+  <p class="help quality-warning">{{ m.icon('info') }} {{ t('result.quality_warning') }}</p>
+</div>
+
+<h2>{{ t('result.comparison_title') }}</h2>
+<div class="comparison-box">
+  {% if not comparison %}
+  <p class="help">{{ t('result.comparison_empty') }}</p>
+  {% else %}
+  <div class="table-scrollable">
+    <table class="table-sortable" id="comparison-table">
+      <thead>
+        <tr>
+          <th data-type="text">{{ t('result.comparison_col_engine') }}</th>
+          <th data-type="text">{{ t('result.comparison_col_model') }}</th>
+          <th data-type="number">{{ t('result.comparison_col_time') }}</th>
+          <th data-type="number">{{ t('result.comparison_col_items_min') }}</th>
+          <th data-type="number">{{ t('result.comparison_col_score') }}</th>
+          <th data-type="text">{{ t('result.comparison_col_confidence') }}</th>
+          <th data-type="text">{{ t('result.comparison_col_parallelism') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in comparison %}
+        <tr>
+          <td>{{ line.engine or "—" }}</td>
+          <td>{{ line.model or "—" }}</td>
+          <td data-value="{{ line.total_seconds }}">{{ line.formatted_time }}</td>
+          <td data-value="{{ line.items_per_minute if line.items_per_minute is not none else -1 }}">
+            {{ line.items_per_minute if line.items_per_minute is not none else "—" }}
+          </td>
+          <td data-value="{{ line.score if line.score is not none else -1 }}">
+            {% if line.score is not none %}
+            {{ line.score }}
+            {% else %}
+            <span class="help">{{ t('result.comparison_score_unavailable') }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if line.confidence %}
+            {{ line.confidence.high }}/{{ line.confidence.medium }}/{{ line.confidence.low }}
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>
+            {% if line.mixed_parallelism %}
+            <span class="comparison-mixed-parallelism">{{ m.icon('warning') }} {{ t('result.comparison_parallelism_mixed') }}</span>
+            {% else %}
+            {{ line.parallelism or "—" }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="help comparison-warning">{{ m.icon('info') }} {{ t('result.comparison_warning_collection') }}</p>
+  <p class="help comparison-warning">{{ m.icon('info') }} {{ t('result.comparison_warning_parallelism') }}</p>
+  <p class="help comparison-warning">{{ m.icon('info') }} {{ t('result.quality_warning') }}</p>
+  {% endif %}
+</div>
+
+<h2>{{ t('result.pending_title') }}</h2>
+{% if pending.windows_pending == 0 and not pending.gaps and not pending.failures %}
+<p class="notice-ok">{{ m.icon('check') }} {{ t('result.nothing_pending') }}</p>
+{% else %}
+<ul class="pending-items">
+  {% if pending.windows_pending > 0 %}
+  <li>{{ t('result.pending_windows', windows=pending.windows_pending) }}</li>
+  {% endif %}
+  {% for agrupador, intervalos in pending.gaps.items() %}
+  <li>{{ t('result.pending_gap', group=agrupador) }}
+    {% for a, b in intervalos %}{{ a }}{% if a != b %}-{{ b }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.
+  </li>
+  {% endfor %}
+  {% for falha in pending.failures %}
+  <li>{{ t('result.pending_failure') }} <code>{{ falha.relative_path }}</code> — {{ falha.error }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>{{ t('result.preview_title') }}</h2>
+{% for artifact in artifacts %}
+<details {% if loop.first %}open{% endif %} class="artifact">
+  <summary>{{ artifact.title }} (<code>{{ artifact.file_name }}</code>)</summary>
+  {% if artifact.content %}
+  <pre class="preview">{{ artifact.content }}</pre>
+  {% else %}
+  <p class="help">{{ t('result.not_generated') }}</p>
+  {% endif %}
+</details>
+{% endfor %}
+
+{% if comparison %}
+<script>
+(function () {
+  // Task 15 (Phase 13): comparison table sortable by column, clicking the
+  // header — no framework, no build, just what the user request ("compare
+  // engines/models") needs so nobody has to reread the whole table to find
+  // the row that matters.
+  var table = document.getElementById("comparison-table");
+  if (!table) { return; }
+  var tbody = table.tBodies[0];
+  var headers = table.tHead.rows[0].cells;
+
+  Array.prototype.forEach.call(headers, function (th, index) {
+    th.style.cursor = "pointer";
+    var ascending = true;
+    th.addEventListener("click", function () {
+      var type = th.getAttribute("data-type");
+      var rows = Array.prototype.slice.call(tbody.rows);
+      rows.sort(function (a, b) {
+        var cellA = a.cells[index], cellB = b.cells[index];
+        var valueA = type === "number"
+          ? parseFloat(cellA.getAttribute("data-value")) : cellA.textContent.trim();
+        var valueB = type === "number"
+          ? parseFloat(cellB.getAttribute("data-value")) : cellB.textContent.trim();
+        if (valueA < valueB) { return ascending ? -1 : 1; }
+        if (valueA > valueB) { return ascending ? 1 : -1; }
+        return 0;
+      });
+      rows.forEach(function (row) { tbody.appendChild(row); });
+      ascending = !ascending;
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.result.title', ['help.result.p1', 'help.result.p2', 'help.result.p3']) }}{% endblock %}

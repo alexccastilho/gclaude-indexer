@@ -1,0 +1,37 @@
+# Interface
+fastapi==0.115.0
+uvicorn==0.32.0
+jinja2==3.1.4
+python-multipart==0.0.12
+
+# PDF
+pymupdf==1.24.11
+
+# OCR
+ocrmypdf==16.5.0
+pytesseract==0.3.13
+# pikepdf >= 10 removeu Pdf.check(), usado internamente pelo ocrmypdf 16.5.0
+# (AttributeError ao finalizar o PDF com OCR). Fixado em 9.x até o ocrmypdf
+# atualizar.
+pikepdf==9.11.0
+
+# Documentos
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
+extract-msg==0.54.1
+
+# Imagens
+pillow==10.4.0
+
+# Monitoramento de recursos (CPU/RAM na tela de Execução)
+psutil==6.0.0
+
+# Ponte .NET para ler sensores de temperatura/potência via LibreHardwareMonitor
+# (nenhuma API nativa do Windows expõe esses dados). Degradação explícita em
+# `sensores.py` quando a DLL, o .NET ou o privilégio de admin faltarem.
+pythonnet==3.0.5
+
+# Testes
+pytest==8.3.3
+httpx==0.27.2

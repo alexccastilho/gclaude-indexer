@@ -1,0 +1,94 @@
+{% import "_macros.html" as m %}
+<!doctype html>
+<html lang="{{ current_language }}" data-theme="{{ current_theme }}" data-layout="{{ current_layout }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ t('app.name') }}{% endblock %}</title>
+<link rel="icon" type="image/jpeg" href="/static/logo.jpg">
+<script src="/static/htmx.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/layouts.css">
+<noscript><style>.notice-bar[hidden] { display: flex; }</style></noscript>
+</head>
+<body>
+{% include "_icons.html" %}
+<header class="header">
+  <div class="brand-group">
+    <a href="/projects" class="brand">
+      <img src="/static/logo.jpg" alt="{{ t('app.name') }}" class="logo">
+      {{ t('app.name') }}
+    </a>
+    <nav class="nav-main">
+      <a href="/projects" class="nav-link">{{ m.icon('folder') }} {{ t('nav.projects') }}</a>
+      <a href="/projects/new" class="nav-link">{{ m.icon('plus') }} {{ t('nav.new_project') }}</a>
+    </nav>
+  </div>
+  <div class="preferences">
+    {% block help_button %}{% endblock %}
+    <a href="/about" class="header-button">{{ m.icon('info') }} {{ t('nav.about') }}</a>
+    <form method="post" action="/preferences/language" class="preference-form">
+      <select name="language" onchange="this.form.submit()" aria-label="idioma / language / idioma">
+        {% for codigo, name in available_languages.items() %}
+        <option value="{{ codigo }}" {% if codigo == current_language %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <form method="post" action="/preferences/theme" class="preference-form">
+      <select name="theme" onchange="this.form.submit()" aria-label="{{ t('theme.label') }}">
+        {% for theme in available_themes %}
+        <option value="{{ theme }}" {% if theme == current_theme %}selected{% endif %}>{{ t('theme.' + theme) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <form method="post" action="/preferences/layout" class="preference-form">
+      <select name="layout" onchange="this.form.submit()" aria-label="{{ t('layout.label') }}">
+        {% for layout in available_layouts %}
+        <option value="{{ layout }}" {% if layout == current_layout %}selected{% endif %}>{{ t('layout.' + layout) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+</header>
+<div class="notice-bar" id="machine-switch-notice" hidden>
+  <span>{{ t('notice.machine_switch') }}</span>
+  <button type="button" id="close-machine-switch-notice" class="notice-close"
+          aria-label="{{ t('notice.dismiss') }}" title="{{ t('notice.dismiss') }}">×</button>
+</div>
+<script>
+(function () {
+  // localStorage, not a cookie: this is a per-browser display preference,
+  // it does not need to go to the server on every request. Starts `hidden`
+  // and only appears if it hasn't been dismissed — this way whoever already
+  // dismissed it never sees the banner flash between the HTML load and this
+  // script running.
+  var STORAGE_KEY = "gclaude.machine_switch_notice_dismissed";
+  var notice = document.getElementById("machine-switch-notice");
+  var closeButton = document.getElementById("close-machine-switch-notice");
+  var dismissed = false;
+  try { dismissed = localStorage.getItem(STORAGE_KEY) === "1"; } catch (error) { dismissed = false; }
+  if (!dismissed) notice.hidden = false;
+  closeButton.addEventListener("click", function () {
+    notice.hidden = true;
+    try { localStorage.setItem(STORAGE_KEY, "1"); } catch (error) { /* private mode: just doesn't remember */ }
+  });
+})();
+</script>
+{% if source_is_stale %}
+{# O código em disco mudou depois que este servidor subiu. Python carrega os
+   módulos uma vez, na partida: o que roda aqui continua sendo o de antes da
+   alteração, até o sistema ser reaberto. #}
+<div class="stale-banner" role="alert">
+  {{ m.icon('warning') }}
+  <div>
+    <strong>{{ t('stale.title') }}</strong>
+    <p>{{ t('stale.body') }}</p>
+  </div>
+</div>
+{% endif %}
+<main class="content">
+{% block content %}{% endblock %}
+</main>
+{% block help_modal %}{% endblock %}
+</body>
+</html>

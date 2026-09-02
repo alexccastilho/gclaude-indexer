@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('run.title') }} — {{ config.name }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<h1>{{ t('run.title') }} — {{ config.name }}</h1>
+<p class="breadcrumb">
+  <a href="/projects">{{ m.icon('back') }} {{ t('run.back_to_projects') }}</a>
+  <span>&middot;</span>
+  <a href="/projects/{{ project.id }}/result">{{ t('run.view_result') }} {{ m.icon('open') }}</a>
+</p>
+
+<div class="actions">
+  <button hx-post="/projects/{{ project.id }}/run-next" hx-target="#steps" hx-swap="innerHTML">
+    {{ m.icon('play') }} {{ t('run.run_next') }}
+  </button>
+  <button hx-post="/projects/{{ project.id }}/run-all" hx-target="#steps" hx-swap="innerHTML"
+          class="button-primary">
+    {{ m.icon('play-all') }} {{ t('run.run_all') }}
+  </button>
+  <form method="post" action="/projects/{{ project.id }}/import-and-generate" style="display:inline">
+    <button type="submit">{{ m.icon('download') }} {{ t('run.import_and_generate') }}</button>
+  </form>
+</div>
+
+<div id="steps" hx-get="/projects/{{ project.id }}/run/steps" hx-trigger="load, every 2s" hx-swap="innerHTML">
+  {% include "_steps.html" %}
+</div>
+
+<h2>{{ m.icon('refresh') }} {{ t('run.progress_title') }}</h2>
+<div id="progress" hx-get="/projects/{{ project.id }}/run/progress" hx-trigger="load, every 2s" hx-swap="innerHTML">
+</div>
+
+<h2>{{ m.icon('cpu') }} {{ t('run.resources_title') }}</h2>
+<div class="resources-grid">
+  <div class="resource-box resource-cpu">
+    <div class="resource-header">
+      <span class="resource-title"><i class="dot dot-cpu"></i> CPU</span>
+      <span class="resource-value" id="cpu-value">—</span>
+    </div>
+    <canvas id="cpu-chart" width="300" height="92"></canvas>
+    <div class="resource-extra">
+      <span>{{ t('resources.clock') }}: <strong id="clock-cpu">—</strong></span>
+      <span>{{ t('resources.temperature') }}: <strong id="temp-cpu">—</strong></span>
+      <span>{{ t('resources.power') }}: <strong id="power-cpu">—</strong></span>
+    </div>
+  </div>
+  <div class="resource-box resource-ram">
+    <div class="resource-header">
+      <span class="resource-title"><i class="dot dot-ram"></i> RAM</span>
+      <span class="resource-value" id="ram-value">—</span>
+    </div>
+    <canvas id="ram-chart" width="300" height="92"></canvas>
+    <div class="resource-detail" id="ram-detail">—</div>
+    <div class="resource-extra">
+      <span>{{ t('resources.clock') }}: <strong id="clock-ram">—</strong></span>
+    </div>
+  </div>
+  <div class="resource-box resource-gpu">
+    <div class="resource-header">
+      <span class="resource-title"><i class="dot dot-gpu"></i> GPU</span>
+      <span class="resource-value" id="gpu-value">—</span>
+    </div>
+    <canvas id="gpu-chart" width="300" height="92"></canvas>
+    <div class="resource-detail" id="gpu-detail">—</div>
+    <div class="resource-extra">
+      <span>{{ t('resources.clock') }}: <strong id="clock-gpu">—</strong></span>
+      <span>{{ t('resources.temperature') }}: <strong id="temp-gpu">—</strong></span>
+      <span>{{ t('resources.hotspot') }}: <strong id="hotspot-gpu">—</strong></span>
+      <span>{{ t('resources.fan') }}: <strong id="fan-gpu">—</strong></span>
+      <span>{{ t('resources.power') }}: <strong id="power-gpu">—</strong></span>
+    </div>
+  </div>
+</div>
+<p class="resources-note" id="resources-sensor-note" hidden></p>
+<div class="hardware-info">
+  <span class="hardware-item">{{ m.icon('cpu') }} {{ t('run.hardware_cpu') }}: <strong id="hw-cpu">—</strong></span>
+  <span class="hardware-item">{{ m.icon('cpu') }} {{ t('run.hardware_gpu') }}: <strong id="hw-gpu">—</strong></span>
+</div>
+
+<h2>{{ t('run.log_title') }}</h2>
+<div class="log-bar">
+  <label for="log-filter">{{ t('run.log_filter') }}</label>
+  <select id="log-filter">
+    <option value="todos">{{ t('run.log_filter_all') }}</option>
+    <option value="info">{{ t('run.log_filter_info') }}</option>
+    <option value="warning">{{ t('run.log_filter_warning') }}</option>
+    <option value="error">{{ t('run.log_filter_error') }}</option>
+  </select>
+  <label class="checkbox-inline">
+    <input type="checkbox" id="follow-log" checked>
+    {{ t('run.log_follow') }}
+  </label>
+  <button type="button" id="log-to-end" class="button-small">{{ t('run.log_to_end') }}</button>
+  <button type="button" id="log-copy" class="button-small">{{ t('run.log_copy') }}</button>
+  <span id="log-paused-note" class="log-paused" hidden>{{ t('run.log_paused') }}</span>
+</div>
+{# No `hx-get` here on purpose. HTMX replaces the element's whole content
+   on every poll, which wipes out any text the user had selected and
+   resets their scroll position — the two things that made this panel
+   unreadable during a run. The script below fetches only the lines that
+   are new and appends them. #}
+<div id="log" class="log-box" data-log-url="/projects/{{ project.id }}/run/log">
+  {% include "_log.html" %}
+</div>
+
+<script>
+(function () {
+  var RESOURCES_URL = "/projects/{{ project.id }}/run/resources";
+  // 2s, not 500ms: the server now reads a background sampler
+  // (`resources.ContinuousSampler`) that collects at that pace, because
+  // `Get-Counter` costs ~2s per metric (GPU, VRAM, CPU clock) — polling
+  // every 500ms would just repeat the same value 4x for nothing.
+  var INTERVAL_MS = 2000;
+  var SAMPLE_WINDOW = 45; // samples kept (2s each => 90s of history)
+  var NO_GPU_TEXT = {{ t('run.no_gpu') | tojson }};
+  var HW_NO_GPU_TEXT = {{ t('run.hardware_no_gpu') | tojson }};
+  var UNAVAILABLE_TEXT = {{ t('resources.unavailable') | tojson }};
+  // Object keys (`sem_dll`, ...) stay as-is on purpose (Task 18, Phase 14):
+  // they are not JS-only identifiers, but the wire values written by
+  // `sensors.py`'s `_state()` and read back here as
+  // `dados.sensors_unavailable_reason` — the same codes `install_diagnostics.py`
+  // maps through `_SENSOR_REASON_KEYS` for the "About" screen (Defect 4).
+  // Renaming them means changing three files in lockstep for a cosmetic
+  // gain; out of this pass's scope, unlike the JS-only names below.
+  var SENSOR_REASON_TEXTS = {
+    sem_dll: {{ t('resources.sensors.no_dll') | tojson }},
+    sem_pythonnet: {{ t('resources.sensors.no_pythonnet') | tojson }},
+    sem_dependencia: {{ t('resources.sensors.no_dependency') | tojson }},
+    sem_privilegio: {{ t('resources.sensors.no_privilege') | tojson }},
+    helper_sem_resposta: {{ t('resources.sensors.helper_no_answer') | tojson }}
+  };
+
+  function showOrDash(id, value, suffix) {
+    // null/undefined = not measured. Never write 0 here: zero is a valid
+    // reading and would lie about the machine's state.
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = (value === null || value === undefined) ? UNAVAILABLE_TEXT : (value + (suffix || ""));
+  }
+
+  var CHARTS = {
+    cpu: { canvas: document.getElementById("cpu-chart"), color: getComputedStyle(document.documentElement).getPropertyValue("--color-cpu").trim() || "#2b8a3e", history: [] },
+    ram: { canvas: document.getElementById("ram-chart"), color: getComputedStyle(document.documentElement).getPropertyValue("--color-ram").trim() || "#3c3ec4", history: [] },
+    gpu: { canvas: document.getElementById("gpu-chart"), color: getComputedStyle(document.documentElement).getPropertyValue("--color-gpu").trim() || "#b3261e", history: [] }
+  };
+
+  function gridColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue("--color-border").trim() || "rgba(128,128,128,0.3)";
+  }
+  function weakTextColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue("--color-text-weak").trim() || "#888";
+  }
+
+  function draw(chart) {
+    var canvas = chart.canvas;
+    var ctx = canvas.getContext("2d");
+    var width = canvas.width, height = canvas.height;
+    var leftMargin = 30;
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.strokeStyle = gridColor();
+    ctx.fillStyle = weakTextColor();
+    ctx.font = "9px system-ui, sans-serif";
+    ctx.lineWidth = 1;
+    [0, 0.5, 1].forEach(function (fraction) {
+      var y = height - fraction * height;
+      ctx.beginPath();
+      ctx.moveTo(leftMargin, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+      var label = Math.round(fraction * 100) + "%";
+      ctx.fillText(label, 2, Math.max(9, Math.min(height - 1, y + 3)));
+    });
+
+    var series = chart.history;
+    if (series.length < 2) return;
+    var usableWidth = width - leftMargin;
+    ctx.strokeStyle = chart.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    series.forEach(function (value, index) {
+      var x = leftMargin + (index / (SAMPLE_WINDOW - 1)) * usableWidth;
+      var y = height - (Math.max(0, Math.min(100, value)) / 100) * height;
+      if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function pushSample(chart, value) {
+    chart.history.push(value == null ? 0 : value);
+    while (chart.history.length > SAMPLE_WINDOW) chart.history.shift();
+  }
+
+  var hardwareLoaded = false;
+
+  function update() {
+    return fetch(RESOURCES_URL).then(function (response) { return response.json(); }).then(function (data) {
+      pushSample(CHARTS.cpu, data.cpu_percent);
+      pushSample(CHARTS.ram, data.ram_percent);
+      pushSample(CHARTS.gpu, data.gpu_percent);
+      draw(CHARTS.cpu);
+      draw(CHARTS.ram);
+      draw(CHARTS.gpu);
+
+      document.getElementById("cpu-value").textContent = data.cpu_percent.toFixed(0) + "%";
+      document.getElementById("ram-value").textContent = data.ram_percent.toFixed(0) + "%";
+      document.getElementById("ram-detail").textContent = data.ram_used_mb + " / " + data.ram_total_mb + " MB";
+      if (data.gpu_percent == null) {
+        document.getElementById("gpu-value").textContent = NO_GPU_TEXT;
+        document.getElementById("gpu-detail").textContent = "";
+      } else {
+        document.getElementById("gpu-value").textContent = data.gpu_percent.toFixed(0) + "%";
+        document.getElementById("gpu-detail").textContent = data.gpu_vram_used_mb + " / " + data.gpu_vram_total_mb + " MB VRAM";
+      }
+
+      if (!hardwareLoaded) {
+        document.getElementById("hw-cpu").textContent = data.cpu_name || "—";
+        document.getElementById("hw-gpu").textContent = data.gpu_name || HW_NO_GPU_TEXT;
+        hardwareLoaded = true;
+      }
+
+      showOrDash("clock-cpu", data.clock_cpu_mhz, " MHz");
+      showOrDash("clock-ram", data.clock_memory_mhz, " MHz");
+      showOrDash("clock-gpu", data.clock_gpu_mhz, " MHz");
+      showOrDash("temp-cpu", data.cpu_temp_c, " °C");
+      showOrDash("temp-gpu", data.gpu_temp_c, " °C");
+      showOrDash("hotspot-gpu", data.gpu_hotspot_c, " °C");
+      showOrDash("fan-gpu", data.gpu_fan_rpm, " RPM");
+      showOrDash("power-cpu", data.cpu_power_w, " W");
+      showOrDash("power-gpu", data.gpu_power_w, " W");
+
+      var sensorNote = document.getElementById("resources-sensor-note");
+      var reason = data.sensors_unavailable_reason;
+      if (reason && SENSOR_REASON_TEXTS[reason]) {
+        sensorNote.textContent = SENSOR_REASON_TEXTS[reason];
+        sensorNote.hidden = false;
+      } else {
+        sensorNote.hidden = true;
+      }
+    }).catch(function () { /* silent: this cycle just doesn't update */ });
+  }
+
+  function scheduleNextSample() {
+    // Chained setTimeout, not setInterval: the endpoint today reads an
+    // already-ready value (background sampler) and responds in
+    // microseconds, but if the network or the server slow down for any
+    // other reason, chaining avoids piling up requests until it exhausts
+    // the 6 connections the browser allows per origin — which would freeze
+    // the progress bar and the live log, which depend on the same limit.
+    setTimeout(function () {
+      update().finally(scheduleNextSample);
+    }, INTERVAL_MS);
+  }
+
+  update().finally(scheduleNextSample);
+
+  // --- live log ------------------------------------------------------
+  //
+  // Appends only what is new instead of re-rendering the panel. Three
+  // things depend on that and none of them worked before: text stays
+  // selected long enough to be copied, the scroll position survives a
+  // refresh, and reading an old line does not fight a poll every two
+  // seconds.
+  var logBox = document.getElementById("log");
+  var logFilter = document.getElementById("log-filter");
+  var followLog = document.getElementById("follow-log");
+  var logToEnd = document.getElementById("log-to-end");
+  var logCopy = document.getElementById("log-copy");
+  var pausedNote = document.getElementById("log-paused-note");
+  var LOG_URL = logBox.getAttribute("data-log-url");
+  var LOG_INTERVAL_MS = 2000;
+  var LOG_MAX_LINES = 400; // trimmed from the top; the server caps its own side too
+  var COPIED_TEXT = {{ t('run.log_copied') | tojson }};
+  var COPY_TEXT = {{ t('run.log_copy') | tojson }};
+
+  function applyLogFilter() {
+    logBox.setAttribute("data-filter", logFilter.value);
+  }
+
+  var NEAR_BOTTOM_PX = 40; // px of tolerance to consider "at the bottom"
+
+  function isAtBottom() {
+    return (logBox.scrollHeight - logBox.clientHeight - logBox.scrollTop) <= NEAR_BOTTOM_PX;
+  }
+
+  // Scrolling up turns off auto-follow; returning to the bottom turns it
+  // back on.
+  var selfScroll = false;
+  logBox.addEventListener("scroll", function () {
+    if (selfScroll) return;
+    followLog.checked = isAtBottom();
+  });
+
+  function scrollLogToBottom() {
+    selfScroll = true;
+    logBox.scrollTop = logBox.scrollHeight;
+    // released next frame, so it doesn't capture the scroll we just caused
+    requestAnimationFrame(function () { selfScroll = false; });
+  }
+
+  function lastEventId() {
+    var lines = logBox.querySelectorAll("li[data-event-id]");
+    if (!lines.length) return 0;
+    return parseInt(lines[lines.length - 1].getAttribute("data-event-id"), 10) || 0;
+  }
+
+  // True while the user is selecting text inside the log. Appending during
+  // a selection is safe in every browser tested, but trimming old lines
+  // off the top is not — it can collapse the selection. So the refresh
+  // holds entirely, and says so, until the selection is released.
+  function hasSelectionInLog() {
+    var selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    var node = selection.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType === 3) node = node.parentNode;
+    return !!(node && logBox.contains(node));
+  }
+
+  function trimLog(list) {
+    var lines = list.querySelectorAll("li[data-event-id]");
+    for (var index = 0; index + LOG_MAX_LINES < lines.length; index += 1) {
+      lines[index].remove();
+    }
+  }
+
+  function refreshLog() {
+    if (hasSelectionInLog()) {
+      pausedNote.hidden = false;
+      return Promise.resolve();
+    }
+    pausedNote.hidden = true;
+
+    return fetch(LOG_URL + "?since=" + lastEventId())
+      .then(function (response) { return response.text(); })
+      .then(function (html) {
+        if (!html.trim()) return;
+        var list = document.getElementById("log-list");
+        if (!list) return;
+        var empty = list.querySelector(".log-empty");
+        if (empty) empty.remove();
+        var wasFollowing = followLog.checked;
+        list.insertAdjacentHTML("beforeend", html);
+        trimLog(list);
+        if (wasFollowing) scrollLogToBottom();
+      })
+      .catch(function () { /* silent: this cycle just doesn't update */ });
+  }
+
+  function scheduleNextLog() {
+    setTimeout(function () { refreshLog().finally(scheduleNextLog); }, LOG_INTERVAL_MS);
+  }
+
+  logFilter.addEventListener("change", applyLogFilter);
+
+  logToEnd.addEventListener("click", function () {
+    followLog.checked = true;
+    scrollLogToBottom();
+  });
+
+  logCopy.addEventListener("click", function () {
+    // What the user can see: the filter hides lines, and copying the ones
+    // they are not looking at would be a surprise.
+    var visible = [];
+    logBox.querySelectorAll("li[data-event-id]").forEach(function (line) {
+      if (line.offsetParent !== null) visible.push(line.innerText.replace(/\s+/g, " ").trim());
+    });
+    var text = visible.join("\n");
+    var done = function () {
+      logCopy.textContent = COPIED_TEXT;
+      setTimeout(function () { logCopy.textContent = COPY_TEXT; }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { /* denied: nothing to do */ });
+    }
+  });
+
+  applyLogFilter();
+  scrollLogToBottom();
+  scheduleNextLog();
+})();
+</script>
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.run.title', ['help.run.p1', 'help.run.p2', 'help.run.p3', 'help.run.p4', 'help.run.p5']) }}{% endblock %}

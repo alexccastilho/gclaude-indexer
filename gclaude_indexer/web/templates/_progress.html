@@ -1,0 +1,30 @@
+{% import "_macros.html" as m %}
+{% if progresso.status == "none" %}
+<p class="help">{{ t('run.no_task') }}</p>
+{% else %}
+<div class="progress-box">
+  <div class="progress-header">
+    <strong>{{ t('step.' + progresso.step + '.title') }}</strong>
+    <span>{{ progresso.concluidos }} / {{ progresso.total }} ({{ progresso.percentual }}%)</span>
+  </div>
+  <div class="progress-bar" role="progressbar" aria-valuenow="{{ progresso.percentual }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-bar-fill progress-bar-{{ progresso.status }}" style="width: {{ progresso.percentual }}%"></div>
+  </div>
+  <p class="help">
+    {% if progresso.status == "running" %}
+      {{ t('run.elapsed') }}: {{ progresso.tempo_decorrido }}{% if progresso.eta_segundos %} · {{ t('run.estimated_remaining') }}: {{ progresso.eta_formatado }}{% endif %}
+    {% elif progresso.status == "done" %}
+      {{ t('run.completed_in') }} {{ progresso.tempo_decorrido }}
+    {% elif progresso.status == "stopped" %}
+      {{ t('run.paused') }}
+    {% elif progresso.status == "error" %}
+      {{ t('run.error') }}: {{ progresso.error }}
+    {% endif %}
+  </p>
+  {% if progresso.status == "running" %}
+  <button hx-post="/projects/{{ project.id }}/pause" hx-target="#steps" hx-swap="innerHTML" class="pause-button">
+    {{ m.icon('pause') }} {{ t('run.pause') }}
+  </button>
+  {% endif %}
+</div>
+{% endif %}

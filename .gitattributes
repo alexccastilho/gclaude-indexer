@@ -1,0 +1,33 @@
+# Line endings.
+#
+# This project is Windows-only (see README, "Highlights"), but the
+# repository is read and cloned on every platform. Without these rules the
+# working tree's line endings depend on each contributor's local
+# `core.autocrlf`, and a pull request can arrive showing every line of a
+# file as changed when only one line actually was.
+#
+# The rule is: normalise to LF inside the repository, and let Git decide
+# the working-tree ending — except for the three Windows script types that
+# must be CRLF on disk to behave correctly when double-clicked or invoked
+# by the shell.
+
+* text=auto
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+
+*.py   text
+*.md   text
+*.html text
+*.css  text
+*.js   text
+*.json text
+*.yml  text
+*.txt  text
+*.ini  text
+
+*.ico binary
+*.jpg binary
+*.png binary

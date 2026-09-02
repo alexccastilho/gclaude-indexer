@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ t('lock.blocked_title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('lock.blocked_title') }}</h1>
+<div class="errors">
+  <p>{{ t(message_key, **message_params) }}</p>
+</div>
+<p class="help">
+  {{ t('lock.fixed_rule') }}
+</p>
+<p><a href="/projects" class="button">&larr; {{ t('new_project.back') }}</a></p>
+{% endblock %}

@@ -1,0 +1,94 @@
+name: Tests
+
+# GClaude Indexer is Windows-only by design: the installer, hardware
+# diagnostics and sensor reading run PowerShell, query WMI and read the
+# Windows registry directly (see gclaude_indexer/install_diagnostics.py,
+# gclaude_indexer/hardware.py, gclaude_indexer/subprocess_utils.py). There
+# is deliberately no Linux/macOS job here — adding one would not "complete"
+# the matrix, it would just fail on every run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Tesseract and Ghostscript are not preinstalled on windows-latest,
+      # but the OCR pipeline exercised by tests/test_phase3.py (via
+      # gclaude_indexer/conversion.py: ocrmypdf + pytesseract) needs both
+      # as real binaries on PATH, not just the Python wrapper packages.
+      # Both are trusted, actively maintained Chocolatey community
+      # packages, and windows-latest ships Chocolatey preinstalled.
+      #
+      # config.py's default `ocr_language` is "por" (Portuguese), and tests
+      # never override it, so `por.traineddata` is required too — neither
+      # choco package bundles it, only `eng` ships out of the box. It is
+      # downloaded straight from the official tesseract-ocr/tessdata_fast
+      # repository (the same source gclaude_indexer/install_diagnostics.py
+      # points users at for the same file) into the installed tessdata
+      # folder.
+      - name: Install Tesseract and Ghostscript (OCR pipeline)
+        shell: pwsh
+        run: |
+          choco install tesseract ghostscript -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install failed with exit code $LASTEXITCODE" }
+
+          $tesseractExe = Get-ChildItem -Path "C:\Program Files*" -Filter tesseract.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $tesseractExe) { throw "tesseract.exe not found after choco install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $tesseractExe.DirectoryName
+
+          $gsExe = Get-ChildItem -Path "C:\Program Files*" -Filter "gswin64c.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $gsExe) { throw "gswin64c.exe not found after choco install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $gsExe.DirectoryName
+
+          $tessdata = Join-Path $tesseractExe.DirectoryName "tessdata"
+          New-Item -ItemType Directory -Force -Path $tessdata | Out-Null
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/por.traineddata" -OutFile (Join-Path $tessdata "por.traineddata")
+
+      - name: Verify OCR toolchain is on PATH
+        run: |
+          tesseract --version
+          tesseract --list-langs
+          gswin64c --version
+
+      # Ollama is intentionally NOT installed here: the model is too large
+      # to fit a CI runner. The `local` engine's tests (tests/test_phase8.py,
+      # tests/test_phase12.py) never talk to a real Ollama process — they
+      # run against an in-process fake HTTP server (`ollama_fake` fixture)
+      # or a monkeypatched `urlopen`, so the suite passes without it.
+
+      - name: Run tests
+        env:
+          # The suite depends on the interface language: dozens of tests
+          # across nine files assert Portuguese text (Task 10, Phase 14).
+          # conftest.py already pins this via `os.environ.setdefault`, so
+          # this line is redundant by itself today — it is spelled out here
+          # so nobody editing this workflow removes conftest.py's pin
+          # without realizing the suite would then depend on whatever
+          # language the runner's own Windows image happens to report.
+          GCLAUDE_INDEXER_LANGUAGE: pt
+          # conftest.py sets `sys.dont_write_bytecode`, but pytest compiles
+          # conftest.py itself before that line can run — the one `.pyc`
+          # that escapes lands in the project folder, which on a developer's
+          # machine is synced by Google Drive (spec section 11.1). Setting
+          # it in the environment closes the gap before Python starts.
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m pytest -q

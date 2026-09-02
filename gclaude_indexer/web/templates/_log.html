@@ -1,0 +1,8 @@
+{# The whole log list. The lines themselves live in `_log_items.html`,
+   which `/run/log?since=<id>` also returns on its own for the incremental
+   append. #}
+<ul class="log" id="log-list">
+  {% if eventos %}{% include "_log_items.html" %}{% else %}
+  <li class="log-empty">{{ t('run.log_empty') }}</li>
+  {% endif %}
+</ul>

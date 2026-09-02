@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('delete.title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ m.icon('trash') }} {{ t('delete.title') }}</h1>
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a></p>
+
+<div class="errors">
+  {{ m.icon('warning') }}
+  <p style="margin:0">{{ t('delete.warning', name=project.name) }}</p>
+</div>
+
+<form method="post" action="/projects/{{ project.id }}/delete">
+  <div class="delete-options">
+    <label class="delete-option">
+      <input type="radio" name="delete_files" value="catalogo" checked>
+      <span>
+        <strong>{{ t('delete.option_keep_files') }}</strong>
+        <span class="explanation">{{ t('delete.option_keep_files_explanation') }}</span>
+      </span>
+    </label>
+    <label class="delete-option">
+      <input type="radio" name="delete_files" value="all">
+      <span>
+        <strong>{{ t('delete.option_delete_all') }}</strong>
+        <span class="explanation">{{ t('delete.option_delete_all_explanation') }}</span>
+      </span>
+    </label>
+  </div>
+
+  <button type="submit" class="button button-danger">{{ m.icon('trash') }} {{ t('delete.confirm') }}</button>
+  <a href="/projects" class="button">{{ t('general.cancel') }}</a>
+</form>
+{% endblock %}
