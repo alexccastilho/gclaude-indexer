@@ -6,6 +6,8 @@ A local, offline tool that turns a folder full of documents into a searchable
 index, a chronological timeline, and ready-to-use instructions for a Claude
 Project.
 
+Google Drive host files to read in the Claude Project with index.
+
 ## What it does
 
 Point GClaude Indexer at a folder of documents — scanned PDFs, Word,
