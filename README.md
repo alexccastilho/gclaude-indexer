@@ -50,6 +50,12 @@ of which classification engine you pick.
 
 ![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/d1502243fb331fd6ada0f415704289a0dd670a94/image.png)
 
+![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/244b86610882d8ba163f97427bd6a750e04963c4/new.png)
+
+![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/244b86610882d8ba163f97427bd6a750e04963c4/run.png)
+
+![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/9f315ce14f673c2966651b2be4c3e88432c02705/result.png)
+
 ## Requirements
 
 - **Windows 10 or 11.** Required — see [Highlights](#highlights) above for
@@ -84,10 +90,14 @@ You do not need Git, a GitHub account, or any programming experience for
 this. You do need to be able to open a folder in File Explorer and run one
 command in a terminal — both are explained step by step below.
 
+Fast install: Run Indexer.bat and follow the instructions.
+
+--
+
 **1. Get the source code onto your machine.** If you downloaded this project
 as a `.zip` file, right-click it and choose "Extract All…", then pick a
 regular folder (for example, one inside your Documents or a folder synced
-by Google Drive/OneDrive). If you cloned it with Git instead, you already
+by Google Drive with drive letter). If you cloned it with Git instead, you already
 have a folder — either way, remember where it is; the rest of these
 instructions call it "the project folder".
 
