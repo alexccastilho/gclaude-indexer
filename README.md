@@ -48,10 +48,7 @@ of which classification engine you pick.
 - **GNU GPL-3.0 licensed.** See [License](#license) below for what that
   means if you plan to modify or redistribute this software.
 
-> A screenshot of the interface would help here, but none is included yet —
-> add one to this section once a real capture is available. Do not treat the
-> absence of a screenshot as a sign the interface doesn't exist: run the app
-> yourself with the steps below to see it.
+![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/d1502243fb331fd6ada0f415704289a0dd670a94/image.png)
 
 ## Requirements
 
