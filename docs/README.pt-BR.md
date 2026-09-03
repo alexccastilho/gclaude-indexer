@@ -6,6 +6,9 @@ Uma ferramenta local e offline que transforma uma pasta cheia de documentos
 num índice pesquisável, numa cronologia e em instruções prontas para um
 projeto no Claude.
 
+O Google Drive hospeda os arquivos; o projeto no Claude os consulta através
+do índice.
+
 ## O que o sistema faz
 
 Aponte o GClaude Indexer para uma pasta de documentos — PDFs escaneados,
@@ -54,11 +57,29 @@ escolha.
   que isso implica se você pretende modificar ou redistribuir este
   software.
 
-> Uma captura de tela da interface ajudaria bastante aqui, mas ainda não há
-> nenhuma incluída — acrescente uma a esta seção quando houver uma captura
-> real disponível. Não tome a ausência de captura de tela como sinal de que
-> a interface não existe: rode o aplicativo você mesmo com os passos abaixo
-> para vê-la.
+*As capturas mostram a interface em inglês; ela também está disponível em
+português e espanhol.*
+
+![Tela de projetos](../image.png)
+
+*Projetos — todas as coleções indexadas nesta máquina, mais o catálogo
+compartilhado opcional que permite abrir os mesmos projetos em outro
+computador.*
+
+![Formulário de novo projeto](../new.png)
+
+*Novo projeto — pastas, tipos de arquivo, fatiamento de PDF, idioma do OCR e
+motor de classificação, tudo numa tela só.*
+
+![Tela de execução](../run.png)
+
+*Execução — as seis etapas com contagens ao vivo, gráficos de CPU/RAM/GPU
+lidos da própria máquina e um log que acompanha o final.*
+
+![Tela de resultado](../result.png)
+
+*Resultado — nota de qualidade, comparação entre os motores executados sobre
+esta coleção e prévia dos quatro arquivos gerados.*
 
 ## Requisitos
 
@@ -95,12 +116,17 @@ programação para isto. Você precisa conseguir abrir uma pasta no
 Explorador de Arquivos e rodar um comando num terminal — os dois passos são
 explicados abaixo.
 
+**Instalação rápida:** execute o `Indexer.bat` e siga as instruções.
+
+---
+
 **1. Coloque o código-fonte na sua máquina.** Se você baixou este projeto
 como um arquivo `.zip`, clique com o botão direito nele e escolha "Extrair
 tudo…", depois escolha uma pasta comum (por exemplo, dentro de Documentos
-ou uma pasta sincronizada pelo Google Drive/OneDrive). Se você já clonou
-com Git, já tem uma pasta — de qualquer forma, lembre onde ela está; o
-resto destas instruções chama essa pasta de "a pasta do projeto".
+ou uma pasta sincronizada pelo Google Drive montado com letra de unidade).
+Se você já clonou com Git, já tem uma pasta — de qualquer forma, lembre onde
+ela está; o resto destas instruções chama essa pasta de "a pasta do
+projeto".
 
 **2. Abra o PowerShell dentro da pasta do projeto.** No Explorador de
 Arquivos, abra a pasta do projeto e então:

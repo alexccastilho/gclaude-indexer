@@ -6,7 +6,8 @@ A local, offline tool that turns a folder full of documents into a searchable
 index, a chronological timeline, and ready-to-use instructions for a Claude
 Project.
 
-Google Drive host files to read in the Claude Project with index.
+Google Drive hosts the files; the Claude Project reads them through the
+index.
 
 ## What it does
 
@@ -50,13 +51,25 @@ of which classification engine you pick.
 - **GNU GPL-3.0 licensed.** See [License](#license) below for what that
   means if you plan to modify or redistribute this software.
 
-![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/d1502243fb331fd6ada0f415704289a0dd670a94/image.png)
+![Projects screen](image.png)
 
-![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/244b86610882d8ba163f97427bd6a750e04963c4/new.png)
+*Projects — every collection indexed on this machine, plus the optional
+shared catalog that lets another computer open the same projects.*
 
-![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/244b86610882d8ba163f97427bd6a750e04963c4/run.png)
+![New project form](new.png)
 
-![image alt](https://github.com/alexccastilho/gclaude-indexer/blob/9f315ce14f673c2966651b2be4c3e88432c02705/result.png)
+*New project — folders, file types, PDF slicing, OCR language and
+classification engine, all on one screen.*
+
+![Execution screen](run.png)
+
+*Execution — the six steps with live counts, CPU/RAM/GPU graphs read from
+the machine itself, and a log that follows the tail.*
+
+![Result screen](result.png)
+
+*Result — quality score, a comparison of the engines run against this
+collection, and a preview of the four generated files.*
 
 ## Requirements
 
@@ -92,16 +105,16 @@ You do not need Git, a GitHub account, or any programming experience for
 this. You do need to be able to open a folder in File Explorer and run one
 command in a terminal — both are explained step by step below.
 
-Fast install: Run Indexer.bat and follow the instructions.
+**Fast install:** run `Indexer.bat` and follow the instructions.
 
---
+---
 
 **1. Get the source code onto your machine.** If you downloaded this project
 as a `.zip` file, right-click it and choose "Extract All…", then pick a
 regular folder (for example, one inside your Documents or a folder synced
-by Google Drive with drive letter). If you cloned it with Git instead, you already
-have a folder — either way, remember where it is; the rest of these
-instructions call it "the project folder".
+by Google Drive mounted with a drive letter). If you cloned it with Git
+instead, you already have a folder — either way, remember where it is; the
+rest of these instructions call it "the project folder".
 
 **2. Open PowerShell in the project folder.** In File Explorer, open the
 project folder, then either:

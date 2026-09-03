@@ -6,6 +6,9 @@ Una herramienta local y sin conexión que convierte una carpeta llena de
 documentos en un índice consultable, una cronología y unas instrucciones
 listas para un proyecto en Claude.
 
+Google Drive aloja los archivos; el proyecto en Claude los consulta a través
+del índice.
+
 ## Qué hace
 
 Apunte GClaude Indexer a una carpeta de documentos — PDF escaneados, Word,
@@ -54,11 +57,29 @@ clasificación elija.
 - **Licenciado bajo la GNU GPL-3.0.** Vea [Licencia](#licencia) abajo para
   saber qué implica esto si piensa modificar o redistribuir este software.
 
-> Una captura de pantalla de la interfaz ayudaría mucho aquí, pero todavía
-> no se incluye ninguna — agregue una a esta sección cuando exista una
-> captura real. No interprete la ausencia de una captura como señal de que
-> la interfaz no existe: ejecute la aplicación usted mismo con los pasos de
-> abajo para verla.
+*Las capturas muestran la interfaz en inglés; también está disponible en
+portugués y español.*
+
+![Pantalla de proyectos](../image.png)
+
+*Proyectos — todas las colecciones indexadas en esta máquina, más el catálogo
+compartido opcional que permite abrir los mismos proyectos en otro
+computador.*
+
+![Formulario de proyecto nuevo](../new.png)
+
+*Proyecto nuevo — carpetas, tipos de archivo, división de PDF, idioma del OCR
+y motor de clasificación, todo en una sola pantalla.*
+
+![Pantalla de ejecución](../run.png)
+
+*Ejecución — los seis pasos con conteos en vivo, gráficos de CPU/RAM/GPU
+leídos de la propia máquina y un registro que sigue el final.*
+
+![Pantalla de resultado](../result.png)
+
+*Resultado — puntuación de calidad, comparación entre los motores ejecutados
+sobre esta colección y vista previa de los cuatro archivos generados.*
 
 ## Requisitos
 
@@ -95,12 +116,17 @@ No necesita Git, una cuenta de GitHub, ni experiencia de programación para
 esto. Sí necesita poder abrir una carpeta en el Explorador de archivos y
 ejecutar un comando en una terminal — ambos se explican paso a paso abajo.
 
+**Instalación rápida:** ejecute `Indexer.bat` y siga las instrucciones.
+
+---
+
 **1. Ponga el código fuente en su máquina.** Si descargó este proyecto
 como un archivo `.zip`, haga clic derecho sobre él y elija "Extraer
 todo…", luego elija una carpeta común (por ejemplo, dentro de Documentos o
-una carpeta sincronizada por Google Drive/OneDrive). Si ya lo clonó con
-Git, ya tiene una carpeta — de cualquier forma, recuerde dónde está; el
-resto de estas instrucciones la llama "la carpeta del proyecto".
+una carpeta sincronizada por Google Drive montado con letra de unidad). Si
+ya lo clonó con Git, ya tiene una carpeta — de cualquier forma, recuerde
+dónde está; el resto de estas instrucciones la llama "la carpeta del
+proyecto".
 
 **2. Abra PowerShell dentro de la carpeta del proyecto.** En el Explorador
 de archivos, abra la carpeta del proyecto y luego:
