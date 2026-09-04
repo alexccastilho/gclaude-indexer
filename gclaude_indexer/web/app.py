@@ -72,7 +72,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.0.0"
+SYSTEM_VERSION = "1.0.1"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 
 # 50 lines covered less than a minute of scanning on a real collection — the

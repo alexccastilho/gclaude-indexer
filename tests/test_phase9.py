@@ -107,7 +107,7 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
     # Determinístico independente do Ollama estar de pé nesta máquina
     # (Tarefa 8, fase 12): o formulário lista os modelos instalados num
     # <select>, mas o teste não pode depender do serviço real.
-    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["gemma4:e4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
 
     resposta = cliente.get("/projects/new")
     assert resposta.status_code == 200
@@ -126,13 +126,13 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
 
     # modelo_local (Tarefa 8, fase 12): com modelos instalados, o campo é um
     # <select> preenchido a partir do Ollama local, não mais um <input
-    # disabled> travado em gemma4:e4b. `id="local_model"` (Tarefa 18, fase
+    # disabled> travado no modelo padrão. `id="local_model"` (Tarefa 18, fase
     # 14): o id foi trocado de "modelo_local" para bater com o name= já
     # traduzido — ver defeito 5 do relatorio da tarefa.
     assert 'id="local_model"' in corpo
     assert '<select id="local_model" name="local_model">' in corpo
     assert '<option value="qwen3:8b"' in corpo
-    assert '<option value="gemma4:e4b" selected' in corpo
+    assert '<option value="qwen3.5:4b" selected' in corpo
 
 
 def _checkbox_marcado(corpo: str, valor: str) -> bool:

@@ -1,4 +1,4 @@
-*Read this in other languages: [Português (Brasil)](docs/README.pt-BR.md) · [Español](docs/README.es.md)*
+**Read this in your language:** **[Português (Brasil)](docs/README.pt-BR.md)** · **[Español](docs/README.es.md)** · English (you are here)
 
 # GClaude Indexer
 
@@ -8,6 +8,11 @@ Project.
 
 Google Drive hosts the files; the Claude Project reads them through the
 index.
+
+![The four screens of GClaude Indexer](demo.gif)
+
+*The four screens in the order you meet them — projects, new project,
+execution, result.*
 
 ## What it does
 
@@ -75,11 +80,12 @@ collection, and a preview of the four generated files.*
 
 - **Windows 10 or 11.** Required — see [Highlights](#highlights) above for
   why.
-- **Python 3.12**, specifically. Newer versions (3.13, 3.14) are known to
-  break this project's pinned dependency versions — if your machine's
-  default `python` is newer, follow the note in
-  [Installing](#installing-first-time-on-a-machine) below to select 3.12
-  explicitly.
+- **Python 3.12** — installed for you if it is missing. This project pins
+  dependency versions that newer Pythons (3.13, 3.14) break, so the
+  installer looks for 3.12 and, when the machine does not have it,
+  downloads and installs the official 3.12.10 for the current user: no
+  administrator, no manual step, and any other Python already on the
+  machine is left exactly where it is.
 - For **OCR** (scanned documents with no text layer): Tesseract and
   Ghostscript. The installer below installs both automatically when
   possible.
@@ -88,8 +94,9 @@ collection, and a preview of the four generated files.*
   below when you accept. A GPU with a few gigabytes of free VRAM speeds this
   engine up considerably, but is not required — Ollama uses as much GPU
   memory as fits and spills the rest into system RAM automatically. As a
-  rough guide, the default local model is close to 9.6 GB to download, and
-  needs somewhat more than that in combined VRAM + RAM to run; a machine
+  rough guide, the default local model (`qwen3.5:4b`) is about 3.2 GB to
+  download, and needs somewhat more than that in combined VRAM + RAM to
+  run — it fits a 6 GB card as comfortably as an 8 GB one; a machine
   with too little of both falls back automatically to the `rules` engine
   (see [Classification engines](#classification-engines) below), with an
   explanation shown on screen.
@@ -323,7 +330,7 @@ card:
 
 | Model | Size | Type filled | s/window |
 |---|---:|---:|---:|
-| **`qwen3.5:4b`** | **3.0 GB** | **100%** | **30.8** |
+| **`qwen3.5:4b`** (default) | **3.0 GB** | **100%** | **30.8** |
 | `gemma4:e4b` | 3.1 GB | 79.5% | 38.5 |
 | `qwen3.5:9b` | 5.3 GB | 79.5% | 86.2 |
 | `qwen3:8b` | 5.4 GB | 100% | 108.8 |
@@ -331,7 +338,9 @@ card:
 
 `qwen3.5:4b` reaches the same quality as the best of them in a quarter of
 the time and half the VRAM, and fits a 6 GB card as comfortably as an 8 GB
-one — one setting for every machine. Note that the larger model of the same
+one — one setting for every machine. It has been the default since version
+1.0.1; before that the default was `gemma4:e4b`, which is still selectable
+here if you want to compare. Note that the larger model of the same
 family lost to the smaller: describing a page is reading and format
 discipline, not deep reasoning, so size buys nothing here and costs time.
 

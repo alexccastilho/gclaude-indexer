@@ -498,7 +498,7 @@ that will actually be used:
 
 - The model's size comes from Ollama's own `/api/tags` when the model is
   already downloaded; otherwise the check falls back to a calibrated
-  estimate for the default model (`gemma4:e4b`, roughly 9.6 GB).
+  estimate for the default model (`qwen3.5:4b`, roughly 3.0 GB).
 - Required combined memory (VRAM + RAM) is the model size plus a 20%
   margin.
 - Below that, classification falls back to the `rules` engine, with the

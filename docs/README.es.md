@@ -1,4 +1,4 @@
-*Lea esto en otros idiomas: [English](../README.md) · [Português (Brasil)](README.pt-BR.md)*
+**Léalo en su idioma:** Español — usted está aquí · **[Português (Brasil)](README.pt-BR.md)** · **[English](../README.md)**
 
 # GClaude Indexer
 
@@ -8,6 +8,11 @@ listas para un proyecto en Claude.
 
 Google Drive aloja los archivos; el proyecto en Claude los consulta a través
 del índice.
+
+![Las cuatro pantallas de GClaude Indexer](../demo.gif)
+
+*Las cuatro pantallas en el orden en que las encuentra — proyectos, nuevo
+proyecto, ejecución, resultado.*
 
 ## Qué hace
 
@@ -85,11 +90,12 @@ sobre esta colección y vista previa de los cuatro archivos generados.*
 
 - **Windows 10 u 11.** Obligatorio — vea [Aspectos destacados](#aspectos-destacados)
   arriba para el motivo.
-- **Python 3.12**, específicamente. Se sabe que versiones más nuevas (3.13,
-  3.14) rompen las versiones fijadas de las dependencias de este
-  proyecto — si el `python` por defecto de su máquina es más nuevo, siga
-  la nota en [Instalación](#instalación-primera-vez-en-una-máquina) abajo
-  para seleccionar la 3.12 explícitamente.
+- **Python 3.12** — instalado por usted si falta. Este proyecto fija
+  versiones de dependencias que los Python más nuevos (3.13, 3.14) rompen,
+  así que el instalador busca la 3.12 y, cuando la máquina no la tiene,
+  descarga e instala la 3.12.10 oficial para el usuario actual: sin
+  administrador, sin paso manual, y cualquier otro Python ya instalado en
+  la máquina se queda exactamente donde está.
 - Para **OCR** (documentos escaneados sin capa de texto): Tesseract y
   Ghostscript. El instalador de abajo los instala automáticamente cuando
   es posible.
@@ -99,9 +105,11 @@ sobre esta colección y vista previa de los cuatro archivos generados.*
   gigabytes de VRAM libre acelera bastante este motor, pero no es
   obligatoria — Ollama usa toda la memoria de GPU que quepa y desborda el
   resto a la RAM del sistema por su cuenta. Como referencia aproximada, el
-  modelo local predeterminado pesa cerca de 9,6 GB para descargar, y
-  necesita algo más que eso sumando VRAM y RAM para ejecutarse; una máquina
-  con poco de ambas cosas cae automáticamente al motor `rules` (vea
+  modelo local predeterminado (`qwen3.5:4b`) pesa cerca de 3,2 GB para
+  descargar, y necesita algo más que eso sumando VRAM y RAM para
+  ejecutarse — cabe en una placa de 6 GB tan holgado como en una de 8 GB;
+  una máquina con poco de ambas cosas cae automáticamente al motor
+  `rules` (vea
   [Motores de clasificación](#motores-de-clasificación) abajo), con una
   explicación mostrada en pantalla.
 - El **motor `rules`** no necesita nada de lo anterior — funciona en
@@ -346,7 +354,7 @@ en una placa de 8 GB:
 
 | Modelo | Tamaño | Tipo completado | s/ventana |
 |---|---:|---:|---:|
-| **`qwen3.5:4b`** | **3,0 GB** | **100%** | **30,8** |
+| **`qwen3.5:4b`** (predeterminado) | **3,0 GB** | **100%** | **30,8** |
 | `gemma4:e4b` | 3,1 GB | 79,5% | 38,5 |
 | `qwen3.5:9b` | 5,3 GB | 79,5% | 86,2 |
 | `qwen3:8b` | 5,4 GB | 100% | 108,8 |
@@ -354,7 +362,9 @@ en una placa de 8 GB:
 
 `qwen3.5:4b` alcanza la misma calidad que el mejor de ellos en un cuarto del
 tiempo y con la mitad de la VRAM, y cabe en una placa de 6 GB tan holgado
-como en una de 8 GB. El modelo mayor de la misma familia perdió ante el
+como en una de 8 GB. Es el predeterminado desde la versión 1.0.1; antes el
+predeterminado era `gemma4:e4b`, que sigue siendo seleccionable aquí para
+quien quiera comparar. El modelo mayor de la misma familia perdió ante el
 menor: describir una página es lectura y disciplina de formato, no
 razonamiento profundo.
 

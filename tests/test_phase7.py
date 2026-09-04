@@ -6,6 +6,7 @@ import pytest
 
 from gclaude_indexer import hardware
 from gclaude_indexer.config import load_config
+from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.hardware import (
@@ -56,35 +57,35 @@ def test_diagnose_nao_falha_e_registra_evento(tmp_path):
     conn.close()
 
 
-# --- escolha de modelo: só gemma4:e4b, por VRAM+RAM combinadas -----------
+# --- escolha de modelo: só qwen3.5:4b, por VRAM+RAM combinadas ----------
 
 
-def test_escolhe_gemma4_com_gpu_forte(tmp_path):
+def test_escolhe_o_padrao_com_gpu_forte(tmp_path):
     conn = _conn(tmp_path)
     diagnostico = _diagnostico(gpu=GpuInfo("RTX 4090", "NVIDIA", 24 * GB_MB), ram_mb=32 * GB_MB)
     escolha = choose_model(conn, diagnostico)
-    assert escolha.model == "gemma4:e4b"
+    assert escolha.model == DEFAULT_LOCAL_MODEL
     assert escolha.use_rules_engine is False
     conn.close()
 
 
-def test_escolhe_gemma4_com_gpu_fraca_transbordando_para_ram(tmp_path):
+def test_escolhe_o_padrao_com_gpu_fraca_transbordando_para_ram(tmp_path):
     """O pedido é usar o máximo de GPU possível e transbordar o resto para
     a RAM — uma GPU fraca não deve mais bloquear o modelo sozinha, desde
     que a soma VRAM+RAM baste (ao contrário da antiga tabela por tiers)."""
     conn = _conn(tmp_path)
     diagnostico = _diagnostico(gpu=GpuInfo("GPU antiga", "NVIDIA", 2 * GB_MB), ram_mb=32 * GB_MB)
     escolha = choose_model(conn, diagnostico)
-    assert escolha.model == "gemma4:e4b"
+    assert escolha.model == DEFAULT_LOCAL_MODEL
     assert escolha.use_rules_engine is False
     conn.close()
 
 
-def test_escolhe_gemma4_sem_gpu_so_com_ram(tmp_path):
+def test_escolhe_o_padrao_sem_gpu_so_com_ram(tmp_path):
     conn = _conn(tmp_path)
     diagnostico = _diagnostico(gpu=None, ram_mb=16 * GB_MB)
     escolha = choose_model(conn, diagnostico)
-    assert escolha.model == "gemma4:e4b"
+    assert escolha.model == DEFAULT_LOCAL_MODEL
     conn.close()
 
 

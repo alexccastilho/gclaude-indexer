@@ -279,7 +279,7 @@ def test_modelo_para_usar_automatico_e_sempre_o_padrao_fixo(tmp_path):
     resolve sempre para o mesmo modelo — não consulta mais o diagnóstico."""
     config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
     assert model_to_use(conn, config) == engine_local.DEFAULT_LOCAL_MODEL
-    assert engine_local.DEFAULT_LOCAL_MODEL == "gemma4:e4b"
+    assert engine_local.DEFAULT_LOCAL_MODEL == "qwen3.5:4b"
     conn.close()
 
 

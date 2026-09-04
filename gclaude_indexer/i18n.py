@@ -130,11 +130,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.name": "Regras",
         "engine.rules.description": "só padrões de texto, sem modelo de linguagem. Instantâneo e sem dependência externa; erra mais em documentos fora do padrão.",
         "engine.local.name": "Modelo local (Ollama)",
-        "engine.local.description": "roda gemma4:e4b na sua máquina pelo Ollama, sem conta e sem internet. Exige o Ollama instalado; sem ele, cai nas regras com aviso.",
+        "engine.local.description": "roda qwen3.5:4b na sua máquina pelo Ollama, sem conta e sem internet. Exige o Ollama instalado; sem ele, cai nas regras com aviso.",
         "engine.claude_code.name": "Claude Code (manual)",
         "engine.claude_code.description": "gera as janelas para você classificar com o Claude Code e rodar um comando à mão. Melhor qualidade, mas não termina sozinho.",
         "new_project.local_model": "Modelo local",
-        "new_project.help_local_model": 'Modelos instalados no Ollama desta máquina. A escolha é usada de verdade na classificação: deixe em "automático" para usar gemma4:e4b, ou escolha outro para comparar a qualidade entre modelos.',
+        "new_project.help_local_model": 'Modelos instalados no Ollama desta máquina. A escolha é usada de verdade na classificação: deixe em "automático" para usar qwen3.5:4b, ou escolha outro para comparar a qualidade entre modelos.',
         "new_project.local_model_no_ollama": "O Ollama não está respondendo em 127.0.0.1:11434, então não dá para listar os modelos instalados. A classificação com o motor \"local\" usa o modelo escolhido aqui (padrão {default}), e precisa do Ollama no ar na hora de rodar; parado, o sistema cai no motor de regras com aviso.",
         "new_project.review_low_confidence": (
             'Revisar confiança baixa (roda "regras" em tudo e submete ao motor escolhido só as '
@@ -255,7 +255,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "A lista mostra o que está instalado no Ollama desta máquina, sempre consultado em "
             "127.0.0.1, sem conta e sem internet. O motor \"local\" classifica com o modelo "
-            "escolhido aqui — \"automático\" usa gemma4:e4b, o padrão; escolher outro serve para "
+            "escolhido aqui — \"automático\" usa qwen3.5:4b, o padrão; escolher outro serve para "
             "comparar a qualidade entre modelos. Com o Ollama parado, o campo vira texto livre e "
             "a classificação cai no motor de regras com aviso."
         ),
@@ -425,7 +425,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "instruções prontas para um Claude Project — offline, processando tudo nesta máquina."
         ),
         "about.technology": (
-            "Python, FastAPI, SQLite e Ollama (gemma4:e4b) rodando localmente; nenhum documento "
+            "Python, FastAPI, SQLite e Ollama (qwen3.5:4b) rodando localmente; nenhum documento "
             "ou dado do acervo sai desta máquina durante o processamento."
         ),
         "diagnostics.title": "Diagnóstico de instalação",
@@ -796,7 +796,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.hardware.real_size": "tamanho real",
         "log.hardware.estimated_size": (
-            "tamanho estimado (calibrado para gemma4:e4b; Ollama não informou o tamanho real)"
+            "tamanho estimado (calibrado para qwen3.5:4b; Ollama não informou o tamanho real)"
         ),
         "log.hardware.insufficient_memory": (
             "Memória insuficiente para '{model}': são necessários pelo menos {required} MB "
@@ -998,11 +998,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.name": "Rules",
         "engine.rules.description": "text patterns only, no language model. Instant and dependency-free; less accurate on documents that break the pattern.",
         "engine.local.name": "Local model (Ollama)",
-        "engine.local.description": "runs gemma4:e4b on your machine through Ollama, no account and no internet. Requires Ollama installed; without it, falls back to rules with a warning.",
+        "engine.local.description": "runs qwen3.5:4b on your machine through Ollama, no account and no internet. Requires Ollama installed; without it, falls back to rules with a warning.",
         "engine.claude_code.name": "Claude Code (manual)",
         "engine.claude_code.description": "prepares the windows for you to classify with Claude Code and run a command by hand. Best quality, but does not finish on its own.",
         "new_project.local_model": "Local model",
-        "new_project.help_local_model": 'Models installed in Ollama on this machine. Your choice is actually used for classification: leave it as "automatic" to use gemma4:e4b, or pick another one to compare quality across models.',
+        "new_project.help_local_model": 'Models installed in Ollama on this machine. Your choice is actually used for classification: leave it as "automatic" to use qwen3.5:4b, or pick another one to compare quality across models.',
         "new_project.local_model_no_ollama": "Ollama is not responding on 127.0.0.1:11434, so the installed models cannot be listed. Classification with the \"local\" engine uses the model chosen here (default {default}), and needs Ollama running at classification time; if it is down, the system falls back to the rules engine with a warning.",
         "new_project.review_low_confidence": (
             'Review low confidence (runs "rules" on everything and submits only the doubtful '
@@ -1121,7 +1121,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "The list shows what is installed in Ollama on this machine, always queried at "
             "127.0.0.1, with no account and no internet. The \"local\" engine classifies with the "
-            "model chosen here — \"automatic\" uses gemma4:e4b, the default; picking another one "
+            "model chosen here — \"automatic\" uses qwen3.5:4b, the default; picking another one "
             "lets you compare quality across models. With Ollama stopped, the field becomes free "
             "text and classification falls back to the rules engine with a warning."
         ),
@@ -1286,7 +1286,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "ready for a Claude Project — offline, processing everything on this machine."
         ),
         "about.technology": (
-            "Python, FastAPI, SQLite and Ollama (gemma4:e4b) running locally; no document or "
+            "Python, FastAPI, SQLite and Ollama (qwen3.5:4b) running locally; no document or "
             "collection data leaves this machine during processing."
         ),
         "diagnostics.title": "Installation diagnostics",
@@ -1631,7 +1631,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.hardware.real_size": "real size",
         "log.hardware.estimated_size": (
-            "estimated size (calibrated for gemma4:e4b; Ollama did not report the real size)"
+            "estimated size (calibrated for qwen3.5:4b; Ollama did not report the real size)"
         ),
         "log.hardware.insufficient_memory": (
             "Not enough memory for '{model}': at least {required} MB combining VRAM and RAM "
@@ -1828,11 +1828,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.name": "Reglas",
         "engine.rules.description": "solo patrones de texto, sin modelo de lenguaje. Instantáneo y sin dependencias; falla más en documentos fuera del patrón.",
         "engine.local.name": "Modelo local (Ollama)",
-        "engine.local.description": "ejecuta gemma4:e4b en tu máquina con Ollama, sin cuenta y sin internet. Requiere Ollama instalado; sin él, recurre a las reglas con aviso.",
+        "engine.local.description": "ejecuta qwen3.5:4b en tu máquina con Ollama, sin cuenta y sin internet. Requiere Ollama instalado; sin él, recurre a las reglas con aviso.",
         "engine.claude_code.name": "Claude Code (manual)",
         "engine.claude_code.description": "prepara las ventanas para que las clasifiques con Claude Code y ejecutes un comando a mano. Mejor calidad, pero no termina solo.",
         "new_project.local_model": "Modelo local",
-        "new_project.help_local_model": 'Modelos instalados en Ollama de esta máquina. La elección se usa de verdad en la clasificación: déjelo en "automático" para usar gemma4:e4b, o elija otro para comparar la calidad entre modelos.',
+        "new_project.help_local_model": 'Modelos instalados en Ollama de esta máquina. La elección se usa de verdad en la clasificación: déjelo en "automático" para usar qwen3.5:4b, o elija otro para comparar la calidad entre modelos.',
         "new_project.local_model_no_ollama": "Ollama no responde en 127.0.0.1:11434, así que no se pueden listar los modelos instalados. La clasificación con el motor \"local\" usa el modelo elegido aquí (por defecto {default}), y necesita que Ollama esté activo al momento de clasificar; si está detenido, el sistema recurre al motor de reglas con aviso.",
         "new_project.review_low_confidence": (
             'Revisar confianza baja (ejecuta "reglas" en todo y solo envía las ventanas dudosas '
@@ -1955,7 +1955,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "La lista muestra lo instalado en Ollama de esta máquina, siempre consultado en "
             "127.0.0.1, sin cuenta y sin internet. El motor \"local\" clasifica con el modelo "
-            "elegido aquí — \"automático\" usa gemma4:e4b, el valor por defecto; elegir otro sirve "
+            "elegido aquí — \"automático\" usa qwen3.5:4b, el valor por defecto; elegir otro sirve "
             "para comparar la calidad entre modelos. Con Ollama detenido, el campo pasa a texto "
             "libre y la clasificación recurre al motor de reglas con aviso."
         ),
@@ -2127,7 +2127,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "máquina."
         ),
         "about.technology": (
-            "Python, FastAPI, SQLite y Ollama (gemma4:e4b) corriendo localmente; ningún documento "
+            "Python, FastAPI, SQLite y Ollama (qwen3.5:4b) corriendo localmente; ningún documento "
             "o dato de la colección sale de esta máquina durante el procesamiento."
         ),
         "diagnostics.title": "Diagnóstico de instalación",
@@ -2472,7 +2472,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.hardware.real_size": "tamaño real",
         "log.hardware.estimated_size": (
-            "tamaño estimado (calibrado para gemma4:e4b; Ollama no informó el tamaño real)"
+            "tamaño estimado (calibrado para qwen3.5:4b; Ollama no informó el tamaño real)"
         ),
         "log.hardware.insufficient_memory": (
             "Memoria insuficiente para '{model}': se necesitan al menos {required} MB sumando "

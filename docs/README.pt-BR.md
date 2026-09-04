@@ -1,4 +1,4 @@
-*Leia isto em outros idiomas: [English](../README.md) · [Español](README.es.md)*
+**Leia no seu idioma:** Português (Brasil) — você está aqui · **[English](../README.md)** · **[Español](README.es.md)**
 
 # GClaude Indexer
 
@@ -8,6 +8,11 @@ projeto no Claude.
 
 O Google Drive hospeda os arquivos; o projeto no Claude os consulta através
 do índice.
+
+![As quatro telas do GClaude Indexer](../demo.gif)
+
+*As quatro telas na ordem em que você as encontra — projetos, novo projeto,
+execução, resultado.*
 
 ## O que o sistema faz
 
@@ -85,11 +90,12 @@ esta coleção e prévia dos quatro arquivos gerados.*
 
 - **Windows 10 ou 11.** Obrigatório — veja [Destaques](#destaques) acima
   para o motivo.
-- **Python 3.12**, especificamente. Versões mais novas (3.13, 3.14) são
-  conhecidas por quebrar as versões fixadas das dependências deste
-  projeto — se o `python` padrão da sua máquina for mais novo, siga a nota
-  em [Instalando](#instalando-primeira-vez-numa-máquina) abaixo para
-  selecionar a 3.12 explicitamente.
+- **Python 3.12** — instalado para você se estiver faltando. Este projeto
+  fixa versões de dependências que os Python mais novos (3.13, 3.14)
+  quebram, então o instalador procura a 3.12 e, quando a máquina não a tem,
+  baixa e instala a 3.12.10 oficial para o usuário atual: sem
+  administrador, sem passo manual, e qualquer outro Python já instalado na
+  máquina fica exatamente onde está.
 - Para **OCR** (documentos escaneados sem camada de texto): Tesseract e
   Ghostscript. O instalador abaixo instala os dois automaticamente quando
   possível.
@@ -98,10 +104,11 @@ esta coleção e prévia dos quatro arquivos gerados.*
   abaixo se você aceitar. Uma GPU com alguns gigabytes de VRAM livre acelera
   bastante este motor, mas não é obrigatória — o Ollama usa o máximo de
   memória de GPU que couber e transborda o resto para a RAM do sistema
-  sozinho. Como referência aproximada, o modelo local padrão tem perto de
-  9,6 GB para baixar, e precisa de um pouco mais que isso somando VRAM e
-  RAM para rodar; uma máquina com pouco dos dois cai automaticamente para o
-  motor `rules` (veja [Motores de classificação](#motores-de-classificação)
+  sozinho. Como referência aproximada, o modelo local padrão (`qwen3.5:4b`)
+  tem cerca de 3,2 GB para baixar, e precisa de um pouco mais que isso
+  somando VRAM e RAM para rodar — ele cabe numa placa de 6 GB tão folgado
+  quanto numa de 8 GB; uma máquina com pouco dos dois cai automaticamente
+  para o motor `rules` (veja [Motores de classificação](#motores-de-classificação)
   abaixo), com uma explicação exibida na tela.
 - O **motor `rules`** não precisa de nada do que está acima — roda em
   qualquer máquina Windows capaz de rodar Python, sem GPU, sem download e
@@ -342,7 +349,7 @@ placa de 8 GB:
 
 | Modelo | Tamanho | Tipo preenchido | s/janela |
 |---|---:|---:|---:|
-| **`qwen3.5:4b`** | **3,0 GB** | **100%** | **30,8** |
+| **`qwen3.5:4b`** (padrão) | **3,0 GB** | **100%** | **30,8** |
 | `gemma4:e4b` | 3,1 GB | 79,5% | 38,5 |
 | `qwen3.5:9b` | 5,3 GB | 79,5% | 86,2 |
 | `qwen3:8b` | 5,4 GB | 100% | 108,8 |
@@ -350,7 +357,9 @@ placa de 8 GB:
 
 O `qwen3.5:4b` alcança a mesma qualidade do melhor deles em um quarto do
 tempo e com metade da VRAM, e cabe numa placa de 6 GB tão folgado quanto
-numa de 8 GB — uma configuração só para todas as máquinas. Repare que o
+numa de 8 GB — uma configuração só para todas as máquinas. É o padrão desde
+a versão 1.0.1; antes disso o padrão era o `gemma4:e4b`, que continua
+selecionável aqui para quem quiser comparar. Repare que o
 modelo maior da mesma família perdeu para o menor: descrever uma página é
 leitura e disciplina de formato, não raciocínio profundo, então tamanho não
 compra qualidade aqui e custa tempo.

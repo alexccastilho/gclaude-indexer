@@ -45,14 +45,21 @@ GB_MB = 1024
 # rest into RAM — that's why the hardware check looks at combined VRAM+RAM,
 # not VRAM alone.
 
-# Approximate download size of the default model (gemma4:e4b, ~9.6 GB), used
+# Approximate download size of the default model (qwen3.5:4b, ~3.2 GB), used
 # to require double that much free space before downloading (section 10.2)
 # and to estimate the minimum combined memory (VRAM + RAM) needed to load it.
 # This is only a calibration for that specific model — for any other,
 # `choose_model` first tries the real size via Ollama's `/api/tags`
 # (`_real_model_size_mb`) and only falls back to this estimate when Ollama
 # does not respond or the model has not been downloaded yet.
-ESTIMATED_MODEL_SIZE_MB = 9_600
+#
+# Version 1.0.1 brought this down from 9_600 (calibrated for the previous
+# default, `gemma4:e4b`) along with the default itself. The old number was
+# not wrong for that model — it really does pull ~9.6 GB — but leaving it
+# here would have made every machine look ~6.4 GB short of what it actually
+# needs on a first run, before Ollama has the model and can report a real
+# size.
+ESTIMATED_MODEL_SIZE_MB = 3_232
 MEMORY_MARGIN = 1.2  # 20% margin over the model size (context/OS)
 _MODEL_SIZE_TIMEOUT_S = 2.0
 
@@ -279,7 +286,7 @@ def choose_model(
 
     The size used in the memory/disk math comes from Ollama's `/api/tags`
     when available (`_real_model_size_mb`); it only falls back to
-    `ESTIMATED_MODEL_SIZE_MB` (calibrated for `gemma4:e4b`, ~9.6 GB) when
+    `ESTIMATED_MODEL_SIZE_MB` (calibrated for `qwen3.5:4b`, ~3.2 GB) when
     Ollama does not respond or the model has not been downloaded yet — and
     the recorded reason makes clear which of the two was used.
     """
@@ -298,7 +305,7 @@ def choose_model(
         log_size_source = nested("log.hardware.real_size")
     else:
         model_size_mb = ESTIMATED_MODEL_SIZE_MB
-        size_source = "tamanho estimado (calibrado para gemma4:e4b; Ollama não informou o tamanho real)"
+        size_source = "tamanho estimado (calibrado para qwen3.5:4b; Ollama não informou o tamanho real)"
         log_size_source = nested("log.hardware.estimated_size")
 
     vram = diagnostic.gpu.vram_mb if diagnostic.gpu else 0

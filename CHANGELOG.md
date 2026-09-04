@@ -6,9 +6,63 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Entries are grouped by development phase, following the project's own
 planning documents in `docs/superpowers/plans/`, rather than by semantic
 version — the reported application version (`SYSTEM_VERSION` in
-`web/app.py`) has stayed `1.0.0` across these phases.
+`web/app.py`) stayed `1.0.0` from phase 1 through phase 16. `1.0.1` is the
+first bump, and it releases everything the phase 16 block below had been
+carrying as unreleased.
 
-## [Unreleased] — Phase 16: Second-Machine Report
+## [1.0.1] — 2026-09-03
+
+The release that goes out with the project's first public announcement.
+
+### Changed
+
+- **The default local model is now `qwen3.5:4b`, replacing `gemma4:e4b`.**
+  This is the project's own measurement finally reaching the default: over
+  the same windows of a 31-page document, every model fully resident on an
+  8 GB card, `qwen3.5:4b` filled the type field on 100% of the pieces at
+  30.8 s/window against `gemma4:e4b`'s 79.5% at 38.5 s/window — better and
+  faster at the same time, which is not the usual shape of that trade. The
+  README had recommended it since phase 15; `DEFAULT_LOCAL_MODEL` had not
+  followed. `gemma4:e4b` stays selectable in the New Project form for
+  anyone who wants to compare, but it is no longer what the installer
+  downloads.
+
+  The practical effect is on first use, not on quality: `gemma4:e4b` pulls
+  ~9.6 GB from Ollama even though only ~3.1 GB of it is resident, so a
+  first run now downloads roughly a third of what it used to, and fits a
+  6 GB card as comfortably as an 8 GB one. `install.ps1` reads
+  `DEFAULT_LOCAL_MODEL` from Python rather than hardcoding a name, so it
+  followed the change on its own.
+
+### Fixed
+
+- **The hardware check told every machine it needed ~9.6 GB it did not
+  need.** `ESTIMATED_MODEL_SIZE_MB` was calibrated for `gemma4:e4b` and is
+  the number `choose_model` falls back to before Ollama can report a real
+  size — that is, on exactly the first run, when nothing has been
+  downloaded yet. Left at 9_600 next to a 3.2 GB default, it would have
+  pushed borderline machines to the `rules` engine over memory they never
+  had to have. Now 3_232, the size this machine's Ollama reports for
+  `qwen3.5:4b`.
+
+### Documentation
+
+- **A demo GIF (`demo.gif`) at the top of all three READMEs**, walking
+  through the four screens in order — projects, new project, execution,
+  result.
+- **The Python 3.12 requirement no longer reads like a manual step.** The
+  installer has downloaded and installed Python 3.12.10 for the current
+  user since phase 15 task 4, and the "Installing" section said so, but
+  the "Requirements" bullet above it still told the reader to go select
+  3.12 themselves — the first thing a newcomer reads, describing a barrier
+  that no longer exists.
+- **The language links now lead each README**, with the other two
+  languages named in their own language rather than folded into one line
+  of small print.
+- The `new.png` screenshot was retaken: it showed `gemma4:e4b` selected in
+  the model dropdown, which is no longer what a fresh install shows.
+
+## Phase 16: Second-Machine Report — released in 1.0.1
 
 Everything in this phase comes from one source: the maintainer installed
 the system on a second computer and wrote down the eight things that were

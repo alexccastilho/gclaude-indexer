@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
+from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
 import gclaude_indexer.sensors as sensors_mod
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
@@ -1706,7 +1707,7 @@ def test_escolher_modelo_reporta_o_modelo_realmente_usado_nao_o_padrao(tmp_path,
     assert escolha.model == "qwen3.5:9b"
     eventos = list_events(conn, step="diagnostics")
     assert any("qwen3.5:9b" in e["message"] for e in eventos), "o evento não nomeia o modelo real"
-    assert not any("'gemma4:e4b' escolhido" in e["message"] for e in eventos), "o evento ainda afirma que gemma4:e4b foi o escolhido"
+    assert not any(f"'{DEFAULT_LOCAL_MODEL}' escolhido" in e["message"] for e in eventos), "o evento ainda afirma que o modelo padrão foi o escolhido"
     conn.close()
 
 
@@ -1742,19 +1743,19 @@ def test_resolver_motor_efetivo_repassa_o_modelo_do_config_para_escolher_modelo(
     assert motor == "local"
     eventos = list_events(conn, step="diagnostics")
     assert any("qwen3.5:9b" in e["message"] for e in eventos)
-    assert not any("'gemma4:e4b' escolhido" in e["message"] for e in eventos)
+    assert not any(f"'{DEFAULT_LOCAL_MODEL}' escolhido" in e["message"] for e in eventos)
     conn.close()
 
 
 def test_escolher_modelo_usa_tamanho_real_do_ollama_quando_disponivel(tmp_path, monkeypatch):
-    """`ESTIMATED_MODEL_SIZE_MB` (9600 MB) é calibrado para o gemma4:e4b;
-    para outro modelo, `choose_model` tenta primeiro o tamanho real via
-    `/api/tags` do Ollama (`_real_model_size_mb`) antes de recorrer à
+    """`ESTIMATED_MODEL_SIZE_MB` (3232 MB desde a 1.0.1) é calibrado para o
+    modelo padrão; para outro modelo, `choose_model` tenta primeiro o tamanho
+    real via `/api/tags` do Ollama (`_real_model_size_mb`) antes de recorrer à
     estimativa — a conta de memória/disco fica errada com um modelo de
-    tamanho bem diferente (qwen3.5:9b tem ~6,3 GB, não ~9,6 GB)."""
+    tamanho bem diferente (qwen3.5:9b tem ~6,3 GB, não ~3,2 GB)."""
     from gclaude_indexer.db import connect, init_schema
     from gclaude_indexer.events import list_events
-    from gclaude_indexer.hardware import GB_MB, HardwareDiagnostic, GpuInfo
+    from gclaude_indexer.hardware import GB_MB, ESTIMATED_MODEL_SIZE_MB, HardwareDiagnostic, GpuInfo
 
     monkeypatch.setattr(hardware_mod, "_real_model_size_mb", lambda modelo, timeout_s=2.0: 6289)
 
@@ -1774,7 +1775,7 @@ def test_escolher_modelo_usa_tamanho_real_do_ollama_quando_disponivel(tmp_path, 
     eventos = list_events(conn, step="diagnostics")
     texto = " ".join(e["message"] for e in eventos)
     assert "6289" in texto, "não usou o tamanho real devolvido pelo Ollama"
-    assert "9600" not in texto, "citou a estimativa do gemma4 mesmo tendo o tamanho real"
+    assert str(ESTIMATED_MODEL_SIZE_MB) not in texto, "citou a estimativa mesmo tendo o tamanho real"
     conn.close()
 
 

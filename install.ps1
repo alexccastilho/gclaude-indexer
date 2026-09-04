@@ -2290,7 +2290,7 @@ if ($HsaUserValue -or $HsaMachineValue) {
 # actually did, from the PROCESSOR column of `ollama ps`:
 #
 #   NAME          ID    SIZE    PROCESSOR   CONTEXT  UNTIL
-#   gemma4:e4b    ...   9.6 GB  100% GPU    4096     4 minutes from now
+#   qwen3.5:4b    ...   3.0 GB  100% GPU    4096     4 minutes from now
 #
 # which is one of "100% GPU", "100% CPU" or a split like "48%/52% CPU/GPU".
 # The result is printed either way — a verification that only speaks up when

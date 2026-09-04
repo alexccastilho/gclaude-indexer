@@ -411,12 +411,12 @@ def test_listar_modelos_devolve_lista_vazia_quando_ollama_esta_fora(monkeypatch)
 def test_formulario_oferece_os_modelos_instalados(cliente, monkeypatch):
     import gclaude_indexer.web.app as app_mod
 
-    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["gemma4:e4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     corpo = cliente.get("/projects/new").text
 
     assert '<select id="local_model" name="local_model">' in corpo
     assert '<option value="qwen3:8b"' in corpo
-    assert '<option value="gemma4:e4b" selected' in corpo
+    assert '<option value="qwen3.5:4b" selected' in corpo
     assert "(fixo)" not in corpo
 
 
@@ -438,13 +438,13 @@ def test_formulario_reexibido_apos_erro_tambem_oferece_os_modelos(cliente, monke
     faz GET não pega regressão nesse segundo ponto."""
     import gclaude_indexer.web.app as app_mod
 
-    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["gemma4:e4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     resposta = cliente.post("/projects/new", data={"name": "Sem pasta"})
 
     assert resposta.status_code == 400
     assert '<select id="local_model" name="local_model">' in resposta.text
     assert '<option value="qwen3:8b"' in resposta.text
-    assert '<option value="gemma4:e4b" selected' in resposta.text
+    assert '<option value="qwen3.5:4b" selected' in resposta.text
 
 
 # --- Tarefa 8 (correção pós-revisão): robustez e textos de ajuda -----------
@@ -468,7 +468,7 @@ def test_ajuda_do_modelo_local_diz_a_verdade_sobre_o_modelo_usado(cliente, monke
     respeita `config.local_model`; só "automático"/vazio cai no padrão)."""
     import gclaude_indexer.web.app as app_mod
 
-    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["gemma4:e4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     corpo = cliente.get("/projects/new").text
 
     assert "Único modelo permitido" not in corpo

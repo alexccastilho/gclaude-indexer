@@ -47,7 +47,24 @@ WAIT_BETWEEN_ATTEMPTS_S = 4.0
 # any machine — the hardware table from section 10.2 (phase 7) still exists
 # for diagnostics/reporting, but no longer decides the model used here. Only
 # a manual choice in `modelo_local` (form) overrides this.
-DEFAULT_LOCAL_MODEL = "gemma4:e4b"
+#
+# Version 1.0.1 moved the default from `gemma4:e4b` to `qwen3.5:4b`, on the
+# benchmark this project ran over the same windows of a 31-page document,
+# every model fully resident on an 8 GB card:
+#
+#   qwen3.5:4b     3.0 GB   100% of types filled    30.8 s/window
+#   gemma4:e4b     3.1 GB    79.5%                  38.5 s/window
+#   qwen3.5:9b     5.3 GB    79.5%                  86.2 s/window
+#   qwen3:8b       5.4 GB   100%                   108.8 s/window
+#   granite4.2:8b  5.7 GB   100%                   116.9 s/window
+#
+# `qwen3.5:4b` wins on both axes at once — best quality, fastest — and it is
+# also the smallest download by far: `gemma4:e4b` pulls ~9.6 GB from Ollama
+# even though only ~3.1 GB is resident, so the switch cuts the first-run
+# download roughly threefold and fits a 6 GB card as comfortably as an 8 GB
+# one. `gemma4:e4b` remains selectable in the form for comparison; it is no
+# longer downloaded by the installer.
+DEFAULT_LOCAL_MODEL = "qwen3.5:4b"
 
 # NOTE (do not translate): this prompt is sent verbatim to the local model,
 # and the project owner's collections are in Portuguese. Translating it would
