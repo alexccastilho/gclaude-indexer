@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS run (
     ok            INTEGER NOT NULL DEFAULT 0
 );
 
+-- Fase 17: documento que saiu da pasta de origem. É estado, não log: o
+-- `review.md` relata as remoções, e um evento desapareceria se o log
+-- fosse limpo.
+CREATE TABLE IF NOT EXISTS removed_file (
+    id            INTEGER PRIMARY KEY,
+    relative_path TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    removed_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_file_status ON file(status);
 CREATE INDEX IF NOT EXISTS idx_page_file_id ON page(file_id);
 CREATE INDEX IF NOT EXISTS idx_item_group_key_order ON item(group_key, start_order);
@@ -135,6 +145,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     """Creates section 4's tables and indexes, idempotent."""
     conn.executescript(SCHEMA_SQL)
     _ensure_event_message_columns(conn)
+    _ensure_file_mtime_column(conn)
     conn.commit()
 
 
@@ -155,3 +166,15 @@ def _ensure_event_message_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE event ADD COLUMN message_key TEXT")
     if "message_params" not in existing_columns:
         conn.execute("ALTER TABLE event ADD COLUMN message_params TEXT")
+
+
+def _ensure_file_mtime_column(conn: sqlite3.Connection) -> None:
+    """Adds `file.mtime` (Phase 17): the update plan compares size and
+    modification time before hashing, so opening a project does not read
+    every byte of a Drive-synced collection. Same guard as
+    `_ensure_event_message_columns` — `CREATE TABLE IF NOT EXISTS` never
+    adds a column to a table that already exists, and `init_schema` runs
+    on every project load."""
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
+    if "mtime" not in existing_columns:
+        conn.execute("ALTER TABLE file ADD COLUMN mtime REAL")
