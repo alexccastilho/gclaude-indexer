@@ -9,9 +9,18 @@
 """Comparing the source folder with the index, without writing anything.
 
 Phase 17. The plan is the read-only half of the update: it answers "what
-changed in the folder, and what would that cost", and nothing it does can
-alter the project. That is what lets it run every time the Execution
-screen opens.
+changed in the folder, and what would that cost", and nothing it does
+touches the index — no file, page, window or item row is written, read
+or moved. That is what lets it run every time the Execution screen
+opens.
+
+One deliberate exception, and only one: when a group's stored window
+layout contradicts the layout derived from its pages, the plan records a
+warning event. An event is a clearable log, not project state (see the
+`removed_file` comment in `db.py` for that distinction), so the
+guarantee above still holds for everything the update could damage — but
+the write is real, and staying silent about a geometry the plan cannot
+trust would be worse.
 
 **Detection is cheap on purpose.** Hashing every file of a Drive-synced
 collection on each open would force the client to download files the user
@@ -29,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ProjectConfig
+from .events import record_event
 from .paths import natural_sort_key
 from .scanning import compute_hash, derive_group_key, source_files
 from .windows_prep import window_spans
@@ -208,15 +218,20 @@ def first_affected_window(
     The one that is easy to miss: the **last** window of a group is
     clamped by the total page count (`min(start + window_size,
     page_count)`), so it can change extent even when no page before it
-    moved. The fallback covers that, and it is reached only in the
-    pure-append case — no span satisfies `end > first_divergent_page`
-    only when `first_divergent_page >= page_count`, and `_divergence_page`
-    returns the full page count only when every stored file matched the
-    intended list positionally and none of them changed. A removal cannot
-    land here: it puts the divergence at the removed file's start offset,
-    which is below `page_count`, so the loop fires instead.
+    moved. The fallback covers that, and it is reached only when
+    `first_divergent_page >= page_count` — no span satisfies
+    `end > first_divergent_page` otherwise, since the last span always
+    ends exactly at `page_count`.
 
-    On a pure append the last window survives exactly when it was
+    That is the pure-append case in all but one degenerate shape. A
+    removed or changed file *can* reach the fallback if its own stored
+    page count is zero and it sorts last: the divergence is then its
+    start offset, which equals `page_count`. The outcome stays correct —
+    a file with no pages contributes nothing, so the surviving layout is
+    identical either way — but the branch is better described as "the
+    divergence lies at or past the last page" than as "an append".
+
+    In that branch the last window survives exactly when it was
     *full-size*. If `end == start + window_size`, then `start +
     window_size <= old_count <= new_count`, so the new layout re-derives
     the identical `end` at the same `start` — same span, same key, same
@@ -291,19 +306,106 @@ def _files_to_renumber(
     starts at or after it is shifted by whatever happened at the
     divergence, so its sheet numbers move even though its bytes did not.
     Files that changed or were removed are not listed: their pages are
-    handled by re-extraction and deletion respectively.
+    handled by re-extraction and deletion respectively. Nor is a file
+    with no pages — a failed extraction leaves one behind, and it has
+    nothing to renumber and no converted output to be re-read from.
     """
     renumber: list[str] = []
     page_offset = 0
     for relative_path, page_count in stored:
         if (
-            page_offset >= first_divergent_page
+            page_count > 0
+            and page_offset >= first_divergent_page
             and relative_path not in changed_paths
             and relative_path not in removed_paths
         ):
             renumber.append(relative_path)
-        page_offset += page_count or 0
+        page_offset += page_count
     return tuple(renumber)
+
+
+def _stored_window_count(conn: sqlite3.Connection, group_key: str) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM window WHERE group_key = ?", (group_key,)
+    ).fetchone()[0]
+
+
+def _layout_disagrees(
+    conn: sqlite3.Connection, group_key: str, derived_count: int
+) -> bool:
+    """Whether the layout on record contradicts the one derived here.
+
+    Nothing else in this module reads the `window` table: the counts it
+    reports are predictions about a layout recomputed from the pages. A
+    prediction with nothing confirming it is how a wrong geometry stays
+    invisible, so this compares the derived span count against the
+    windows actually stored for the group.
+
+    A group with *no* stored windows is not a disagreement. It has simply
+    never been through `prepare_windows` — normal before the first
+    classification — and there is no layout to contradict. Reporting it
+    as a mismatch would discard nothing while telling the user that
+    `derived_count` windows are going back to the model, inflating the
+    very number this feature exists to keep honest.
+    """
+    stored_count = _stored_window_count(conn, group_key)
+    return stored_count != 0 and stored_count != derived_count
+
+
+def _stored_geometry(
+    conn: sqlite3.Connection,
+) -> dict[str, list[tuple[str, int]]]:
+    """Each group's `(relative_path, page_count)` in the group's page order.
+
+    The page counts are counted from the `page` table, never read from
+    `file.page_count`. The two disagree in ordinary operation, and the
+    windows that actually exist were built by
+    `windows_prep.pages_for_group`, which counts page rows — so reading
+    the column here would give this module a different geometry from the
+    one the index was built with, and from the one the invalidation step
+    will slice against.
+
+    Two routes to the disagreement, both reachable without anything going
+    wrong at the user's end:
+
+    - `conversion.py` writes `page_count = N` on success; if extraction
+      then fails, it writes only `status = 'failed'` and leaves that `N`
+      behind with zero page rows. One unreadable PDF is enough.
+    - `scanning._update_file` sets `page_count = NULL` on a re-scan
+      without deleting the file's pages — the same disagreement in the
+      opposite direction.
+
+    A file with no pages stays in the list with a count of zero rather
+    than being dropped. It contributes nothing to the geometry, but
+    `_divergence_page` compares this list positionally against the
+    intended membership, and silently omitting a file would shift every
+    position after it and place the divergence too early.
+    """
+    rows = conn.execute(
+        """
+        SELECT file.relative_path AS relative_path,
+               file.group_key     AS group_key,
+               COUNT(page.id)     AS page_rows
+        FROM file
+        LEFT JOIN page ON page.file_id = file.id
+        WHERE file.group_key IS NOT NULL AND file.status != 'duplicate'
+        GROUP BY file.id
+        """
+    ).fetchall()
+
+    stored_by_group: dict[str, list[tuple[str, int]]] = {}
+    for row in rows:
+        stored_by_group.setdefault(row["group_key"], []).append(
+            (row["relative_path"], row["page_rows"])
+        )
+
+    # Natural order, not insertion order: this must be the same sequence
+    # `pages_for_group` concatenates, or the page offsets computed here
+    # would name positions the windows never had.
+    for group_key in stored_by_group:
+        stored_by_group[group_key].sort(key=lambda pair: natural_sort_key(pair[0]))
+
+    return stored_by_group
 
 
 def _intended_membership(
@@ -331,8 +433,17 @@ def _intended_membership(
     return members
 
 
-def build_update_plan(conn: sqlite3.Connection, config: ProjectConfig) -> UpdatePlan:
-    """The whole plan: what changed, and what invalidating it would cost."""
+def build_update_plan(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    language: str | None = None,
+) -> UpdatePlan:
+    """The whole plan: what changed, and what invalidating it would cost.
+
+    `language` is used only for the layout-mismatch warning described in
+    the module docstring; it falls back to `DEFAULT_LANGUAGE` like every
+    other `record_event` caller that cannot see the interface's choice.
+    """
     changes, unchanged, fingerprint = detect_changes(conn, config)
 
     by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": []}
@@ -343,21 +454,7 @@ def build_update_plan(conn: sqlite3.Connection, config: ProjectConfig) -> Update
     removed_paths = {change.relative_path for change in by_kind["removed"]}
 
     source_dir = Path(config.source_folder).resolve()
-    stored_rows = conn.execute(
-        "SELECT relative_path, group_key, page_count FROM file"
-        " WHERE group_key IS NOT NULL AND status != 'duplicate'"
-    ).fetchall()
-
-    stored_by_group: dict[str, list[tuple[str, int]]] = {}
-    for row in stored_rows:
-        stored_by_group.setdefault(row["group_key"], []).append(
-            (row["relative_path"], row["page_count"] or 0)
-        )
-    # Natural order, not insertion order: this must be the same sequence
-    # `windows_prep.pages_for_group` concatenates, or the page offsets
-    # computed here would name positions the windows never had.
-    for group_key in stored_by_group:
-        stored_by_group[group_key].sort(key=lambda pair: natural_sort_key(pair[0]))
+    stored_by_group = _stored_geometry(conn)
 
     intended_by_group: dict[str, list[str]] = {}
     for relative_path, group_key in _intended_membership(
@@ -379,9 +476,31 @@ def build_update_plan(conn: sqlite3.Connection, config: ProjectConfig) -> Update
         divergent_page = _divergence_page(stored, intended, changed_paths)
         page_count = sum(count for _, count in stored)
         old_spans = window_spans(page_count, config.pages_per_window, config.overlap)
-        affected = first_affected_window(
-            old_spans, divergent_page, config.pages_per_window
-        )
+
+        if _layout_disagrees(conn, group_key, len(old_spans)):
+            # The derived layout is not the one on record, so no claim
+            # about which windows survive can be trusted. Discarding the
+            # whole group is the conservative-correct answer; the event
+            # puts the cost in the log instead of letting it be silent.
+            # Refusing the plan outright would block the user in a state
+            # that reclassifying fully recovers.
+            record_event(
+                conn,
+                "update",
+                "warning",
+                "log.update.layout_mismatch",
+                {
+                    "group": group_key,
+                    "stored": _stored_window_count(conn, group_key),
+                    "derived": len(old_spans),
+                },
+                language=language,
+            )
+            affected = 0
+        else:
+            affected = first_affected_window(
+                old_spans, divergent_page, config.pages_per_window
+            )
 
         groups.append(
             GroupInvalidation(

@@ -845,6 +845,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.windows.summary": (
             "preparação de janelas concluída: {created} nova(s), {existing} já existente(s)"
         ),
+        "log.update.layout_mismatch": (
+            "grupo {group}: o índice guarda {stored} janela(s), mas as páginas atuais dariam "
+            "{derived} — como não dá para saber quais continuam valendo, todas as janelas "
+            "deste grupo serão reclassificadas"
+        ),
         "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
         "log.rules.summary": (
             "motor regras: {windows} janela(s), {items} peça(s) (alta={high}, media={medium}, "
@@ -1677,6 +1682,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.windows.summary": (
             "window preparation complete: {created} new, {existing} already existing"
+        ),
+        "log.update.layout_mismatch": (
+            "group {group}: the index holds {stored} window(s), but the current pages would "
+            "give {derived} — since there is no telling which ones still hold, every window "
+            "in this group will be reclassified"
         ),
         "log.rules.invalid_item": "invalid item in window {window}: {errors}",
         "log.rules.summary": (
@@ -2521,6 +2531,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.windows.summary": (
             "preparación de ventanas completa: {created} nueva(s), {existing} ya existente(s)"
+        ),
+        "log.update.layout_mismatch": (
+            "grupo {group}: el índice guarda {stored} ventana(s), pero las páginas actuales "
+            "darían {derived} — como no hay forma de saber cuáles siguen valiendo, todas las "
+            "ventanas de este grupo se reclasificarán"
         ),
         "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
         "log.rules.summary": (

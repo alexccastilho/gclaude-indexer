@@ -604,6 +604,142 @@ def test_arquivo_removido_do_meio_desloca_quem_vem_depois(tmp_path):
     assert invalidacao.files_to_renumber == ("c.pdf",)
 
 
+def _marcar_como_falho(conn, nome: str, page_count_fantasma: int) -> None:
+    """Reproduz o estado que `conversion` + `extraction` deixam para trás.
+
+    `conversion.py` grava `page_count = N` no sucesso; se a extração
+    depois falha, `extraction.py` grava só `status = 'failed'` e deixa o
+    `N` lá, sem nenhuma linha em `page`. É assim que `file.page_count`
+    passa a mentir sobre a geometria real do grupo.
+    """
+    file_id = conn.execute(
+        "SELECT id FROM file WHERE relative_path = ?", (nome,)
+    ).fetchone()[0]
+    conn.execute("DELETE FROM page WHERE file_id = ?", (file_id,))
+    conn.execute(
+        "UPDATE file SET status = 'failed', page_count = ? WHERE id = ?",
+        (page_count_fantasma, file_id),
+    )
+    conn.commit()
+
+
+def test_geometria_vem_das_paginas_reais_e_nao_de_file_page_count(tmp_path):
+    """Um PDF ilegível no meio do acervo não pode deslocar a geometria.
+
+    `b.pdf` falhou na extração e ficou com `page_count = 100` e zero
+    linhas em `page`. As janelas que existem de verdade foram montadas
+    sobre 20 páginas — as de `a.pdf` e `c.pdf` —, não sobre 120. Ler a
+    coluna daria divergência 110 e índice 7 numa lista de 2 janelas: a
+    Task 7 fatiaria vazio, não apagaria nada, e a janela (14, 20)
+    manteria a classificação antiga sobre páginas que mudaram.
+    """
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    _marcar_como_falho(conn, "b.pdf", page_count_fantasma=100)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    (origem / "c.pdf").write_text("c bem diferente", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    # A geometria derivada é a das linhas de `page`, não a da coluna.
+    paginas_reais = len(pages_for_group(conn, grupo))
+    assert paginas_reais == 20
+    invalidacao = plano.groups[0]
+    assert invalidacao.first_divergent_page == 10  # início de c.pdf, não 110
+    janelas_reais = window_spans(paginas_reais, 16, 2)
+    assert len(janelas_reais) == 2
+    assert invalidacao.windows_kept + invalidacao.windows_discarded == 2
+    assert invalidacao.first_affected_window == 0
+    assert invalidacao.windows_discarded == 2
+    # E o arquivo falho não é arrastado para a renumeração.
+    assert invalidacao.files_to_renumber == ()
+
+
+def test_arquivo_sem_paginas_nao_desalinha_a_comparacao_posicional(tmp_path):
+    """O arquivo de zero páginas continua na lista com contagem zero.
+
+    Omiti-lo deslocaria todas as posições seguintes e poria a divergência
+    cedo demais: aqui `c.pdf` muda, e a divergência tem de ser 10 (início
+    de c), não 0.
+    """
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    _marcar_como_falho(conn, "b.pdf", page_count_fantasma=0)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    (origem / "c.pdf").write_text("c bem diferente", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert plano.groups[0].first_divergent_page == 10
+
+
+def test_layout_divergente_descarta_o_grupo_inteiro_e_avisa(tmp_path):
+    """Rede de segurança: se o que está gravado não bate com o que as
+    páginas dariam, nenhuma previsão vale e o grupo inteiro volta."""
+    from gclaude_indexer.events import list_events
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    # O índice guarda um layout de 500 páginas; as páginas dão 30.
+    _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    invalidacao = plano.groups[0]
+    assert invalidacao.first_affected_window == 0
+    assert invalidacao.windows_kept == 0
+    assert invalidacao.windows_discarded == len(window_spans(30, 16, 2))
+    chaves = [evento["message_key"] for evento in list_events(conn)]
+    assert "log.update.layout_mismatch" in chaves
+
+
+def test_grupo_sem_janela_gravada_nao_e_tratado_como_divergencia(tmp_path):
+    """Antes da primeira classificação não há layout gravado para
+    contradizer. Acusar divergência aqui não descartaria nada e ainda
+    assim diria ao usuário que o acervo inteiro volta ao modelo."""
+    from gclaude_indexer.events import list_events
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    # Última janela de 30 páginas é cheia: nada a descartar.
+    assert plano.groups[0].windows_discarded == 0
+    chaves = [evento["message_key"] for evento in list_events(conn)]
+    assert "log.update.layout_mismatch" not in chaves
+
+
 def test_a_contagem_prevista_bate_com_a_que_windows_prep_cria():
     """Teste de acoplamento: se a aritmética voltar a ser duplicada, este
     falha antes de o usuário ver um número errado na tela."""
