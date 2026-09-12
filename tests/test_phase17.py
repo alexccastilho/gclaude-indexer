@@ -1213,3 +1213,99 @@ def test_as_chaves_do_log_da_atualizacao_existem_nos_tres_idiomas():
     for idioma in ("pt", "en", "es"):
         assert "log.update.applied" in _TRANSLATIONS[idioma]
         assert "log.update.orphan_window_file" in _TRANSLATIONS[idioma]
+
+
+# --- Task 8: reescrita incondicional quando a linha é criada aqui -----------
+
+def test_txt_orfao_e_reescrito_quando_a_linha_nao_existia(tmp_path):
+    """Corrige a corrupção de janela: se prepare_windows cria a linha,
+    reescreve o .txt incondicionalmente, mesmo que o arquivo exista no disco.
+    Um arquivo descartado que não saiu (travado, desconexão) deixaria a
+    janela com texto velho ao lado da nova classificação — um silêncio
+    perigoso. Agora: se a linha aqui nasce, o texto sempre entra novo.
+    """
+    from gclaude_indexer.windows_prep import prepare_windows, sanitize_group_name
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+
+    # Cria um arquivo com páginas, mas sem inserir a linha de window no banco
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+
+    # Pré-cria o arquivo da janela com texto velho (simula arquivo preso no disco)
+    config = _config(origem, saida)
+    windows_dir = Path(config.output_folder) / "windows"
+    base = sanitize_group_name(grupo)
+    txt_path = windows_dir / f"{base}_j0001-0016.txt"
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    txt_path.write_text("TEXTO VELHO", encoding="utf-8")
+
+    # Valida que a linha não existe ainda
+    assert conn.execute(
+        "SELECT COUNT(*) FROM window WHERE key LIKE ?",
+        (f"{base}::%",)
+    ).fetchone()[0] == 0
+
+    # Executa prepare_windows
+    resultado = prepare_windows(conn, config)
+
+    # Valida que ambas as linhas foram criadas (20 paginas = 2 janelas)
+    assert resultado.created == 2
+    assert resultado.existing == 0
+
+    # Valida que o arquivo foi reescrito (contém texto novo, não velho)
+    conteudo = txt_path.read_text(encoding="utf-8")
+    assert "TEXTO VELHO" not in conteudo
+    # O arquivo deve conter o header e o texto das páginas
+    assert "# window:" in conteudo
+    assert "# pages: 16" in conteudo
+
+
+def test_janela_existente_pula_reescrita_se_arquivo_existe(tmp_path):
+    """Regressao: a otimizacao que salta a reescrita quando a linha existe
+    e o arquivo existe no disco deve continuar funcionando. De outro jeito,
+    toda execucao de prepare_windows reescreveria todas as janelas."""
+    from gclaude_indexer.windows_prep import prepare_windows, sanitize_group_name
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+
+    # Cria um arquivo com paginas e as janelas do banco
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+
+    # Pre-escreve os arquivos das janelas com um marcador identificavel
+    config = _config(origem, saida)
+    windows_dir = Path(config.output_folder) / "windows"
+    base = sanitize_group_name(grupo)
+    txt_path = windows_dir / f"{base}_j0001-0016.txt"
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    marcador = "CONTEUDO INTOCAVEL"
+    txt_path.write_text(marcador, encoding="utf-8")
+
+    # Valida estado inicial: linha existe, arquivo existe, tem o marcador
+    assert conn.execute(
+        "SELECT COUNT(*) FROM window WHERE key LIKE ?",
+        (f"{base}::%",)
+    ).fetchone()[0] == 2
+    assert txt_path.read_text(encoding="utf-8") == marcador
+
+    # Roda prepare_windows
+    resultado = prepare_windows(conn, config)
+
+    # Valida que nenhuma nova linha foi criada (ambas ja existiam)
+    assert resultado.created == 0
+    assert resultado.existing == 2
+
+    # Valida que o arquivo foi poupado da reescrita (marcador ainda la)
+    assert txt_path.read_text(encoding="utf-8") == marcador

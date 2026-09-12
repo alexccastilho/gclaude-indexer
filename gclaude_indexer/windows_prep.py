@@ -158,7 +158,8 @@ def prepare_windows(
             end_ref = page_block[-1]["reference"]
             key = window_key(base_name, start, end)
 
-            if conn.execute("SELECT 1 FROM window WHERE key = ?", (key,)).fetchone():
+            row_exists = conn.execute("SELECT 1 FROM window WHERE key = ?", (key,)).fetchone()
+            if row_exists:
                 result.existing += 1
             else:
                 conn.execute(
@@ -172,7 +173,10 @@ def prepare_windows(
                 result.created += 1
 
             file_path = windows_dir / f"{base_name}_j{start + 1:04d}-{end:04d}.txt"
-            if not file_path.exists():
+            # Write unconditionally when this call creates the row: if unlink ever failed
+            # during invalidation, the old text must not survive. For existing windows,
+            # keep the shortcut: skip writing if the file exists and was not corrupted.
+            if not row_exists or not file_path.exists():
                 _write_window_file(file_path, key, group_key, start_ref, end_ref, page_block)
 
     record_event(
