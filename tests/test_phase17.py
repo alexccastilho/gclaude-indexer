@@ -1365,21 +1365,30 @@ def test_a_secao_de_removidos_existe_nos_tres_idiomas():
 def _app_com_projeto(tmp_path, monkeypatch):
     """Servidor de teste com um projeto registrado e uma pasta de origem.
 
-    Isola o catálogo local (`catalog.machine_local_folder`) numa pasta
-    descartável, no mesmo padrão já usado por
-    `test_tela_de_execucao_escreve_o_claude_md_do_motor_claude_code`
-    (`tests/test_phase14.py`): sem isso, `register_project`/`find_project`
-    escreveriam em `%LOCALAPPDATA%\\GClaudeIndexer\\projects.json` de
-    verdade — o catálogo real desta máquina, não uma fixture.
+    Isola `machine_local_folder()` numa pasta descartável através da
+    variável de ambiente que a própria função já lê
+    (`paths.LOCAL_FOLDER_ENV`), e não através de um patch por módulo.
+
+    `machine_local_folder` é importado separadamente por `catalog.py`,
+    `sync.py` e `settings.py` (`from .paths import machine_local_folder`
+    em cada um) — corrigir só o nome ligado dentro de `catalog` deixaria
+    `sync.check_sync`/`mark_synced` (chamados em todo `_open_project`) e
+    `settings.shared_catalog_folder` (chamado por `catalog.catalog_folder`)
+    ainda lendo o `%LOCALAPPDATA%\\GClaudeIndexer` de verdade desta
+    máquina. A variável de ambiente é lida dentro da própria função, a
+    cada chamada (`paths.machine_local_folder`), então alcança todo mundo
+    de uma vez, não importa como cada módulo importou o nome — ver
+    `test_o_isolamento_alcanca_catalogo_sincronizacao_e_configuracoes`
+    logo abaixo, que prova isso.
     """
-    import gclaude_indexer.catalog as catalogo_mod
     from fastapi.testclient import TestClient
 
+    from gclaude_indexer import paths
     from gclaude_indexer.catalog import register_project
     from gclaude_indexer.config import config_to_json
     from gclaude_indexer.web.app import app
 
-    monkeypatch.setattr(catalogo_mod, "machine_local_folder", lambda: tmp_path / "local")
+    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
 
     origem = tmp_path / "origem"
     origem.mkdir()
@@ -1404,16 +1413,106 @@ def _app_com_projeto(tmp_path, monkeypatch):
     return TestClient(app), entry.id, conn
 
 
+def test_o_isolamento_alcanca_catalogo_sincronizacao_e_configuracoes(tmp_path, monkeypatch):
+    """Prova de que a variável de ambiente redireciona todo mundo que lê
+    `machine_local_folder()`, não só o módulo `catalog`.
+
+    Sem isso, cada teste desta seção — que abre um projeto de verdade via
+    `_open_project`, e portanto passa por `sync.check_sync`/`mark_synced`
+    e por `catalog.register_project`/`find_project` — gravaria em
+    `%LOCALAPPDATA%\\GClaudeIndexer\\projects.json` e
+    `...\\sincronizacao.json` desta máquina, e não numa pasta descartável.
+    """
+    import os
+
+    pasta_real = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "GClaudeIndexer"
+    marcadores = ("projects.json", "sincronizacao.json")
+    mtimes_antes = {
+        nome: (pasta_real / nome).stat().st_mtime
+        for nome in marcadores
+        if (pasta_real / nome).is_file()
+    }
+
+    cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
+    assert cliente.get(f"/projects/{projeto_id}/update").status_code == 200
+
+    mtimes_depois = {
+        nome: (pasta_real / nome).stat().st_mtime
+        for nome in marcadores
+        if (pasta_real / nome).is_file()
+    }
+    assert mtimes_depois == mtimes_antes, "a pasta local de verdade desta máquina foi tocada pelo teste"
+
+    pasta_redirecionada = tmp_path / "local"
+    assert (pasta_redirecionada / "projects.json").is_file()
+    assert (pasta_redirecionada / "sincronizacao.json").is_file()
+
+
 def test_o_diagnostico_nao_escreve_no_banco(tmp_path, monkeypatch):
     """A rota GET roda a cada abertura da tela. Se escrevesse, abrir um
-    projeto o modificaria."""
+    projeto o modificaria.
+
+    Precisa de uma pasta que realmente divergiu do índice, e de um "a.pdf"
+    que já tenha passado por extração e preparação de janelas — com
+    "a.pdf" parado e sem página nem janela nenhuma (o estado que
+    `_app_com_projeto` deixa pronto sozinho), uma invalidação indevida não
+    teria absolutamente nada para descartar: `status` já é 'discovered' e
+    voltaria a ser 'discovered', `page_count` já é `NULL` e voltaria a ser
+    `NULL`, não há página nem janela para apagar. O teste não
+    distinguiria "não escreve" de "escreve, mas não tinha nada para
+    escrever" (é exatamente esse buraco que o code review do Finding 2
+    apontou, e a inspeção manual confirmou: injetar um `apply_update_plan`
+    de propósito na rota GET não fazia este teste, na sua versão
+    anterior, falhar).
+
+    Por isso o "a.pdf" ganha 3 páginas e a janela correspondente antes do
+    diff (imitando o que `prepare_windows` deixaria gravado depois de uma
+    execução completa), e só então a pasta ganha um arquivo novo e o
+    existente é alterado. Uma invalidação chamada por engano aqui
+    descartaria a janela do grupo e resetaria "a.pdf" para 'discovered'
+    com `page_count = NULL` — mudanças reais, que o teste consegue ver.
+    """
     cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
-    antes = conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
+    origem = tmp_path / "origem"
+
+    grupo, file_id = conn.execute(
+        "SELECT group_key, id FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()
+    conn.execute(
+        "UPDATE file SET status = 'extracted', page_count = 3 WHERE id = ?", (file_id,)
+    )
+    for numero in range(1, 4):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+            (file_id, numero, f"f. {numero}"),
+        )
+    _criar_janelas(conn, grupo, page_count=3, window_size=16, overlap=2)
+    conn.commit()
+
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+    (origem / "a.pdf").write_text("mudou bastante", encoding="utf-8")
+
+    arquivos_antes = {
+        row["relative_path"]: (row["sha256"], row["status"], row["page_count"])
+        for row in conn.execute("SELECT relative_path, sha256, status, page_count FROM file")
+    }
+    paginas_antes = conn.execute("SELECT COUNT(*) FROM page").fetchone()[0]
+    janelas_antes = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
+    removidos_antes = conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0]
+    assert paginas_antes == 3 and janelas_antes == 1  # pré-condição: há o que descartar
 
     resposta = cliente.get(f"/projects/{projeto_id}/update")
 
     assert resposta.status_code == 200
-    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == antes
+    arquivos_depois = {
+        row["relative_path"]: (row["sha256"], row["status"], row["page_count"])
+        for row in conn.execute("SELECT relative_path, sha256, status, page_count FROM file")
+    }
+    assert arquivos_depois == arquivos_antes
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == paginas_antes
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == janelas_antes
+    assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == removidos_antes
 
 
 def test_o_post_com_plano_vencido_e_recusado(tmp_path, monkeypatch):
@@ -1432,6 +1531,49 @@ def test_o_aviso_nao_aparece_quando_nada_mudou(tmp_path, monkeypatch):
     corpo = cliente.get(f"/projects/{projeto_id}/update/banner").text
 
     assert corpo.strip() == ""
+
+
+def _esvaziar_pasta_de_origem(tmp_path: Path) -> None:
+    """Simula a pasta de origem ficando inacessível, sem apagar a própria
+    pasta.
+
+    Apagar ou renomear a pasta inteira (`shutil.rmtree`) faz
+    `_open_project` levantar antes de qualquer rota rodar: `load_config`
+    valida `source_folder` (`config._validate`, `folder.exists()`) em
+    toda abertura de projeto, não só nas de atualização, e devolve um 500
+    — um comportamento pré-existente, alheio a esta tarefa. O caminho que
+    realmente alcança `SourceFolderUnavailable` dentro das rotas novas é
+    o mesmo já coberto em `update_plan.py`
+    (`test_pasta_vazia_com_banco_cheio_tambem_e_recusada`): a pasta
+    continua existindo, mas está vazia enquanto o índice não está —
+    `detect_changes` levanta `SourceFolderUnavailable` nesse caso porque
+    lê-la como "tudo foi removido" seria a própria falha de segurança que
+    a exceção existe para evitar.
+    """
+    for item in tmp_path.joinpath("origem").iterdir():
+        item.unlink()
+
+
+def test_o_aviso_nao_aparece_quando_a_pasta_de_origem_sumiu(tmp_path, monkeypatch):
+    """A guarda mais importante: uma pasta de origem inacessível nunca vira
+    um aviso alarmante na tela de Execução — só a tela dedicada explica o
+    motivo (ver o teste seguinte)."""
+    cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
+    _esvaziar_pasta_de_origem(tmp_path)
+
+    corpo = cliente.get(f"/projects/{projeto_id}/update/banner").text
+
+    assert corpo.strip() == ""
+
+
+def test_a_tela_de_atualizacao_explica_a_pasta_de_origem_sumida(tmp_path, monkeypatch):
+    cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
+    _esvaziar_pasta_de_origem(tmp_path)
+
+    resposta = cliente.get(f"/projects/{projeto_id}/update")
+
+    assert resposta.status_code == 409
+    assert "não pode ser lida" in resposta.text  # update.source_unavailable (pt)
 
 
 def test_todas_as_chaves_da_atualizacao_existem_nos_tres_idiomas():
