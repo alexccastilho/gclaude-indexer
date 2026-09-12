@@ -89,16 +89,17 @@ def _insert_file(
     extension: str,
     size: int,
     file_hash: str,
+    mtime: float,
     group_key: str | None,
     status: str,
 ) -> None:
     conn.execute(
         """
         INSERT INTO file
-            (relative_path, name, extension, size, sha256, group_key, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (relative_path, name, extension, size, sha256, mtime, group_key, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (relative_path, name, extension, size, file_hash, group_key, status),
+        (relative_path, name, extension, size, file_hash, mtime, group_key, status),
     )
 
 
@@ -109,17 +110,18 @@ def _update_file(
     extension: str,
     size: int,
     file_hash: str,
+    mtime: float,
     group_key: str | None,
     status: str,
 ) -> None:
     conn.execute(
         """
         UPDATE file
-        SET name = ?, extension = ?, size = ?, sha256 = ?, group_key = ?,
+        SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?,
             status = ?, error = NULL, page_count = NULL, needs_ocr = 0
         WHERE relative_path = ?
         """,
-        (name, extension, size, file_hash, group_key, status, relative_path),
+        (name, extension, size, file_hash, mtime, group_key, status, relative_path),
     )
 
 
@@ -223,7 +225,8 @@ def scan(
             # inventory.
             extension_no_dot = extension.lstrip(".")
             _insert_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash, None, "duplicate"
+                conn, relative_path, name, extension_no_dot, size, file_hash,
+                path.stat().st_mtime, None, "duplicate"
             )
             result.skipped += 1
             conn.commit()
@@ -240,7 +243,8 @@ def scan(
 
         if existing_row is None:
             _insert_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash, group_key, status
+                conn, relative_path, name, extension_no_dot, size, file_hash,
+                path.stat().st_mtime, group_key, status
             )
             if allowed:
                 result.discovered += 1
@@ -256,7 +260,8 @@ def scan(
                 )
         else:
             _update_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash, group_key, status
+                conn, relative_path, name, extension_no_dot, size, file_hash,
+                path.stat().st_mtime, group_key, status
             )
             result.updated += 1
             record_event(

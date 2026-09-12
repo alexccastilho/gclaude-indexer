@@ -159,3 +159,136 @@ def test_pagina_inserida_depois_nao_salta_para_o_fim_do_grupo(tmp_path):
     ordem = [row["text"] for row in pages_for_group(conn, "g")]
 
     assert ordem == ["a.pdf", "b.pdf", "c.pdf"]
+
+
+from gclaude_indexer.config import ProjectConfig
+from gclaude_indexer.update_plan import SourceFolderUnavailable, detect_changes
+
+
+def _config(origem: Path, saida: Path) -> ProjectConfig:
+    return ProjectConfig(
+        name="acervo", source_folder=str(origem), output_folder=str(saida),
+        group_mode="all_together", extensions=["pdf"],
+    )
+
+
+def _registrar(conn, relative_path: str, conteudo: str, mtime: float | None):
+    import hashlib
+
+    digest = hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, mtime,"
+        " group_key, status) VALUES (?, ?, 'pdf', ?, ?, ?, 'g', 'extracted')",
+        (relative_path, Path(relative_path).name, len(conteudo), digest, mtime),
+    )
+    conn.commit()
+
+
+def test_pasta_de_origem_sumida_nao_propoe_remover_o_acervo(tmp_path):
+    """A guarda mais importante da funcionalidade. Drive desconectado,
+    pasta movida, letra de unidade trocada: nada disso pode virar uma
+    proposta de apagar tudo."""
+    origem = tmp_path / "origem"
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", 1.0)
+
+    with pytest.raises(SourceFolderUnavailable):
+        detect_changes(conn, _config(origem, saida))
+
+
+def test_pasta_vazia_com_banco_cheio_tambem_e_recusada(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", 1.0)
+
+    with pytest.raises(SourceFolderUnavailable):
+        detect_changes(conn, _config(origem, saida))
+
+
+def test_pasta_inalterada_nao_acusa_mudanca(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    arquivo = origem / "a.pdf"
+    arquivo.write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", arquivo.stat().st_mtime)
+
+    mudancas, inalterados, _ = detect_changes(conn, _config(origem, saida))
+
+    assert mudancas == []
+    assert inalterados == 1
+
+
+def test_mtime_reescrito_pelo_drive_sem_mudar_conteudo_nao_e_alteracao(tmp_path):
+    """O Google Drive reescreve a data de arquivos cujo conteúdo não mudou.
+    Sem o desempate pelo hash, o plano gritaria 'mudou' o tempo todo."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", 1.0)  # mtime antigo, conteúdo igual
+
+    mudancas, inalterados, _ = detect_changes(conn, _config(origem, saida))
+
+    assert mudancas == []
+    assert inalterados == 1
+
+
+def test_novo_alterado_e_removido_sao_detectados(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "igual.pdf").write_text("igual", encoding="utf-8")
+    (origem / "mudou.pdf").write_text("depois", encoding="utf-8")
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+    conn = _conn(tmp_path)
+    _registrar(conn, "igual.pdf", "igual", (origem / "igual.pdf").stat().st_mtime)
+    _registrar(conn, "mudou.pdf", "antes", 1.0)
+    _registrar(conn, "sumiu.pdf", "sumiu", 1.0)
+
+    mudancas, inalterados, _ = detect_changes(conn, _config(origem, saida))
+
+    por_tipo = {m.kind: m.relative_path for m in mudancas}
+    assert por_tipo == {"new": "novo.pdf", "changed": "mudou.pdf", "removed": "sumiu.pdf"}
+    assert inalterados == 1
+
+
+def test_a_impressao_digital_muda_quando_a_pasta_muda(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+
+    _, _, antes = detect_changes(conn, _config(origem, saida))
+    (origem / "b.pdf").write_text("b", encoding="utf-8")
+    _, _, depois = detect_changes(conn, _config(origem, saida))
+
+    assert antes != depois
+
+
+def test_o_scan_grava_o_mtime_para_a_deteccao_rapida(tmp_path):
+    from gclaude_indexer.scanning import scan
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+
+    scan(conn, _config(origem, saida))
+
+    gravado = conn.execute("SELECT mtime FROM file WHERE relative_path = 'a.pdf'").fetchone()[0]
+    assert gravado == pytest.approx((origem / "a.pdf").stat().st_mtime)
