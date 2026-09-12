@@ -1590,3 +1590,205 @@ def test_todas_as_chaves_da_atualizacao_existem_nos_tres_idiomas():
         for chave in chaves:
             texto = translate(idioma, chave)
             assert texto and not texto.startswith("update."), f"{idioma}/{chave}"
+
+
+# --- Tarefa 11: o oráculo ---------------------------------------------------
+#
+# The correctness criterion of the whole feature: an incremental update is
+# right if, and only if, its result cannot be told apart from a full
+# reindex of the same final folder.
+
+import re
+
+ORACULO_PAGINAS_POR_JANELA = 4
+ORACULO_SOBREPOSICAO = 1
+
+# Matches the ISO instant that `artifacts._now_iso()` stamps on every
+# generated file ("2026-09-12T14:33:01"). Deliberately a full pattern and
+# not the brief's "starts with 20" heuristic: that one would also drop a
+# legitimate line beginning with "20" — an item dated "2024-..." in
+# `timeline.md`, say — and a silently dropped line is a divergence the
+# oracle would never see.
+_CARIMBO_ISO = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+
+def _texto_de_pagina(rotulo: str, numero: int) -> str:
+    """Enough native text that `_pdf_needs_ocr` never fires.
+
+    The threshold is an average of 100 characters per page; below it the
+    conversion calls `ocrmypdf`, which need not exist on the machine
+    running the suite — and an OCR pass would make the two sides of the
+    oracle depend on a binary instead of on the code under test.
+    """
+    return (
+        f"{rotulo} - pagina {numero}. Documento de teste com texto nativo "
+        "suficiente para que a conversao nao trate a pagina como digitalizada. "
+        f"Referencia interna {rotulo}-{numero:03d} do acervo de verificacao."
+    )
+
+
+def _pdf_de_paginas(caminho: Path, rotulo: str, paginas: int) -> None:
+    """A PDF with `paginas` text pages, deterministic for a given label."""
+    import fitz
+
+    documento = fitz.open()
+    try:
+        for numero in range(1, paginas + 1):
+            pagina = documento.new_page()
+            pagina.insert_textbox(
+                (50, 50, 550, 750), _texto_de_pagina(rotulo, numero), fontsize=11
+            )
+        documento.save(caminho)
+    finally:
+        documento.close()
+
+
+def _etapas_depois_do_scan(conn, config: ProjectConfig) -> None:
+    """Da conversão aos artefatos. Mesma ordem de `background_runs.STEP_ORDER`.
+
+    Serves both sides of the oracle: after the `scan`, in a brand-new
+    project, and after the invalidation, in an updated one — where the
+    invalidation has already put every known file into the state these
+    steps look for.
+    """
+    from gclaude_indexer.artifacts import generate_all_artifacts
+    from gclaude_indexer.conversion import convert
+    from gclaude_indexer.extraction import extract_pages
+    from gclaude_indexer.import_items import import_and_consolidate
+    from gclaude_indexer.orchestrator import run_classification
+    from gclaude_indexer.windows_prep import prepare_windows
+
+    convert(conn, config)
+    extract_pages(conn, config)
+    prepare_windows(conn, config)
+    run_classification(conn, config)
+    import_and_consolidate(conn, config)
+    generate_all_artifacts(conn, config, "pt")
+
+
+def _config_do_oraculo(origem: Path, saida: Path) -> ProjectConfig:
+    """`rules` engine: deterministic, no model, no cost.
+
+    Small windows on purpose, so a ten-page document spans several of
+    them. With a single window per group the update could only ever
+    discard everything, and the window preservation the feature exists
+    for would never be exercised at all.
+    """
+    return ProjectConfig(
+        name="acervo",
+        source_folder=str(origem),
+        output_folder=str(saida),
+        group_mode="all_together",
+        extensions=["pdf"],
+        classification_engine="rules",
+        pages_per_window=ORACULO_PAGINAS_POR_JANELA,
+        overlap=ORACULO_SOBREPOSICAO,
+    )
+
+
+def _rodar_pipeline_completo(
+    origem: Path, saida: Path
+) -> tuple[sqlite3.Connection, ProjectConfig]:
+    """Pipeline inteiro, do zero, sobre a pasta como ela estiver agora."""
+    from gclaude_indexer.scanning import scan
+
+    config = _config_do_oraculo(origem, saida)
+    conn = db.connect(saida / "project.db")
+    db.init_schema(conn)
+
+    scan(conn, config)
+    _etapas_depois_do_scan(conn, config)
+    return conn, config
+
+
+def _sem_carimbo(texto: str) -> str:
+    """Remove a linha de data, a única coisa que difere legitimamente."""
+    return "\n".join(
+        linha for linha in texto.splitlines() if not _CARIMBO_ISO.search(linha)
+    )
+
+
+def _montar_acervo_inicial(origem: Path) -> None:
+    origem.mkdir()
+    _pdf_de_paginas(origem / "01-contrato.pdf", "CONTRATO", 10)
+    _pdf_de_paginas(origem / "02-recibo.pdf", "RECIBO", 10)
+    _pdf_de_paginas(origem / "03-carta.pdf", "CARTA", 10)
+
+
+def _mudar_o_acervo(origem: Path) -> None:
+    """Um acrescentado, um alterado, um removido — as três mudanças que a
+    invalidação trata por caminhos diferentes."""
+    _pdf_de_paginas(origem / "04-aditivo.pdf", "ADITIVO", 6)
+    _pdf_de_paginas(origem / "02-recibo.pdf", "RECIBO REVISTO", 12)
+    (origem / "03-carta.pdf").unlink()
+
+
+def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
+    """O critério de correção da funcionalidade inteira.
+
+    Um acervo é montado e indexado. Depois um documento é acrescentado,
+    outro alterado e um terceiro removido, e o acervo é atualizado. Em
+    paralelo, um projeto novo é construído do zero sobre a pasta final. Os
+    artefatos gerados têm de ser iguais.
+    """
+    from gclaude_indexer.invalidation import apply_update_plan
+    from gclaude_indexer.scanning import scan
+    from gclaude_indexer.update_plan import build_update_plan
+
+    origem = tmp_path / "origem"
+    _montar_acervo_inicial(origem)
+
+    incremental = tmp_path / "incremental"
+    incremental.mkdir()
+    conn, config = _rodar_pipeline_completo(origem, incremental)
+
+    _mudar_o_acervo(origem)
+
+    # Nothing may touch the source folder between building the plan and
+    # applying it: `apply_update_plan` re-derives its own plan and compares
+    # fingerprints, and a folder that moved on raises `PlanExpired`.
+    plano = build_update_plan(conn, config)
+    apply_update_plan(conn, config, plano)
+
+    # The `scan` still runs: the invalidation puts the *known* files into
+    # the states the later steps look for, but only the scan brings a
+    # brand-new file into the `file` table. It is the first step of the
+    # rerun, exactly as on the execution screen.
+    scan(conn, config)
+    _etapas_depois_do_scan(conn, config)
+    conn.close()
+
+    # E o mesmo acervo, indexado do zero.
+    completo = tmp_path / "completo"
+    completo.mkdir()
+    conn_completo, _ = _rodar_pipeline_completo(origem, completo)
+    conn_completo.close()
+
+    for nome in ("index.md", "timeline.md", "review.md", "project_instructions.md"):
+        atualizado = _sem_carimbo((incremental / nome).read_text(encoding="utf-8"))
+        do_zero = _sem_carimbo((completo / nome).read_text(encoding="utf-8"))
+        if nome == "review.md":
+            # O incremental sabe da remoção; o do zero nunca viu o arquivo.
+            assert "03-carta.pdf" in atualizado
+            continue
+        assert atualizado == do_zero, f"{nome} diverge"
+
+
+def test_reexecutar_sem_mudanca_nao_reprocessa_nada(tmp_path):
+    """A incrementalidade que já existia por acidente passa a ter contrato."""
+    from gclaude_indexer.update_plan import build_update_plan
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    _pdf_de_paginas(origem / "a.pdf", "DOCUMENTO", 10)
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn, config = _rodar_pipeline_completo(origem, saida)
+    janelas_antes = dict(conn.execute("SELECT key, status FROM window"))
+
+    plano = build_update_plan(conn, config)
+
+    assert plano.is_empty
+    assert plano.groups == ()
+    assert dict(conn.execute("SELECT key, status FROM window")) == janelas_antes
+    conn.close()
