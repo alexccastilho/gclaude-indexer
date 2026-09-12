@@ -308,6 +308,54 @@ def test_o_scan_grava_o_mtime_para_a_deteccao_rapida(tmp_path):
     assert gravado == pytest.approx((origem / "a.pdf").stat().st_mtime)
 
 
+def test_o_scan_corrige_o_mtime_de_arquivo_inalterado(tmp_path, monkeypatch):
+    """Sem isto, a detecção rápida nunca entra em projeto já existente.
+
+    O `scan` pula o arquivo inalterado antes de escrever qualquer coisa,
+    então `file.mtime` só era gravado pelos caminhos de inserção e de
+    atualização. Num projeto vindo da 1.0.1 a coluna nasce nula e fica
+    nula para sempre — e toda abertura da tela de Execução calculava o
+    hash do acervo inteiro, num acervo no Drive baixando todos os bytes.
+    Vale igual para um arquivo isolado cujo mtime o Drive reescreveu: a
+    divergência era permanente. §8.1 promete "da segunda em diante a
+    detecção é rápida".
+    """
+    from gclaude_indexer import update_plan as modulo_plano
+    from gclaude_indexer.scanning import scan
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    arquivo = origem / "a.pdf"
+    arquivo.write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", None)  # como um projeto da 1.0.1
+    config = _config(origem, saida)
+
+    resultado = scan(conn, config)
+
+    assert resultado.skipped == 1  # continua sendo o caminho do inalterado
+    gravado = conn.execute(
+        "SELECT mtime FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()[0]
+    assert gravado == pytest.approx(arquivo.stat().st_mtime)
+
+    # E a prova do que a coluna serve: a detecção seguinte não lê os
+    # bytes. Conferir só "não acusou mudança" passaria de qualquer jeito,
+    # porque o desempate pelo hash chega à mesma conclusão — pagando
+    # exatamente o custo que este defeito é.
+    def nao_pode_ler(caminho):
+        raise AssertionError(f"a detecção leu os bytes de {caminho}")
+
+    monkeypatch.setattr(modulo_plano, "compute_hash", nao_pode_ler)
+
+    mudancas, inalterados, _ = detect_changes(conn, config)
+
+    assert mudancas == []
+    assert inalterados == 1
+
+
 # --- Task 6: divergência por grupo e contagem de janelas -------------------
 
 from gclaude_indexer.update_plan import build_update_plan, first_affected_window

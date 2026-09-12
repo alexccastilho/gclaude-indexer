@@ -76,7 +76,7 @@ def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig
 
 
 def _list_known_files(conn: sqlite3.Connection) -> tuple[set[str], dict[str, sqlite3.Row]]:
-    rows = conn.execute("SELECT relative_path, sha256 FROM file").fetchall()
+    rows = conn.execute("SELECT relative_path, sha256, mtime FROM file").fetchall()
     known_hashes = {row["sha256"] for row in rows}
     by_path = {row["relative_path"]: row for row in rows}
     return known_hashes, by_path
@@ -204,13 +204,33 @@ def scan(
         relative_path = path.relative_to(source_dir).as_posix()
         name = path.name
         extension = path.suffix.lower()
-        size = path.stat().st_size
+        file_stat = path.stat()
+        size = file_stat.st_size
+        mtime = file_stat.st_mtime
         file_hash = compute_hash(path)
 
         existing_row = known_paths.get(relative_path)
 
         if existing_row is not None and existing_row["sha256"] == file_hash:
             result.skipped += 1
+            # The one write on the unchanged path, and it is not about
+            # correctness: `file.mtime` is what lets `update_plan` decide
+            # a file is unchanged without reading its bytes. Only the
+            # insert and update branches below ever wrote it, so a
+            # project created by 1.0.1 kept `mtime` NULL forever — the
+            # scan skips unchanged files and the plan is read-only —
+            # and every open of the Execution screen re-hashed the whole
+            # collection, pulling a Drive-synced acervo down byte by
+            # byte. The same applies to any single file whose mtime Drive
+            # rewrote without changing the content: the mismatch would be
+            # permanent. §8.1 promises "da segunda em diante a detecção é
+            # rápida"; this is what delivers it.
+            if existing_row["mtime"] != mtime:
+                conn.execute(
+                    "UPDATE file SET mtime = ? WHERE relative_path = ?",
+                    (mtime, relative_path),
+                )
+                conn.commit()
             continue
 
         if existing_row is None and file_hash in known_hashes:
@@ -226,12 +246,14 @@ def scan(
             extension_no_dot = extension.lstrip(".")
             _insert_file(
                 conn, relative_path, name, extension_no_dot, size, file_hash,
-                path.stat().st_mtime, None, "duplicate"
+                mtime, None, "duplicate"
             )
             result.skipped += 1
             conn.commit()
             known_hashes.add(file_hash)
-            known_paths[relative_path] = {"relative_path": relative_path, "sha256": file_hash}
+            known_paths[relative_path] = {
+                "relative_path": relative_path, "sha256": file_hash, "mtime": mtime,
+            }
             continue
 
         allowed = is_extension_allowed(extension, config.extensions)
@@ -244,7 +266,7 @@ def scan(
         if existing_row is None:
             _insert_file(
                 conn, relative_path, name, extension_no_dot, size, file_hash,
-                path.stat().st_mtime, group_key, status
+                mtime, group_key, status
             )
             if allowed:
                 result.discovered += 1
@@ -261,7 +283,7 @@ def scan(
         else:
             _update_file(
                 conn, relative_path, name, extension_no_dot, size, file_hash,
-                path.stat().st_mtime, group_key, status
+                mtime, group_key, status
             )
             result.updated += 1
             record_event(
@@ -275,7 +297,9 @@ def scan(
         conn.commit()
 
         known_hashes.add(file_hash)
-        known_paths[relative_path] = {"relative_path": relative_path, "sha256": file_hash}
+        known_paths[relative_path] = {
+            "relative_path": relative_path, "sha256": file_hash, "mtime": mtime,
+        }
 
     conn.commit()
 
