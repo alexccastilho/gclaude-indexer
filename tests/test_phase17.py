@@ -513,6 +513,7 @@ def test_o_plano_conta_janelas_descartadas_e_preservadas(tmp_path):
     # cuja última janela tem 10 e por isso é descartada.
     assert grupo.windows_discarded == 0
     assert grupo.windows_kept == 2
+    assert grupo.discard_whole_group is False
     assert plano.is_empty is False
     assert plano.files_needing_ocr == 1
     assert plano.windows_to_reclassify == grupo.windows_discarded
@@ -658,6 +659,10 @@ def test_geometria_vem_das_paginas_reais_e_nao_de_file_page_count(tmp_path):
     assert invalidacao.windows_kept + invalidacao.windows_discarded == 2
     assert invalidacao.first_affected_window == 0
     assert invalidacao.windows_discarded == 2
+    # Índice 0 porque a divergência cai dentro da primeira janela, não
+    # porque o layout gravado discorda: os dois mecanismos são
+    # distintos e aqui o gravado bate com o derivado.
+    assert invalidacao.discard_whole_group is False
     # E o arquivo falho não é arrastado para a renumeração.
     assert invalidacao.files_to_renumber == ()
 
@@ -701,16 +706,32 @@ def test_layout_divergente_descarta_o_grupo_inteiro_e_avisa(tmp_path):
     for nome in ("a.pdf", "b.pdf", "c.pdf"):
         (origem / nome).write_text(nome, encoding="utf-8")
         _registrar_com_paginas(conn, origem, nome, 10, grupo)
-    # O índice guarda um layout de 500 páginas; as páginas dão 30.
+    # O índice guarda um layout de 500 páginas (36 janelas); as páginas
+    # dão 30 (2 janelas). A diferença é de 34 de propósito: um erro de
+    # um a mais ou a menos não passa por este teste.
     _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
     (origem / "d.pdf").write_text("d", encoding="utf-8")
+    gravadas = conn.execute(
+        "SELECT COUNT(*) FROM window WHERE group_key = ?", (grupo,)
+    ).fetchone()[0]
+    derivadas = len(window_spans(30, 16, 2))
+    assert (gravadas, derivadas) == (36, 2)
 
     plano = build_update_plan(conn, _config(origem, saida))
 
     invalidacao = plano.groups[0]
+    # A bandeira é o que carrega a intenção. Um índice não consegue
+    # dizer "tudo o que a tabela tem deste grupo": apagar por
+    # `spans[first_affected_window:]` alcançaria no máximo as 2 janelas
+    # derivadas — talvez nenhuma delas existente — e deixaria 34 para
+    # trás, dentro da própria rede de segurança.
+    assert invalidacao.discard_whole_group is True
     assert invalidacao.first_affected_window == 0
     assert invalidacao.windows_kept == 0
-    assert invalidacao.windows_discarded == len(window_spans(30, 16, 2))
+    # A conta mostrada é a das janelas que existem, não a das derivadas.
+    assert invalidacao.windows_discarded == gravadas == 36
+    assert invalidacao.windows_discarded != derivadas
+    assert plano.windows_to_reclassify == 36
     chaves = [evento["message_key"] for evento in list_events(conn)]
     assert "log.update.layout_mismatch" in chaves
 
@@ -736,6 +757,7 @@ def test_grupo_sem_janela_gravada_nao_e_tratado_como_divergencia(tmp_path):
 
     # Última janela de 30 páginas é cheia: nada a descartar.
     assert plano.groups[0].windows_discarded == 0
+    assert plano.groups[0].discard_whole_group is False
     chaves = [evento["message_key"] for evento in list_events(conn)]
     assert "log.update.layout_mismatch" not in chaves
 

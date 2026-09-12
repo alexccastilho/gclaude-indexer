@@ -140,6 +140,23 @@ class GroupInvalidation:
 
     `first_divergent_page` is 0-based and counted over the group's
     concatenated pages, the same coordinate `window_spans` works in.
+
+    `discard_whole_group` exists because an index cannot say "everything
+    the table holds for this group". `first_affected_window` is a
+    position in the layout *derived* from the current pages, so deleting
+    by `spans[first_affected_window:]` can only ever reach windows that
+    layout describes. When the stored layout disagrees with the derived
+    one, the rows that need deleting are precisely the ones the derived
+    layout does not account for — 36 stored against 2 derived would
+    delete at most 2 keys, and possibly none that exist, leaving 34
+    stale windows behind. The flag lets the caller delete by
+    `group_key` instead of span by span.
+
+    When it is set, `windows_discarded` is the number of rows actually
+    stored for the group — what will really be deleted — and
+    `windows_kept` is 0. Reporting the derived count there would show
+    the user 2 when 36 windows are going back to the model, understating
+    exactly the cost this flag exists to make visible.
     """
 
     group_key: str
@@ -148,6 +165,7 @@ class GroupInvalidation:
     windows_discarded: int
     windows_kept: int
     files_to_renumber: tuple[str, ...]
+    discard_whole_group: bool = False
 
 
 @dataclass(frozen=True)
@@ -330,9 +348,7 @@ def _stored_window_count(conn: sqlite3.Connection, group_key: str) -> int:
     ).fetchone()[0]
 
 
-def _layout_disagrees(
-    conn: sqlite3.Connection, group_key: str, derived_count: int
-) -> bool:
+def _layout_disagrees(stored_count: int, derived_count: int) -> bool:
     """Whether the layout on record contradicts the one derived here.
 
     Nothing else in this module reads the `window` table: the counts it
@@ -348,7 +364,6 @@ def _layout_disagrees(
     `derived_count` windows are going back to the model, inflating the
     very number this feature exists to keep honest.
     """
-    stored_count = _stored_window_count(conn, group_key)
     return stored_count != 0 and stored_count != derived_count
 
 
@@ -477,13 +492,19 @@ def build_update_plan(
         page_count = sum(count for _, count in stored)
         old_spans = window_spans(page_count, config.pages_per_window, config.overlap)
 
-        if _layout_disagrees(conn, group_key, len(old_spans)):
+        stored_windows = _stored_window_count(conn, group_key)
+
+        if _layout_disagrees(stored_windows, len(old_spans)):
             # The derived layout is not the one on record, so no claim
             # about which windows survive can be trusted. Discarding the
             # whole group is the conservative-correct answer; the event
             # puts the cost in the log instead of letting it be silent.
             # Refusing the plan outright would block the user in a state
             # that reclassifying fully recovers.
+            #
+            # The counts below are the stored ones, not the derived
+            # ones: the caller will delete by `group_key`, so what goes
+            # back to the model is every row the table holds.
             record_event(
                 conn,
                 "update",
@@ -491,27 +512,34 @@ def build_update_plan(
                 "log.update.layout_mismatch",
                 {
                     "group": group_key,
-                    "stored": _stored_window_count(conn, group_key),
+                    "stored": stored_windows,
                     "derived": len(old_spans),
                 },
                 language=language,
             )
+            discard_whole_group = True
             affected = 0
+            discarded = stored_windows
+            kept = 0
         else:
+            discard_whole_group = False
             affected = first_affected_window(
                 old_spans, divergent_page, config.pages_per_window
             )
+            discarded = max(0, len(old_spans) - affected)
+            kept = affected
 
         groups.append(
             GroupInvalidation(
                 group_key=group_key,
                 first_divergent_page=divergent_page,
                 first_affected_window=affected,
-                windows_discarded=max(0, len(old_spans) - affected),
-                windows_kept=affected,
+                windows_discarded=discarded,
+                windows_kept=kept,
                 files_to_renumber=_files_to_renumber(
                     stored, divergent_page, changed_paths, removed_paths
                 ),
+                discard_whole_group=discard_whole_group,
             )
         )
 
