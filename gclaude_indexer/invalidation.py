@@ -23,10 +23,17 @@ unlinked only once it has committed.
 
 What it does NOT touch: `item`. `import_items` already wipes and rebuilds
 that table on every run, so invalidating it here would be work done twice.
+
+What it *does* have to touch, and for the opposite reason: the classified
+items in `<output>/raw_items.jsonl`. That file is append-only and is
+re-read whole on every import, so nothing else in the pipeline ever
+removes anything from it — the rebuild of `item` faithfully rebuilds the
+stale lines too. See `_prune_raw_items`.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +41,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
+from .import_items import RAW_ITEMS_FILE_NAME
 from .paths import resolve_within
 from .update_plan import UpdatePlan, build_update_plan, detect_changes
 from .windows_prep import sanitize_group_name, window_key, window_spans
@@ -62,10 +70,18 @@ class InvalidationResult:
 
     `windows_orphaned` counts the `.txt` files whose row was deleted but
     whose unlink failed — see the loop at the end of `apply_update_plan`
-    for why that is survivable and why it must still be visible."""
+    for why that is survivable and why it must still be visible.
+
+    `items_pruned` counts the `raw_items.jsonl` lines dropped because the
+    window that produced them was discarded; `prune_failures` counts the
+    prunes that could not be written (0 or 1 today — there is one file).
+    A failed prune is the more serious of the two failures here: it
+    yields a wrong index, not an orphan file."""
 
     windows_deleted: int = 0
     windows_orphaned: int = 0
+    items_pruned: int = 0
+    prune_failures: int = 0
     pages_deleted: int = 0
     files_removed: int = 0
     files_reset: int = 0
@@ -139,7 +155,11 @@ def _group_page_count(conn: sqlite3.Connection, group_key: str) -> int:
 
 
 def _delete_whole_group(
-    conn: sqlite3.Connection, group_key: str, windows_dir: Path, doomed: list[Path]
+    conn: sqlite3.Connection,
+    group_key: str,
+    windows_dir: Path,
+    doomed: list[Path],
+    discarded_keys: set[str],
 ) -> int:
     """Discards every window row the table holds for the group.
 
@@ -151,16 +171,85 @@ def _delete_whole_group(
     inside the safety net meant to prevent that.
 
     The rows are read before they are deleted because their keys are the
-    only record of which files on disk belong to them.
+    only record of which files on disk belong to them, and of which
+    `raw_items.jsonl` lines were classified from them.
     """
     for row in conn.execute(
         "SELECT key FROM window WHERE group_key = ?", (group_key,)
     ).fetchall():
         _doom(windows_dir, _window_file_name(row["key"]), doomed)
+        discarded_keys.add(row["key"])
 
     return conn.execute(
         "DELETE FROM window WHERE group_key = ?", (group_key,)
     ).rowcount
+
+
+def _prune_raw_items(output_dir: Path, discarded_keys: set[str]) -> int:
+    """Drops from `raw_items.jsonl` every item classified from a discarded
+    window. Returns how many lines were dropped.
+
+    `classify_pending` appends to this file and `import_and_consolidate`
+    re-reads it whole on every run, so an item left behind by a discarded
+    window keeps being imported — with sheet references that now point at
+    different pages. `_validate_range_within_group` does not catch it,
+    because the range still fits inside the group; `_consolidate` then
+    merges the stale line into the live items, unions the `files` lists,
+    and can impose its own type, date, author or summary through the
+    confidence tie-break. A stale item touching no live item simply enters
+    the index as a document that is not in the collection any more.
+
+    Filtering at read time instead would not work. Window keys are
+    positional and get reused: once invalidation deletes window `X` and
+    `prepare_windows` recreates it, classification appends new lines under
+    that same key while the old ones are still in the file, and nothing
+    distinguishes the two. The file has to be pruned.
+
+    Only a line that positively parses as an object whose `window` is a
+    discarded key is dropped. Unparseable lines and blank lines are kept:
+    `import_and_consolidate` already reports those as errors, and
+    quietly deleting what cannot be read is not this function's call.
+    """
+    path = output_dir / RAW_ITEMS_FILE_NAME
+    if not discarded_keys or not path.exists():
+        # A project that has never been classified has no file here. That
+        # is the normal state before the first run, not an error.
+        return 0
+
+    kept: list[str] = []
+    dropped = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            kept.append(line)
+            continue
+        if isinstance(item, dict) and item.get("window") in discarded_keys:
+            dropped += 1
+            continue
+        kept.append(line)
+
+    if not dropped:
+        return 0
+
+    # Temporary file in the same folder, then an atomic replace: a
+    # half-written `raw_items.jsonl` would lose items for windows that
+    # are still valid, and those are not recoverable from anywhere.
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        temporary.write_text(
+            "".join(f"{line}\n" for line in kept), encoding="utf-8"
+        )
+        temporary.replace(path)
+    except OSError:
+        # Leave no half-written leftover next to the real file for the
+        # next run to trip over; the caller reports the failure.
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return dropped
 
 
 def _record_removals(conn: sqlite3.Connection, plan: UpdatePlan) -> int:
@@ -238,8 +327,10 @@ def apply_update_plan(
         raise PlanExpired(plan.fingerprint)
 
     result = InvalidationResult()
-    windows_dir = Path(config.output_folder) / "windows"
+    output_dir = Path(config.output_folder)
+    windows_dir = output_dir / "windows"
     doomed_files: list[Path] = []
+    discarded_keys: set[str] = set()
 
     try:
         conn.execute("BEGIN")
@@ -251,7 +342,11 @@ def apply_update_plan(
         for group in current.groups:
             if group.discard_whole_group:
                 result.windows_deleted += _delete_whole_group(
-                    conn, group.group_key, windows_dir, doomed_files
+                    conn,
+                    group.group_key,
+                    windows_dir,
+                    doomed_files,
+                    discarded_keys,
                 )
                 continue
 
@@ -265,15 +360,19 @@ def apply_update_plan(
             # equal `len(spans)`, which means nothing is discarded — the
             # commonest happy path, an append whose last window was full.
             for start, end in spans[group.first_affected_window:]:
+                key = window_key(base_name, start, end)
                 result.windows_deleted += conn.execute(
-                    "DELETE FROM window WHERE key = ?",
-                    (window_key(base_name, start, end),),
+                    "DELETE FROM window WHERE key = ?", (key,)
                 ).rowcount
                 _doom(
                     windows_dir,
                     f"{base_name}_j{start + 1:04d}-{end:04d}.txt",
                     doomed_files,
                 )
+                # Queued whether or not a row was actually deleted: a
+                # `raw_items.jsonl` line under this key is stale either
+                # way, and the row may have gone in an earlier apply.
+                discarded_keys.add(key)
 
         for change in current.removed:
             file_id = _file_id(conn, change.relative_path)
@@ -350,10 +449,34 @@ def apply_update_plan(
             orphans.append(path.name)
     result.windows_orphaned = len(orphans)
 
+    # Same side of the commit as the unlinks, and for a sharper version
+    # of the same reason. Pruning before the commit would, on a
+    # rollback, delete the items of windows that still exist and are
+    # still marked `done` — nothing would ever reclassify them, so those
+    # items would be gone for good.
+    prune_error: str | None = None
+    try:
+        result.items_pruned = _prune_raw_items(output_dir, discarded_keys)
+    except OSError as error:
+        # Worse than a surviving `.txt`: this one produces a wrong index
+        # rather than an orphan file, so it is reported in those terms.
+        result.prune_failures = 1
+        prune_error = str(error)
+
     # The log must never be able to invalidate a committed update, so
     # even recording it is guarded — `record_event` writes to the
     # database and to the on-disk log.
     try:
+        if prune_error is not None:
+            record_event(
+                conn,
+                "update",
+                "warning",
+                "log.update.raw_items_prune_failed",
+                {"error": prune_error},
+                language=language,
+            )
+
         if orphans:
             record_event(
                 conn,

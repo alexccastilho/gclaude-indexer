@@ -887,6 +887,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "{count} arquivo(s) de janela não puderam ser apagados e continuam na "
             "pasta windows/ — apague-os à mão antes de reclassificar: {files}"
         ),
+        "log.update.raw_items_prune_failed": (
+            "não foi possível limpar raw_items.jsonl ({error}) — até uma "
+            "reindexação completa, o índice pode conter peças de documentos que "
+            "não estão mais no acervo"
+        ),
         "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
         "log.rules.summary": (
             "motor regras: {windows} janela(s), {items} peça(s) (alta={high}, media={medium}, "
@@ -1760,6 +1765,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.update.orphan_window_file": (
             "{count} window file(s) could not be deleted and are still in the "
             "windows/ folder — delete them by hand before reclassifying: {files}"
+        ),
+        "log.update.raw_items_prune_failed": (
+            "raw_items.jsonl could not be cleaned up ({error}) — until a full "
+            "reindex, the index may contain items from documents that are no "
+            "longer in the collection"
         ),
         "log.rules.invalid_item": "invalid item in window {window}: {errors}",
         "log.rules.summary": (
@@ -2647,6 +2657,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.update.orphan_window_file": (
             "{count} archivo(s) de ventana no pudieron borrarse y siguen en la "
             "carpeta windows/ — bórrelos a mano antes de reclasificar: {files}"
+        ),
+        "log.update.raw_items_prune_failed": (
+            "no se pudo limpiar raw_items.jsonl ({error}) — hasta una "
+            "reindexación completa, el índice puede contener piezas de documentos "
+            "que ya no están en la colección"
         ),
         "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
         "log.rules.summary": (
