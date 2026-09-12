@@ -2095,6 +2095,71 @@ def test_o_post_com_plano_vencido_e_recusado(tmp_path, monkeypatch):
     assert resposta.status_code == 409
 
 
+def test_o_post_e_recusado_enquanto_uma_etapa_roda(tmp_path, monkeypatch):
+    """`_open_project` toma o bloqueio entre máquinas, que a execução em
+    curso já segura — ele não protege nada aqui.
+
+    O banco está quase todo coberto pelo travamento do SQLite, mas
+    `_prune_raw_items` não: ele copia `raw_items.jsonl` para um temporário
+    e renomeia por cima enquanto `classify_pending` pode estar
+    acrescentando linhas. As classificações escritas durante a cópia se
+    perdem, ou uma linha velha sobrevive e é importada contra páginas que
+    já se moveram.
+    """
+    from types import SimpleNamespace
+
+    from gclaude_indexer.web.background_runs import task_manager
+
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    origem = tmp_path / "origem"
+    saida = tmp_path / "saida"
+
+    grupo, file_id = conn.execute(
+        "SELECT group_key, id FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()
+    conn.execute(
+        "UPDATE file SET status = 'extracted', page_count = 3 WHERE id = ?", (file_id,)
+    )
+    for numero in range(1, 4):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+            (file_id, numero, f"f. {numero}"),
+        )
+    _criar_janelas(conn, grupo, page_count=3, window_size=16, overlap=2)
+    conn.commit()
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+
+    # A impressão digital é válida: a recusa tem de vir do trabalho em
+    # curso, e não do caminho de plano vencido, que já tem teste próprio.
+    impressao = build_update_plan(conn, _config(origem, saida)).fingerprint
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 1
+
+    monkeypatch.setattr(
+        task_manager, "latest_for_project", lambda _id: SimpleNamespace(running=True)
+    )
+
+    recusa = cliente.post(
+        f"/projects/{projeto_id}/update", data={"fingerprint": impressao}
+    )
+
+    assert recusa.status_code == 409
+    assert "em execução" in recusa.text  # update.run_in_progress (pt)
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 1
+
+    # Sem execução em curso o mesmo POST passa: a recusa é de estado, e
+    # não um "não" permanente que o teste confundiria com sucesso.
+    monkeypatch.setattr(task_manager, "latest_for_project", lambda _id: None)
+
+    aceito = cliente.post(
+        f"/projects/{projeto_id}/update", data={"fingerprint": impressao},
+        follow_redirects=False,
+    )
+
+    assert aceito.status_code == 303
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+
+
 def test_o_aviso_nao_aparece_quando_nada_mudou(tmp_path, monkeypatch):
     cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
 
@@ -2154,7 +2219,7 @@ def test_todas_as_chaves_da_atualizacao_existem_nos_tres_idiomas():
         "update.removed", "update.files_ocr", "update.windows_discarded",
         "update.windows_kept", "update.new_windows_unknown", "update.confirm",
         "update.cancel", "update.nothing_changed", "update.source_unavailable",
-        "update.plan_expired", "update.cost_title",
+        "update.plan_expired", "update.cost_title", "update.run_in_progress",
     )
     for idioma in ("pt", "en", "es"):
         for chave in chaves:

@@ -695,6 +695,23 @@ async def update_apply(request: Request, project_id: int):
     form = await request.form()
 
     with _open_project(project_id) as (entry, config, conn):
+        # `_open_project`'s lock is the cross-machine one and the running
+        # step already holds it, so it protects nothing here. SQLite
+        # covers most of the database side, but `_prune_raw_items` is
+        # outside it: it streams `raw_items.jsonl` to a temporary file
+        # and renames it over the original while `classify_pending` may
+        # be appending, so classifications written during the copy are
+        # lost, or a stale line survives and is imported against pages
+        # that have since moved.
+        current_task = task_manager.latest_for_project(project_id)
+        if current_task is not None and current_task.running:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.run_in_progress"},
+                status_code=409,
+            )
+
         try:
             plan = build_update_plan(conn, config, record_warnings=False)
         except SourceFolderUnavailable:

@@ -665,6 +665,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "A pasta mudou enquanto esta tela estava aberta. Nada foi alterado."
             " Refaça o diagnóstico."
         ),
+        "update.run_in_progress": (
+            "Uma etapa está em execução neste projeto. Espere ela terminar, ou"
+            " pause a execução, antes de atualizar. Nada foi alterado."
+        ),
         "result.title": "Resultado",
         "result.back_to_run": "execução",
         "result.open_folder": "Abrir pasta de saída no Explorer",
@@ -1559,6 +1563,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "The folder changed while this screen was open. Nothing was changed."
             " Run the diagnosis again."
         ),
+        "update.run_in_progress": (
+            "A step is running for this project. Wait for it to finish, or pause"
+            " the run, before updating. Nothing was changed."
+        ),
         "result.title": "Result",
         "result.back_to_run": "execution",
         "result.open_folder": "Open output folder in Explorer",
@@ -2449,6 +2457,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "update.plan_expired": (
             "La carpeta cambió mientras esta pantalla estaba abierta. No se cambió nada."
             " Vuelva a hacer el diagnóstico."
+        ),
+        "update.run_in_progress": (
+            "Hay una etapa en ejecución en este proyecto. Espere a que termine, o"
+            " pause la ejecución, antes de actualizar. No se cambió nada."
         ),
         "result.title": "Resultado",
         "result.back_to_run": "ejecución",
