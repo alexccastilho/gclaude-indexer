@@ -26,7 +26,6 @@ following files keep numbering correctly.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
@@ -40,6 +39,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .parallelism import workers_for
 from .file_types import category_of_extension
+from .paths import natural_sort_key
 
 ERROR_MESSAGE_CHAR_LIMIT = 500
 
@@ -49,10 +49,6 @@ class ExtractionResult:
     files_processed: int = 0
     pages_written: int = 0
     failed: int = 0
-
-
-def _natural_sort_key(text: str):
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
 
 
 def _read_pdf_pages(pdf_path: Path, limit: int) -> list[tuple[str, int, bool]]:
@@ -144,7 +140,7 @@ def _build_groups(conn) -> dict[str, list]:
         groups[group_key].append(row)
 
     for group_files in groups.values():
-        group_files.sort(key=lambda r: _natural_sort_key(r["relative_path"]))
+        group_files.sort(key=lambda r: natural_sort_key(r["relative_path"]))
 
     return groups
 

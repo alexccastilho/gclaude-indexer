@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 
 from gclaude_indexer import db
+from gclaude_indexer.paths import natural_sort_key
+from gclaude_indexer.windows_prep import pages_for_group
 
 
 def _conn(tmp_path: Path) -> sqlite3.Connection:
@@ -123,3 +125,37 @@ def test_sobreposicao_maior_que_a_janela_nao_trava():
 
     assert len(spans) <= 10
     assert spans[-1][1] == 10
+
+
+def test_a_ordem_natural_poe_o_dez_depois_do_dois():
+    nomes = ["doc10.pdf", "doc2.pdf", "doc1.pdf"]
+
+    assert sorted(nomes, key=natural_sort_key) == ["doc1.pdf", "doc2.pdf", "doc10.pdf"]
+
+
+def test_pagina_inserida_depois_nao_salta_para_o_fim_do_grupo(tmp_path):
+    """O caso da atualização: o arquivo b.pdf é reextraído e suas páginas
+    recebem ids maiores que as de c.pdf. A ordem tem de continuar a-b-c."""
+    conn = _conn(tmp_path)
+    for relative_path in ("a.pdf", "b.pdf", "c.pdf"):
+        conn.execute(
+            "INSERT INTO file (relative_path, name, extension, size, sha256,"
+            " group_key, status) VALUES (?, ?, 'pdf', 1, ?, 'g', 'extracted')",
+            (relative_path, relative_path, relative_path),
+        )
+    ids = {
+        row["relative_path"]: row["id"]
+        for row in conn.execute("SELECT id, relative_path FROM file")
+    }
+    # c.pdf entra antes de b.pdf, como aconteceria numa reextração de b.
+    for relative_path in ("a.pdf", "c.pdf", "b.pdf"):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, 1, 'f. 1', 1, 0, 0, ?)",
+            (ids[relative_path], relative_path),
+        )
+    conn.commit()
+
+    ordem = [row["text"] for row in pages_for_group(conn, "g")]
+
+    assert ordem == ["a.pdf", "b.pdf", "c.pdf"]

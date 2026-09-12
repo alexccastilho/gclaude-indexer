@@ -25,6 +25,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .i18n import _REFERENCE_LANGUAGE
+from .paths import natural_sort_key
 
 CLAUDE_MD_FILENAME = "CLAUDE.md"
 
@@ -80,18 +81,29 @@ def window_key(base_name: str, start: int, end: int) -> str:
 
 
 def pages_for_group(conn, group_key: str):
-    """Pages of the group, in the order they were extracted (phase 4) — the
-    same order used to build the windows and cited by `RulesEngine`."""
-    return conn.execute(
+    """Pages of the group, in the order the windows and `RulesEngine` cite.
+
+    Ordered by natural path and page number, not by `page.id` (Phase 17).
+    The two coincide in a project built in one pass, because extraction
+    writes group by group in that same order — but not after an update,
+    where a re-extracted file's pages get the highest ids and would jump
+    to the end of the group. Natural ordering is not expressible in SQL,
+    so the final sort happens here, with the key `extraction` already uses.
+    """
+    rows = conn.execute(
         """
-        SELECT page.*, file.name AS file_name
+        SELECT page.*, file.name AS file_name, file.relative_path AS file_relative_path
         FROM page
         JOIN file ON file.id = page.file_id
         WHERE file.group_key = ?
-        ORDER BY page.id
         """,
         (group_key,),
     ).fetchall()
+
+    return sorted(
+        rows,
+        key=lambda row: (natural_sort_key(row["file_relative_path"]), row["number"]),
+    )
 
 
 def _write_window_file(path: Path, key: str, group_key: str, start_ref: str, end_ref: str, pages) -> None:

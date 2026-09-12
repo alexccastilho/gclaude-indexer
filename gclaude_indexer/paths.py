@@ -17,6 +17,7 @@ validated to prevent escaping it (including via `..`), per section 7.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -69,3 +70,14 @@ def resolve_within(base: Path, relative: str) -> Path:
         )
 
     return candidate
+
+
+def natural_sort_key(text: str) -> list[int | str]:
+    """Sort key where "doc10" comes after "doc2", not before it.
+
+    Lived in `extraction.py` as `_natural_sort_key` until Phase 17, when
+    `windows_prep.pages_for_group` needed the same ordering: the windows
+    and the classification slice the group's pages by position, so the two
+    must agree on what that position is.
+    """
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
