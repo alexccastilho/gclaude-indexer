@@ -108,9 +108,8 @@ CREATE TABLE IF NOT EXISTS run (
     ok            INTEGER NOT NULL DEFAULT 0
 );
 
--- Fase 17: documento que saiu da pasta de origem. É estado, não log: o
--- `review.md` relata as remoções, e um evento desapareceria se o log
--- fosse limpo.
+-- Phase 17: a document that left the source folder. This is state, not a log:
+-- `review.md` reports removals, and an event would vanish if the log were cleared.
 CREATE TABLE IF NOT EXISTS removed_file (
     id            INTEGER PRIMARY KEY,
     relative_path TEXT NOT NULL,

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ import pytest
 from gclaude_indexer import db
 
 
-def _conn(tmp_path: Path):
+def _conn(tmp_path: Path) -> sqlite3.Connection:
     connection = db.connect(tmp_path / "project.db")
     db.init_schema(connection)
     return connection
