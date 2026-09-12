@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -18,6 +20,18 @@ import pytest
 from gclaude_indexer import db
 from gclaude_indexer.paths import natural_sort_key
 from gclaude_indexer.windows_prep import pages_for_group
+
+# --- geometry of the oracle's collection (see `_config_do_oraculo`) --------
+ORACULO_PAGINAS_POR_JANELA = 4
+ORACULO_SOBREPOSICAO = 1
+
+# The three numbers the oracle's fixture is worth. 30 pages with a stride
+# of 3 give ten spans; `02-recibo.pdf` starts at page 10 (0-based), so the
+# first span ending past it is index 3 — three windows survive the update
+# and seven go back to the engine. Asserted, not merely computed here, for
+# the reason spelled out at the assertion itself.
+ORACULO_JANELAS_PRESERVADAS = 3
+ORACULO_JANELAS_DESCARTADAS = 7
 
 
 def _conn(tmp_path: Path) -> sqlite3.Connection:
@@ -1212,8 +1226,6 @@ def _escrever_raw_items(saida: Path, pecas: list[tuple[str, str]]) -> Path:
     produção — `window` é a chave da janela e `group` é o `group_key`
     dela — e a poda usa um ou outro conforme o ramo do descarte.
     """
-    import json
-
     caminho = saida / "raw_items.jsonl"
     caminho.write_text(
         "".join(
@@ -1227,8 +1239,6 @@ def _escrever_raw_items(saida: Path, pecas: list[tuple[str, str]]) -> Path:
 
 
 def _janelas_do_raw_items(caminho: Path) -> list[str]:
-    import json
-
     return [
         json.loads(linha)["window"]
         for linha in caminho.read_text(encoding="utf-8").splitlines()
@@ -1844,16 +1854,11 @@ def test_todas_as_chaves_da_atualizacao_existem_nos_tres_idiomas():
             assert texto and not texto.startswith("update."), f"{idioma}/{chave}"
 
 
-# --- Tarefa 11: o oráculo ---------------------------------------------------
+# --- Task 11: the oracle ----------------------------------------------------
 #
 # The correctness criterion of the whole feature: an incremental update is
 # right if, and only if, its result cannot be told apart from a full
 # reindex of the same final folder.
-
-import re
-
-ORACULO_PAGINAS_POR_JANELA = 4
-ORACULO_SOBREPOSICAO = 1
 
 # Matches the ISO instant that `artifacts._now_iso()` stamps on every
 # generated file ("2026-09-12T14:33:01"). Deliberately a full pattern and
@@ -2027,7 +2032,34 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
     # applying it: `apply_update_plan` re-derives its own plan and compares
     # fingerprints, and a folder that moved on raises `PlanExpired`.
     plano = build_update_plan(conn, config)
-    apply_update_plan(conn, config, plano)
+
+    # --- the oracle's own fixture, pinned -------------------------------
+    #
+    # These are not a second copy of the unit tests: they are what stops
+    # this test from degenerating into a tautology. The comparison below
+    # only means something while the left-hand side is an *incremental*
+    # update. If some later change made every update discard its whole
+    # group — a different default `pages_per_window`, a stricter
+    # `_layout_disagrees`, anything — both sides would quietly become full
+    # reindexes, the equality would still hold, and the oracle would be
+    # comparing two full reindexes agreeing with each other while the
+    # feature's entire value had evaporated. That is the same failure the
+    # brief's original three-text-file fixture had; the data was fixed,
+    # and this is the contract. Do not delete them to simplify the test:
+    # deleting them deletes the test's meaning.
+    (grupo,) = plano.groups
+    assert grupo.discard_whole_group is False
+    assert grupo.windows_kept == ORACULO_JANELAS_PRESERVADAS
+    assert grupo.windows_discarded == ORACULO_JANELAS_DESCARTADAS
+
+    resultado = apply_update_plan(conn, config, plano)
+
+    # And that the apply really walked the incremental path, rather than
+    # reporting a plan it did not carry out. A run that pruned nothing
+    # never exercised what the oracle exists to prove.
+    assert resultado.windows_deleted == ORACULO_JANELAS_DESCARTADAS
+    assert resultado.items_pruned > 0
+    assert resultado.prune_failures == 0
 
     # The `scan` still runs: the invalidation puts the *known* files into
     # the states the later steps look for, but only the scan brings a
@@ -2037,7 +2069,7 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
     _etapas_depois_do_scan(conn, config)
     conn.close()
 
-    # E o mesmo acervo, indexado do zero.
+    # And the same collection, indexed from scratch.
     completo = tmp_path / "completo"
     completo.mkdir()
     conn_completo, _ = _rodar_pipeline_completo(origem, completo)
@@ -2045,12 +2077,12 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
 
     for nome in ("index.md", "timeline.md", "review.md", "project_instructions.md"):
         if nome == "review.md":
-            # O único que diverge legitimamente: o incremental sabe da
-            # remoção e a relata; o do zero nunca viu o arquivo existir.
-            # A asserção é a assimetria inteira — está na seção de
-            # removidos de um lado, e em lado nenhum do outro — e corre
-            # sobre o texto bruto, pela razão que `_secao_de_removidos`
-            # explica.
+            # The one artifact that legitimately differs: the updated
+            # project knows about the removal and reports it, while the
+            # from-scratch one never saw the document exist. The assertion
+            # is that whole asymmetry — present in one side's removals
+            # section, absent from the other's — and it runs on the raw
+            # text, for the reason `_secao_de_removidos` explains.
             removidos_atualizado = _secao_de_removidos(
                 (incremental / nome).read_text(encoding="utf-8")
             )
@@ -2063,6 +2095,17 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
 
         atualizado = _sem_carimbo((incremental / nome).read_text(encoding="utf-8"))
         do_zero = _sem_carimbo((completo / nome).read_text(encoding="utf-8"))
+
+        if nome == "index.md":
+            # Non-vacuity guard, and part of the same defence as the plan
+            # assertions above: two empty files compare equal. Without
+            # this, an `index.md` that lost its table — or a collection
+            # that silently indexed nothing — would still satisfy the
+            # equality and the oracle would report success over a pair of
+            # blanks. Naming a document that must be in the table makes
+            # the comparison prove that there was something to compare.
+            assert "01-contrato.pdf" in atualizado
+
         assert atualizado == do_zero, f"{nome} diverge"
 
 
