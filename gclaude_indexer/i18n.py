@@ -855,6 +855,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
             "renumerar"
         ),
+        "log.update.orphan_window_file": (
+            "{count} arquivo(s) de janela não puderam ser apagados e continuam na "
+            "pasta windows/ — apague-os à mão antes de reclassificar: {files}"
+        ),
         "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
         "log.rules.summary": (
             "motor regras: {windows} janela(s), {items} peça(s) (alta={high}, media={medium}, "
@@ -1696,6 +1700,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.update.applied": (
             "update applied: {windows} window(s) discarded, {removed} document(s) "
             "removed, {reset} to reprocess, {renumbered} to renumber"
+        ),
+        "log.update.orphan_window_file": (
+            "{count} window file(s) could not be deleted and are still in the "
+            "windows/ folder — delete them by hand before reclassifying: {files}"
         ),
         "log.rules.invalid_item": "invalid item in window {window}: {errors}",
         "log.rules.summary": (
@@ -2550,6 +2558,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
             "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "
             "renumerar"
+        ),
+        "log.update.orphan_window_file": (
+            "{count} archivo(s) de ventana no pudieron borrarse y siguen en la "
+            "carpeta windows/ — bórrelos a mano antes de reclasificar: {files}"
         ),
         "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
         "log.rules.summary": (

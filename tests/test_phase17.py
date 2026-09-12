@@ -348,13 +348,21 @@ def _registrar_com_paginas(
 def _criar_janelas(
     conn, group_key: str, page_count: int, window_size: int, overlap: int
 ) -> None:
-    from gclaude_indexer.windows_prep import window_key
+    """Grava as janelas de um grupo como `prepare_windows` as gravaria.
 
+    A chave passa por `sanitize_group_name`, como na produção. Sem isso a
+    fixture só coincidiria com o código real por acidente do nome do
+    grupo usado nos testes ("origem", que a higienização não altera), e um
+    grupo com espaço ou acento revelaria a diferença apenas no usuário.
+    """
+    from gclaude_indexer.windows_prep import sanitize_group_name, window_key
+
+    base = sanitize_group_name(group_key)
     for start, end in window_spans(page_count, window_size, overlap):
         conn.execute(
             "INSERT INTO window (key, group_key, start_ref, end_ref, status)"
             " VALUES (?, ?, ?, ?, 'done')",
-            (window_key(group_key, start, end), group_key,
+            (window_key(base, start, end), group_key,
              f"f. {start + 1}", f"f. {end}"),
         )
     conn.commit()
@@ -780,23 +788,81 @@ from gclaude_indexer.windows_prep import sanitize_group_name
 def test_plano_vencido_e_recusado_sem_escrever_nada(tmp_path):
     """O plano é uma fotografia da pasta, e o Drive continua sincronizando
     enquanto o usuário lê a tela de confirmação. Aplicar um plano vencido
-    seria gravar uma coisa tendo mostrado outra."""
+    seria gravar uma coisa tendo mostrado outra.
+
+    O acervo aqui é montado de propósito com coisas a perder — um
+    documento removido, 36 janelas gravadas, 20 páginas — e com um layout
+    divergente, que faz `build_update_plan` gravar um evento de aviso.
+    Com um acervo vazio as asserções de "não escreveu nada" seriam
+    verdadeiras em qualquer implementação, inclusive numa sem verificação
+    de impressão digital.
+    """
     origem = tmp_path / "origem"
     origem.mkdir()
     saida = tmp_path / "saida"
     saida.mkdir()
-    (origem / "a.pdf").write_text("a", encoding="utf-8")
     conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "fica.pdf").write_text("fica", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "fica.pdf", paginas=10, group_key=grupo)
+    (origem / "sai.pdf").write_text("sai", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "sai.pdf", paginas=10, group_key=grupo)
+    (origem / "sai.pdf").unlink()
+    # 20 páginas dariam 2 janelas; o índice guarda 36. O layout diverge,
+    # e é isso que faria `build_update_plan` gravar um evento.
+    _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
     config = _config(origem, saida)
     plano = build_update_plan(conn, config)
+    eventos_antes = conn.execute("SELECT COUNT(*) FROM event").fetchone()[0]
 
-    (origem / "b.pdf").write_text("b", encoding="utf-8")  # a pasta mudou
+    (origem / "c.pdf").write_text("c", encoding="utf-8")  # a pasta mudou
 
     with pytest.raises(PlanExpired):
         apply_update_plan(conn, config, plano)
 
     assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 20
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 36
+    # Nem sequer um evento: a verificação usa `detect_changes`, que não
+    # grava nada, e não `build_update_plan`, que grava o aviso de layout
+    # divergente (e dá commit) antes de qualquer recusa.
+    assert conn.execute("SELECT COUNT(*) FROM event").fetchone()[0] == eventos_antes
+
+
+def test_o_plano_recebido_e_so_testemunha_da_impressao_digital(tmp_path):
+    """Os índices do plano apontam para o layout que existia quando a
+    fotografia foi tirada; os vãos fatiados aqui vêm do banco de agora. A
+    impressão digital cobre a pasta de origem, não o índice — outra
+    conexão pode tê-lo movido por baixo de um plano ainda válido. Por
+    isso a aplicação é feita sobre um plano derivado na hora, e o plano
+    recebido serve só para provar que a pasta não mudou."""
+    from dataclasses import replace
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+    assert plano.groups and plano.changed  # o plano de verdade tem o que fazer
+
+    # Mesma impressão digital, conteúdo esvaziado: uma implementação que
+    # iterasse o plano recebido não apagaria janela nenhuma.
+    mentiroso = replace(plano, groups=(), changed=(), removed=())
+
+    apply_update_plan(conn, config, mentiroso)
+
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT status FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()[0] == "discovered"
 
 
 def test_o_removido_sai_das_tabelas_e_entra_em_removed_file(tmp_path):
@@ -941,11 +1007,22 @@ def test_chave_que_escapa_da_pasta_de_janelas_nao_apaga_nada_fora(tmp_path):
     (origem / "d.pdf").write_text("d", encoding="utf-8")
     forasteiro = tmp_path / "escapou_j0001-0016.txt"
     forasteiro.write_text("nao me apague", encoding="utf-8")
+    base = sanitize_group_name(grupo)
+    legitimos = [
+        saida / "windows" / f"{base}_j0001-0016.txt",
+        saida / "windows" / f"{base}_j0015-0030.txt",
+    ]
+    for caminho in legitimos:
+        caminho.write_text("velho", encoding="utf-8")
     config = _config(origem, saida)
 
-    apply_update_plan(conn, config, build_update_plan(conn, config))
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
 
     assert forasteiro.exists()
+    # Pula exatamente o arquivo recusado e nenhum outro: os dois
+    # legítimos foram apagados.
+    assert [caminho.exists() for caminho in legitimos] == [False, False]
+    assert resultado.windows_orphaned == 0
     assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
 
 
@@ -994,10 +1071,93 @@ def test_falha_no_meio_deixa_o_banco_como_estava_e_o_txt_no_disco(tmp_path, monk
     assert txt.exists()
 
 
-def test_a_chave_do_log_da_atualizacao_existe_nos_tres_idiomas():
+def test_txt_preso_no_disco_vira_aviso_em_vez_de_silencio(tmp_path, monkeypatch):
+    """O Drive pode estar segurando o arquivo. Levantar depois de um
+    commit bem-sucedido seria pior — mas engolir sem deixar rastro também
+    é ruim: `prepare_windows` pula o `.txt` que já existe, então um
+    sobrevivente pode virar o texto de uma janela nova com o mesmo vão."""
+    from gclaude_indexer.events import list_events
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    base = sanitize_group_name(grupo)
+    preso = saida / "windows" / f"{base}_j0001-0016.txt"
+    solto = saida / "windows" / f"{base}_j0015-0020.txt"
+    preso.write_text("texto velho", encoding="utf-8")
+    solto.write_text("texto velho", encoding="utf-8")
+    (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
+    config = _config(origem, saida)
+
+    unlink_real = Path.unlink
+
+    def travado(self, *args, **kwargs):
+        if self.name == preso.name:
+            raise PermissionError("arquivo em uso pelo Drive")
+        return unlink_real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", travado)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    # A atualização não falhou: o banco já estava commitado.
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+    assert resultado.windows_deleted == 2
+    assert resultado.windows_orphaned == 1
+    assert preso.exists() and not solto.exists()
+    avisos = [
+        evento for evento in list_events(conn)
+        if evento["message_key"] == "log.update.orphan_window_file"
+    ]
+    assert len(avisos) == 1
+    assert avisos[0]["level"] == "warning"
+    assert preso.name in avisos[0]["message"]
+
+
+def test_grupo_com_espaco_apaga_o_txt_com_o_nome_higienizado(tmp_path):
+    """A produção nomeia o `.txt` com `sanitize_group_name(group_key)`,
+    não com a chave crua. Todos os outros testes usam um grupo que a
+    higienização não altera, então trocar uma pela outra passaria
+    despercebido — aqui não."""
+    origem = tmp_path / "Meu Acervo"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    base = sanitize_group_name(grupo)
+    assert (grupo, base) == ("Meu Acervo", "Meu_Acervo")
+
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    higienizado = saida / "windows" / f"{base}_j0001-0016.txt"
+    cru = saida / "windows" / f"{grupo}_j0001-0016.txt"
+    higienizado.write_text("este é o que a produção escreveu", encoding="utf-8")
+    cru.write_text("este nome nunca foi escrito pela produção", encoding="utf-8")
+    (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    assert not higienizado.exists()
+    assert cru.exists()
+    # A linha também saiu: a chave gravada usa a mesma higienização.
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+    assert resultado.windows_deleted == 2
+
+
+def test_as_chaves_do_log_da_atualizacao_existem_nos_tres_idiomas():
     """A suíte não tem teste de paridade de chaves de i18n; sem isto uma
     tradução faltando só apareceria para o usuário."""
     from gclaude_indexer.i18n import _TRANSLATIONS
 
     for idioma in ("pt", "en", "es"):
         assert "log.update.applied" in _TRANSLATIONS[idioma]
+        assert "log.update.orphan_window_file" in _TRANSLATIONS[idioma]

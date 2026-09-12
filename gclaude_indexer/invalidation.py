@@ -35,7 +35,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .paths import resolve_within
-from .update_plan import UpdatePlan, build_update_plan
+from .update_plan import UpdatePlan, build_update_plan, detect_changes
 from .windows_prep import sanitize_group_name, window_key, window_spans
 
 
@@ -46,6 +46,10 @@ class PlanExpired(RuntimeError):
     the screen. Applying a stale plan would write one thing having shown
     another, so this is a safety property rather than an error path: the
     caller is expected to rebuild the plan and show it again.
+
+    Nothing at all is written on this path — not even an event row. That
+    is why the check uses `detect_changes` rather than
+    `build_update_plan`, which can commit a layout-mismatch warning.
     """
 
 
@@ -54,9 +58,14 @@ class InvalidationResult:
     """What the application actually did — counted from the rows the
     database reported affected, not from what the plan predicted. The two
     can legitimately differ (a window the plan expected was never written
-    to the table), and the honest number is the one that happened."""
+    to the table), and the honest number is the one that happened.
+
+    `windows_orphaned` counts the `.txt` files whose row was deleted but
+    whose unlink failed — see the loop at the end of `apply_update_plan`
+    for why that is survivable and why it must still be visible."""
 
     windows_deleted: int = 0
+    windows_orphaned: int = 0
     pages_deleted: int = 0
     files_removed: int = 0
     files_reset: int = 0
@@ -112,11 +121,15 @@ def _group_page_count(conn: sqlite3.Connection, group_key: str) -> int:
 
     Never `file.page_count`: the column and the rows disagree in ordinary
     operation (a failed extraction leaves the old count behind, a re-scan
-    nulls it without deleting pages), and the geometry that must be
-    sliced here is the one the windows were built from — which
-    `windows_prep.pages_for_group` counted from these same rows.
-    Duplicates are excluded for the same reason `update_plan` excludes
-    them: they never entered a window.
+    nulls it without deleting pages), so the column would give a
+    different geometry from the one the index was actually built with.
+
+    The `duplicate` filter makes this count identical to the one
+    `update_plan._stored_geometry` sums — the geometry the plan's
+    `first_affected_window` is an index into. Without it the two could
+    disagree, and an index computed over one layout and applied to
+    another names the wrong window. (`pages_for_group` has no such
+    filter; it is not the reference here, the plan's geometry is.)
     """
     return conn.execute(
         "SELECT COUNT(*) FROM page JOIN file ON file.id = page.file_id"
@@ -184,10 +197,30 @@ def apply_update_plan(
 
     Raises `PlanExpired` — writing nothing — when the source folder no
     longer matches the one the plan was built from.
+
+    `plan` is used for one thing only: its fingerprint, as the witness
+    that the user confirmed this folder. Everything actually applied is
+    read from a plan derived here, for the reason spelled out below.
     """
-    current = build_update_plan(conn, config, language=language)
-    if current.fingerprint != plan.fingerprint:
+    # `detect_changes`, not `build_update_plan`: the latter can commit a
+    # layout-mismatch warning event, and an expired plan must leave the
+    # project byte-for-byte untouched. This is also the cheap half of the
+    # work — no group geometry, no window counting.
+    _changes, _unchanged, fingerprint = detect_changes(conn, config)
+    if fingerprint != plan.fingerprint:
         raise PlanExpired(plan.fingerprint)
+
+    # Only now, and never the caller's plan from here on.
+    # `first_affected_window` is an index into the layout that existed
+    # when the plan was photographed, while the spans sliced below are
+    # derived from the database as it stands at this instant. The
+    # fingerprint covers the *source folder*, not the index — another
+    # connection, or a step run from the progress screen, can move the
+    # index underneath a plan whose fingerprint still matches. Slicing
+    # fresh spans with stale indices would delete the wrong windows.
+    # Walking the folder twice is the price; applying is a rare action
+    # the user explicitly confirmed.
+    current = build_update_plan(conn, config, language=language)
 
     result = InvalidationResult()
     windows_dir = Path(config.output_folder) / "windows"
@@ -200,7 +233,7 @@ def apply_update_plan(
         # `first_affected_window` indexes the layout derived from the
         # pages as they are *now*. Deleting pages first would shift that
         # layout and make the index name a different window.
-        for group in plan.groups:
+        for group in current.groups:
             if group.discard_whole_group:
                 result.windows_deleted += _delete_whole_group(
                     conn, group.group_key, windows_dir, doomed_files
@@ -227,7 +260,7 @@ def apply_update_plan(
                     doomed_files,
                 )
 
-        for change in plan.removed:
+        for change in current.removed:
             file_id = _file_id(conn, change.relative_path)
             if file_id is None:
                 continue
@@ -235,9 +268,9 @@ def apply_update_plan(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
             conn.execute("DELETE FROM file WHERE id = ?", (file_id,))
-        result.files_removed = _record_removals(conn, plan)
+        result.files_removed = _record_removals(conn, current)
 
-        for change in plan.changed:
+        for change in current.changed:
             file_id = _file_id(conn, change.relative_path)
             if file_id is None:
                 continue
@@ -255,8 +288,8 @@ def apply_update_plan(
             )
             result.files_reset += 1
 
-        changed_paths = {change.relative_path for change in plan.changed}
-        for group in plan.groups:
+        changed_paths = {change.relative_path for change in current.changed}
+        for group in current.groups:
             for relative_path in group.files_to_renumber:
                 if relative_path in changed_paths:
                     continue
@@ -286,28 +319,50 @@ def apply_update_plan(
         conn.rollback()
         raise
 
-    # Only now, with the database committed. A failure here is logged by
-    # its absence and nothing more: the rows are already gone, so raising
-    # would tell the caller an update failed that in fact succeeded, and
-    # a leftover `.txt` is harmless — `prepare_windows` overwrites by name
-    # and skips by key.
+    # Only now, with the database committed. Raising here would tell the
+    # caller an update failed that in fact succeeded — the rows are
+    # already gone — so the failure is swallowed. It is not swallowed
+    # silently: `prepare_windows` skips writing a `.txt` that already
+    # exists (`if not file_path.exists()`), so a survivor left by a Drive
+    # lock can be reused as the text of a freshly created window with the
+    # same span. The warning below is what makes that visible until the
+    # regeneration step stops skipping.
+    orphans: list[str] = []
     for path in doomed_files:
         try:
             path.unlink(missing_ok=True)
         except OSError:
-            continue
+            orphans.append(path.name)
+    result.windows_orphaned = len(orphans)
 
-    record_event(
-        conn,
-        "update",
-        "info",
-        "log.update.applied",
-        {
-            "windows": result.windows_deleted,
-            "removed": result.files_removed,
-            "reset": result.files_reset,
-            "renumbered": result.files_renumbered,
-        },
-        language=language,
-    )
+    # The log must never be able to invalidate a committed update, so
+    # even recording it is guarded — `record_event` writes to the
+    # database and to the on-disk log.
+    try:
+        if orphans:
+            record_event(
+                conn,
+                "update",
+                "warning",
+                "log.update.orphan_window_file",
+                {"count": len(orphans), "files": ", ".join(sorted(orphans))},
+                language=language,
+            )
+
+        record_event(
+            conn,
+            "update",
+            "info",
+            "log.update.applied",
+            {
+                "windows": result.windows_deleted,
+                "removed": result.files_removed,
+                "reset": result.files_reset,
+                "renumbered": result.files_renumbered,
+            },
+            language=language,
+        )
+    except (sqlite3.Error, OSError):
+        pass
+
     return result
