@@ -1309,3 +1309,51 @@ def test_janela_existente_pula_reescrita_se_arquivo_existe(tmp_path):
 
     # Valida que o arquivo foi poupado da reescrita (marcador ainda la)
     assert txt_path.read_text(encoding="utf-8") == marcador
+
+
+# --- Task 9: removed documents in review.md --------------------------------
+
+
+def test_o_review_lista_os_documentos_removidos(tmp_path):
+    from gclaude_indexer.artifacts import generate_review_md
+
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    conn.execute(
+        "INSERT INTO removed_file (relative_path, name, removed_at)"
+        " VALUES ('velho.pdf', 'velho.pdf', '2026-09-12T10:00:00+00:00')"
+    )
+    conn.commit()
+    config = ProjectConfig(name="a", source_folder=str(tmp_path), output_folder=str(saida))
+
+    caminho = generate_review_md(conn, config, "pt")
+    texto = caminho.read_text(encoding="utf-8")
+
+    assert "velho.pdf" in texto
+    assert "2026-09-12T10:00:00+00:00" in texto
+
+
+def test_sem_remocoes_o_review_diz_que_nao_houve(tmp_path):
+    from gclaude_indexer.artifacts import generate_review_md
+
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    config = ProjectConfig(name="a", source_folder=str(tmp_path), output_folder=str(saida))
+
+    texto = generate_review_md(conn, config, "pt").read_text(encoding="utf-8")
+
+    assert "Nenhum documento removido" in texto
+
+
+def test_a_secao_de_removidos_existe_nos_tres_idiomas():
+    from gclaude_indexer.i18n import translate
+
+    for idioma in ("pt", "en", "es"):
+        for chave in (
+            "artifact.review.removed_section",
+            "artifact.review.removed_none",
+        ):
+            texto = translate(idioma, chave)
+            assert texto and not texto.startswith("artifact."), f"{idioma}/{chave}"

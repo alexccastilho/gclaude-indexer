@@ -243,6 +243,10 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
         "SELECT name, relative_path, error FROM file WHERE status = 'failed' ORDER BY relative_path"
     ).fetchall()
 
+    removals = conn.execute(
+        "SELECT name, relative_path, removed_at FROM removed_file ORDER BY removed_at DESC, name"
+    ).fetchall()
+
     error_events = conn.execute(
         "SELECT step, message, created_at FROM event WHERE level = 'error' ORDER BY id DESC LIMIT 50"
     ).fetchall()
@@ -283,6 +287,13 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     else:
         for failure in failures:
             lines.append(f"- `{failure['relative_path']}`: {failure['error']}")
+
+    lines += ["", f"## {t('artifact.review.removed_section')}"]
+    if not removals:
+        lines.append(t("artifact.review.removed_none"))
+    else:
+        for removal in removals:
+            lines.append(f"- `{removal['relative_path']}` ({removal['removed_at']})")
 
     lines += ["", f"## {t('artifact.review.errors_section')}"]
     if not error_events:
