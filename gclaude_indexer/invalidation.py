@@ -201,11 +201,15 @@ def apply_update_plan(
     `plan` is used for one thing only: its fingerprint, as the witness
     that the user confirmed this folder. Everything actually applied is
     read from a plan derived here, for the reason spelled out below.
+
+    The fingerprint is therefore checked twice, against two different
+    guarantees. Neither check subsumes the other.
     """
-    # `detect_changes`, not `build_update_plan`: the latter can commit a
-    # layout-mismatch warning event, and an expired plan must leave the
-    # project byte-for-byte untouched. This is also the cheap half of the
-    # work — no group geometry, no window counting.
+    # First check, before anything can write. `detect_changes`, not
+    # `build_update_plan`: the latter can commit a layout-mismatch
+    # warning event, and an expired plan must leave the project
+    # byte-for-byte untouched. This is also the cheap half of the work —
+    # no group geometry, no window counting.
     _changes, _unchanged, fingerprint = detect_changes(conn, config)
     if fingerprint != plan.fingerprint:
         raise PlanExpired(plan.fingerprint)
@@ -221,6 +225,17 @@ def apply_update_plan(
     # Walking the folder twice is the price; applying is a rare action
     # the user explicitly confirmed.
     current = build_update_plan(conn, config, language=language)
+
+    # Second check, and a different guarantee: `current` came from its
+    # own walk of the folder, so it is not the object the first check
+    # validated. A Drive-synced file that blinks out of existence between
+    # the two walks puts an entry in `current.removed` that the user
+    # never saw and never confirmed — and this function would then delete
+    # its pages, its `file` row, and log it as gone. The first check
+    # protects "an expired plan writes nothing"; this one protects
+    # "nothing is applied from a snapshot the user did not confirm".
+    if current.fingerprint != plan.fingerprint:
+        raise PlanExpired(plan.fingerprint)
 
     result = InvalidationResult()
     windows_dir = Path(config.output_folder) / "windows"

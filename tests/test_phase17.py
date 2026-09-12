@@ -830,6 +830,58 @@ def test_plano_vencido_e_recusado_sem_escrever_nada(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM event").fetchone()[0] == eventos_antes
 
 
+def test_arquivo_que_some_entre_as_duas_caminhadas_nao_e_apagado(tmp_path, monkeypatch):
+    """Aplicar faz duas caminhadas pela pasta: a da verificação e a de
+    dentro de `build_update_plan`. O plano aplicado vem da segunda, então
+    ele *não* é o objeto cuja impressão digital foi validada.
+
+    Um arquivo sincronizado que pisca fora de existência entre as duas —
+    coisa que cliente de Drive faz — entraria em `current.removed` sem
+    nunca ter sido visto nem confirmado pelo usuário, e teria as páginas,
+    a linha de `file` e o registro de remoção gravados. Aqui o plano
+    confirmado estava vazio: não havia nada a apagar, e mesmo assim um
+    documento sumiria.
+    """
+    from gclaude_indexer import update_plan as modulo_plano
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("fica.pdf", "pisca.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 2, group_key=grupo)
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+    assert plano.is_empty  # o usuário confirmou "nada a fazer"
+
+    # Só a segunda caminhada enxerga a pasta sem o arquivo: `invalidation`
+    # guarda a própria referência a `detect_changes`, importada no topo,
+    # enquanto `build_update_plan` resolve a sua no módulo `update_plan`.
+    deteccao_real = modulo_plano.detect_changes
+
+    def some_antes_da_segunda_caminhada(conn_interna, config_interna):
+        caminho = origem / "pisca.pdf"
+        if caminho.exists():
+            caminho.unlink()
+        return deteccao_real(conn_interna, config_interna)
+
+    monkeypatch.setattr(
+        modulo_plano, "detect_changes", some_antes_da_segunda_caminhada
+    )
+
+    with pytest.raises(PlanExpired):
+        apply_update_plan(conn, config, plano)
+
+    assert conn.execute(
+        "SELECT COUNT(*) FROM file WHERE relative_path = 'pisca.pdf'"
+    ).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 4
+    assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
+
+
 def test_o_plano_recebido_e_so_testemunha_da_impressao_digital(tmp_path):
     """Os índices do plano apontam para o layout que existia quando a
     fotografia foi tirada; os vãos fatiados aqui vêm do banco de agora. A
