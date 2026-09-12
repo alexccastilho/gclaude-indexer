@@ -506,8 +506,20 @@ def _intended_membership(
         if row["relative_path"] not in removed_paths:
             members.append((row["relative_path"], row["group_key"]))
 
+    # The rows this plan is about to delete are excluded on purpose: the
+    # set has to describe the index as `scan` will find it *after* the
+    # apply, not as it stands now. A rename reaches the plan as a removal
+    # of the old path plus a new file with identical bytes, so seeding
+    # from the whole table made the new path a duplicate of the row that
+    # is on its way out. It was then dropped from the intended
+    # membership, while `scan` — running after the old row was deleted —
+    # saw a genuinely new document, gave it a group, and inserted pages
+    # no window layout accounted for. Renaming a file to a name that
+    # sorts earlier shifted every sheet number after it, silently.
     known_hashes = {
-        row["sha256"] for row in conn.execute("SELECT sha256 FROM file")
+        row["sha256"]
+        for row in conn.execute("SELECT relative_path, sha256 FROM file")
+        if row["relative_path"] not in removed_paths
     }
 
     for change in new_files:

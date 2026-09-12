@@ -2575,3 +2575,104 @@ def test_reexecutar_sem_mudanca_nao_reprocessa_nada(tmp_path):
     assert plano.groups == ()
     assert dict(conn.execute("SELECT key, status FROM window")) == janelas_antes
     conn.close()
+
+
+def _folhas_por_documento(conn, group_key: str) -> list[tuple[str, list[int]]]:
+    """`(caminho, folhas)` do grupo, em ordem natural de caminho.
+
+    As folhas vêm de `page.reference` ("f. N"), e não de `page.number`,
+    que é a contagem interna de cada documento e seguiria contígua mesmo
+    com a numeração do grupo errada — justamente o defeito que este
+    trecho precisa enxergar.
+    """
+    linhas = conn.execute(
+        "SELECT file.relative_path AS relative_path, page.reference AS reference"
+        " FROM file JOIN page ON page.file_id = file.id"
+        " WHERE file.group_key = ? AND file.status != 'duplicate'",
+        (group_key,),
+    ).fetchall()
+
+    por_documento: dict[str, list[int]] = {}
+    for linha in linhas:
+        folha = int(linha["reference"].split(".", 1)[1])
+        por_documento.setdefault(linha["relative_path"], []).append(folha)
+
+    return sorted(
+        ((caminho, sorted(folhas)) for caminho, folhas in por_documento.items()),
+        key=lambda par: natural_sort_key(par[0]),
+    )
+
+
+def test_documento_renomeado_nao_e_duplicata_de_si_mesmo(tmp_path):
+    """Renomear não é acrescentar uma cópia.
+
+    Para o plano, uma renomeação chega como a remoção do caminho antigo
+    mais um arquivo novo com os mesmos bytes. Se o conjunto de hashes
+    conhecidos incluir a linha que a aplicação está prestes a apagar, o
+    caminho novo bate com o hash do caminho velho, é classificado como
+    duplicata e sai da associação pretendida — enquanto o `scan`, que
+    roda depois de a linha antiga ter sido apagada, vê um documento
+    genuinamente novo, dá um grupo a ele e insere páginas que nenhuma
+    janela previu.
+
+    O nome novo ordena **antes** dos vizinhos de propósito: assim a
+    renomeação desloca a numeração de folhas de todo o resto do grupo, e
+    o estrago aparece como faixas de folhas disputadas por dois
+    documentos, em vez de ficar escondido no fim do acervo.
+    """
+    from gclaude_indexer.invalidation import apply_update_plan
+    from gclaude_indexer.scanning import scan
+    from gclaude_indexer.update_plan import _intended_membership, build_update_plan
+
+    origem = tmp_path / "origem"
+    _montar_acervo_inicial(origem)
+
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn, config = _rodar_pipeline_completo(origem, saida)
+
+    (grupo,) = {
+        linha["group_key"]
+        for linha in conn.execute(
+            "SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL"
+        )
+    }
+
+    # A renomeação: mesmo conteúdo, nome que passa a ordenar primeiro.
+    (origem / "03-carta.pdf").rename(origem / "00-carta.pdf")
+
+    plano = build_update_plan(conn, config)
+
+    assert {mudanca.relative_path for mudanca in plano.new} == {"00-carta.pdf"}
+    assert {mudanca.relative_path for mudanca in plano.removed} == {"03-carta.pdf"}
+
+    pretendidos = dict(
+        _intended_membership(
+            conn,
+            config,
+            Path(config.source_folder).resolve(),
+            list(plano.new),
+            {mudanca.relative_path for mudanca in plano.removed},
+        )
+    )
+
+    # O que quebrava: o caminho novo era descartado como duplicata do seu
+    # próprio registro antigo, e o plano previa um grupo sem ele.
+    assert pretendidos.get("00-carta.pdf") == grupo
+    assert "03-carta.pdf" not in pretendidos
+
+    apply_update_plan(conn, config, plano)
+    scan(conn, config)
+    _etapas_depois_do_scan(conn, config)
+
+    documentos = _folhas_por_documento(conn, grupo)
+    conn.close()
+
+    assert [caminho for caminho, _ in documentos] == [
+        "00-carta.pdf", "01-contrato.pdf", "02-recibo.pdf",
+    ]
+
+    # Contíguas de 1 a N: nenhuma folha repetida, portanto nenhum par de
+    # documentos reivindicando a mesma faixa, e nenhum buraco.
+    todas = [folha for _, folhas in documentos for folha in folhas]
+    assert todas == list(range(1, len(todas) + 1)), documentos
