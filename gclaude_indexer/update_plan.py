@@ -22,6 +22,13 @@ guarantee above still holds for everything the update could damage — but
 the write is real, and staying silent about a geometry the plan cannot
 trust would be worse.
 
+Callers that must not write *at all* — the two GET routes, which run on
+every open of the Execution screen — pass `record_warnings=False`. The
+promise "the diagnosis never writes" is then categorical rather than
+merely usually true: it does not depend on the mismatch staying rare.
+The warning belongs to the caller that is about to act on the geometry
+(`apply_update_plan`), not to the one that is only looking at it.
+
 **Detection is cheap on purpose.** Hashing every file of a Drive-synced
 collection on each open would force the client to download files the user
 never asked for. Size and modification time decide first; the hash is
@@ -41,7 +48,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .paths import natural_sort_key
 from .scanning import compute_hash, derive_group_key, source_files
-from .windows_prep import window_spans
+from .windows_prep import sanitize_group_name, window_key, window_spans
 
 
 class SourceFolderUnavailable(RuntimeError):
@@ -342,29 +349,60 @@ def _files_to_renumber(
     return tuple(renumber)
 
 
-def _stored_window_count(conn: sqlite3.Connection, group_key: str) -> int:
-    return conn.execute(
-        "SELECT COUNT(*) FROM window WHERE group_key = ?", (group_key,)
-    ).fetchone()[0]
+def _stored_window_keys(conn: sqlite3.Connection, group_key: str) -> set[str]:
+    """The keys the `window` table actually holds for the group."""
+    return {
+        row["key"]
+        for row in conn.execute(
+            "SELECT key FROM window WHERE group_key = ?", (group_key,)
+        )
+    }
 
 
-def _layout_disagrees(stored_count: int, derived_count: int) -> bool:
+def _derived_window_keys(group_key: str, spans: list[tuple[int, int]]) -> set[str]:
+    """The keys `prepare_windows` would write for `spans`.
+
+    Built by the same two functions that step uses — `sanitize_group_name`
+    then `window_key` — rather than by a second formatting of the same
+    numbers here, for the reason this module exists to respect: a value
+    derived by one set of rules and consumed by another is the defect
+    class this feature keeps producing.
+    """
+    base_name = sanitize_group_name(group_key)
+    return {window_key(base_name, start, end) for start, end in spans}
+
+
+def _layout_disagrees(stored_keys: set[str], derived_keys: set[str]) -> bool:
     """Whether the layout on record contradicts the one derived here.
 
     Nothing else in this module reads the `window` table: the counts it
     reports are predictions about a layout recomputed from the pages. A
     prediction with nothing confirming it is how a wrong geometry stays
-    invisible, so this compares the derived span count against the
-    windows actually stored for the group.
+    invisible, so this checks the stored rows against the derived ones.
 
-    A group with *no* stored windows is not a disagreement. It has simply
-    never been through `prepare_windows` — normal before the first
-    classification — and there is no layout to contradict. Reporting it
-    as a mismatch would discard nothing while telling the user that
-    `derived_count` windows are going back to the model, inflating the
-    very number this feature exists to keep honest.
+    Keys, and not counts. A stored *subset* of the derived keys is the
+    normal state immediately after a successful apply: the invalidation
+    deleted the tail windows and `prepare_windows` has not run yet to
+    recreate them, so the group legitimately holds fewer rows than its
+    pages imply — and every row it does hold is one the derived layout
+    still names, at the same span, over the same pages. Comparing counts
+    read that as corruption and discarded the whole group, which on the
+    Execution screen is one click away from the previous apply: the
+    banner fires before `scan` has run, the plan is not empty yet, and a
+    second Update threw away every preserved window and every
+    `raw_items.jsonl` line of the group. That is option A of §5, the one
+    the design rejected.
+
+    A disagreement is therefore a stored key the derived layout does not
+    know about: a row that no recomputed span accounts for, which is
+    exactly the row `spans[first_affected_window:]` could never reach.
+
+    A group with *no* stored windows is not a disagreement either (the
+    empty set has nothing the derived layout lacks). It has simply never
+    been through `prepare_windows` — normal before the first
+    classification — and there is no layout to contradict.
     """
-    return stored_count != 0 and stored_count != derived_count
+    return bool(stored_keys - derived_keys)
 
 
 def _stored_geometry(
@@ -452,12 +490,18 @@ def build_update_plan(
     conn: sqlite3.Connection,
     config: ProjectConfig,
     language: str | None = None,
+    record_warnings: bool = True,
 ) -> UpdatePlan:
     """The whole plan: what changed, and what invalidating it would cost.
 
     `language` is used only for the layout-mismatch warning described in
     the module docstring; it falls back to `DEFAULT_LANGUAGE` like every
     other `record_event` caller that cannot see the interface's choice.
+
+    `record_warnings=False` makes the call write nothing whatsoever — the
+    mode the read-only GET routes use, so that opening a screen can never
+    modify the project. The plan returned is identical either way; only
+    the log entry is suppressed.
     """
     changes, unchanged, fingerprint = detect_changes(conn, config)
 
@@ -492,9 +536,11 @@ def build_update_plan(
         page_count = sum(count for _, count in stored)
         old_spans = window_spans(page_count, config.pages_per_window, config.overlap)
 
-        stored_windows = _stored_window_count(conn, group_key)
+        stored_keys = _stored_window_keys(conn, group_key)
+        derived_keys = _derived_window_keys(group_key, old_spans)
+        stored_windows = len(stored_keys)
 
-        if _layout_disagrees(stored_windows, len(old_spans)):
+        if _layout_disagrees(stored_keys, derived_keys):
             # The derived layout is not the one on record, so no claim
             # about which windows survive can be trusted. Discarding the
             # whole group is the conservative-correct answer; the event
@@ -505,18 +551,19 @@ def build_update_plan(
             # The counts below are the stored ones, not the derived
             # ones: the caller will delete by `group_key`, so what goes
             # back to the model is every row the table holds.
-            record_event(
-                conn,
-                "update",
-                "warning",
-                "log.update.layout_mismatch",
-                {
-                    "group": group_key,
-                    "stored": stored_windows,
-                    "derived": len(old_spans),
-                },
-                language=language,
-            )
+            if record_warnings:
+                record_event(
+                    conn,
+                    "update",
+                    "warning",
+                    "log.update.layout_mismatch",
+                    {
+                        "group": group_key,
+                        "stored": stored_windows,
+                        "derived": len(old_spans),
+                    },
+                    language=language,
+                )
             discard_whole_group = True
             affected = 0
             discarded = stored_windows

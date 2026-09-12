@@ -1043,6 +1043,61 @@ def test_layout_divergente_apaga_todas_as_janelas_gravadas_do_grupo(tmp_path):
     assert not so_no_gravado.exists()  # inalcançável vão a vão
 
 
+def test_aplicar_duas_vezes_nao_descarta_o_que_a_primeira_preservou(tmp_path):
+    """O estado que uma aplicação bem-sucedida deixa não é layout corrompido.
+
+    Depois de aplicar, o grupo guarda menos janelas do que as páginas
+    dariam: a cauda foi apagada e `prepare_windows` ainda não rodou para
+    recriá-la. Comparando *contagens*, o plano seguinte lia isso como
+    contradição e mandava descartar o grupo inteiro — e esse plano
+    seguinte está a um clique de distância, porque `update_apply`
+    redireciona para a tela de execução, cujo aviso roda ao carregar e
+    ainda enxerga o documento alterado (quem atualiza o hash é o `scan`).
+    O segundo "Atualizar" jogava fora toda janela preservada e toda linha
+    de `raw_items.jsonl` do grupo: exatamente a opção A que o §5 do
+    design recusa.
+
+    Comparando *chaves*, um conjunto gravado contido no derivado é o
+    estado normal de meio-caminho, e não uma contradição.
+    """
+    from gclaude_indexer.events import list_events
+    from gclaude_indexer.windows_prep import window_key as _chave
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("01.pdf", "02.pdf", "03.pdf", "04.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=40, window_size=16, overlap=2)
+    base = sanitize_group_name(grupo)
+    preservada = _chave(base, 0, 16)
+    bruto = _escrever_raw_items(saida, [(preservada, grupo)])
+    # `03.pdf` começa na página 20: a primeira janela sobrevive.
+    (origem / "03.pdf").write_text("03 corrigido e bem maior", encoding="utf-8")
+    config = _config(origem, saida)
+
+    apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    # Pré-condição: a primeira aplicação preservou mesmo alguma coisa —
+    # sem isso as asserções seguintes seriam verdadeiras à toa.
+    assert [linha[0] for linha in conn.execute("SELECT key FROM window")] == [preservada]
+
+    segundo = build_update_plan(conn, config)
+
+    assert segundo.groups[0].discard_whole_group is False
+    chaves = [evento["message_key"] for evento in list_events(conn)]
+    assert "log.update.layout_mismatch" not in chaves
+
+    apply_update_plan(conn, config, segundo)
+
+    assert [linha[0] for linha in conn.execute("SELECT key FROM window")] == [preservada]
+    assert _janelas_do_raw_items(bruto) == [preservada]
+
+
 def test_chave_que_escapa_da_pasta_de_janelas_nao_apaga_nada_fora(tmp_path):
     """A chave do grupo pode vir de uma regex sobre um nome de arquivo que
     o acervo trouxe: é dado, não constante. Um `.txt` órfão custa nada;
@@ -1775,6 +1830,68 @@ def test_o_diagnostico_nao_escreve_no_banco(tmp_path, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == paginas_antes
     assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == janelas_antes
     assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == removidos_antes
+
+
+def test_o_diagnostico_nao_grava_nem_o_aviso_de_layout_divergente(tmp_path, monkeypatch):
+    """A única escrita que o plano se permitia era o aviso de layout
+    divergente, e ela alcançava as rotas GET.
+
+    O design promete que o diagnóstico não escreve. Tornar o aviso raro
+    não é a mesma coisa que a promessa: aqui a rota é posta justamente
+    no estado que o dispara, e mesmo assim nenhuma linha de `event` pode
+    nascer. Quem avisa é `apply_update_plan`, que está escrevendo de
+    qualquer maneira.
+    """
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    origem = tmp_path / "origem"
+
+    grupo, file_id = conn.execute(
+        "SELECT group_key, id FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()
+    conn.execute(
+        "UPDATE file SET status = 'extracted', page_count = 3 WHERE id = ?", (file_id,)
+    )
+    for numero in range(1, 4):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+            (file_id, numero, f"f. {numero}"),
+        )
+    # 3 páginas dariam uma janela; o índice guarda o layout de 500 (36).
+    _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
+    conn.commit()
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+    eventos_antes = conn.execute("SELECT COUNT(*) FROM event").fetchone()[0]
+
+    resposta = cliente.get(f"/projects/{projeto_id}/update")
+
+    assert resposta.status_code == 200
+    assert conn.execute("SELECT COUNT(*) FROM event").fetchone()[0] == eventos_antes
+
+
+def test_o_aviso_cala_enquanto_o_pipeline_tem_trabalho_pendente(tmp_path, monkeypatch):
+    """Depois de aplicar, a ação honesta é "rodar as etapas", não
+    "atualizar de novo".
+
+    A invalidação deixa o acervo cheio de trabalho que o pipeline já sabe
+    fazer, e os documentos novos só entram na tabela `file` quando o
+    `scan` roda — então o plano continua não-vazio e o aviso convidaria a
+    uma segunda atualização sobre um estado meio aplicado.
+    """
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    origem = tmp_path / "origem"
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+
+    # `_app_com_projeto` roda só o `scan`: "a.pdf" está 'discovered', ou
+    # seja, a conversão ainda tem o que fazer.
+    assert cliente.get(f"/projects/{projeto_id}/update/banner").text.strip() == ""
+
+    conn.execute("UPDATE file SET status = 'extracted' WHERE relative_path = 'a.pdf'")
+    conn.commit()
+
+    # Sem nada pendente, o aviso volta: a supressão é de estado, não de
+    # sempre — senão o teste passaria com o aviso removido de vez.
+    assert cliente.get(f"/projects/{projeto_id}/update/banner").text.strip() != ""
 
 
 def test_o_post_com_plano_vencido_e_recusado(tmp_path, monkeypatch):

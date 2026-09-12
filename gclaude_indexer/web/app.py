@@ -592,6 +592,37 @@ def run_screen(request: Request, project_id: int):
     )
 
 
+def _pipeline_has_pending_work(conn) -> bool:
+    """Whether the existing five steps still have something to do.
+
+    The predicate is "some step would process a row if it ran now", read
+    with the same criteria the steps themselves use: `convert()` selects
+    `status = 'discovered'`, `extract_pages()` selects `'converted'`, and
+    the classification engines select `window.status = 'pending'`. It is
+    deliberately *not* "did an update just happen": nothing records that,
+    and inferring it from a flag would be one more value derived twice.
+
+    Statuses left out on purpose. `'extracted'` is a finished file;
+    `'failed'`, `'skipped'` and `'duplicate'` are terminal for this run —
+    no step picks them up, so a collection holding only those has no
+    pending work and the notice is honest again.
+
+    Used only to silence the update banner. After an apply the collection
+    is full of work the pipeline already knows how to do, and telling the
+    user to update again — before `scan` has even brought the new
+    documents into the `file` table — points at the one action that
+    cannot help.
+    """
+    pending_file = conn.execute(
+        "SELECT 1 FROM file WHERE status IN ('discovered', 'converted') LIMIT 1"
+    ).fetchone()
+    if pending_file is not None:
+        return True
+    return conn.execute(
+        "SELECT 1 FROM window WHERE status = 'pending' LIMIT 1"
+    ).fetchone() is not None
+
+
 @app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
 def update_banner(request: Request, project_id: int):
     """The "the folder changed" notice on the Execution screen.
@@ -602,10 +633,15 @@ def update_banner(request: Request, project_id: int):
     source folder renders nothing — the screen is not the place to shout
     about a disconnected drive, and `SourceFolderUnavailable` never
     becomes a removal proposal.
+
+    `record_warnings=False`: this runs on every open of the Execution
+    screen, so it must not be able to write a single row.
     """
     with _open_project(project_id) as (entry, config, conn):
+        if _pipeline_has_pending_work(conn):
+            return HTMLResponse("")
         try:
-            plan = build_update_plan(conn, config)
+            plan = build_update_plan(conn, config, record_warnings=False)
         except SourceFolderUnavailable:
             return HTMLResponse("")
         if plan.is_empty:
@@ -618,10 +654,14 @@ def update_banner(request: Request, project_id: int):
 
 @app.get("/projects/{project_id}/update", response_class=HTMLResponse)
 def update_screen(request: Request, project_id: int):
-    """The confirmation. Read-only: it never writes to the project."""
+    """The confirmation. Read-only: it never writes to the project.
+
+    `record_warnings=False` is what makes that categorical rather than
+    merely usual — see `build_update_plan`.
+    """
     with _open_project(project_id) as (entry, config, conn):
         try:
-            plan = build_update_plan(conn, config)
+            plan = build_update_plan(conn, config, record_warnings=False)
         except SourceFolderUnavailable:
             return render(
                 request, "update_project.html",
@@ -644,13 +684,19 @@ async def update_apply(request: Request, project_id: int):
     testable without a web server and keeps this route from walking the
     folder a third time. The route rebuilds the plan the form refers to,
     hands it over, and turns a refusal into a screen.
+
+    `record_warnings=False` here too, and for a different reason than on
+    the GET routes: `apply_update_plan` builds its own plan and records
+    the layout warning itself, so leaving it on would log the same
+    mismatch twice for one action — and once on a refusal that applied
+    nothing at all.
     """
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
     form = await request.form()
 
     with _open_project(project_id) as (entry, config, conn):
         try:
-            plan = build_update_plan(conn, config)
+            plan = build_update_plan(conn, config, record_warnings=False)
         except SourceFolderUnavailable:
             return render(
                 request, "update_project.html",
