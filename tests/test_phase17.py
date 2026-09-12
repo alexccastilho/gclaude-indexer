@@ -436,6 +436,51 @@ def test_grupo_sem_janela_nao_quebra():
     assert first_affected_window([], 0) == 0
 
 
+def test_ultima_janela_truncada_e_descartada_quando_o_acervo_cresce():
+    """Metade 1 da regra. 500 páginas em janela 16 / sobreposição 2: a
+    última vai de (490, 500) — só 10 páginas, truncada pelo total. Com
+    mais páginas ela vira (490, 506): muda de chave e precisa voltar ao
+    modelo."""
+    antigas = window_spans(500, 16, 2)
+    ultima_inicio, ultima_fim = antigas[-1]
+    assert ultima_fim - ultima_inicio < 16  # truncada
+
+    indice = first_affected_window(antigas, 500, 16)
+
+    assert indice == 35
+    assert len(antigas) - indice == 1   # 1 descartada
+    assert indice == 35                 # 35 preservadas
+    assert antigas[indice:] == [(490, 500)]
+
+
+def test_ultima_janela_cheia_sobrevive_ao_acrescimo():
+    """Metade 2 da regra. 30 páginas na mesma configuração dão
+    [(0, 16), (14, 30)]: a última tem 16 páginas, não foi truncada, e o
+    total maior recalcula o mesmo (14, 30). Nada a descartar — descartá-la
+    seria pagar o modelo por um texto que não mudou."""
+    antigas = window_spans(30, 16, 2)
+    novas = window_spans(40, 16, 2)
+    ultima_inicio, ultima_fim = antigas[-1]
+    assert ultima_fim - ultima_inicio == 16  # cheia
+
+    indice = first_affected_window(antigas, 30, 16)
+
+    assert indice == len(antigas)       # nada descartado
+    assert antigas[indice:] == []       # fatiar no limite não estoura
+    assert max(0, len(antigas) - indice) == 0   # windows_discarded
+    assert indice == 2                          # windows_kept
+    assert novas[: len(antigas)] == antigas     # as antigas continuam lá
+
+
+def test_acervo_de_uma_janela_so_e_tratado_como_truncado():
+    """Um grupo menor que uma janela dá [(0, n)], e o layout sozinho não
+    diz se n é o total ou o tamanho da janela. Sem `window_size` a função
+    escolhe o lado seguro: descartar."""
+    assert first_affected_window([(0, 10)], 10) == 0        # truncada, inferida
+    assert first_affected_window([(0, 10)], 10, 16) == 0    # truncada, explícita
+    assert first_affected_window([(0, 16)], 16, 16) == 1    # cheia: preservada
+
+
 def test_o_plano_conta_janelas_descartadas_e_preservadas(tmp_path):
     """Acervo de 30 páginas em 3 arquivos de 10, janela 16 / sobreposição 2.
     Um quarto arquivo entra no fim."""
@@ -459,7 +504,15 @@ def test_o_plano_conta_janelas_descartadas_e_preservadas(tmp_path):
     grupo = plano.groups[0]
     assert grupo.group_key == grupo_esperado
     assert grupo.windows_kept + grupo.windows_discarded == len(window_spans(30, 16, 2))
-    assert grupo.windows_discarded >= 1
+    # Zero descartadas é a resposta certa para *este* acervo, não uma
+    # omissão: 30 páginas em janela 16 / sobreposição 2 dão
+    # [(0, 16), (14, 30)], e a última tem 16 páginas — cheia, não
+    # truncada. Acrescentar um quarto documento no fim recalcula esse
+    # mesmo (14, 30) idêntico, então reclassificá-lo seria pagar o modelo
+    # por um texto que não mudou. Compare com o acervo de 500 páginas,
+    # cuja última janela tem 10 e por isso é descartada.
+    assert grupo.windows_discarded == 0
+    assert grupo.windows_kept == 2
     assert plano.is_empty is False
     assert plano.files_needing_ocr == 1
     assert plano.windows_to_reclassify == grupo.windows_discarded

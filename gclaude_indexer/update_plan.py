@@ -170,22 +170,71 @@ class UpdatePlan:
         return sum(group.windows_discarded for group in self.groups)
 
 
+def _infer_window_size(old_spans: list[tuple[int, int]]) -> int:
+    """Window size implied by a layout, when the caller did not say.
+
+    Exact whenever the group has two or more windows: a second window
+    exists only if the first one did not already reach the end, so
+    `spans[0]` is necessarily full-size and its width *is* the window
+    size. With a single window the layout is `(0, page_count)` and the
+    two cases are indistinguishable — a group shorter than one window and
+    a group exactly one window long look identical. There we return a
+    size one larger, which reads as "truncated" and discards that single
+    window: the conservative answer, and the right one except in the
+    knife-edge case where the collection happens to be exactly one window
+    long.
+    """
+    if len(old_spans) == 1:
+        start, end = old_spans[0]
+        return end - start + 1
+    return max(end - start for start, end in old_spans)
+
+
 def first_affected_window(
-    old_spans: list[tuple[int, int]], first_divergent_page: int
+    old_spans: list[tuple[int, int]],
+    first_divergent_page: int,
+    window_size: int | None = None,
 ) -> int:
     """Index of the first window that must be discarded.
 
+    Everything from this index on goes back to the model; everything
+    before it is preserved. The return value may equal `len(old_spans)`,
+    meaning *nothing* is discarded — callers must slice (`spans[index:]`,
+    which is empty) rather than index.
+
     Two conditions, not one. The obvious one is the window that covers the
-    first divergent page. The one that is easy to miss: the **last**
-    window of a group is clamped by the total page count
-    (`min(start + window_size, page_count)`), so it can change extent even
-    when no page before it moved — which is exactly what happens when a
-    document is appended to the end of the group. That is why the fallback
-    below returns the last index instead of `len(old_spans)`: with 500
-    pages at window 16 / overlap 2 the layout is 36 windows ending at
-    `(490, 500)`; appending 10 pages makes that window `(490, 506)` and
-    adds `(504, 510)`, so exactly one old window is discarded and 35 are
-    preserved.
+    first divergent page: the loop below.
+
+    The one that is easy to miss: the **last** window of a group is
+    clamped by the total page count (`min(start + window_size,
+    page_count)`), so it can change extent even when no page before it
+    moved. The fallback covers that, and it is reached only in the
+    pure-append case — no span satisfies `end > first_divergent_page`
+    only when `first_divergent_page >= page_count`, and `_divergence_page`
+    returns the full page count only when every stored file matched the
+    intended list positionally and none of them changed. A removal cannot
+    land here: it puts the divergence at the removed file's start offset,
+    which is below `page_count`, so the loop fires instead.
+
+    On a pure append the last window survives exactly when it was
+    *full-size*. If `end == start + window_size`, then `start +
+    window_size <= old_count <= new_count`, so the new layout re-derives
+    the identical `end` at the same `start` — same span, same key, same
+    pages, and discarding it would re-run the model over text that
+    provably did not change. If instead it was truncated (`end - start <
+    window_size`, i.e. it hit the clamp), more pages make `end` grow, the
+    key changes, and it must go.
+
+    Worked example, both halves: 500 pages at window 16 / overlap 2 gives
+    36 windows whose last is `(490, 500)` — truncated, 10 pages wide — so
+    appending 10 pages discards exactly 1 and preserves 35. But 30 pages
+    at the same settings gives `[(0, 16), (14, 30)]`, whose last is
+    full-size; appending there discards nothing.
+
+    `window_size` is optional only so the pure function stays callable
+    from a test with a layout and nothing else; pass it whenever the
+    configuration is at hand, because a one-window group cannot be read
+    back from its layout (see `_infer_window_size`).
     """
     if not old_spans:
         return 0
@@ -193,7 +242,14 @@ def first_affected_window(
     for index, (_start, end) in enumerate(old_spans):
         if end > first_divergent_page:
             return index
-    return len(old_spans) - 1
+
+    if window_size is None:
+        window_size = _infer_window_size(old_spans)
+
+    last_start, last_end = old_spans[-1]
+    if last_end - last_start < window_size:
+        return len(old_spans) - 1
+    return len(old_spans)
 
 
 def _divergence_page(
@@ -323,7 +379,9 @@ def build_update_plan(conn: sqlite3.Connection, config: ProjectConfig) -> Update
         divergent_page = _divergence_page(stored, intended, changed_paths)
         page_count = sum(count for _, count in stored)
         old_spans = window_spans(page_count, config.pages_per_window, config.overlap)
-        affected = first_affected_window(old_spans, divergent_page)
+        affected = first_affected_window(
+            old_spans, divergent_page, config.pages_per_window
+        )
 
         groups.append(
             GroupInvalidation(
