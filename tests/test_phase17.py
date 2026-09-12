@@ -1872,6 +1872,33 @@ def _sem_carimbo(texto: str) -> str:
     )
 
 
+def _secao_de_removidos(review_md: str) -> str:
+    """O trecho de `review.md` entre o título da seção de removidos e o da
+    seção seguinte.
+
+    Recebe o texto **bruto**, nunca o filtrado. `generate_review_md` (
+    `artifacts.py:295`) renderiza cada remoção numa linha só — ``- `nome`
+    (instante ISO)`` — e `_sem_carimbo` descarta a linha inteira, isto é,
+    justamente a única que nomeia o arquivo. O filtro existe para tornar
+    justa a comparação de igualdade dos outros três artefatos; uma
+    verificação de conteúdo não precisa dele e só é prejudicada por ele.
+
+    E o recorte por seção, em vez de procurar o nome no arquivo todo:
+    `review.md` termina com até cinquenta eventos de erro, e um deles
+    citando o documento faria uma busca solta passar sem que a seção de
+    removidos dissesse coisa alguma.
+    """
+    from gclaude_indexer.i18n import translate
+
+    inicio = f"## {translate('pt', 'artifact.review.removed_section')}"
+    fim = f"## {translate('pt', 'artifact.review.errors_section')}"
+
+    _antes, marcador, resto = review_md.partition(inicio)
+    assert marcador, "review.md sem a seção de documentos removidos"
+    secao, _marcador_final, _depois = resto.partition(fim)
+    return secao
+
+
 def _montar_acervo_inicial(origem: Path) -> None:
     origem.mkdir()
     _pdf_de_paginas(origem / "01-contrato.pdf", "CONTRATO", 10)
@@ -1929,12 +1956,25 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
     conn_completo.close()
 
     for nome in ("index.md", "timeline.md", "review.md", "project_instructions.md"):
+        if nome == "review.md":
+            # O único que diverge legitimamente: o incremental sabe da
+            # remoção e a relata; o do zero nunca viu o arquivo existir.
+            # A asserção é a assimetria inteira — está na seção de
+            # removidos de um lado, e em lado nenhum do outro — e corre
+            # sobre o texto bruto, pela razão que `_secao_de_removidos`
+            # explica.
+            removidos_atualizado = _secao_de_removidos(
+                (incremental / nome).read_text(encoding="utf-8")
+            )
+            removidos_do_zero = _secao_de_removidos(
+                (completo / nome).read_text(encoding="utf-8")
+            )
+            assert "03-carta.pdf" in removidos_atualizado
+            assert "03-carta.pdf" not in removidos_do_zero
+            continue
+
         atualizado = _sem_carimbo((incremental / nome).read_text(encoding="utf-8"))
         do_zero = _sem_carimbo((completo / nome).read_text(encoding="utf-8"))
-        if nome == "review.md":
-            # O incremental sabe da remoção; o do zero nunca viu o arquivo.
-            assert "03-carta.pdf" in atualizado
-            continue
         assert atualizado == do_zero, f"{nome} diverge"
 
 
