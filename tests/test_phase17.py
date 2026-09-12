@@ -78,3 +78,48 @@ def test_o_caminhamento_ignora_lixo_de_sistema_e_a_pasta_de_saida(tmp_path):
     encontrados = [p.relative_to(origem).as_posix() for p in source_files(origem, saida)]
 
     assert encontrados == ["A.pdf", "b.pdf", "sub/c.pdf"]
+
+
+def test_quinhentas_paginas_dao_trinta_e_seis_janelas():
+    from gclaude_indexer.windows_prep import window_key, window_spans
+
+    spans = window_spans(500, 16, 2)
+
+    assert len(spans) == 36
+    assert spans[0] == (0, 16)
+    assert spans[-1] == (490, 500)
+
+
+def test_dez_paginas_no_fim_mudam_so_a_cauda():
+    from gclaude_indexer.windows_prep import window_spans
+
+    antes = window_spans(500, 16, 2)
+    depois = window_spans(510, 16, 2)
+
+    assert antes[:35] == depois[:35]      # 35 janelas idênticas
+    assert antes[35] == (490, 500)        # a última de antes
+    assert depois[35] == (490, 506)       # mudou: cobre 6 páginas novas
+    assert depois[36] == (504, 510)       # e nasceu uma
+    assert len(depois) == 37
+
+
+def test_a_chave_da_janela_e_posicional_e_com_zeros_a_esquerda():
+    from gclaude_indexer.windows_prep import window_key
+
+    assert window_key("processo", 490, 500) == "processo::000491-000500"
+
+
+def test_acervo_vazio_nao_gera_janela():
+    from gclaude_indexer.windows_prep import window_spans
+
+    assert window_spans(0, 16, 2) == []
+
+
+def test_sobreposicao_maior_que_a_janela_nao_trava():
+    """Passo zero ou negativo faria laço infinito. O piso de 1 impede."""
+    from gclaude_indexer.windows_prep import window_spans
+
+    spans = window_spans(10, 4, 9)
+
+    assert len(spans) <= 10
+    assert spans[-1][1] == 10
