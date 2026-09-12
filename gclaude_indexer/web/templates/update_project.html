@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('update.title') }} — {{ config.name }}{% endblock %}
+{% block content %}
+<h1>{{ t('update.title') }} — {{ config.name }}</h1>
+<p class="breadcrumb">
+  <a href="/projects/{{ project.id }}/run">{{ m.icon('back') }} {{ t('update.cancel') }}</a>
+</p>
+
+{% if error %}
+  <p class="error">{{ t(error) }}</p>
+{% elif plan.is_empty %}
+  <p>{{ t('update.nothing_changed') }}</p>
+{% else %}
+  <h2>{{ t('update.new') }} ({{ plan.new | length }})</h2>
+  <ul>{% for change in plan.new %}<li><code>{{ change.relative_path }}</code></li>{% endfor %}</ul>
+
+  <h2>{{ t('update.changed') }} ({{ plan.changed | length }})</h2>
+  <ul>{% for change in plan.changed %}<li><code>{{ change.relative_path }}</code></li>{% endfor %}</ul>
+
+  <h2>{{ t('update.removed') }} ({{ plan.removed | length }})</h2>
+  <ul>{% for change in plan.removed %}<li><code>{{ change.relative_path }}</code></li>{% endfor %}</ul>
+
+  <h2>{{ t('update.cost_title') }}</h2>
+  <ul>
+    <li>{{ t('update.files_ocr', n=plan.files_needing_ocr) }}</li>
+    <li>{{ t('update.windows_discarded', n=plan.windows_to_reclassify) }}</li>
+    <li>{{ t('update.windows_kept', n=plan.groups | sum(attribute='windows_kept')) }}</li>
+    <li>{{ t('update.new_windows_unknown') }}</li>
+  </ul>
+
+  <form method="post" action="/projects/{{ project.id }}/update">
+    <input type="hidden" name="fingerprint" value="{{ plan.fingerprint }}">
+    <button type="submit" class="button-primary">{{ t('update.confirm') }}</button>
+  </form>
+{% endif %}
+{% endblock %}

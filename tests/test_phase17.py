@@ -1357,3 +1357,94 @@ def test_a_secao_de_removidos_existe_nos_tres_idiomas():
         ):
             texto = translate(idioma, chave)
             assert texto and not texto.startswith("artifact."), f"{idioma}/{chave}"
+
+
+# --- Task 10: rotas, tela de confirmação e aviso na execução ---------------
+
+
+def _app_com_projeto(tmp_path, monkeypatch):
+    """Servidor de teste com um projeto registrado e uma pasta de origem.
+
+    Isola o catálogo local (`catalog.machine_local_folder`) numa pasta
+    descartável, no mesmo padrão já usado por
+    `test_tela_de_execucao_escreve_o_claude_md_do_motor_claude_code`
+    (`tests/test_phase14.py`): sem isso, `register_project`/`find_project`
+    escreveriam em `%LOCALAPPDATA%\\GClaudeIndexer\\projects.json` de
+    verdade — o catálogo real desta máquina, não uma fixture.
+    """
+    import gclaude_indexer.catalog as catalogo_mod
+    from fastapi.testclient import TestClient
+
+    from gclaude_indexer.catalog import register_project
+    from gclaude_indexer.config import config_to_json
+    from gclaude_indexer.web.app import app
+
+    monkeypatch.setattr(catalogo_mod, "machine_local_folder", lambda: tmp_path / "local")
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+
+    conn = db.connect(saida / "project.db")
+    db.init_schema(conn)
+    config = _config(origem, saida)
+    conn.execute(
+        "INSERT INTO project (name, source_folder, output_folder, config_json, created_at)"
+        " VALUES (?, ?, ?, ?, '2026-09-12T00:00:00')",
+        (config.name, str(origem), str(saida), config_to_json(config)),
+    )
+    conn.commit()
+    from gclaude_indexer.scanning import scan
+
+    scan(conn, config)
+
+    entry = register_project("acervo", str(saida))
+    return TestClient(app), entry.id, conn
+
+
+def test_o_diagnostico_nao_escreve_no_banco(tmp_path, monkeypatch):
+    """A rota GET roda a cada abertura da tela. Se escrevesse, abrir um
+    projeto o modificaria."""
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    antes = conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
+
+    resposta = cliente.get(f"/projects/{projeto_id}/update")
+
+    assert resposta.status_code == 200
+    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == antes
+
+
+def test_o_post_com_plano_vencido_e_recusado(tmp_path, monkeypatch):
+    cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
+
+    resposta = cliente.post(
+        f"/projects/{projeto_id}/update", data={"fingerprint": "impressao-que-nao-existe"}
+    )
+
+    assert resposta.status_code == 409
+
+
+def test_o_aviso_nao_aparece_quando_nada_mudou(tmp_path, monkeypatch):
+    cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
+
+    corpo = cliente.get(f"/projects/{projeto_id}/update/banner").text
+
+    assert corpo.strip() == ""
+
+
+def test_todas_as_chaves_da_atualizacao_existem_nos_tres_idiomas():
+    from gclaude_indexer.i18n import translate
+
+    chaves = (
+        "update.title", "update.banner", "update.new", "update.changed",
+        "update.removed", "update.files_ocr", "update.windows_discarded",
+        "update.windows_kept", "update.new_windows_unknown", "update.confirm",
+        "update.cancel", "update.nothing_changed", "update.source_unavailable",
+        "update.plan_expired", "update.cost_title",
+    )
+    for idioma in ("pt", "en", "es"):
+        for chave in chaves:
+            texto = translate(idioma, chave)
+            assert texto and not texto.startswith("update."), f"{idioma}/{chave}"

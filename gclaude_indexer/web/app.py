@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import MISSING
+from dataclasses import MISSING, replace
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -48,6 +48,8 @@ from ..install_diagnostics import check_installation
 from ..events import list_events
 from ..deletion import delete_project
 from ..import_items import import_and_consolidate
+from ..invalidation import PlanExpired, apply_update_plan
+from ..update_plan import SourceFolderUnavailable, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
 from ..engine_claude_code import command_for_language, prepare, sync_progress
 from ..claude_package import generate_claude_project_package
@@ -588,6 +590,91 @@ def run_screen(request: Request, project_id: int):
             "claude_code_status": claude_code_status,
         },
     )
+
+
+@app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
+def update_banner(request: Request, project_id: int):
+    """The "the folder changed" notice on the Execution screen.
+
+    Fetched by HTMX after the page renders, never before it: on a large
+    Drive-synced collection the walk takes seconds, and paying them before
+    the first pixel would trade one problem for another. An unreachable
+    source folder renders nothing — the screen is not the place to shout
+    about a disconnected drive, and `SourceFolderUnavailable` never
+    becomes a removal proposal.
+    """
+    with _open_project(project_id) as (entry, config, conn):
+        try:
+            plan = build_update_plan(conn, config)
+        except SourceFolderUnavailable:
+            return HTMLResponse("")
+        if plan.is_empty:
+            return HTMLResponse("")
+        return render(
+            request, "_update_banner.html",
+            {"project": entry, "plan": plan, "config": config},
+        )
+
+
+@app.get("/projects/{project_id}/update", response_class=HTMLResponse)
+def update_screen(request: Request, project_id: int):
+    """The confirmation. Read-only: it never writes to the project."""
+    with _open_project(project_id) as (entry, config, conn):
+        try:
+            plan = build_update_plan(conn, config)
+        except SourceFolderUnavailable:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.source_unavailable"},
+                status_code=409,
+            )
+        return render(
+            request, "update_project.html",
+            {"project": entry, "config": config, "plan": plan, "error": None},
+        )
+
+
+@app.post("/projects/{project_id}/update", response_class=HTMLResponse)
+async def update_apply(request: Request, project_id: int):
+    """Applies the plan, then sends the user to the Execution screen.
+
+    The stale-plan check lives in `apply_update_plan`, not here: it is the
+    invariant of the invalidation itself, and putting it there keeps it
+    testable without a web server and keeps this route from walking the
+    folder a third time. The route rebuilds the plan the form refers to,
+    hands it over, and turns a refusal into a screen.
+    """
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    form = await request.form()
+
+    with _open_project(project_id) as (entry, config, conn):
+        try:
+            plan = build_update_plan(conn, config)
+        except SourceFolderUnavailable:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.source_unavailable"},
+                status_code=409,
+            )
+
+        # What the user actually saw. If the folder moved since the screen
+        # rendered, this no longer matches the plan just rebuilt.
+        seen = str(form.get("fingerprint", ""))
+        try:
+            apply_update_plan(
+                conn, config, replace(plan, fingerprint=seen), language
+            )
+        except PlanExpired:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": plan,
+                 "error": "update.plan_expired"},
+                status_code=409,
+            )
+
+    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
 
 
 @app.get("/projects/{project_id}/run/log", response_class=HTMLResponse)

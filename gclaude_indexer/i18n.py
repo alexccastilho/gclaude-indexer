@@ -639,6 +639,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} janela(s) feita(s), {pending} pendente(s).",
         "run.finished_notice": "Execução concluída: {items} peça(s), pontuação de qualidade {score}/100.",
         "run.finished_view_result": "Ver resultado",
+        "update.title": "Atualizar acervo",
+        "update.banner": (
+            "A pasta de origem mudou: {new} novos, {changed} alterados, {removed} removidos."
+        ),
+        "update.new": "Documentos novos",
+        "update.changed": "Documentos alterados",
+        "update.removed": "Documentos removidos",
+        "update.cost_title": "O que a atualização vai custar",
+        "update.files_ocr": "{n} arquivos passarão por OCR novamente.",
+        "update.windows_discarded": "{n} janelas serão reclassificadas.",
+        "update.windows_kept": "{n} janelas serão preservadas com a classificação atual.",
+        "update.new_windows_unknown": (
+            "Os documentos novos acrescentam janelas além dessas. Quantas, só se sabe"
+            " depois da leitura das páginas."
+        ),
+        "update.confirm": "Atualizar",
+        "update.cancel": "Voltar sem atualizar",
+        "update.nothing_changed": "A pasta de origem está igual ao índice. Nada a fazer.",
+        "update.source_unavailable": (
+            "A pasta de origem não pode ser lida. Verifique se a unidade está conectada"
+            " e se a pasta não foi movida. Nada foi alterado."
+        ),
+        "update.plan_expired": (
+            "A pasta mudou enquanto esta tela estava aberta. Nada foi alterado."
+            " Refaça o diagnóstico."
+        ),
         "result.title": "Resultado",
         "result.back_to_run": "execução",
         "result.open_folder": "Abrir pasta de saída no Explorer",
@@ -1496,6 +1522,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} window(s) done, {pending} pending.",
         "run.finished_notice": "Execution finished: {items} piece(s), quality score {score}/100.",
         "run.finished_view_result": "View result",
+        "update.title": "Update collection",
+        "update.banner": (
+            "The source folder changed: {new} new, {changed} changed, {removed} removed."
+        ),
+        "update.new": "New documents",
+        "update.changed": "Changed documents",
+        "update.removed": "Removed documents",
+        "update.cost_title": "What the update will cost",
+        "update.files_ocr": "{n} files will go through OCR again.",
+        "update.windows_discarded": "{n} windows will be reclassified.",
+        "update.windows_kept": "{n} windows keep their current classification.",
+        "update.new_windows_unknown": (
+            "New documents add windows on top of those. How many is not known until"
+            " their pages have been read."
+        ),
+        "update.confirm": "Update",
+        "update.cancel": "Back without updating",
+        "update.nothing_changed": "The source folder matches the index. Nothing to do.",
+        "update.source_unavailable": (
+            "The source folder cannot be read. Check that the drive is connected and"
+            " the folder has not been moved. Nothing was changed."
+        ),
+        "update.plan_expired": (
+            "The folder changed while this screen was open. Nothing was changed."
+            " Run the diagnosis again."
+        ),
         "result.title": "Result",
         "result.back_to_run": "execution",
         "result.open_folder": "Open output folder in Explorer",
@@ -2350,6 +2402,33 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} ventana(s) hecha(s), {pending} pendiente(s).",
         "run.finished_notice": "Ejecución finalizada: {items} pieza(s), puntuación de calidad {score}/100.",
         "run.finished_view_result": "Ver resultado",
+        "update.title": "Actualizar acervo",
+        "update.banner": (
+            "La carpeta de origen cambió: {new} nuevos, {changed} modificados,"
+            " {removed} eliminados."
+        ),
+        "update.new": "Documentos nuevos",
+        "update.changed": "Documentos modificados",
+        "update.removed": "Documentos eliminados",
+        "update.cost_title": "Lo que costará la actualización",
+        "update.files_ocr": "{n} archivos pasarán por OCR de nuevo.",
+        "update.windows_discarded": "{n} ventanas se reclasificarán.",
+        "update.windows_kept": "{n} ventanas conservan su clasificación actual.",
+        "update.new_windows_unknown": (
+            "Los documentos nuevos añaden ventanas además de esas. Cuántas solo se sabe"
+            " después de leer sus páginas."
+        ),
+        "update.confirm": "Actualizar",
+        "update.cancel": "Volver sin actualizar",
+        "update.nothing_changed": "La carpeta de origen coincide con el índice. Nada que hacer.",
+        "update.source_unavailable": (
+            "No se puede leer la carpeta de origen. Verifique que la unidad esté conectada"
+            " y que la carpeta no se haya movido. No se cambió nada."
+        ),
+        "update.plan_expired": (
+            "La carpeta cambió mientras esta pantalla estaba abierta. No se cambió nada."
+            " Vuelva a hacer el diagnóstico."
+        ),
         "result.title": "Resultado",
         "result.back_to_run": "ejecución",
         "result.open_folder": "Abrir carpeta de salida en el Explorador",
