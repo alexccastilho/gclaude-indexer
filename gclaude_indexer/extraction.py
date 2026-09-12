@@ -129,6 +129,23 @@ def _write_pages(conn, config: ProjectConfig, row, pages: list[tuple[str, int, b
     return sheet
 
 
+def _page_row_count(conn, file_id: int) -> int:
+    """Pages a file really has, counted from the `page` table.
+
+    Never `file.page_count`. The column and the rows disagree in ordinary
+    operation — `conversion` writes the count and a later extraction
+    failure leaves it behind with zero rows; a re-scan nulls it without
+    deleting the rows — and the whole of the incremental update reads
+    page rows for exactly that reason (see
+    `update_plan._stored_geometry`). The head of a group decides every
+    `f. N` in the re-extracted tail, so measuring it with the column
+    would silently number the tail from a total the pages never had.
+    """
+    return conn.execute(
+        "SELECT COUNT(*) FROM page WHERE file_id = ?", (file_id,)
+    ).fetchone()[0]
+
+
 def _build_groups(conn) -> dict[str, list]:
     rows = conn.execute(
         "SELECT * FROM file WHERE status IN ('converted', 'extracted') ORDER BY relative_path"
@@ -162,7 +179,7 @@ def _extract_sequential(
                 break
 
             if row["status"] == "extracted":
-                running_sheet += row["page_count"] or 0
+                running_sheet += _page_row_count(conn, row["id"])
                 continue
 
             try:
@@ -223,7 +240,7 @@ def _extract_in_parallel(
             row = group_files[index]
 
             if row["status"] == "extracted":
-                current_sheet[group_key] += row["page_count"] or 0
+                current_sheet[group_key] += _page_row_count(conn, row["id"])
                 current_position[group_key] += 1
                 continue
 

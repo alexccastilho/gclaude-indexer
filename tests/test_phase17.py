@@ -1178,6 +1178,81 @@ def test_pdf_com_texto_nativo_renumera_sem_reconverter(tmp_path):
     assert resultado.files_reconverted == 0
 
 
+def test_a_renumeracao_conta_as_paginas_reais_e_nao_a_coluna(tmp_path):
+    """A cabeça do grupo decide todo `f. N` da cauda reextraída.
+
+    `extraction` avançava o contador de folhas por `file.page_count` dos
+    arquivos já 'extracted', enquanto todo o resto desta funcionalidade
+    lê linhas de `page` — justamente porque a coluna e as linhas
+    discordam em operação normal (ver `update_plan._stored_geometry`).
+    Aqui a coluna mente em 99 e as páginas são 2: a folha seguinte tem de
+    ser a 3.
+    """
+    from gclaude_indexer.extraction import extract_pages
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "converted").mkdir(parents=True)
+    conn = _conn(tmp_path)
+
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, group_key,"
+        " page_count, status) VALUES ('a.txt', 'a.txt', 'txt', 1, 'ha', 'g', 99,"
+        " 'extracted')"
+    )
+    a_id = conn.execute("SELECT id FROM file WHERE relative_path = 'a.txt'").fetchone()[0]
+    for numero in (1, 2):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+            (a_id, numero, f"f. {numero}"),
+        )
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, group_key,"
+        " page_count, status) VALUES ('b.txt', 'b.txt', 'txt', 1, 'hb', 'g', 1,"
+        " 'converted')"
+    )
+    conn.commit()
+    (saida / "converted" / "b.txt").write_text("conteudo de b", encoding="utf-8")
+    config = ProjectConfig(
+        name="acervo", source_folder=str(origem), output_folder=str(saida)
+    )
+
+    extract_pages(conn, config)
+
+    referencia = conn.execute(
+        "SELECT page.reference FROM page JOIN file ON file.id = page.file_id"
+        " WHERE file.relative_path = 'b.txt'"
+    ).fetchone()[0]
+    assert referencia == "f. 3"
+
+
+def test_quem_volta_para_converted_perde_tambem_a_contagem_de_paginas(tmp_path):
+    """As linhas de `page` foram apagadas para renumerar; deixar
+    `file.page_count` para trás é criar de propósito a divergência que
+    `update_plan._stored_geometry` documenta."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 2, group_key=grupo)
+    (origem / "a.pdf").write_text("a corrigido e bem maior", encoding="utf-8")
+    config = _config(origem, saida)
+
+    apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    estado, contagem = conn.execute(
+        "SELECT status, page_count FROM file WHERE relative_path = 'b.pdf'"
+    ).fetchone()
+    assert estado == "converted"
+    assert contagem is None
+
+
 def test_o_txt_da_janela_descartada_some_do_disco(tmp_path):
     origem = tmp_path / "origem"
     origem.mkdir()

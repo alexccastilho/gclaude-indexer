@@ -502,9 +502,15 @@ def apply_update_plan(
                 # make every update as expensive as a full reindex — so
                 # the fallback is taken only when the artifact is really
                 # gone (see `_renumber_status`).
+                #
+                # `page_count = NULL` either way: the rows the column
+                # counted were just deleted, and a count outliving its
+                # rows is the very disagreement
+                # `update_plan._stored_geometry` documents at length.
                 status = _renumber_status(config, relative_path, row)
                 conn.execute(
-                    "UPDATE file SET status = ?, error = NULL WHERE id = ?",
+                    "UPDATE file SET status = ?, page_count = NULL, error = NULL"
+                    " WHERE id = ?",
                     (status, file_id),
                 )
                 if status == "converted":
