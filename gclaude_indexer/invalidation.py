@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import ProjectConfig
+from .conversion import converted_artifact_path
 from .events import record_event
 from .import_items import RAW_ITEMS_FILE_NAME
 from .paths import resolve_within
@@ -76,7 +77,14 @@ class InvalidationResult:
     window that produced them was discarded; `prune_failures` counts the
     prunes that could not be written (0 or 1 today — there is one file).
     A failed prune is the more serious of the two failures here: it
-    yields a wrong index, not an orphan file."""
+    yields a wrong index, not an orphan file.
+
+    `files_reconverted` counts the files that would only have needed
+    renumbering but whose converted artifact is no longer on disk — the
+    user cleared the intermediates — and which therefore go back through
+    OCR instead. Counted apart from `files_renumbered` because the two
+    cost wildly different amounts of time, and apart from `files_reset`
+    because nothing about these files actually changed."""
 
     windows_deleted: int = 0
     windows_orphaned: int = 0
@@ -86,6 +94,7 @@ class InvalidationResult:
     files_removed: int = 0
     files_reset: int = 0
     files_renumbered: int = 0
+    files_reconverted: int = 0
 
 
 def _window_file_name(key: str) -> str | None:
@@ -299,11 +308,44 @@ def _record_removals(conn: sqlite3.Connection, plan: UpdatePlan) -> int:
     return len(plan.removed)
 
 
-def _file_id(conn: sqlite3.Connection, relative_path: str) -> int | None:
-    row = conn.execute(
-        "SELECT id FROM file WHERE relative_path = ?", (relative_path,)
+def _file_row(conn: sqlite3.Connection, relative_path: str) -> sqlite3.Row | None:
+    """The columns every branch below needs: the id to write by, and the
+    two that say where this file's converted artifact would be."""
+    return conn.execute(
+        "SELECT id, extension, needs_ocr FROM file WHERE relative_path = ?",
+        (relative_path,),
     ).fetchone()
-    return None if row is None else row["id"]
+
+
+def _renumber_status(
+    config: ProjectConfig, relative_path: str, row: sqlite3.Row
+) -> str:
+    """`'converted'` if the file can really be re-read, `'discovered'` if
+    it has to pay OCR again.
+
+    The whole economy of the update is the first answer: a file whose
+    bytes did not change only needs new sheet numbers, and extraction can
+    get them from the intermediate already in `<output>/converted/`
+    without OCR. But that folder is not permanent. `cleanup.py` deletes it
+    on purpose, and the Result screen offers the deletion as a
+    first-class button ("free space after the artifacts are ready") —
+    truthfully so until this feature existed, because nothing re-read
+    `converted/` after a completed run.
+
+    Demoting to `'converted'` with the artifact gone is not a slow
+    update, it is a destroyed document: extraction raises on the missing
+    file and marks it `'failed'`, it disappears from `index.md` and
+    `timeline.md`, and nothing brings it back — `convert()` only picks up
+    `'discovered'`, and a re-scan skips a file whose hash still matches.
+    So the artifact is checked, and when it is missing the file goes to
+    `'discovered'` instead: slower, and recoverable.
+    """
+    artifact = converted_artifact_path(
+        config.output_folder, relative_path, row["extension"], bool(row["needs_ocr"])
+    )
+    if artifact is None or artifact.exists():
+        return "converted"
+    return "discovered"
 
 
 def apply_update_plan(
@@ -362,6 +404,7 @@ def apply_update_plan(
     doomed_files: list[Path] = []
     discarded_keys: set[str] = set()
     discarded_groups: set[str] = set()
+    reconverted: list[str] = []
 
     try:
         conn.execute("BEGIN")
@@ -407,9 +450,10 @@ def apply_update_plan(
                 discarded_keys.add(key)
 
         for change in current.removed:
-            file_id = _file_id(conn, change.relative_path)
-            if file_id is None:
+            row = _file_row(conn, change.relative_path)
+            if row is None:
                 continue
+            file_id = row["id"]
             result.pages_deleted += conn.execute(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
@@ -417,9 +461,10 @@ def apply_update_plan(
         result.files_removed = _record_removals(conn, current)
 
         for change in current.changed:
-            file_id = _file_id(conn, change.relative_path)
-            if file_id is None:
+            row = _file_row(conn, change.relative_path)
+            if row is None:
                 continue
+            file_id = row["id"]
             result.pages_deleted += conn.execute(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
@@ -439,26 +484,34 @@ def apply_update_plan(
             for relative_path in group.files_to_renumber:
                 if relative_path in changed_paths:
                     continue
-                file_id = _file_id(conn, relative_path)
-                if file_id is None:
+                row = _file_row(conn, relative_path)
+                if row is None:
                     continue
+                file_id = row["id"]
                 deleted = conn.execute(
                     "DELETE FROM page WHERE file_id = ?", (file_id,)
                 ).rowcount
                 if not deleted:
                     continue
                 result.pages_deleted += deleted
-                # Back to 'converted', not 'discovered': this file's bytes
-                # did not change, only its position in the group did. The
-                # OCR output is still in <output>/converted/, so
+                # Normally 'converted', not 'discovered': this file's
+                # bytes did not change, only its position in the group
+                # did. The OCR output is still in <output>/converted/, so
                 # extraction re-reads it and renumbers without paying OCR
                 # again. Sending it to 'discovered' instead would silently
-                # make every update as expensive as a full reindex.
+                # make every update as expensive as a full reindex — so
+                # the fallback is taken only when the artifact is really
+                # gone (see `_renumber_status`).
+                status = _renumber_status(config, relative_path, row)
                 conn.execute(
-                    "UPDATE file SET status = 'converted' WHERE id = ?",
-                    (file_id,),
+                    "UPDATE file SET status = ?, error = NULL WHERE id = ?",
+                    (status, file_id),
                 )
-                result.files_renumbered += 1
+                if status == "converted":
+                    result.files_renumbered += 1
+                else:
+                    result.files_reconverted += 1
+                    reconverted.append(relative_path)
 
         conn.commit()
     except Exception:
@@ -508,6 +561,23 @@ def apply_update_plan(
                 "warning",
                 "log.update.raw_items_prune_failed",
                 {"error": prune_error},
+                language=language,
+            )
+
+        if reconverted:
+            # Not a failure, but news the user is owed: the update just
+            # became far more expensive than the screen predicted, and
+            # the reason (the intermediates were cleared) is something
+            # only they can recognise.
+            record_event(
+                conn,
+                "update",
+                "warning",
+                "log.update.reconversion_needed",
+                {
+                    "count": len(reconverted),
+                    "files": ", ".join(sorted(reconverted)),
+                },
                 language=language,
             )
 

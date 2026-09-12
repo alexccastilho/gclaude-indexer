@@ -988,6 +988,71 @@ def test_quem_mudou_volta_para_discovered_e_quem_so_renumera_para_converted(tmp_
     assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 0
 
 
+def test_renumerar_sem_o_convertido_no_disco_volta_para_discovered(tmp_path):
+    """"Renumerar sem OCR" só existe enquanto o intermediário existe.
+
+    `cleanup.py` apaga `<saida>/converted/` de propósito, e a tela de
+    Resultado oferece o botão ("liberar espaço depois que os artefatos
+    estão prontos"). Rebaixar para 'converted' com o artefato apagado não
+    é uma atualização lenta: a extração levanta no arquivo que falta,
+    marca o documento 'failed', ele some do `index.md` e do
+    `timeline.md`, e nada o traz de volta — `convert()` só pega
+    'discovered' e um novo `scan` pula o arquivo porque o hash continua
+    batendo.
+    """
+    from gclaude_indexer.events import list_events
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "converted").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 2, group_key=grupo)
+    # Os dois posteriores foram digitalizados: a extração os relê do
+    # PDF gravado em converted/, não do original.
+    conn.execute("UPDATE file SET needs_ocr = 1 WHERE relative_path IN ('b.pdf', 'c.pdf')")
+    conn.commit()
+    # Só o de "c.pdf" sobreviveu à limpeza dos intermediários.
+    (saida / "converted" / "c.pdf").write_bytes(b"%PDF-1.4 ocr")
+    (origem / "a.pdf").write_text("a corrigido e bem maior", encoding="utf-8")
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    estados = dict(conn.execute("SELECT relative_path, status FROM file"))
+    assert estados["b.pdf"] == "discovered"  # sem artefato: paga OCR de novo
+    assert estados["c.pdf"] == "converted"   # com artefato: só renumera
+    assert resultado.files_reconverted == 1
+    assert resultado.files_renumbered == 1
+    chaves = [evento["message_key"] for evento in list_events(conn)]
+    assert "log.update.reconversion_needed" in chaves
+
+
+def test_pdf_com_texto_nativo_renumera_sem_reconverter(tmp_path):
+    """Um PDF que nunca precisou de OCR não tem intermediário nenhum: a
+    extração abre o original na pasta de origem. Exigir um artefato dele
+    mandaria para o OCR justamente o caso em que o OCR é inútil."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()  # sem converted/ nenhum, e é o certo
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 2, group_key=grupo)
+    (origem / "a.pdf").write_text("a corrigido e bem maior", encoding="utf-8")
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    assert dict(conn.execute("SELECT relative_path, status FROM file"))["b.pdf"] == "converted"
+    assert resultado.files_reconverted == 0
+
+
 def test_o_txt_da_janela_descartada_some_do_disco(tmp_path):
     origem = tmp_path / "origem"
     origem.mkdir()
@@ -1530,6 +1595,7 @@ def test_as_chaves_do_log_da_atualizacao_existem_nos_tres_idiomas():
         assert "log.update.applied" in _TRANSLATIONS[idioma]
         assert "log.update.orphan_window_file" in _TRANSLATIONS[idioma]
         assert "log.update.raw_items_prune_failed" in _TRANSLATIONS[idioma]
+        assert "log.update.reconversion_needed" in _TRANSLATIONS[idioma]
 
 
 # --- Task 8: reescrita incondicional quando a linha é criada aqui -----------

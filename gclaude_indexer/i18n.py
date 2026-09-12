@@ -883,6 +883,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
             "renumerar"
         ),
+        "log.update.reconversion_needed": (
+            "{count} documento(s) precisarão passar por OCR de novo porque os "
+            "arquivos intermediários da pasta converted/ foram apagados — o "
+            "conteúdo deles continua íntegro, só a releitura ficou mais lenta: "
+            "{files}"
+        ),
         "log.update.orphan_window_file": (
             "{count} arquivo(s) de janela não puderam ser apagados e continuam na "
             "pasta windows/ — apague-os à mão antes de reclassificar: {files}"
@@ -1761,6 +1767,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.update.applied": (
             "update applied: {windows} window(s) discarded, {removed} document(s) "
             "removed, {reset} to reprocess, {renumbered} to renumber"
+        ),
+        "log.update.reconversion_needed": (
+            "{count} document(s) have to go through OCR again because the "
+            "intermediate files in converted/ were deleted — their content is "
+            "intact, only re-reading them got slower: {files}"
         ),
         "log.update.orphan_window_file": (
             "{count} window file(s) could not be deleted and are still in the "
@@ -2653,6 +2664,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
             "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "
             "renumerar"
+        ),
+        "log.update.reconversion_needed": (
+            "{count} documento(s) tendrán que pasar por OCR de nuevo porque los "
+            "archivos intermedios de la carpeta converted/ fueron borrados — su "
+            "contenido sigue íntegro, solo la relectura se volvió más lenta: "
+            "{files}"
         ),
         "log.update.orphan_window_file": (
             "{count} archivo(s) de ventana no pudieron borrarse y siguen en la "
