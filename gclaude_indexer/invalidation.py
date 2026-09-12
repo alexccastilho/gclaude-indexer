@@ -159,7 +159,6 @@ def _delete_whole_group(
     group_key: str,
     windows_dir: Path,
     doomed: list[Path],
-    discarded_keys: set[str],
 ) -> int:
     """Discards every window row the table holds for the group.
 
@@ -178,14 +177,15 @@ def _delete_whole_group(
         "SELECT key FROM window WHERE group_key = ?", (group_key,)
     ).fetchall():
         _doom(windows_dir, _window_file_name(row["key"]), doomed)
-        discarded_keys.add(row["key"])
 
     return conn.execute(
         "DELETE FROM window WHERE group_key = ?", (group_key,)
     ).rowcount
 
 
-def _prune_raw_items(output_dir: Path, discarded_keys: set[str]) -> int:
+def _prune_raw_items(
+    output_dir: Path, discarded_keys: set[str], discarded_groups: set[str]
+) -> int:
     """Drops from `raw_items.jsonl` every item classified from a discarded
     window. Returns how many lines were dropped.
 
@@ -205,45 +205,75 @@ def _prune_raw_items(output_dir: Path, discarded_keys: set[str]) -> int:
     that same key while the old ones are still in the file, and nothing
     distinguishes the two. The file has to be pruned.
 
-    Only a line that positively parses as an object whose `window` is a
-    discarded key is dropped. Unparseable lines and blank lines are kept:
+    Two criteria, because the two discard branches know different things.
+
+    `discarded_keys` is the span-by-span branch: those windows are named
+    individually, and only their own lines are stale.
+
+    `discarded_groups` is the `discard_whole_group` branch, and it matches
+    on the line's `group` field (`item_to_dict` writes
+    `"group": window["group_key"]` on every line). Every line of that
+    group is stale by definition — the whole group is going back to the
+    model — so there is no need to name its windows one by one. That also
+    makes the branch self-healing: if an earlier prune failed and left
+    lines behind, their window rows are gone by now and their keys could
+    never be reconstructed, but their `group` still identifies them.
+
+    Only a line that positively parses as an object matching one of those
+    two criteria is dropped. Unparseable lines and blank lines are kept:
     `import_and_consolidate` already reports those as errors, and
     quietly deleting what cannot be read is not this function's call.
+
+    The file is streamed rather than read whole. Holding a multi-gigabyte
+    `raw_items.jsonl` in memory to rewrite it is the one way this
+    function could plausibly raise `MemoryError`, and it runs after the
+    commit, where raising at all is the thing to avoid.
     """
     path = output_dir / RAW_ITEMS_FILE_NAME
-    if not discarded_keys or not path.exists():
+    if not (discarded_keys or discarded_groups) or not path.exists():
         # A project that has never been classified has no file here. That
         # is the normal state before the first run, not an error.
         return 0
 
-    kept: list[str] = []
-    dropped = 0
-    for line in path.read_text(encoding="utf-8").splitlines():
+    def _is_stale(line: str) -> bool:
         try:
             item = json.loads(line)
         except json.JSONDecodeError:
-            kept.append(line)
-            continue
-        if isinstance(item, dict) and item.get("window") in discarded_keys:
-            dropped += 1
-            continue
-        kept.append(line)
-
-    if not dropped:
-        return 0
-
-    # Temporary file in the same folder, then an atomic replace: a
-    # half-written `raw_items.jsonl` would lose items for windows that
-    # are still valid, and those are not recoverable from anywhere.
-    temporary = path.with_name(path.name + ".tmp")
-    try:
-        temporary.write_text(
-            "".join(f"{line}\n" for line in kept), encoding="utf-8"
+            return False
+        if not isinstance(item, dict):
+            return False
+        return (
+            item.get("window") in discarded_keys
+            or item.get("group") in discarded_groups
         )
-        temporary.replace(path)
-    except OSError:
-        # Leave no half-written leftover next to the real file for the
-        # next run to trip over; the caller reports the failure.
+
+    # Written beside the real file and renamed over it only once it is
+    # complete: a half-written `raw_items.jsonl` would lose the items of
+    # windows that are still valid, and those exist nowhere else.
+    temporary = path.with_name(path.name + ".tmp")
+    dropped = 0
+    try:
+        # `newline=""` on both sides: the kept lines are copied through
+        # byte for byte, instead of having their line endings rewritten
+        # by the platform translation on the way in and out.
+        with open(path, "r", encoding="utf-8", newline="") as source, open(
+            temporary, "w", encoding="utf-8", newline=""
+        ) as target:
+            for line in source:
+                if _is_stale(line):
+                    dropped += 1
+                else:
+                    target.write(line)
+
+        if dropped:
+            temporary.replace(path)
+        else:
+            temporary.unlink(missing_ok=True)
+    except (OSError, ValueError):
+        # `ValueError` covers `UnicodeDecodeError` from a corrupted file:
+        # the read is as much a failure path as the write, and both have
+        # to reach the caller's counted-and-warned channel rather than
+        # escape past a commit that already succeeded.
         try:
             temporary.unlink(missing_ok=True)
         except OSError:
@@ -331,6 +361,7 @@ def apply_update_plan(
     windows_dir = output_dir / "windows"
     doomed_files: list[Path] = []
     discarded_keys: set[str] = set()
+    discarded_groups: set[str] = set()
 
     try:
         conn.execute("BEGIN")
@@ -342,12 +373,13 @@ def apply_update_plan(
         for group in current.groups:
             if group.discard_whole_group:
                 result.windows_deleted += _delete_whole_group(
-                    conn,
-                    group.group_key,
-                    windows_dir,
-                    doomed_files,
-                    discarded_keys,
+                    conn, group.group_key, windows_dir, doomed_files
                 )
+                # By group, not by key: every line of this group is
+                # stale, and naming its windows one by one would lose
+                # the lines an earlier failed prune left behind, whose
+                # rows are gone and whose keys nothing can reconstruct.
+                discarded_groups.add(group.group_key)
                 continue
 
             page_count = _group_page_count(conn, group.group_key)
@@ -456,8 +488,10 @@ def apply_update_plan(
     # items would be gone for good.
     prune_error: str | None = None
     try:
-        result.items_pruned = _prune_raw_items(output_dir, discarded_keys)
-    except OSError as error:
+        result.items_pruned = _prune_raw_items(
+            output_dir, discarded_keys, discarded_groups
+        )
+    except (OSError, ValueError) as error:
         # Worse than a surviving `.txt`: this one produces a wrong index
         # rather than an orphan file, so it is reported in those terms.
         result.prune_failures = 1

@@ -1205,16 +1205,21 @@ def test_grupo_com_espaco_apaga_o_txt_com_o_nome_higienizado(tmp_path):
     assert resultado.windows_deleted == 2
 
 
-def _escrever_raw_items(saida: Path, chaves: list[str]) -> Path:
-    """Uma peça por chave de janela, no formato que `classify_pending` grava."""
+def _escrever_raw_items(saida: Path, pecas: list[tuple[str, str]]) -> Path:
+    """Uma peça por par `(chave da janela, agrupador)`.
+
+    Os dois campos são gravados porque `item_to_dict` grava os dois em
+    produção — `window` é a chave da janela e `group` é o `group_key`
+    dela — e a poda usa um ou outro conforme o ramo do descarte.
+    """
     import json
 
     caminho = saida / "raw_items.jsonl"
     caminho.write_text(
         "".join(
-            json.dumps({"window": chave, "group": "g", "type": "OFÍCIO"},
+            json.dumps({"window": chave, "group": grupo, "type": "OFÍCIO"},
                        ensure_ascii=False) + "\n"
-            for chave in chaves
+            for chave, grupo in pecas
         ),
         encoding="utf-8",
     )
@@ -1251,7 +1256,10 @@ def test_a_poda_tira_do_raw_items_so_as_pecas_da_janela_descartada(tmp_path):
     preservada = _chave(base, 0, 16)
     descartada = _chave(base, 14, 30)
     de_outro_grupo = "outro::000001-000016"
-    bruto = _escrever_raw_items(saida, [preservada, descartada, de_outro_grupo])
+    bruto = _escrever_raw_items(
+        saida,
+        [(preservada, grupo), (descartada, grupo), (de_outro_grupo, "outro")],
+    )
     # Linha ilegível: a importação já a reporta como erro; a poda não é
     # quem decide apagar o que não consegue ler.
     with open(bruto, "a", encoding="utf-8") as arquivo:
@@ -1291,7 +1299,12 @@ def test_a_poda_do_grupo_inteiro_alcanca_as_janelas_que_o_layout_derivado_nao_ve
     so_no_gravado = _chave(base, 490, 500)
     de_outro_grupo = "outro::000001-000016"
     bruto = _escrever_raw_items(
-        saida, [_chave(base, 0, 16), so_no_gravado, de_outro_grupo]
+        saida,
+        [
+            (_chave(base, 0, 16), grupo),
+            (so_no_gravado, grupo),
+            (de_outro_grupo, "outro"),
+        ],
     )
     config = _config(origem, saida)
     plano = build_update_plan(conn, config)
@@ -1301,6 +1314,81 @@ def test_a_poda_do_grupo_inteiro_alcanca_as_janelas_que_o_layout_derivado_nao_ve
 
     assert resultado.items_pruned == 2
     assert _janelas_do_raw_items(bruto) == [de_outro_grupo]
+
+
+def test_poda_do_grupo_inteiro_recupera_linhas_de_uma_poda_anterior_que_falhou(tmp_path):
+    """Se uma poda falhou, as linhas ficaram e as janelas delas já não
+    existem — nada consegue reconstruir aquelas chaves. O campo `group`,
+    que `item_to_dict` grava em toda linha, ainda as identifica."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+    base = sanitize_group_name(grupo)
+
+    # Sobras de uma poda que falhou numa atualização anterior: chaves de
+    # um layout que não existe mais em `window`.
+    orfa_1 = f"{base}::000901-000916"
+    orfa_2 = f"{base}::000915-000930"
+    de_outro_grupo = "outro::000001-000016"
+    bruto = _escrever_raw_items(
+        saida, [(orfa_1, grupo), (orfa_2, grupo), (de_outro_grupo, "outro")]
+    )
+    chaves_gravadas = {
+        linha[0] for linha in conn.execute("SELECT key FROM window")
+    }
+    assert orfa_1 not in chaves_gravadas and orfa_2 not in chaves_gravadas
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+    assert plano.groups[0].discard_whole_group is True
+
+    resultado = apply_update_plan(conn, config, plano)
+
+    assert resultado.items_pruned == 2
+    assert _janelas_do_raw_items(bruto) == [de_outro_grupo]
+
+
+def test_raw_items_corrompido_nao_estoura_depois_do_commit(tmp_path):
+    """Bytes inválidos em UTF-8 levantam `UnicodeDecodeError`, que é
+    `ValueError` e não `OSError`. Depois do commit nada pode escapar: o
+    chamador ouviria que a atualização falhou com as linhas já apagadas."""
+    from gclaude_indexer.events import list_events
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    bruto = saida / "raw_items.jsonl"
+    bruto.write_bytes(b'{"window": "x"}\n\xff\xfe nao e utf-8\n')
+    (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    # A atualização em si deu certo — e foi isso que o chamador ouviu.
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+    assert resultado.windows_deleted == 2
+    assert resultado.prune_failures == 1
+    assert resultado.items_pruned == 0
+    assert not (saida / "raw_items.jsonl.tmp").exists()
+    avisos = [
+        evento for evento in list_events(conn)
+        if evento["message_key"] == "log.update.raw_items_prune_failed"
+    ]
+    assert len(avisos) == 1
+    assert avisos[0]["level"] == "warning"
 
 
 def test_projeto_nunca_classificado_nao_tem_raw_items_e_isso_e_normal(tmp_path):
@@ -1342,7 +1430,7 @@ def test_poda_que_falha_e_contada_e_avisada_em_vez_de_silenciosa(tmp_path, monke
     base = sanitize_group_name(grupo)
     from gclaude_indexer.windows_prep import window_key as _chave
 
-    bruto = _escrever_raw_items(saida, [_chave(base, 0, 16)])
+    bruto = _escrever_raw_items(saida, [(_chave(base, 0, 16), grupo)])
     antes = bruto.read_text(encoding="utf-8")
     (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
     config = _config(origem, saida)
