@@ -560,6 +560,83 @@ def test_acervo_intacto_nao_produz_plano(tmp_path):
     assert plano.windows_to_reclassify == 0
 
 
+def test_extensao_fora_da_lista_nao_invalida_o_grupo(tmp_path):
+    """O plano tem de decidir a participação no grupo pela mesma regra que
+    o `scan` usa, e não por uma reimplementação mais curta dela.
+
+    Um `leiame.txt` num acervo só de PDF entra como `skipped`, com
+    `group_key` nulo: o pipeline nunca vai indexá-lo. Tratá-lo como
+    membro do grupo invalidava o grupo inteiro — cada página apagada e
+    reextraída, cada janela reclassificada — para reconstruir um layout
+    idêntico ao descartado.
+    """
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    (origem / "leiame.txt").write_text("instruções para quem abrir a pasta", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    # A pasta mudou de verdade, e o plano diz isso: o que não pode é a
+    # mudança custar uma reclassificação.
+    assert [mudanca.relative_path for mudanca in plano.new] == ["leiame.txt"]
+    assert plano.groups == ()
+    assert plano.windows_to_reclassify == 0
+
+
+def test_copia_duplicada_nao_invalida_o_grupo(tmp_path):
+    """`scan` marca como `duplicate`, sem grupo, o conteúdo já indexado sob
+    outro caminho — §11 do design pede "duplicata continua tratada como
+    hoje". O plano tinha de concordar."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    # Byte a byte o mesmo conteúdo de "a.pdf" (que guarda o próprio nome).
+    (origem / "copia-de-a.pdf").write_text("a.pdf", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert [mudanca.relative_path for mudanca in plano.new] == ["copia-de-a.pdf"]
+    assert plano.groups == ()
+    assert plano.windows_to_reclassify == 0
+
+
+def test_documento_novo_de_verdade_continua_invalidando_o_grupo(tmp_path):
+    """A contraprova das duas acima: com a regra do `scan` aplicada, um
+    documento que o pipeline realmente vai indexar não pode passar a
+    escapar da invalidação."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    (origem / "c.pdf").write_text("conteúdo inédito", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert len(plano.groups) == 1
+    assert plano.groups[0].group_key == grupo
+
+
 def test_arquivos_antes_da_divergencia_nao_sao_renumerados(tmp_path):
     """Ruling C2: só o último arquivo muda, então nada antes dele pode
     entrar em `files_to_renumber` — quem entra nessa lista perde as

@@ -46,6 +46,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
+from .file_types import is_extension_allowed
 from .paths import natural_sort_key
 from .scanning import compute_hash, derive_group_key, source_files
 from .windows_prep import sanitize_group_name, window_key, window_spans
@@ -468,7 +469,34 @@ def _intended_membership(
     new_files: list[FileChange],
     removed_paths: set[str],
 ) -> list[tuple[str, str]]:
-    """`(relative_path, group_key)` the collection will have after the update."""
+    """`(relative_path, group_key)` the collection will have after the update.
+
+    A new path joins a group only if `scanning.scan` would put it in one,
+    and by the same three rules `scan` applies in the same order:
+
+    - an extension outside `config.extensions` becomes `skipped` with
+      `group_key = NULL`, so it belongs to no group;
+    - content already indexed under another path becomes `duplicate`,
+      also with no group;
+    - anything else gets `derive_group_key`.
+
+    Deriving membership by a shorter rule than the pipeline's was the
+    third instance on this branch of one value computed twice: dropping a
+    `leiame.txt` into a PDF-only collection, or a second copy of a
+    document already indexed, made the group look changed and invalidated
+    every window in it — 36 windows for a README, rebuilt byte-identical
+    to the ones discarded. §11 of the design asks for "duplicata continua
+    tratada como hoje", so this is the stated behaviour, not a tuning.
+
+    The duplicate rule needs the new file's hash, and hashing is the cost
+    this module works hard to avoid. It is affordable here because only
+    genuinely new paths reach it — never the unchanged majority — and the
+    pipeline is about to read those same bytes anyway. `known_hashes`
+    grows as the loop runs, mirroring `scan`, which sees the first copy of
+    a brand-new document as the original and every later one as a
+    duplicate; both walk the paths in the same sorted order, so both pick
+    the same original.
+    """
     members: list[tuple[str, str]] = []
 
     for row in conn.execute(
@@ -478,7 +506,28 @@ def _intended_membership(
         if row["relative_path"] not in removed_paths:
             members.append((row["relative_path"], row["group_key"]))
 
+    known_hashes = {
+        row["sha256"] for row in conn.execute("SELECT sha256 FROM file")
+    }
+
     for change in new_files:
+        if not is_extension_allowed(
+            Path(change.relative_path).suffix.lower(), config.extensions
+        ):
+            continue
+
+        try:
+            file_hash = compute_hash(source_dir / change.relative_path)
+        except OSError:
+            # Unreadable or already gone between the walk and this read.
+            # Leaving it out only means the group is not invalidated for
+            # it — the safe direction, and the same one a file that
+            # appears after the plan was built already takes.
+            continue
+        if file_hash in known_hashes:
+            continue
+        known_hashes.add(file_hash)
+
         group_key = derive_group_key(change.relative_path, source_dir, config)
         if group_key is not None:
             members.append((change.relative_path, group_key))
