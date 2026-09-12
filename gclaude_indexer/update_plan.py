@@ -24,11 +24,14 @@ bytes never changed — the same lesson already recorded in `staleness.py`.
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ProjectConfig
-from .scanning import compute_hash, source_files
+from .paths import natural_sort_key
+from .scanning import compute_hash, derive_group_key, source_files
+from .windows_prep import window_spans
 
 
 class SourceFolderUnavailable(RuntimeError):
@@ -63,7 +66,7 @@ def _fingerprint(entries: list[tuple[str, int, float]]) -> str:
 
 
 def detect_changes(
-    conn, config: ProjectConfig
+    conn: sqlite3.Connection, config: ProjectConfig
 ) -> tuple[list[FileChange], int, str]:
     """New, changed and removed files; how many are unchanged; and the
     folder's fingerprint.
@@ -119,3 +122,227 @@ def detect_changes(
         )
 
     return changes, unchanged, _fingerprint(entries)
+
+
+@dataclass(frozen=True)
+class GroupInvalidation:
+    """What one group loses when the update is applied.
+
+    `first_divergent_page` is 0-based and counted over the group's
+    concatenated pages, the same coordinate `window_spans` works in.
+    """
+
+    group_key: str
+    first_divergent_page: int
+    first_affected_window: int
+    windows_discarded: int
+    windows_kept: int
+    files_to_renumber: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpdatePlan:
+    new: tuple[FileChange, ...]
+    changed: tuple[FileChange, ...]
+    removed: tuple[FileChange, ...]
+    groups: tuple[GroupInvalidation, ...]
+    unchanged_count: int
+    fingerprint: str
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.new or self.changed or self.removed)
+
+    @property
+    def files_needing_ocr(self) -> int:
+        """Only these pay OCR again. The files that merely get renumbered
+        are re-read from `<output>/converted/`."""
+        return len(self.new) + len(self.changed)
+
+    @property
+    def windows_to_reclassify(self) -> int:
+        """Windows certain to go back to the model.
+
+        Exact, and deliberately not the whole answer: the windows a *new*
+        document will add depend on its page count, which nothing knows
+        before extraction. The screen says so rather than estimating.
+        """
+        return sum(group.windows_discarded for group in self.groups)
+
+
+def first_affected_window(
+    old_spans: list[tuple[int, int]], first_divergent_page: int
+) -> int:
+    """Index of the first window that must be discarded.
+
+    Two conditions, not one. The obvious one is the window that covers the
+    first divergent page. The one that is easy to miss: the **last**
+    window of a group is clamped by the total page count
+    (`min(start + window_size, page_count)`), so it can change extent even
+    when no page before it moved — which is exactly what happens when a
+    document is appended to the end of the group. That is why the fallback
+    below returns the last index instead of `len(old_spans)`: with 500
+    pages at window 16 / overlap 2 the layout is 36 windows ending at
+    `(490, 500)`; appending 10 pages makes that window `(490, 506)` and
+    adds `(504, 510)`, so exactly one old window is discarded and 35 are
+    preserved.
+    """
+    if not old_spans:
+        return 0
+
+    for index, (_start, end) in enumerate(old_spans):
+        if end > first_divergent_page:
+            return index
+    return len(old_spans) - 1
+
+
+def _divergence_page(
+    stored: list[tuple[str, int]], intended: list[str], changed: set[str]
+) -> int:
+    """First page position at which the group stops matching the index.
+
+    `stored` is `(relative_path, page_count)` in the group's current page
+    order; `intended` the paths the group will have, naturally sorted.
+    """
+    page_offset = 0
+    for index, (relative_path, page_count) in enumerate(stored):
+        if index >= len(intended):
+            return page_offset
+        if intended[index] != relative_path or relative_path in changed:
+            return page_offset
+        page_offset += page_count or 0
+
+    return page_offset
+
+
+def _files_to_renumber(
+    stored: list[tuple[str, int]],
+    first_divergent_page: int,
+    changed_paths: set[str],
+    removed_paths: set[str],
+) -> tuple[str, ...]:
+    """Untouched files whose pages must nonetheless be renumbered.
+
+    Bounded by the divergence on purpose. The invalidation step deletes
+    the pages of every file named here so they can be re-inserted with new
+    sheet numbers; naming every unchanged file of the group — as a first
+    draft of this module did — would delete the pages of documents nothing
+    touched and force the whole collection back through extraction and
+    OCR. That is the exact cost the incremental update exists to avoid.
+
+    A file that *starts* before the divergence keeps its pages and its
+    numbering, because everything ahead of it is unchanged. A file that
+    starts at or after it is shifted by whatever happened at the
+    divergence, so its sheet numbers move even though its bytes did not.
+    Files that changed or were removed are not listed: their pages are
+    handled by re-extraction and deletion respectively.
+    """
+    renumber: list[str] = []
+    page_offset = 0
+    for relative_path, page_count in stored:
+        if (
+            page_offset >= first_divergent_page
+            and relative_path not in changed_paths
+            and relative_path not in removed_paths
+        ):
+            renumber.append(relative_path)
+        page_offset += page_count or 0
+    return tuple(renumber)
+
+
+def _intended_membership(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    source_dir: Path,
+    new_files: list[FileChange],
+    removed_paths: set[str],
+) -> list[tuple[str, str]]:
+    """`(relative_path, group_key)` the collection will have after the update."""
+    members: list[tuple[str, str]] = []
+
+    for row in conn.execute(
+        "SELECT relative_path, group_key FROM file"
+        " WHERE group_key IS NOT NULL AND status != 'duplicate'"
+    ):
+        if row["relative_path"] not in removed_paths:
+            members.append((row["relative_path"], row["group_key"]))
+
+    for change in new_files:
+        group_key = derive_group_key(change.relative_path, source_dir, config)
+        if group_key is not None:
+            members.append((change.relative_path, group_key))
+
+    return members
+
+
+def build_update_plan(conn: sqlite3.Connection, config: ProjectConfig) -> UpdatePlan:
+    """The whole plan: what changed, and what invalidating it would cost."""
+    changes, unchanged, fingerprint = detect_changes(conn, config)
+
+    by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": []}
+    for change in changes:
+        by_kind[change.kind].append(change)
+
+    changed_paths = {change.relative_path for change in by_kind["changed"]}
+    removed_paths = {change.relative_path for change in by_kind["removed"]}
+
+    source_dir = Path(config.source_folder).resolve()
+    stored_rows = conn.execute(
+        "SELECT relative_path, group_key, page_count FROM file"
+        " WHERE group_key IS NOT NULL AND status != 'duplicate'"
+    ).fetchall()
+
+    stored_by_group: dict[str, list[tuple[str, int]]] = {}
+    for row in stored_rows:
+        stored_by_group.setdefault(row["group_key"], []).append(
+            (row["relative_path"], row["page_count"] or 0)
+        )
+    # Natural order, not insertion order: this must be the same sequence
+    # `windows_prep.pages_for_group` concatenates, or the page offsets
+    # computed here would name positions the windows never had.
+    for group_key in stored_by_group:
+        stored_by_group[group_key].sort(key=lambda pair: natural_sort_key(pair[0]))
+
+    intended_by_group: dict[str, list[str]] = {}
+    for relative_path, group_key in _intended_membership(
+        conn, config, source_dir, by_kind["new"], removed_paths
+    ):
+        intended_by_group.setdefault(group_key, []).append(relative_path)
+    for group_key in intended_by_group:
+        intended_by_group[group_key].sort(key=natural_sort_key)
+
+    groups: list[GroupInvalidation] = []
+    for group_key, stored in stored_by_group.items():
+        intended = intended_by_group.get(group_key, [])
+        touched = any(
+            path in changed_paths or path in removed_paths for path, _ in stored
+        ) or intended != [path for path, _ in stored]
+        if not touched:
+            continue
+
+        divergent_page = _divergence_page(stored, intended, changed_paths)
+        page_count = sum(count for _, count in stored)
+        old_spans = window_spans(page_count, config.pages_per_window, config.overlap)
+        affected = first_affected_window(old_spans, divergent_page)
+
+        groups.append(
+            GroupInvalidation(
+                group_key=group_key,
+                first_divergent_page=divergent_page,
+                first_affected_window=affected,
+                windows_discarded=max(0, len(old_spans) - affected),
+                windows_kept=affected,
+                files_to_renumber=_files_to_renumber(
+                    stored, divergent_page, changed_paths, removed_paths
+                ),
+            )
+        )
+
+    return UpdatePlan(
+        new=tuple(by_kind["new"]),
+        changed=tuple(by_kind["changed"]),
+        removed=tuple(by_kind["removed"]),
+        groups=tuple(groups),
+        unchanged_count=unchanged,
+        fingerprint=fingerprint,
+    )

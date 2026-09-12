@@ -292,3 +292,269 @@ def test_o_scan_grava_o_mtime_para_a_deteccao_rapida(tmp_path):
 
     gravado = conn.execute("SELECT mtime FROM file WHERE relative_path = 'a.pdf'").fetchone()[0]
     assert gravado == pytest.approx((origem / "a.pdf").stat().st_mtime)
+
+
+# --- Task 6: divergência por grupo e contagem de janelas -------------------
+
+from gclaude_indexer.update_plan import build_update_plan, first_affected_window
+from gclaude_indexer.windows_prep import window_spans
+
+
+def _group_key(origem: Path, saida: Path) -> str:
+    """Chave do grupo derivada pela mesma função que a produção usa.
+
+    Hardcoding "g" here would be a silent lie: `_config` uses
+    `group_mode="all_together"`, under which `derive_group_key` returns the
+    source folder's *name*. With a literal, the stored group and the
+    intended group would never match, and every divergence test would
+    measure the wrong thing while still passing.
+    """
+    from gclaude_indexer.scanning import derive_group_key
+
+    origem_resolvida = origem.resolve()
+    chave = derive_group_key(
+        "qualquer.pdf", origem_resolvida, _config(origem_resolvida, saida)
+    )
+    assert chave is not None
+    return chave
+
+
+def _registrar_com_paginas(
+    conn, origem: Path, nome: str, paginas: int, group_key: str
+) -> None:
+    import hashlib
+
+    caminho = origem / nome
+    conteudo = caminho.read_text(encoding="utf-8")
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, mtime,"
+        " group_key, page_count, status)"
+        " VALUES (?, ?, 'pdf', ?, ?, ?, ?, ?, 'extracted')",
+        (nome, nome, len(conteudo), hashlib.sha256(conteudo.encode()).hexdigest(),
+         caminho.stat().st_mtime, group_key, paginas),
+    )
+    file_id = conn.execute(
+        "SELECT id FROM file WHERE relative_path = ?", (nome,)
+    ).fetchone()[0]
+    for numero in range(1, paginas + 1):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+            " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+            (file_id, numero, f"f. {numero}"),
+        )
+    conn.commit()
+
+
+def _criar_janelas(
+    conn, group_key: str, page_count: int, window_size: int, overlap: int
+) -> None:
+    from gclaude_indexer.windows_prep import window_key
+
+    for start, end in window_spans(page_count, window_size, overlap):
+        conn.execute(
+            "INSERT INTO window (key, group_key, start_ref, end_ref, status)"
+            " VALUES (?, ?, ?, ?, 'done')",
+            (window_key(group_key, start, end), group_key,
+             f"f. {start + 1}", f"f. {end}"),
+        )
+    conn.commit()
+
+
+def _contar_janelas_criadas(page_count: int, window_size: int, overlap: int) -> int:
+    """Roda `prepare_windows` de verdade sobre um grupo sintético.
+
+    A conexão é fechada antes de sair do `TemporaryDirectory`: no Windows
+    um `project.db` ainda aberto trava a remoção da pasta (WinError 32) e
+    o teste falharia por causa da limpeza, não da contagem.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as pasta:
+        base = Path(pasta)
+        conn = db.connect(base / "project.db")
+        db.init_schema(conn)
+        conn.execute(
+            "INSERT INTO file (relative_path, name, extension, size, sha256,"
+            " group_key, page_count, status) VALUES ('a.pdf', 'a.pdf', 'pdf', 1, 'h',"
+            " 'g', ?, 'extracted')",
+            (page_count,),
+        )
+        file_id = conn.execute("SELECT id FROM file").fetchone()[0]
+        for numero in range(1, page_count + 1):
+            conn.execute(
+                "INSERT INTO page (file_id, number, reference, char_count, image_count,"
+                " has_table, text) VALUES (?, ?, ?, 1, 0, 0, 'x')",
+                (file_id, numero, f"f. {numero}"),
+            )
+        conn.commit()
+
+        from gclaude_indexer.windows_prep import prepare_windows
+
+        config = ProjectConfig(
+            name="a", source_folder=str(base), output_folder=str(base),
+            pages_per_window=window_size, overlap=overlap,
+        )
+        prepare_windows(conn, config)
+        criadas = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
+        conn.close()
+        return criadas
+
+
+def test_a_ultima_janela_sempre_entra_porque_o_total_a_limita():
+    """Divergência na página 501 (0-based 500). Nenhuma janela antiga
+    cobre essa página, mas a última ia de 491 a 500 e passa a ir de 491 a
+    506: é ela que muda."""
+    antigas = window_spans(500, 16, 2)
+    novas = window_spans(510, 16, 2)
+
+    indice = first_affected_window(antigas, 500)
+
+    assert indice == 35
+    assert len(antigas) - indice == 1   # exatamente 1 descartada
+    assert indice == 35                 # exatamente 35 preservadas
+    assert len(novas) == 37
+    assert antigas[:35] == novas[:35]   # as preservadas continuam idênticas
+    assert antigas[35] != novas[35]     # (490, 500) vira (490, 506)
+
+
+def test_divergencia_no_comeco_invalida_tudo():
+    antigas = window_spans(500, 16, 2)
+
+    assert first_affected_window(antigas, 0) == 0
+
+
+def test_divergencia_no_meio_preserva_o_que_vem_antes():
+    antigas = window_spans(500, 16, 2)
+
+    indice = first_affected_window(antigas, 250)
+
+    assert antigas[indice][1] > 250       # a janela cobre a página divergente
+    assert antigas[indice - 1][1] <= 250  # a anterior não
+
+
+def test_grupo_sem_janela_nao_quebra():
+    assert first_affected_window([], 0) == 0
+
+
+def test_o_plano_conta_janelas_descartadas_e_preservadas(tmp_path):
+    """Acervo de 30 páginas em 3 arquivos de 10, janela 16 / sobreposição 2.
+    Um quarto arquivo entra no fim."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo_esperado = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo_esperado)
+    _criar_janelas(conn, grupo_esperado, page_count=30, window_size=16, overlap=2)
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert [m.relative_path for m in plano.new] == ["d.pdf"]
+    assert plano.changed == ()
+    assert plano.removed == ()
+    grupo = plano.groups[0]
+    assert grupo.group_key == grupo_esperado
+    assert grupo.windows_kept + grupo.windows_discarded == len(window_spans(30, 16, 2))
+    assert grupo.windows_discarded >= 1
+    assert plano.is_empty is False
+    assert plano.files_needing_ocr == 1
+    assert plano.windows_to_reclassify == grupo.windows_discarded
+
+
+def test_acervo_intacto_nao_produz_plano(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert plano.is_empty is True
+    assert plano.groups == ()
+    assert plano.unchanged_count == 2
+    assert plano.windows_to_reclassify == 0
+
+
+def test_arquivos_antes_da_divergencia_nao_sao_renumerados(tmp_path):
+    """Ruling C2: só o último arquivo muda, então nada antes dele pode
+    entrar em `files_to_renumber` — quem entra nessa lista perde as
+    páginas e volta para a extração."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf", "d.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    (origem / "d.pdf").write_text("d bem diferente", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert [m.relative_path for m in plano.changed] == ["d.pdf"]
+    invalidacao = plano.groups[0]
+    assert invalidacao.first_divergent_page == 30
+    assert "a.pdf" not in invalidacao.files_to_renumber
+    assert "b.pdf" not in invalidacao.files_to_renumber
+    assert "c.pdf" not in invalidacao.files_to_renumber
+    assert invalidacao.files_to_renumber == ()
+
+
+def test_so_quem_vem_depois_da_divergencia_e_renumerado(tmp_path):
+    """O arquivo do meio muda: quem vem antes fica intacto, quem vem
+    depois precisa de novas folhas."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf", "d.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    (origem / "b.pdf").write_text("b bem diferente", encoding="utf-8")
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    invalidacao = plano.groups[0]
+    assert invalidacao.first_divergent_page == 10
+    assert invalidacao.files_to_renumber == ("c.pdf", "d.pdf")
+
+
+def test_arquivo_removido_do_meio_desloca_quem_vem_depois(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, grupo)
+    (origem / "b.pdf").unlink()
+
+    plano = build_update_plan(conn, _config(origem, saida))
+
+    assert [m.relative_path for m in plano.removed] == ["b.pdf"]
+    invalidacao = plano.groups[0]
+    assert invalidacao.first_divergent_page == 10
+    assert invalidacao.files_to_renumber == ("c.pdf",)
+
+
+def test_a_contagem_prevista_bate_com_a_que_windows_prep_cria():
+    """Teste de acoplamento: se a aritmética voltar a ser duplicada, este
+    falha antes de o usuário ver um número errado na tela."""
+    for page_count in (1, 15, 16, 17, 30, 100, 500, 510):
+        previstas = len(window_spans(page_count, 16, 2))
+        criadas = _contar_janelas_criadas(page_count, window_size=16, overlap=2)
+        assert previstas == criadas, f"{page_count} páginas"
