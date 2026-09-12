@@ -769,3 +769,235 @@ def test_a_contagem_prevista_bate_com_a_que_windows_prep_cria():
         previstas = len(window_spans(page_count, 16, 2))
         criadas = _contar_janelas_criadas(page_count, window_size=16, overlap=2)
         assert previstas == criadas, f"{page_count} páginas"
+
+
+# --- Task 7: aplicação do plano (a única coisa do projeto que apaga) ------
+
+from gclaude_indexer.invalidation import PlanExpired, apply_update_plan
+from gclaude_indexer.windows_prep import sanitize_group_name
+
+
+def test_plano_vencido_e_recusado_sem_escrever_nada(tmp_path):
+    """O plano é uma fotografia da pasta, e o Drive continua sincronizando
+    enquanto o usuário lê a tela de confirmação. Aplicar um plano vencido
+    seria gravar uma coisa tendo mostrado outra."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+
+    (origem / "b.pdf").write_text("b", encoding="utf-8")  # a pasta mudou
+
+    with pytest.raises(PlanExpired):
+        apply_update_plan(conn, config, plano)
+
+    assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == 0
+
+
+def test_o_removido_sai_das_tabelas_e_entra_em_removed_file(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "fica.pdf").write_text("fica", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "fica.pdf", paginas=2, group_key=grupo)
+    (origem / "sai.pdf").write_text("sai", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "sai.pdf", paginas=2, group_key=grupo)
+    (origem / "sai.pdf").unlink()
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    assert conn.execute(
+        "SELECT COUNT(*) FROM file WHERE relative_path = 'sai.pdf'"
+    ).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 2
+    assert conn.execute(
+        "SELECT name FROM removed_file"
+    ).fetchone()["name"] == "sai.pdf"
+    assert resultado.files_removed == 1
+    assert resultado.pages_deleted == 2
+
+
+def test_quem_mudou_volta_para_discovered_e_quem_so_renumera_para_converted(tmp_path):
+    """A economia inteira da funcionalidade está nestas duas transições:
+    'discovered' paga OCR de novo, 'converted' relê o que já está em
+    <saida>/converted/. Trocá-las tornaria toda atualização tão cara
+    quanto uma reindexação completa."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    (origem / "b.pdf").write_text("b", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=2, group_key=grupo)
+    _registrar_com_paginas(conn, origem, "b.pdf", paginas=2, group_key=grupo)
+    (origem / "a.pdf").write_text("a corrigido e maior", encoding="utf-8")
+    config = _config(origem, saida)
+
+    resultado = apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    estados = dict(conn.execute("SELECT relative_path, status FROM file"))
+    assert estados["a.pdf"] == "discovered"   # mudou: paga OCR
+    assert estados["b.pdf"] == "converted"    # só renumera: relê o convertido
+    assert resultado.files_reset == 1
+    assert resultado.files_renumbered == 1
+    # Os dois perderam as páginas: um para reextrair, o outro para
+    # renumerar. Nenhum dos dois fica com numeração velha.
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 0
+
+
+def test_o_txt_da_janela_descartada_some_do_disco(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
+    _criar_janelas(conn, grupo, page_count=20, window_size=16, overlap=2)
+    base = sanitize_group_name(grupo)
+    txt = saida / "windows" / f"{base}_j0001-0016.txt"
+    txt.write_text("texto velho", encoding="utf-8")
+    (origem / "a.pdf").write_text("a corrigido", encoding="utf-8")
+    config = _config(origem, saida)
+
+    apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    assert not txt.exists()
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+
+
+def test_layout_divergente_apaga_todas_as_janelas_gravadas_do_grupo(tmp_path):
+    """Correção da bandeira `discard_whole_group`: apagar vão a vão
+    alcançaria no máximo as 2 janelas derivadas e deixaria 34 gravadas
+    de pé, dentro da própria rede de segurança."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, group_key=grupo)
+    # 30 páginas dão 2 janelas; o índice guarda o layout de 500 (36).
+    _criar_janelas(conn, grupo, page_count=500, window_size=16, overlap=2)
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+    base = sanitize_group_name(grupo)
+    dentro_do_derivado = saida / "windows" / f"{base}_j0001-0016.txt"
+    so_no_gravado = saida / "windows" / f"{base}_j0491-0500.txt"
+    dentro_do_derivado.write_text("velho", encoding="utf-8")
+    so_no_gravado.write_text("velho", encoding="utf-8")
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+    assert plano.groups[0].discard_whole_group is True
+
+    resultado = apply_update_plan(conn, config, plano)
+
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+    assert resultado.windows_deleted == 36
+    assert not dentro_do_derivado.exists()
+    assert not so_no_gravado.exists()  # inalcançável vão a vão
+
+
+def test_chave_que_escapa_da_pasta_de_janelas_nao_apaga_nada_fora(tmp_path):
+    """A chave do grupo pode vir de uma regex sobre um nome de arquivo que
+    o acervo trouxe: é dado, não constante. Um `.txt` órfão custa nada;
+    um delete fora da pasta de janelas custa o acervo do usuário."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf", "c.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 10, group_key=grupo)
+    # Três linhas gravadas contra duas derivadas: dispara o descarte do
+    # grupo inteiro, que é o caminho em que o nome do arquivo vem da
+    # chave armazenada.
+    for chave in (
+        f"{grupo}::000001-000016",
+        f"{grupo}::000015-000030",
+        "../../escapou::000001-000016",
+    ):
+        conn.execute(
+            "INSERT INTO window (key, group_key, start_ref, end_ref, status)"
+            " VALUES (?, ?, 'f. 1', 'f. 16', 'done')",
+            (chave, grupo),
+        )
+    conn.commit()
+    (origem / "d.pdf").write_text("d", encoding="utf-8")
+    forasteiro = tmp_path / "escapou_j0001-0016.txt"
+    forasteiro.write_text("nao me apague", encoding="utf-8")
+    config = _config(origem, saida)
+
+    apply_update_plan(conn, config, build_update_plan(conn, config))
+
+    assert forasteiro.exists()
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 0
+
+
+def test_falha_no_meio_deixa_o_banco_como_estava_e_o_txt_no_disco(tmp_path, monkeypatch):
+    """Atomicidade e ordem: nada é gravado pela metade, e nenhum arquivo
+    some antes de o commit passar."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    (saida / "windows").mkdir(parents=True)
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    (origem / "fica.pdf").write_text("fica", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "fica.pdf", paginas=2, group_key=grupo)
+    (origem / "sai.pdf").write_text("sai", encoding="utf-8")
+    _registrar_com_paginas(conn, origem, "sai.pdf", paginas=2, group_key=grupo)
+    (origem / "sai.pdf").unlink()
+    _criar_janelas(conn, grupo, page_count=4, window_size=16, overlap=2)
+    base = sanitize_group_name(grupo)
+    txt = saida / "windows" / f"{base}_j0001-0004.txt"
+    txt.write_text("texto velho", encoding="utf-8")
+    config = _config(origem, saida)
+    plano = build_update_plan(conn, config)
+    paginas_antes = conn.execute("SELECT COUNT(*) FROM page").fetchone()[0]
+    janelas_antes = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
+
+    import gclaude_indexer.invalidation as mod
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("disco cheio")
+
+    monkeypatch.setattr(mod, "_record_removals", explode)
+
+    with pytest.raises(RuntimeError):
+        apply_update_plan(conn, config, plano)
+
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == paginas_antes
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == janelas_antes
+    assert conn.execute(
+        "SELECT COUNT(*) FROM file WHERE relative_path = 'sai.pdf'"
+    ).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
+    # O apagamento em disco só acontece depois do commit: se acontecesse
+    # antes, este arquivo teria sumido e a linha da janela continuaria
+    # no banco, deixando uma janela sem texto.
+    assert txt.exists()
+
+
+def test_a_chave_do_log_da_atualizacao_existe_nos_tres_idiomas():
+    """A suíte não tem teste de paridade de chaves de i18n; sem isto uma
+    tradução faltando só apareceria para o usuário."""
+    from gclaude_indexer.i18n import _TRANSLATIONS
+
+    for idioma in ("pt", "en", "es"):
+        assert "log.update.applied" in _TRANSLATIONS[idioma]

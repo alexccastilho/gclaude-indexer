@@ -850,6 +850,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "{derived} — como não dá para saber quais continuam valendo, todas as janelas "
             "deste grupo serão reclassificadas"
         ),
+        "log.update.applied": (
+            "atualização aplicada: {windows} janela(s) descartada(s), {removed} "
+            "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
+            "renumerar"
+        ),
         "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
         "log.rules.summary": (
             "motor regras: {windows} janela(s), {items} peça(s) (alta={high}, media={medium}, "
@@ -1687,6 +1692,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "group {group}: the index holds {stored} window(s), but the current pages would "
             "give {derived} — since there is no telling which ones still hold, every window "
             "in this group will be reclassified"
+        ),
+        "log.update.applied": (
+            "update applied: {windows} window(s) discarded, {removed} document(s) "
+            "removed, {reset} to reprocess, {renumbered} to renumber"
         ),
         "log.rules.invalid_item": "invalid item in window {window}: {errors}",
         "log.rules.summary": (
@@ -2536,6 +2545,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "grupo {group}: el índice guarda {stored} ventana(s), pero las páginas actuales "
             "darían {derived} — como no hay forma de saber cuáles siguen valiendo, todas las "
             "ventanas de este grupo se reclasificarán"
+        ),
+        "log.update.applied": (
+            "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
+            "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "
+            "renumerar"
         ),
         "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
         "log.rules.summary": (
