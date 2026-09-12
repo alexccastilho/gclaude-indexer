@@ -59,3 +59,22 @@ def test_um_projeto_da_1_0_1_ganha_a_coluna_na_primeira_abertura(tmp_path):
 
     colunas = {row[1] for row in conn.execute("PRAGMA table_info(file)")}
     assert "mtime" in colunas
+
+
+def test_o_caminhamento_ignora_lixo_de_sistema_e_a_pasta_de_saida(tmp_path):
+    from gclaude_indexer.scanning import source_files
+
+    origem = tmp_path / "origem"
+    saida = origem / "saida"
+    (origem / "sub").mkdir(parents=True)
+    saida.mkdir()
+
+    (origem / "b.pdf").write_text("b", encoding="utf-8")
+    (origem / "A.pdf").write_text("a", encoding="utf-8")
+    (origem / "sub" / "c.pdf").write_text("c", encoding="utf-8")
+    (origem / "desktop.ini").write_text("lixo", encoding="utf-8")
+    (saida / "index.md").write_text("gerado", encoding="utf-8")
+
+    encontrados = [p.relative_to(origem).as_posix() for p in source_files(origem, saida)]
+
+    assert encontrados == ["A.pdf", "b.pdf", "sub/c.pdf"]

@@ -142,11 +142,35 @@ def is_system_file(path: Path) -> bool:
     starts with a dot, and refusing to index it because of that would be a
     silent loss of the user's own material. Everything here is a file no
     person put in the folder.
+
+    Bookkeeping files (such as desktop.ini) that slip in through the "all
+    extensions" option are never indexed; a real run turned a `desktop.ini`
+    into item number one of an index of course material, summarised as
+    "operating system configuration file".
     """
     name = path.name.lower()
     if name in _SYSTEM_FILE_NAMES:
         return True
     return any(name.startswith(prefix) for prefix in _SYSTEM_FILE_PREFIXES)
+
+
+def source_files(source_dir: Path, output_dir: Path) -> list[Path]:
+    """Files of the collection, in the order the scan walks them.
+
+    Extracted from `scan()` (Phase 17) so the update plan
+    (`update_plan.py`) walks by exactly the same criteria. Two walks that
+    disagree would make the plan describe a folder the scan does not see.
+    """
+    return sorted(
+        (
+            path
+            for path in source_dir.rglob("*")
+            if path.is_file()
+            and not path.is_relative_to(output_dir)
+            and not is_system_file(path)
+        ),
+        key=lambda path: str(path.relative_to(source_dir)).lower(),
+    )
 
 
 def scan(
@@ -169,27 +193,9 @@ def scan(
 
     result = ScanResult()
 
-    paths = sorted(
-        (path for path in source_dir.rglob("*") if path.is_file()),
-        key=lambda path: str(path.relative_to(source_dir)).lower(),
-    )
-
-    for path in paths:
+    for path in source_files(source_dir, output_dir):
         if should_stop is not None and should_stop():
             break
-
-        if path.is_relative_to(output_dir):
-            continue
-
-        if is_system_file(path):
-            # Bookkeeping the operating system and the sync client leave
-            # behind, never part of the collection. They slip in through
-            # the "all extensions" option, and a real run turned a
-            # `desktop.ini` into item number one of an index of course
-            # material, summarised as "operating system configuration
-            # file". Skipped before `total_found` so the count reflects
-            # documents, not clutter.
-            continue
 
         result.total_found += 1
 
