@@ -2160,6 +2160,33 @@ def test_o_aviso_cala_enquanto_o_pipeline_tem_trabalho_pendente(tmp_path, monkey
     assert cliente.get(f"/projects/{projeto_id}/update/banner").text.strip() != ""
 
 
+def test_janela_pendente_para_sempre_nao_cala_o_aviso(tmp_path, monkeypatch):
+    """Classificação interrompida não pode silenciar o aviso para sempre.
+
+    A única transição de `window.status` no código é `pending -> 'done'`
+    no sucesso. Quem parar a classificação no meio — coisa comum a uns
+    trinta segundos por janela, e a tela de Execução oferece o botão —
+    deixa janelas pendentes indefinidamente. Se o aviso olhasse para
+    elas, nunca mais apareceria nesse projeto.
+    """
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    origem = tmp_path / "origem"
+    (origem / "novo.pdf").write_text("novo", encoding="utf-8")
+
+    grupo = conn.execute(
+        "SELECT group_key FROM file WHERE relative_path = 'a.pdf'"
+    ).fetchone()[0]
+    conn.execute("UPDATE file SET status = 'extracted' WHERE relative_path = 'a.pdf'")
+    conn.execute(
+        "INSERT INTO window (key, group_key, start_ref, end_ref, status)"
+        " VALUES (?, ?, 'f. 1', 'f. 4', 'pending')",
+        (f"{grupo}::000001-000004", grupo),
+    )
+    conn.commit()
+
+    assert cliente.get(f"/projects/{projeto_id}/update/banner").text.strip() != ""
+
+
 def test_o_post_com_plano_vencido_e_recusado(tmp_path, monkeypatch):
     cliente, projeto_id, _ = _app_com_projeto(tmp_path, monkeypatch)
 

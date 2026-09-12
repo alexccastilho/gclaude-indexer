@@ -593,33 +593,36 @@ def run_screen(request: Request, project_id: int):
 
 
 def _pipeline_has_pending_work(conn) -> bool:
-    """Whether the existing five steps still have something to do.
+    """Whether documents are still waiting to be converted or extracted.
 
-    The predicate is "some step would process a row if it ran now", read
-    with the same criteria the steps themselves use: `convert()` selects
-    `status = 'discovered'`, `extract_pages()` selects `'converted'`, and
-    the classification engines select `window.status = 'pending'`. It is
-    deliberately *not* "did an update just happen": nothing records that,
-    and inferring it from a flag would be one more value derived twice.
+    Used only to silence the update banner, and only for that one case:
+    while a file sits in `'discovered'` or `'converted'`, the honest next
+    action is to run the steps — `convert()` selects the first,
+    `extract_pages()` the second — not to diagnose the folder again. It
+    is deliberately *not* "did an update just happen": nothing records
+    that, and inferring it from a flag would be one more value derived
+    twice.
 
     Statuses left out on purpose. `'extracted'` is a finished file;
     `'failed'`, `'skipped'` and `'duplicate'` are terminal for this run —
     no step picks them up, so a collection holding only those has no
     pending work and the notice is honest again.
 
-    Used only to silence the update banner. After an apply the collection
-    is full of work the pipeline already knows how to do, and telling the
-    user to update again — before `scan` has even brought the new
-    documents into the `file` table — points at the one action that
-    cannot help.
+    Pending *windows* are not consulted, though the classification
+    engines do select `window.status = 'pending'`. The only transition
+    in the codebase is `pending -> 'done'` on success, so a user who
+    stops classification part-way — an ordinary thing to do at roughly
+    thirty seconds a window, and the Execution screen offers the button
+    — would leave windows pending forever and never see the banner
+    again for that project. Nor did the clause earn its place: after an
+    apply of a pure addition nothing is `'discovered'` or `'converted'`
+    and the discarded tail windows are gone, so the predicate was
+    already False and the banner returned anyway. Applying the same plan
+    twice is prevented by the key-based layout comparison in
+    `update_plan._layout_disagrees`, not by this guard.
     """
-    pending_file = conn.execute(
-        "SELECT 1 FROM file WHERE status IN ('discovered', 'converted') LIMIT 1"
-    ).fetchone()
-    if pending_file is not None:
-        return True
     return conn.execute(
-        "SELECT 1 FROM window WHERE status = 'pending' LIMIT 1"
+        "SELECT 1 FROM file WHERE status IN ('discovered', 'converted') LIMIT 1"
     ).fetchone() is not None
 
 
