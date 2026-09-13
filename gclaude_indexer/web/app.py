@@ -6,9 +6,9 @@
 # Software Foundation, either version 3 of the License, or (at your option)
 # any later version. See the LICENSE file for details.
 
-"""Web interface (section 6): four screens — Projects, New project,
-Execution and Result — served by FastAPI + Jinja2, with HTMX for the parts
-that update themselves. No front-end framework, no JavaScript build: HTML
+"""Web interface (section 6): five screens — Projects, New project,
+Execution, Update collection and Result — served by FastAPI + Jinja2, with
+HTMX for the parts that update themselves. No front-end framework, no JavaScript build: HTML
 served by Python itself; the only script is HTMX, vendored in
 `static/htmx.min.js` (no network call at runtime).
 
@@ -41,6 +41,7 @@ from ..artifacts import (
     TIMELINE_FILENAME,
     generate_all_artifacts,
     pending_items,
+    stale_artifacts,
 )
 from ..catalog import CatalogEntry, find_project, list_projects, register_project
 from ..config import ProjectConfig, ConfigError, load_config
@@ -74,7 +75,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.1.0"
+SYSTEM_VERSION = "1.2.0"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 
 # 50 lines covered less than a minute of scanning on a real collection — the
@@ -581,6 +582,8 @@ def run_screen(request: Request, project_id: int):
             prepare(conn, config, language)
             claude_code_status = sync_progress(conn, config, language)
 
+        stale = _stale_context(_reports_to_regenerate(conn))
+
     return render(
         request, "run.html",
         {
@@ -588,8 +591,49 @@ def run_screen(request: Request, project_id: int):
             "config": config, "eventos": events,
             "known_steps": LOG_KNOWN_STEPS,
             "claude_code_status": claude_code_status,
+            **stale,
         },
     )
+
+
+def _reports_to_regenerate(conn):
+    """Out-of-date reports, but only once there is nothing left to process.
+
+    Two different questions share the word "pending" and must not share a
+    predicate. `_pipeline_has_pending_work` below deliberately ignores
+    pending *windows*, so that someone who stops classification part-way
+    still sees the update banner. Here the opposite holds: nudging "generate
+    the reports" while windows are still waiting for the model would produce
+    reports that are incomplete the moment they are written, and stale again
+    a minute later. So this one does consult them.
+
+    The nudge is only a nudge. The button itself is always on the Execution
+    screen, so a user who deliberately stopped half-way and wants reports
+    for what is done can still ask for them.
+    """
+    if _pipeline_has_pending_work(conn):
+        return None
+    if conn.execute("SELECT 1 FROM window WHERE status = 'pending' LIMIT 1").fetchone():
+        return None
+    return stale_artifacts(conn)
+
+
+def _stale_context(staleness) -> dict:
+    """The numbers the two notices interpolate, or an empty dict."""
+    if staleness is None:
+        return {"stale": None, "stale_numbers": {}}
+    return {
+        "stale": staleness,
+        "stale_numbers": {
+            "generated_at": staleness.generated_at,
+            "was_files": staleness.recorded.files,
+            "was_windows": staleness.recorded.windows_done,
+            "was_items": staleness.recorded.items,
+            "now_files": staleness.current.files,
+            "now_windows": staleness.current.windows_done,
+            "now_items": staleness.current.items,
+        },
+    }
 
 
 def _pipeline_has_pending_work(conn) -> bool:
@@ -951,6 +995,11 @@ def result_screen(request: Request, project_id: int):
             content = path.read_text(encoding="utf-8") if path.exists() else None
             artifacts.append({"title": translate(language, title_key), "file_name": file_name, "content": content})
         pending = pending_items(conn)
+        # Read inside the block: `conn` is closed when it exits. On the
+        # Result screen the notice shows whenever the numbers differ, with
+        # no pending-work condition — whatever is still running, the files
+        # on display really do predate the project.
+        stale = _stale_context(stale_artifacts(conn))
         quality = quality_summary(conn, config)
         comparison = compare_runs(conn)
         for row in comparison:
@@ -967,6 +1016,7 @@ def result_screen(request: Request, project_id: int):
             "step_in_progress": step_in_progress,
             "qualidade": quality,
             "comparison": comparison,
+            **stale,
         },
     )
 

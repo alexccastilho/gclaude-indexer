@@ -362,6 +362,15 @@ editados, 1 removido". Siga-o até a tela **Atualizar coleção**, veja o
 que ela planeja fazer e confirme. Depois rode as etapas como de costume:
 elas vão encontrar só o trabalho que a atualização deixou para elas.
 
+**Uma etapa não faz parte de "rodar todas as etapas".** Transformar os itens
+classificados nos quatro arquivos Markdown é um botão separado — "Importar e
+gerar relatórios" — na mesma tela Execução. A classificação terminar não os
+grava. Pular essa etapa deixa os relatórios descrevendo a coleção como ela
+era antes, o que é tão confuso quanto parece. Agora o aplicativo avisa:
+assim que não sobra mais nada para processar, aparece um aviso com o botão
+nele, e a tela Resultado diz claramente quando os arquivos exibidos são
+anteriores ao projeto e o que mudou desde então.
+
 **Quanto isso custa, e por que não é a coleção inteira.** Os documentos
 são agrupados, e as páginas de um grupo são lidas como uma única
 sequência longa, fatiada em janelas sobrepostas — as janelas são o que o
@@ -552,7 +561,7 @@ sozinho — veja [Requisitos](#requisitos)):
 Uma execução correta termina com uma linha parecida com:
 
 ```
-537 passed, 7 warnings in 167.09s (0:02:47)
+552 passed, 7 warnings in 181.23s (0:03:01)
 ```
 
 (A contagem de avisos pode variar um pouco entre máquinas; eles vêm de

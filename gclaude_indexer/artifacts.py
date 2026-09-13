@@ -21,6 +21,8 @@ through `translate()` (moved to core in this same task, see `i18n.py`).
 
 from __future__ import annotations
 
+import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -260,7 +262,11 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     # Statuses are the fixed database/domain codes (`file.status`), not
     # translatable prose — left as-is, same reasoning as the JSON contract
     # keys in `CLAUDE.md` (see `windows_prep.py`).
-    for status in ("discovered", "converted", "extracted", "failed", "skipped"):
+    # `duplicate` was missing from this list until phase 18, so a file that
+    # entered as a copy of one already indexed left no trace in the report:
+    # the coverage counts simply did not add up to the collection, and
+    # nothing said why. `scanning.py` writes exactly these six values.
+    for status in ("discovered", "converted", "extracted", "failed", "duplicate", "skipped"):
         lines.append(f"- {status}: {file_counts.get(status, 0)}")
 
     lines += ["", f"## {t('artifact.review.windows_section')}"]
@@ -374,10 +380,88 @@ def pending_items(conn) -> dict:
     }
 
 
+# --- are the four files still current? --------------------------------------
+
+
+@dataclass(frozen=True)
+class ArtifactState:
+    """What the four generated files describe, in three numbers."""
+
+    files: int
+    windows_done: int
+    items: int
+
+
+@dataclass(frozen=True)
+class ArtifactStaleness:
+    """The gap between what the files say and what the project holds."""
+
+    recorded: ArtifactState
+    current: ArtifactState
+    generated_at: str
+
+
+def current_artifact_state(conn: sqlite3.Connection) -> ArtifactState:
+    """The state a generation run right now would describe."""
+    return ArtifactState(
+        files=conn.execute("SELECT COUNT(*) FROM file").fetchone()[0],
+        windows_done=conn.execute(
+            "SELECT COUNT(*) FROM window WHERE status = 'done'"
+        ).fetchone()[0],
+        items=conn.execute("SELECT COUNT(*) FROM item").fetchone()[0],
+    )
+
+
+def record_artifact_state(conn: sqlite3.Connection) -> ArtifactState:
+    """Stores what the files just written describe. One row, replaced."""
+    state = current_artifact_state(conn)
+    conn.execute(
+        "INSERT INTO artifact_state (id, generated_at, files, windows_done, items)"
+        " VALUES (1, ?, ?, ?, ?)"
+        " ON CONFLICT(id) DO UPDATE SET generated_at = excluded.generated_at,"
+        " files = excluded.files, windows_done = excluded.windows_done,"
+        " items = excluded.items",
+        (_now_iso(), state.files, state.windows_done, state.items),
+    )
+    conn.commit()
+    return state
+
+
+def stale_artifacts(conn: sqlite3.Connection) -> ArtifactStaleness | None:
+    """The four files against the project as it stands, or `None` when they
+    agree — and also `None` when there is nothing to compare against.
+
+    A project from before phase 18 carries no recorded state. Reporting it
+    as out of date would be a guess dressed as a fact, and a warning that
+    cries wolf is worse than no warning: the first generation on this
+    version records the state, and every one after it is checked.
+    """
+    recorded = conn.execute(
+        "SELECT generated_at, files, windows_done, items FROM artifact_state WHERE id = 1"
+    ).fetchone()
+    if recorded is None:
+        return None
+
+    was = ArtifactState(
+        files=recorded["files"],
+        windows_done=recorded["windows_done"],
+        items=recorded["items"],
+    )
+    now = current_artifact_state(conn)
+    if was == now:
+        return None
+
+    return ArtifactStaleness(recorded=was, current=now, generated_at=recorded["generated_at"])
+
+
 def generate_all_artifacts(conn, config: ProjectConfig, language: str) -> dict[str, Path]:
-    return {
+    written = {
         "index": generate_index_md(conn, config, language),
         "timeline": generate_timeline_md(conn, config, language),
         "review": generate_review_md(conn, config, language),
         "project_instructions": generate_project_instructions_md(conn, config, language),
     }
+    # Last, and only on success: a state recorded for files that failed to
+    # be written would claim they describe something they do not.
+    record_artifact_state(conn)
+    return written

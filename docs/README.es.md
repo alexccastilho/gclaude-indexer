@@ -369,6 +369,16 @@ Ejecución, si algo cambió en la carpeta de origen, un aviso dice cuánto —
 ejecute los pasos como de costumbre: solo encontrarán el trabajo que la
 actualización les dejó.
 
+**Un paso no forma parte de "ejecutar todos los pasos".** Convertir los
+elementos clasificados en los cuatro archivos Markdown es un botón aparte —
+"Importar y generar informes" — en la misma pantalla Ejecución. Que la
+clasificación termine no los escribe. Si lo omite, los informes siguen
+describiendo la colección como era antes, lo cual es tan confuso como suena.
+La aplicación ahora avisa: en cuanto no queda nada por procesar, aparece un
+aviso con el botón dentro, y la pantalla Resultado indica claramente cuándo
+los archivos mostrados son anteriores al proyecto y qué ha cambiado desde
+entonces.
+
 **Qué cuesta, y por qué no es la colección entera.** Los documentos se
 agrupan, y las páginas de un grupo se leen como una única secuencia
 larga, cortada en ventanas superpuestas — las ventanas son lo que el
@@ -556,7 +566,7 @@ vea [Requisitos](#requisitos)):
 Una ejecución correcta termina con una línea como:
 
 ```
-537 passed, 7 warnings in 167.09s (0:02:47)
+552 passed, 7 warnings in 181.23s (0:03:01)
 ```
 
 (El número de avisos puede variar ligeramente según la máquina; provienen

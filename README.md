@@ -343,6 +343,15 @@ anything in the source folder has changed, a notice says how much —
 screen, read what it plans to do, and confirm. Then run the steps as
 usual: they will find only the work the update left for them.
 
+**One step is not part of "run all steps".** Turning classified items into
+the four Markdown files is its own button — "Import and generate reports"
+— on the same Execution screen. Classification finishing does not write
+them. If you skip it, the reports keep describing the collection as it was
+before, which is exactly as confusing as it sounds. The app now tells you:
+once there is nothing left to process, a notice appears with the button in
+it, and the Result screen says plainly when the files on display predate
+the project and what has changed since.
+
 **What it costs, and why it is not the whole collection.** Documents are
 grouped, and a group's pages are read as one long sequence sliced into
 overlapping windows — the windows are what the classification engine
@@ -531,7 +540,7 @@ installer created (not whatever `python` your PATH resolves to — see
 A correct run ends with a line like:
 
 ```
-537 passed, 7 warnings in 167.09s (0:02:47)
+552 passed, 7 warnings in 181.23s (0:03:01)
 ```
 
 (The warning count may vary slightly by machine; they come from third-party
