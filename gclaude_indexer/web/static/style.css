@@ -191,10 +191,13 @@ a:hover { color: var(--color-accent-strong); }
 .header .brand .logo {
   height: 34px;
   width: 34px;
-  object-fit: cover;
-  border-radius: 8px;
+  /* contain, não cover: a arte é transparente e tem forma própria, e
+     recortá-la para preencher um quadrado corta o vértice do triângulo.
+     Sem canto arredondado e sem moldura pela mesma razão — ambos foram
+     escritos para o JPEG opaco que havia aqui antes, e desenhariam um
+     quadrado em volta de um logotipo que não é quadrado. */
+  object-fit: contain;
   display: block;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.14);
 }
 .nav-main { display: flex; align-items: center; gap: 0.3rem; margin-left: 0.5rem; }
 .nav-link {
@@ -694,7 +697,7 @@ html[data-theme="dark"] .claude-package { background: var(--color-surface-alt); 
 
 /* About screen ------------------------------------------------------------ */
 .about-header { display: flex; align-items: center; gap: 1rem; }
-.about-header img { width: 64px; height: 64px; border-radius: 14px; box-shadow: var(--shadow-card); }
+.about-header img { width: 64px; height: 64px; object-fit: contain; }
 .about-version { display: inline-block; background: var(--color-surface-alt); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-top: 0.3rem; }
 
 /* delete confirmation -------------------------------------------------------- */
