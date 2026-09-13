@@ -1,4 +1,4 @@
-; GClaude Indexer — Windows installer.
+﻿; GClaude Indexer — Windows installer.
 ;
 ; A shell around install.ps1, not a replacement for it: that script already
 ; installs Python 3.12, Tesseract, Ghostscript, Ollama and the model, with
@@ -77,6 +77,15 @@ brazilianportuguese.CompGhostscript=Ghostscript
 brazilianportuguese.CompOllama=Ollama (o servidor de modelos)
 brazilianportuguese.CompModels=Modelos já baixados do Ollama (vários GB; rebaixar leva horas)
 brazilianportuguese.CompPython=Python 3.12
+brazilianportuguese.DepsPageTitle=Dependências
+brazilianportuguese.DepsPageSubtitle=O que será baixado e instalado junto
+brazilianportuguese.DepsPageText=Tudo é baixado e instalado automaticamente, sem abrir nenhuma janela de comando. As duas primeiras são obrigatórias: sem elas o sistema não consegue ler páginas digitalizadas.
+brazilianportuguese.DepTesseract=Tesseract (OCR) e o idioma português — obrigatório
+brazilianportuguese.DepGhostscript=Ghostscript (tratamento de PDF) — obrigatório
+brazilianportuguese.DepOllama=Ollama (classificação com modelo local)
+brazilianportuguese.DepModel=Modelo padrão de classificação (cerca de 3,2 GB)
+brazilianportuguese.DepSensors=Bibliotecas de sensor (temperatura, potência, relógios)
+brazilianportuguese.DepCpuSensor=Atalho do sensor de CPU na área de trabalho
 
 english.OptionalGroup=Optional:
 english.DownloadModel=Download the local classification model now (about 3.2 GB)
@@ -93,6 +102,15 @@ english.CompGhostscript=Ghostscript
 english.CompOllama=Ollama (the model server)
 english.CompModels=Models already downloaded by Ollama (several GB; re-downloading takes hours)
 english.CompPython=Python 3.12
+english.DepsPageTitle=Dependencies
+english.DepsPageSubtitle=What will be downloaded and installed alongside
+english.DepsPageText=Everything is downloaded and installed automatically, without opening any command window. The first two are required: without them the system cannot read a scanned page.
+english.DepTesseract=Tesseract (OCR) and the Portuguese language data — required
+english.DepGhostscript=Ghostscript (PDF handling) — required
+english.DepOllama=Ollama (classification with a local model)
+english.DepModel=Default classification model (about 3.2 GB)
+english.DepSensors=Sensor libraries (temperature, power, clocks)
+english.DepCpuSensor=CPU sensor shortcut on the desktop
 
 spanish.OptionalGroup=Opcionales:
 spanish.DownloadModel=Descargar ahora el modelo de clasificación local (unos 3,2 GB)
@@ -109,14 +127,22 @@ spanish.CompGhostscript=Ghostscript
 spanish.CompOllama=Ollama (el servidor de modelos)
 spanish.CompModels=Modelos ya descargados por Ollama (varios GB; volver a descargarlos lleva horas)
 spanish.CompPython=Python 3.12
+spanish.DepsPageTitle=Dependencias
+spanish.DepsPageSubtitle=Qué se descargará e instalará junto
+spanish.DepsPageText=Todo se descarga e instala automáticamente, sin abrir ninguna ventana de comandos. Las dos primeras son obligatorias: sin ellas el sistema no puede leer una página escaneada.
+spanish.DepTesseract=Tesseract (OCR) y el idioma portugués — obligatorio
+spanish.DepGhostscript=Ghostscript (tratamiento de PDF) — obligatorio
+spanish.DepOllama=Ollama (clasificación con modelo local)
+spanish.DepModel=Modelo de clasificación predeterminado (unos 3,2 GB)
+spanish.DepSensors=Bibliotecas de sensor (temperatura, potencia, relojes)
+spanish.DepCpuSensor=Acceso directo del sensor de CPU en el escritorio
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-; Unchecked on purpose, with the size in the label: gigabytes started
-; without being asked for is how an installation someone expected to take a
-; minute becomes twenty.
-Name: "downloadmodel"; Description: "{cm:DownloadModel}"; GroupDescription: "{cm:OptionalGroup}"; Flags: unchecked
-Name: "cpusensor"; Description: "{cm:CpuSensorShortcut}"; GroupDescription: "{cm:OptionalGroup}"; Flags: unchecked
+; The model and the CPU-sensor shortcut used to live here. They moved to the
+; Dependencies page, where the rest of what gets downloaded is listed: a
+; person deciding whether to spend 3.2 GB should see that choice next to
+; the other four, not two pages away from them.
 
 [Files]
 Source: "..\gclaude_indexer\*"; DestDir: "{app}\gclaude_indexer"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
@@ -148,6 +174,16 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Indexer.vbs"; IconFilename: "
 Filename: "{app}\Indexer.vbs"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: postinstall nowait skipifsilent shellexec
 
 [Code]
+const
+  { Positions on the dependency page. Named because Values[3] read out of
+    context says nothing about which 3.2 GB it is deciding. }
+  DEP_TESSERACT = 0;
+  DEP_GHOSTSCRIPT = 1;
+  DEP_OLLAMA = 2;
+  DEP_MODEL = 3;
+  DEP_SENSORS = 4;
+  DEP_CPUSENSOR = 5;
+
 var
   StatusFilePath: String;
   DoneFilePath: String;
@@ -155,34 +191,112 @@ var
   DepsExitCode: Integer;
   RemoveComponents: String;
   DepsPage: TOutputProgressWizardPage;
+  DepsChoicePage: TInputOptionWizardPage;
 
-function BuildCommandLine(): String;
+function QuoteForPowerShell(const Value: String): String;
+var
+  Escaped: String;
+begin
+  { Single quotes, because a single-quoted PowerShell string takes its
+    contents literally and a Windows path is full of backslashes. A folder
+    may legitimately contain an apostrophe (C:\Users\O'Brien), and there
+    the quote has to be doubled. }
+  Escaped := Value;
+  StringChangeEx(Escaped, '''', '''''', True);
+  Result := '''' + Escaped + '''';
+end;
+
+function WriteRunnerScript(const Target, Args, LogPath, DonePath: String): String;
+var
+  Lines: TArrayOfString;
+begin
+  { A generated .ps1, and no cmd.exe anywhere.
+
+    What was here before built one long
+    `cmd /c ""powershell.exe" -File ""<path>"" ..."` string. The doubled
+    quotes that cmd's own parsing needs did not survive PowerShell's: with
+    the default folder — C:\Program Files\GClaude Indexer — PowerShell was
+    handed -File 'C:\Program', refused it, and fell through to its
+    interactive prompt. That is the black window a user reported, standing
+    in front of an installation where not one dependency had been
+    installed. Both the install and the uninstall went through that same
+    command line, which is why both failed the same way.
+
+    A file cannot have its quoting mangled in transit. It also writes the
+    sentinel itself, which is the honest version of cmd's
+    `& echo %ERRORLEVEL%`: that one ran whether or not PowerShell had ever
+    started, and reported success for a script that never existed. }
+  Result := ExpandConstant('{tmp}\gclaude-run.ps1');
+
+  SetArrayLength(Lines, 10);
+  Lines[0] := '$ErrorActionPreference = ''Continue''';
+  Lines[1] := '$code = 1';
+  Lines[2] := 'try {';
+  { `*>&1 | Out-File -Encoding utf8`, not a bare `*>`. The bare form writes
+    UTF-16, and the catch below appends UTF-8 — so the one log anybody ever
+    reads, the one from a run that failed, would be half in each encoding.
+    Piping every stream through Out-File settles on one. }
+  Lines[3] := '  & ' + QuoteForPowerShell(Target) + ' ' + Args +
+              ' *>&1 | Out-File -LiteralPath ' + QuoteForPowerShell(LogPath) +
+              ' -Encoding utf8';
+  Lines[4] := '  if ($null -ne $LASTEXITCODE) { $code = $LASTEXITCODE } else { $code = 0 }';
+  Lines[5] := '} catch {';
+  Lines[6] := '  $_ | Out-String | Out-File -LiteralPath ' +
+              QuoteForPowerShell(LogPath) + ' -Append -Encoding utf8';
+  Lines[7] := '  $code = 1';
+  Lines[8] := '}';
+  Lines[9] := 'Set-Content -LiteralPath ' + QuoteForPowerShell(DonePath) +
+              ' -Value $code';
+
+  SaveStringsToFile(Result, Lines, False);
+end;
+
+function RunnerCommandLine(const RunnerPath: String): String;
+begin
+  { -NonInteractive is the belt to the braces: with it, anything that tries
+    to read from the console fails immediately instead of waiting forever
+    behind a hidden window. -WindowStyle Hidden is PowerShell's own, asked
+    for in addition to SW_HIDE because the two are enforced at different
+    layers and only one of them survived the last attempt. }
+  Result := '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass'
+          + ' -File "' + RunnerPath + '"';
+end;
+
+function PowerShellPath(): String;
+begin
+  { By absolute path, not by name: PATH is inherited from whatever launched
+    the installer, and this must not depend on it. }
+  Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+end;
+
+function DependencyWanted(Index: Integer): Boolean;
+begin
+  { Before the page exists — a silent install, for instance — everything
+    optional is wanted. A silent install has nobody to ask, and answering
+    "no" on their behalf would install less than the person asked for. }
+  if DepsChoicePage = nil then
+    Result := True
+  else
+    Result := DepsChoicePage.Values[Index];
+end;
+
+function BuildScriptArguments(): String;
 var
   Args: String;
 begin
   { -NoShortcut on purpose: the [Icons] section owns the shortcuts so that
     uninstalling removes them. }
-  Args := '-NoProfile -ExecutionPolicy Bypass -File ""' + ExpandConstant('{app}\install.ps1') + '""'
-        + ' -AutoInstall -NoShortcut'
-        + ' -StatusFile ""' + StatusFilePath + '""';
-  if WizardIsTaskSelected('cpusensor') then
+  Args := '-AutoInstall -NoShortcut -StatusFile ' + QuoteForPowerShell(StatusFilePath);
+  if DependencyWanted(DEP_CPUSENSOR) then
     Args := Args + ' -CpuSensorShortcut';
-  if not WizardIsTaskSelected('downloadmodel') then
+  if not DependencyWanted(DEP_MODEL) then
     Args := Args + ' -SkipModelDownload';
+  if not DependencyWanted(DEP_OLLAMA) then
+    Args := Args + ' -SkipOllama';
+  if not DependencyWanted(DEP_SENSORS) then
+    Args := Args + ' -SkipSensors';
 
-  { Through cmd, for two things Exec alone cannot give us.
-
-    The log: the script's output used to be discarded, and the first time
-    it failed on a user's machine the only way to find out why was to
-    reproduce it by hand. A three-thousand-line script that installs five
-    third-party programs must leave a record.
-
-    The sentinel: Exec with ewNoWait returns no handle, so there is no way
-    to ask "has it finished?". Writing the exit code to a file at the end
-    answers both that and "did it succeed", and lets the loop below keep
-    the window alive and the progress moving while the script runs. }
-  Result := '/c ""powershell.exe" ' + Args + ' > ""' + LogFilePath + '"" 2>&1'
-          + ' & echo %ERRORLEVEL% > ""' + DoneFilePath + '"""';
+  Result := Args;
 end;
 
 procedure ReadProgress();
@@ -238,6 +352,7 @@ function RunDependencyInstall(): Integer;
 var
   ResultCode: Integer;
   Waited: Integer;
+  Runner: String;
 begin
   StatusFilePath := ExpandConstant('{tmp}\gclaude-status.txt');
   DoneFilePath := ExpandConstant('{tmp}\gclaude-done.txt');
@@ -253,7 +368,10 @@ begin
   DepsPage.SetProgress(0, 8);
   DepsPage.Show();
 
-  if not Exec(ExpandConstant('{cmd}'), BuildCommandLine(), ExpandConstant('{app}'),
+  Runner := WriteRunnerScript(ExpandConstant('{app}\install.ps1'),
+                             BuildScriptArguments(), LogFilePath, DoneFilePath);
+
+  if not Exec(PowerShellPath(), RunnerCommandLine(Runner), ExpandConstant('{app}'),
               SW_HIDE, ewNoWait, ResultCode) then
   begin
     DepsPage.Hide();
@@ -293,6 +411,45 @@ procedure InitializeWizard();
 begin
   DepsPage := CreateOutputProgressPage(
     ExpandConstant('{cm:InstallingDeps}'), '');
+
+  DepsChoicePage := CreateInputOptionPage(wpSelectTasks,
+    ExpandConstant('{cm:DepsPageTitle}'),
+    ExpandConstant('{cm:DepsPageSubtitle}'),
+    ExpandConstant('{cm:DepsPageText}'), False, False);
+
+  DepsChoicePage.Add(ExpandConstant('{cm:DepTesseract}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepGhostscript}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepOllama}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepModel}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepSensors}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepCpuSensor}'));
+
+  { Ticked and greyed out rather than hidden. Without OCR and Ghostscript
+    the program cannot read a scanned page, which is the entire job, so
+    they are not a choice — but they are still the two biggest downloads
+    and someone watching a progress bar deserves to know they are coming. }
+  DepsChoicePage.Values[DEP_TESSERACT] := True;
+  DepsChoicePage.Values[DEP_GHOSTSCRIPT] := True;
+  DepsChoicePage.CheckListBox.ItemEnabled[DEP_TESSERACT] := False;
+  DepsChoicePage.CheckListBox.ItemEnabled[DEP_GHOSTSCRIPT] := False;
+
+  DepsChoicePage.Values[DEP_OLLAMA] := True;
+  DepsChoicePage.Values[DEP_SENSORS] := True;
+
+  { Unticked, with the size in the label: gigabytes started without being
+    asked for is how an installation someone expected to take a minute
+    becomes twenty. }
+  DepsChoicePage.Values[DEP_MODEL] := False;
+  DepsChoicePage.Values[DEP_CPUSENSOR] := False;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  { The model is downloaded by Ollama. Offering it while Ollama is
+    unticked would promise something the installer cannot deliver. }
+  if (DepsChoicePage <> nil) and (CurPageID = DepsChoicePage.ID) then
+    DepsChoicePage.CheckListBox.ItemEnabled[DEP_MODEL] :=
+      DepsChoicePage.Values[DEP_OLLAMA];
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -423,6 +580,7 @@ var
   Args: String;
   ResultCode: Integer;
   Script: String;
+  Runner: String;
 begin
   if CurUninstallStep <> usUninstall then
     exit;
@@ -450,8 +608,13 @@ begin
   LogFilePath := ExpandConstant('{localappdata}\GClaudeIndexer\uninstall-log.txt');
   ForceDirectories(ExpandConstant('{localappdata}\GClaudeIndexer'));
 
-  Exec(ExpandConstant('{cmd}'),
-       '/c ""powershell.exe" -NoProfile -ExecutionPolicy Bypass -File ""' + Script + '"" '
-       + Args + ' > ""' + LogFilePath + '"" 2>&1"',
-       ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  { Through the same generated runner as the install, and for the same
+    reason: this call used to be a cmd command line whose doubled quotes
+    broke on the space in "C:\Program Files", so the uninstaller reported a
+    clean run having removed nothing — and left no log to say otherwise,
+    because the redirection was part of the line that never ran. }
+  Runner := WriteRunnerScript(Script, Args, LogFilePath,
+                              ExpandConstant('{tmp}\gclaude-uninstall-done.txt'));
+  Exec(PowerShellPath(), RunnerCommandLine(Runner), ExpandConstant('{app}'),
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

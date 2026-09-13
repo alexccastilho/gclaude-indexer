@@ -167,6 +167,12 @@ param(
     # therefore needs a way to say "everything else, yes; the model, no",
     # which `-AutoInstall` alone cannot express.
     [switch]$SkipModelDownload,
+    # Phase 19. The graphical installer shows every dependency on one page
+    # and lets the optional ones be unticked. Tesseract, Ghostscript and
+    # the Portuguese language file have no switch on purpose: without them
+    # the system cannot read a scanned page, which is the whole job.
+    [switch]$SkipOllama,
+    [switch]$SkipSensors,
     # Phase 19. Path the installer polls to keep its progress label
     # truthful. Empty means nobody is watching — the default for anyone
     # running this script by hand, who sees no difference at all.
@@ -2090,7 +2096,10 @@ if ($OllamaPath) {
         Write-Host "  winget is not available on this machine. Install manually:" -ForegroundColor Yellow
         Write-Host "  $OllamaCommand" -ForegroundColor Yellow
     } else {
-        $Proceed = [bool]$AutoInstall
+        $Proceed = [bool]$AutoInstall -and (-not $SkipOllama)
+        if ($SkipOllama) {
+            Write-Host "  not selected in the installer; skipping." -ForegroundColor Yellow
+        }
         if (-not $AutoInstall) {
             Write-Host "  The Ollama installer is a few dozen MB." -ForegroundColor Yellow
             $answer = Read-Host "  Install Ollama now with winget? (Y/N)"
@@ -2745,7 +2754,10 @@ function Install-SensorLibrary {
 }
 
 $SensorArchitecture = "$env:PROCESSOR_ARCHITECTURE"
-if ($SensorArchitecture -ne "AMD64") {
+if ($SkipSensors) {
+    Write-Host "Sensor libraries: not selected in the installer; skipping." -ForegroundColor Yellow
+    Write-Host "Everything else works; the Run screen will report temperature, power and clocks as unavailable." -ForegroundColor Yellow
+} elseif ($SensorArchitecture -ne "AMD64") {
     Write-Host "Windows on $SensorArchitecture — the sensor libraries are pinned to the verified 64-bit x86 build," -ForegroundColor Yellow
     Write-Host "so they are not installed here. Everything else works; the Run screen will simply report" -ForegroundColor Yellow
     Write-Host "temperature, power and clocks as unavailable." -ForegroundColor Yellow

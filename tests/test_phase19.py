@@ -254,3 +254,112 @@ def test_o_resumo_conta_o_que_a_maquina_diz():
     registro = bloco.find("$Removed.Add($dependency.Title)")
     assert verificacao != -1, "resultado não é conferido depois da remoção"
     assert verificacao < registro, "conta como removido antes de conferir"
+
+
+# --- o caminho com espaço, que derrubou a instalação inteira ---------------
+
+ISS = RAIZ / "installer" / "GClaudeIndexer.iss"
+
+
+def test_nada_no_instalador_passa_por_cmd():
+    """A causa raiz de três relatos seguidos. O instalador montava
+    `cmd /c ""powershell.exe" -File ""<caminho>"" ..."`, e as aspas
+    dobradas que o cmd exige não sobrevivem ao parser do PowerShell: na
+    pasta padrão — C:\\Program Files\\GClaude Indexer — o PowerShell
+    recebia `-File 'C:\\Program'`, recusava, e caía no prompt interativo.
+
+    Era essa a janela preta que o usuário via, na frente de uma instalação
+    onde nenhuma dependência tinha sido instalada. A desinstalação usava a
+    mesma linha e falhava igual, sem sequer deixar log — o redirecionamento
+    fazia parte da linha que nunca rodou.
+    """
+    texto = ISS.read_text(encoding="utf-8")
+    for linha in texto.splitlines():
+        nua = linha.strip()
+        if nua.startswith("{") or nua.startswith("//") or nua.startswith(";"):
+            continue
+        assert "ExpandConstant('{cmd}')" not in linha, linha
+
+
+def test_o_lancamento_nao_pode_abrir_janela_nem_esperar_por_ninguem():
+    """SW_HIDE é a camada do Windows; -WindowStyle Hidden é a do próprio
+    PowerShell. Só uma das duas sobreviveu à tentativa anterior, e quando
+    o processo caiu em modo interativo foi a janela que apareceu. As duas,
+    mais -NonInteractive: o que tentar ler do console falha na hora em vez
+    de esperar para sempre atrás de uma janela oculta."""
+    texto = ISS.read_text(encoding="utf-8")
+    inicio = texto.find("function RunnerCommandLine")
+    assert inicio != -1
+    bloco = texto[inicio:inicio + 1200]
+
+    assert "-NonInteractive" in bloco
+    assert "-WindowStyle Hidden" in bloco
+    assert "-NoProfile" in bloco
+
+
+def test_o_runner_sobrevive_a_um_caminho_com_espaco(tmp_path):
+    """O teste que o defeito exigia: a mesma forma de wrapper que o
+    instalador escreve, apontando para uma pasta com espaço no nome, tem
+    de executar o script, registrar a saída e gravar o código de saída."""
+    pasta = tmp_path / "Program Files Falso" / "GClaude Indexer"
+    pasta.mkdir(parents=True)
+
+    alvo = pasta / "alvo.ps1"
+    alvo.write_text(
+        "param([switch]$AutoInstall, [string]$StatusFile = '', [switch]$SkipOllama)\n"
+        "Write-Host \"rodou AutoInstall=$AutoInstall SkipOllama=$SkipOllama\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+
+    log = pasta / "log.txt"
+    done = pasta / "done.txt"
+    status = pasta / "status.txt"
+
+    def aspas(caminho):
+        return "'" + str(caminho).replace("'", "''") + "'"
+
+    runner = pasta / "runner.ps1"
+    runner.write_text(
+        "$ErrorActionPreference = 'Continue'\n"
+        "$code = 1\n"
+        "try {\n"
+        f"  & {aspas(alvo)} -AutoInstall -StatusFile {aspas(status)} -SkipOllama"
+        f" *>&1 | Out-File -LiteralPath {aspas(log)} -Encoding utf8\n"
+        "  if ($null -ne $LASTEXITCODE) { $code = $LASTEXITCODE } else { $code = 0 }\n"
+        "} catch {\n"
+        f"  $_ | Out-String | Out-File -LiteralPath {aspas(log)} -Append -Encoding utf8\n"
+        "  $code = 1\n"
+        "}\n"
+        f"Set-Content -LiteralPath {aspas(done)} -Value $code\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [POWERSHELL, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+         "-ExecutionPolicy", "Bypass", "-File", str(runner)],
+        capture_output=True, text=True, timeout=120,
+    )
+
+    assert done.exists(), "o sentinela não foi escrito"
+    assert done.read_text(encoding="utf-8").strip() == "0"
+    # UTF-8, por escolha: `*>` sozinho grava UTF-16 e o `catch` acrescenta
+    # UTF-8, então o log de uma execução que falhou sairia metade em cada.
+    assert "rodou AutoInstall=True SkipOllama=True" in log.read_text(encoding="utf-8")
+
+
+def test_as_opcoes_da_tela_viram_argumentos():
+    """Cada caixa desmarcada tem de virar um -Skip correspondente, e cada
+    -Skip tem de existir no script. Um nome errado de um lado produz uma
+    caixa que não faz nada — pior que não ter a caixa."""
+    iss = ISS.read_text(encoding="utf-8")
+    ps = (RAIZ / "install.ps1").read_text(encoding="utf-8")
+
+    inicio = iss.find("function BuildScriptArguments")
+    assert inicio != -1
+    bloco = iss[inicio:iss.index("end;", inicio)]
+
+    for switch in ("-SkipModelDownload", "-SkipOllama", "-SkipSensors",
+                   "-CpuSensorShortcut"):
+        assert switch in bloco, f"{switch} não é passado pela tela"
+        assert f"${switch[1:]}" in ps, f"{switch} não existe em install.ps1"
