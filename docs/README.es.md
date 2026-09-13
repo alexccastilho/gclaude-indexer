@@ -9,10 +9,11 @@ listas para un proyecto en Claude.
 Google Drive aloja los archivos; el proyecto en Claude los consulta a través
 del índice.
 
-![Las cuatro pantallas de GClaude Indexer](../demo.gif)
+![GClaude Indexer en uso](../demo.gif)
 
-*Las cuatro pantallas en el orden en que las encuentra — proyectos, nuevo
-proyecto, ejecución, resultado.*
+*Una primera ejecución, en el orden en que la encuentra — proyectos,
+nuevo proyecto, ejecución, resultado. La actualización de una colección,
+añadida después, se describe abajo.*
 
 ## Qué hace
 
@@ -29,6 +30,13 @@ conjunto de **instrucciones de proyecto** listas para pegar en un nuevo
 proyecto de Claude. Los documentos originales nunca se modifican — todo lo
 que la herramienta produce son archivos nuevos, escritos junto a los
 originales, en una carpeta de salida separada que usted elige.
+
+Una colección rara vez está terminada. Cuando se añaden documentos a la
+carpeta de origen, se corrigen o se sacan de ella, la aplicación detecta
+qué cambió y reprocesa solo eso — añadir un documento a una colección de
+500 páginas reclasifica una ventana en vez de treinta y seis, cerca de un
+minuto en vez de dieciocho y media. Le muestra qué encontró y cuánto va a
+costar antes de tocar nada.
 
 La clasificación — el paso que decide qué es cada página, quién la escribió
 y cuándo — puede hacerse de cuatro formas distintas, descritas abajo. Tres
@@ -51,6 +59,10 @@ clasificación elija.
   los datos de Tesseract y la detección de idioma) y el subsistema de
   Performance Counters (para los gráficos en vivo de CPU/GPU). No funciona
   en Linux ni en macOS.
+- **Actualizaciones incrementales.** Una colección ya indexada absorbe
+  documentos nuevos, editados y eliminados sin necesidad de procesarse de
+  nuevo desde cero. Solo se rehace lo que el cambio realmente afecta, y
+  usted ve cuánto va a costar antes de confirmarlo.
 - **Interfaz en tres idiomas** — español, inglés y portugués de Brasil,
   seleccionables en cualquier momento desde un menú en el encabezado de la
   página. El idioma por defecto se detecta automáticamente a partir del
@@ -292,7 +304,7 @@ elimínela allí si quiere que desaparezca de todas las computadoras.
 
 ## Uso de la aplicación
 
-La interfaz tiene cuatro pantallas, más una página "Acerca de":
+La interfaz tiene cinco pantallas, más una página "Acerca de":
 
 1. **Proyectos** — enumera todos los proyectos que ha abierto, con su fecha
    de creación y estado actual. Aquí es donde llega al abrir la
@@ -320,8 +332,20 @@ La interfaz tiene cuatro pantallas, más una página "Acerca de":
    se muestran un registro en vivo y un gráfico de uso de CPU/RAM/GPU. Un
    botón aparte, "Importar y generar informes", ejecuta los dos últimos
    pasos (convirtiendo los elementos clasificados en los cuatro archivos
-   de salida) una vez que termina la clasificación.
-4. **Resultado** — una vista previa de los cuatro archivos generados, un
+   de salida) una vez que termina la clasificación. Si la carpeta de
+   origen cambió desde la última ejecución, un aviso aparece en la parte
+   superior un momento después de que la página carga, con un enlace a la
+   siguiente pantalla.
+4. **Actualizar colección** — a la que se llega desde ese aviso, o
+   directamente. Enumera los documentos nuevos, editados y eliminados,
+   nombra los que se van a reprocesar, y indica el costo: cuántos
+   archivos pasan de nuevo por el OCR, cuántas ventanas se reclasifican y
+   cuántas conservan la clasificación que ya tienen. Nada cambia hasta que
+   confirme. Si la carpeta de origen no se puede leer — una unidad
+   desconectada, una carpeta que se movió — lo indica y no ofrece nada,
+   porque una carpeta inalcanzable nunca debe confundirse con una
+   colección cuyos documentos fueron todos eliminados.
+5. **Resultado** — una vista previa de los cuatro archivos generados, un
    botón para abrir la carpeta de salida directamente en el Explorador de
    archivos, un informe de lo que sigue pendiente, y un botón para
    liberar espacio en disco eliminando los archivos intermedios (los PDF
@@ -332,6 +356,44 @@ La interfaz tiene cuatro pantallas, más una página "Acerca de":
 Un selector de idioma y un selector de tema (cuatro temas de color) están
 en el encabezado de cada pantalla; ambas elecciones se recuerdan en su
 navegador entre visitas.
+
+## Mantener una colección actualizada
+
+Una colección cambia. Llegan documentos, un escaneo se reemplaza por uno
+mejor, algo se saca. Nada de eso requiere indexarlo todo de nuevo.
+
+Abra el proyecto. Unos segundos después de que aparece la pantalla
+Ejecución, si algo cambió en la carpeta de origen, un aviso dice cuánto —
+"14 nuevos, 3 editados, 1 eliminado". Sígalo hasta la pantalla
+**Actualizar colección**, lea lo que planea hacer y confirme. Después
+ejecute los pasos como de costumbre: solo encontrarán el trabajo que la
+actualización les dejó.
+
+**Qué cuesta, y por qué no es la colección entera.** Los documentos se
+agrupan, y las páginas de un grupo se leen como una única secuencia
+larga, cortada en ventanas superpuestas — las ventanas son lo que el
+motor de clasificación realmente lee. Un cambio no invalida un
+documento; invalida el grupo desde la primera página que se desplazó en
+adelante. Todo lo anterior a ese punto conserva sus páginas y su
+clasificación intactas. Por eso un documento añadido al final de un
+grupo cuesta casi nada, mientras que uno insertado al principio desplaza
+cada página posterior y cuesta más. La pantalla le indica en qué caso
+está antes de que se comprometa.
+
+Los documentos que solo necesitan renumeración no vuelven a pasar por el
+OCR — los archivos convertidos siguen en el disco y simplemente se
+releen. Solo un documento cuyo propio contenido cambió paga ese costo.
+
+**Si borró los archivos intermedios** desde la pantalla Resultado, los
+archivos convertidos dejan de existir, y los documentos que se habrían
+releído deben convertirse de nuevo. La actualización maneja esto
+correctamente; solo tarda más.
+
+**Si no se puede alcanzar la carpeta de origen** — la unidad está
+desconectada, la carpeta se movió o se renombró — no se ofrece nada y no
+se cambia nada. Una carpeta inalcanzable no es una colección cuyos
+documentos fueron todos eliminados, y la aplicación no la tratará como
+tal.
 
 ## Obtener una buena clasificación
 
@@ -443,7 +505,10 @@ que esté la interfaz en el momento en que los genere:
   tipo, fecha, autor y resumen.
 - `timeline.md` — los elementos con fecha en orden cronológico.
 - `review.md` — un informe de cobertura: vacíos, fallos, lo que sigue
-  pendiente.
+  pendiente, y los documentos que se eliminaron de la carpeta de origen,
+  con el momento en que cada uno salió. El índice y la cronología
+  describen la colección tal como está hoy; aquí es donde descubre qué
+  solía haber en ella.
 - `project_instructions.md` — instrucciones listas para pegar en un nuevo
   proyecto de Claude, construidas a partir de una plantilla con los campos
   que completó en el formulario de Nuevo proyecto.
@@ -491,7 +556,7 @@ vea [Requisitos](#requisitos)):
 Una ejecución correcta termina con una línea como:
 
 ```
-317 passed, 6 warnings in 147.01s (0:02:27)
+537 passed, 7 warnings in 167.09s (0:02:47)
 ```
 
 (El número de avisos puede variar ligeramente según la máquina; provienen

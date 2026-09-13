@@ -9,10 +9,11 @@ projeto no Claude.
 O Google Drive hospeda os arquivos; o projeto no Claude os consulta através
 do índice.
 
-![As quatro telas do GClaude Indexer](../demo.gif)
+![GClaude Indexer em uso](../demo.gif)
 
-*As quatro telas na ordem em que você as encontra — projetos, novo projeto,
-execução, resultado.*
+*Uma primeira execução, na ordem em que você a encontra — projetos, novo
+projeto, execução, resultado. A atualização de uma coleção, adicionada
+depois, é descrita abaixo.*
 
 ## O que o sistema faz
 
@@ -29,6 +30,13 @@ prontas para colar num novo projeto no Claude. Os documentos originais
 nunca são alterados — tudo que a ferramenta produz são arquivos novos,
 gravados ao lado dos originais, numa pasta de saída separada que você
 escolhe.
+
+Uma coleção raramente está terminada. Quando documentos são adicionados à
+pasta de origem, corrigidos ou retirados dela, o aplicativo detecta o que
+mudou e reprocessa só isso — adicionar um documento a uma coleção de 500
+páginas reclassifica uma janela em vez de trinta e seis, cerca de um
+minuto em vez de dezoito e meia. Ele mostra o que encontrou e quanto isso
+vai custar antes de tocar em qualquer coisa.
 
 A classificação — a etapa que decide o que cada página é, quem escreveu e
 quando — pode ser feita de quatro formas diferentes, descritas abaixo. Três
@@ -50,6 +58,10 @@ escolha.
   dados do Tesseract e detecção de idioma) e o subsistema de Performance
   Counters (para os gráficos ao vivo de CPU/GPU). Não roda em Linux nem
   macOS.
+- **Atualizações incrementais.** Uma coleção já indexada absorve
+  documentos novos, editados e removidos sem precisar ser processada de
+  novo do zero. Só o que a mudança realmente afeta é refeito, e você vê
+  quanto isso vai custar antes de confirmar.
 - **Interface em três idiomas** — português do Brasil, inglês e espanhol,
   selecionáveis a qualquer momento num menu no cabeçalho da página. O
   padrão é detectado automaticamente a partir do idioma de exibição do seu
@@ -289,7 +301,7 @@ tocada: apague-a por lá se quiser que ela suma de todos os computadores.
 
 ## Usando o aplicativo
 
-A interface tem quatro telas, mais uma página "Sobre":
+A interface tem cinco telas, mais uma página "Sobre":
 
 1. **Projetos** — lista todos os projetos que você já abriu, com data de
    criação e situação atual. É onde você cai ao abrir o aplicativo. No
@@ -316,8 +328,19 @@ A interface tem quatro telas, mais uma página "Sobre":
    gráfico de uso de CPU/RAM/GPU. Um botão separado, "Importar e gerar
    relatórios", roda as duas últimas etapas (transformando os itens
    classificados nos quatro arquivos de saída) assim que a classificação
-   termina.
-4. **Resultado** — uma prévia dos quatro arquivos gerados, um botão para
+   termina. Se a pasta de origem mudou desde a última execução, um aviso
+   aparece no topo pouco depois que a página carrega, com um link para a
+   próxima tela.
+4. **Atualizar coleção** — alcançada a partir desse aviso, ou diretamente.
+   Lista os documentos novos, editados e removidos, nomeia os que serão
+   reprocessados e informa o custo: quantos arquivos passam pelo OCR de
+   novo, quantas janelas são reclassificadas e quantas mantêm a
+   classificação que já têm. Nada é alterado até você confirmar. Se a
+   pasta de origem não puder ser lida — um disco desconectado, uma pasta
+   que foi movida — a tela avisa isso e não oferece nada, porque uma pasta
+   inacessível nunca deve ser confundida com uma coleção cujos documentos
+   foram todos apagados.
+5. **Resultado** — uma prévia dos quatro arquivos gerados, um botão para
    abrir a pasta de saída direto no Explorador de Arquivos, um relatório do
    que ainda está pendente, e um botão para liberar espaço em disco
    apagando os arquivos intermediários (os PDFs com OCR e os fatiamentos de
@@ -327,6 +350,42 @@ A interface tem quatro telas, mais uma página "Sobre":
 Um seletor de idioma e um seletor de tema (quatro temas de cor) ficam no
 cabeçalho de toda tela; as duas escolhas são lembradas no seu navegador
 entre visitas.
+
+## Mantendo uma coleção atualizada
+
+Uma coleção muda. Chegam documentos, um escaneamento é trocado por um
+melhor, algo é retirado. Nada disso exige indexar tudo de novo.
+
+Abra o projeto. Alguns segundos depois que a tela Execução aparece, se
+algo mudou na pasta de origem, um aviso diz o quanto — "14 novos, 3
+editados, 1 removido". Siga-o até a tela **Atualizar coleção**, veja o
+que ela planeja fazer e confirme. Depois rode as etapas como de costume:
+elas vão encontrar só o trabalho que a atualização deixou para elas.
+
+**Quanto isso custa, e por que não é a coleção inteira.** Os documentos
+são agrupados, e as páginas de um grupo são lidas como uma única
+sequência longa, fatiada em janelas sobrepostas — as janelas são o que o
+motor de classificação de fato lê. Uma mudança não invalida um
+documento; ela invalida o grupo a partir da primeira página que se
+deslocou em diante. Tudo antes desse ponto mantém suas páginas e sua
+classificação intactas. Por isso um documento adicionado no fim de um
+grupo custa quase nada, enquanto um inserido no início desloca toda
+página depois dele e custa mais. A tela diz em qual dos dois casos você
+está, antes de você confirmar.
+
+Documentos que só precisam de renumeração não passam pelo OCR de novo —
+os arquivos convertidos ainda estão em disco e são simplesmente relidos.
+Só um documento cujo próprio conteúdo mudou paga esse custo.
+
+**Se você limpou os arquivos intermediários** na tela Resultado, os
+arquivos convertidos deixam de existir, e os documentos que seriam
+relidos precisam ser convertidos de novo. A atualização trata isso
+corretamente; só demora mais.
+
+**Se a pasta de origem não puder ser alcançada** — o disco está
+desconectado, a pasta foi movida ou renomeada — nada é oferecido e nada
+é alterado. Uma pasta inacessível não é uma coleção cujos documentos
+foram todos apagados, e o aplicativo não vai tratá-la como se fosse.
 
 ## Conseguindo uma boa classificação
 
@@ -441,7 +500,10 @@ interface estiver no momento em que você os gerar:
   data, autor e resumo.
 - `timeline.md` — os itens datados em ordem cronológica.
 - `review.md` — um relatório de cobertura: lacunas, falhas, o que ainda
-  está pendente.
+  está pendente, e os documentos que foram removidos da pasta de origem,
+  com o momento em que cada um saiu. O índice e a cronologia descrevem a
+  coleção como ela está hoje; é aqui que você descobre o que costumava
+  estar nela.
 - `project_instructions.md` — instruções prontas para colar num novo
   projeto no Claude, montadas a partir de um modelo com os campos que você
   preencheu no formulário de Novo Projeto.
@@ -490,7 +552,7 @@ sozinho — veja [Requisitos](#requisitos)):
 Uma execução correta termina com uma linha parecida com:
 
 ```
-317 passed, 6 warnings in 147.01s (0:02:27)
+537 passed, 7 warnings in 167.09s (0:02:47)
 ```
 
 (A contagem de avisos pode variar um pouco entre máquinas; eles vêm de
