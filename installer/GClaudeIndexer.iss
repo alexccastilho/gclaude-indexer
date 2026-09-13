@@ -85,6 +85,7 @@ brazilianportuguese.DepGhostscript=Ghostscript (tratamento de PDF) — obrigató
 brazilianportuguese.DepOllama=Ollama (classificação com modelo local)
 brazilianportuguese.DepModel=Modelo padrão de classificação (cerca de 3,2 GB)
 brazilianportuguese.DepSensors=Bibliotecas de sensor (temperatura, potência, relógios)
+brazilianportuguese.CpuSensorComment=GClaude Indexer lendo os sensores da CPU: o Windows pede administrador na abertura, só para o leitor de sensores.
 brazilianportuguese.DepCpuSensor=Atalho do sensor de CPU na área de trabalho
 
 english.OptionalGroup=Optional:
@@ -110,6 +111,7 @@ english.DepGhostscript=Ghostscript (PDF handling) — required
 english.DepOllama=Ollama (classification with a local model)
 english.DepModel=Default classification model (about 3.2 GB)
 english.DepSensors=Sensor libraries (temperature, power, clocks)
+english.CpuSensorComment=GClaude Indexer with the CPU sensor: Windows asks for administrator at launch, for the sensor reader only.
 english.DepCpuSensor=CPU sensor shortcut on the desktop
 
 spanish.OptionalGroup=Opcionales:
@@ -135,6 +137,7 @@ spanish.DepGhostscript=Ghostscript (tratamiento de PDF) — obligatorio
 spanish.DepOllama=Ollama (clasificación con modelo local)
 spanish.DepModel=Modelo de clasificación predeterminado (unos 3,2 GB)
 spanish.DepSensors=Bibliotecas de sensor (temperatura, potencia, relojes)
+spanish.CpuSensorComment=GClaude Indexer leyendo los sensores de CPU: Windows pide administrador al abrir, solo para el lector de sensores.
 spanish.DepCpuSensor=Acceso directo del sensor de CPU en el escritorio
 
 [Tasks]
@@ -169,6 +172,19 @@ Source: "..\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; no longer there.
 Name: "{group}\{#AppName}"; Filename: "{app}\Indexer.vbs"; IconFilename: "{app}\logo.ico"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Indexer.vbs"; IconFilename: "{app}\logo.ico"; Tasks: desktopicon
+; The CPU-sensor shortcut, which install.ps1 could never create from here:
+; its whole block sits behind `if (-not $NoShortcut)`, and -NoShortcut is
+; what this installer always passes. Ticking the box on the Dependencies
+; page passed -CpuSensorShortcut into a script that had already decided to
+; create no shortcuts, so nothing appeared — while the application told the
+; user to open the shortcut that was not there.
+;
+; Through wscript.exe rather than the .vbs directly, because this one needs
+; an argument. It does NOT carry the "run as administrator" flag: it passes
+; --cpu-sensor to the same launcher, and the unprivileged server then spawns
+; one small elevated child that reads five numbers. The server, the parsers
+; and the documents stay on an ordinary token.
+Name: "{autodesktop}\{#AppName} (CPU sensor)"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\Indexer.vbs"" --cpu-sensor"; IconFilename: "{app}\logo.ico"; Comment: "{cm:CpuSensorComment}"; Check: CpuSensorShortcutWanted
 
 [Run]
 Filename: "{app}\Indexer.vbs"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: postinstall nowait skipifsilent shellexec
@@ -280,15 +296,26 @@ begin
     Result := DepsChoicePage.Values[Index];
 end;
 
+function CpuSensorShortcutWanted(): Boolean;
+begin
+  { Not DependencyWanted: that one answers yes when there is no page,
+    which is right for a download nobody is watching and wrong for this.
+    This shortcut arms a Windows administrator prompt on every future
+    launch, and the default, with nobody to ask, is no. }
+  Result := (DepsChoicePage <> nil) and DepsChoicePage.Values[DEP_CPUSENSOR];
+end;
+
 function BuildScriptArguments(): String;
 var
   Args: String;
 begin
   { -NoShortcut on purpose: the [Icons] section owns the shortcuts so that
     uninstalling removes them. }
+  { No -CpuSensorShortcut here. It would be ignored anyway — the script
+    refuses to create any shortcut under -NoShortcut — and the [Icons]
+    entry above now creates that one, which also means uninstalling
+    removes it. }
   Args := '-AutoInstall -NoShortcut -StatusFile ' + QuoteForPowerShell(StatusFilePath);
-  if DependencyWanted(DEP_CPUSENSOR) then
-    Args := Args + ' -CpuSensorShortcut';
   if not DependencyWanted(DEP_MODEL) then
     Args := Args + ' -SkipModelDownload';
   if not DependencyWanted(DEP_OLLAMA) then

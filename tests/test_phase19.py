@@ -359,8 +359,7 @@ def test_as_opcoes_da_tela_viram_argumentos():
     assert inicio != -1
     bloco = iss[inicio:iss.index("end;", inicio)]
 
-    for switch in ("-SkipModelDownload", "-SkipOllama", "-SkipSensors",
-                   "-CpuSensorShortcut"):
+    for switch in ("-SkipModelDownload", "-SkipOllama", "-SkipSensors"):
         assert switch in bloco, f"{switch} não é passado pela tela"
         assert f"${switch[1:]}" in ps, f"{switch} não existe em install.ps1"
 
@@ -446,3 +445,42 @@ def test_um_formulario_sem_dfm_define_o_que_o_dfm_daria():
     for propriedade in ("Form.ClientWidth", "Form.ClientHeight",
                         "Form.Position", "Form.BorderStyle", "Form.Font.Name"):
         assert propriedade in bloco, f"{propriedade} não é definida"
+
+
+# --- o atalho do sensor de CPU --------------------------------------------
+
+
+def test_o_atalho_do_sensor_e_criado_pelo_instalador_e_nao_pelo_script():
+    """A caixa marcada não criava atalho nenhum, e o aplicativo mandava o
+    usuário abrir pelo atalho que não existia.
+
+    O bloco inteiro do atalho no install.ps1 fica dentro de
+    `if (-not $NoShortcut)`, e -NoShortcut é o que este instalador sempre
+    passa — de propósito, para que a desinstalação consiga remover os
+    atalhos. Passar -CpuSensorShortcut para um script que já decidiu não
+    criar atalho nenhum não podia dar em nada."""
+    iss = ISS.read_text(encoding="utf-8")
+    ps = (RAIZ / "install.ps1").read_text(encoding="utf-8")
+
+    # A premissa que torna a correção necessária, verificada e não suposta.
+    bloco_ps = ps[ps.index("# --- 5b. Optional CPU-sensor shortcut"):]
+    assert "if (-not $NoShortcut) {" in bloco_ps[:2000]
+
+    # E a correção: o atalho passou a ser do instalador.
+    icones = iss[iss.index("[Icons]"):iss.index("[Run]")]
+    assert "--cpu-sensor" in icones
+    assert "Check: CpuSensorShortcutWanted" in icones
+
+
+def test_o_atalho_do_sensor_nao_aparece_sozinho_numa_instalacao_silenciosa():
+    """Ao contrário das dependências, este não vale o padrão 'sim quando
+    não há quem responda': ele arma um pedido de administrador em toda
+    abertura futura do sistema."""
+    iss = ISS.read_text(encoding="utf-8")
+    inicio = iss.index("function CpuSensorShortcutWanted")
+    bloco = iss[inicio:iss.index("end;", inicio)]
+
+    assert "DepsChoicePage <> nil" in bloco
+    # A chamada, não a palavra: o comentário cita DependencyWanted
+    # justamente para dizer por que não a usa.
+    assert "DependencyWanted(" not in bloco
