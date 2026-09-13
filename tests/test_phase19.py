@@ -551,3 +551,70 @@ def test_um_segundo_servidor_nao_tenta_mais_tomar_a_porta():
 def test_o_ajudante_e_amarrado_ao_servidor_que_existe():
     texto = (RAIZ / "gclaude_indexer" / "web" / "app.py").read_text(encoding="utf-8")
     assert "start_elevated_helper(parent_pid=existing_pid)" in texto
+
+
+# --- escopo de usuário contra escopo de máquina ---------------------------
+
+
+def test_a_remocao_tenta_sem_elevacao_antes_de_elevar():
+    """Uma desinstalação real removeu o Tesseract e deixou Ollama e Python
+    para trás, com o usuário tendo de remover o Ollama à mão. O log conta
+    a diferença entre eles: o Tesseract instala para a máquina inteira, os
+    outros dois no perfil do próprio usuário. Um winget elevado é o
+    contexto errado para um pacote que pertence ao perfil.
+
+    Daí a ordem: pedir como o usuário primeiro, elevar depois só para o
+    que sobrou. Nada se perde — um pacote de máquina apenas falha a
+    primeira passada e sai na segunda."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("Removing shared packages through winget")
+    assert inicio != -1
+    bloco = texto[inicio:]
+
+    primeira = bloco.find("Uninstall-WingetPackage -Id $dependency.WingetId")
+    sobrou = bloco.find("$StillThere = @(")
+    elevada = bloco.find("Invoke-ElevatedWingetUninstall")
+
+    assert primeira != -1, "não há passada sem elevação"
+    assert primeira < sobrou < elevada, "a elevação não é a última tentativa"
+
+
+def test_a_elevacao_so_recebe_o_que_sobrou():
+    """Elevar para um pacote que já saiu é um pedido de administrador que
+    não compra nada."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("if ($StillThere.Count -gt 0")
+    assert inicio != -1
+    bloco = texto[inicio:inicio + 400]
+
+    assert "$StillThere | ForEach-Object { $_.WingetId }" in bloco
+
+
+def test_o_ollama_e_fechado_antes_de_ser_removido():
+    """Um desinstalador não apaga arquivo aberto, e o servidor do Ollama
+    normalmente está no ar: o Windows inicia o aplicativo de bandeja no
+    logon, e o indexador sobe `ollama serve` sozinho quando precisa
+    classificar."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+
+    assert "function Stop-OllamaProcesses" in texto
+
+    inicio = texto.find("Removing shared packages through winget")
+    bloco = texto[inicio:]
+    parada = bloco.find("Stop-OllamaProcesses")
+    remocao = bloco.find("Uninstall-WingetPackage -Id $dependency.WingetId")
+    assert parada != -1, "o Ollama nunca é fechado"
+    assert parada < remocao, "fecha depois de tentar remover"
+
+
+def test_fechar_o_ollama_funciona_com_ele_ausente():
+    """Ninguém marca o Ollama numa máquina que não o tem, mas um
+    desinstalador que lança exceção ao não encontrar um processo pararia
+    no meio e deixaria o resto instalado."""
+    script = (
+        f". '{RAIZ / 'uninstall.ps1'}' -DryRunContract; "
+        "Stop-OllamaProcesses; 'SOBREVIVEU'"
+    )
+    resultado = _rodar_ps(script)
+    linhas = [l for l in resultado.stdout.splitlines() if l.strip()]
+    assert linhas and linhas[-1].strip() == "SOBREVIVEU", resultado.stderr

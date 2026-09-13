@@ -347,6 +347,45 @@ function Test-WingetPackageInstalled {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Stop-OllamaProcesses {
+    <#
+    .SYNOPSIS
+        Fecha o servidor e o aplicativo de bandeja do Ollama.
+
+    .DESCRIPTION
+        The Ollama uninstaller cannot delete files that are open, and the
+        server is normally running: Windows starts the tray application at
+        logon, and the indexer starts `ollama serve` itself when it needs
+        a classification. Asking winget to remove a program while its own
+        executable is mapped into a live process is asking for a partial
+        removal.
+
+        Politely first, then not: CloseMainWindow gives the tray icon a
+        chance to shut the server down in order, and what is still there a
+        second later is ended.
+    #>
+    $names = @("ollama app", "ollama")
+
+    foreach ($name in $names) {
+        foreach ($process in (Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+            try { $process.CloseMainWindow() | Out-Null } catch { }
+        }
+    }
+
+    Start-Sleep -Seconds 2
+
+    foreach ($name in $names) {
+        foreach ($process in (Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                Write-Host ("  closed {0} (pid {1})." -f $process.ProcessName, $process.Id)
+            } catch {
+                Write-Host ("  could not close {0} (pid {1})." -f $process.ProcessName, $process.Id) -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
 function Invoke-ElevatedWingetUninstall {
     <#
     .SYNOPSIS
@@ -616,12 +655,33 @@ foreach ($dependency in $SharedDependencies) {
 if ($Approved.Count -gt 0) {
     Write-Host ""
     Write-Host "Removing shared packages through winget..." -ForegroundColor Cyan
-    $ids = @($Approved | ForEach-Object { $_.WingetId })
-    if (Test-IsElevated) {
-        foreach ($id in $ids) { Uninstall-WingetPackage -Id $id | Out-Null }
-    } else {
-        Write-Host "  these are installed for the whole machine; asking for administrator rights."
-        Invoke-ElevatedWingetUninstall -Ids $ids | Out-Null
+
+    if ($Approved | Where-Object { $_.Component -eq "ollama" }) {
+        Stop-OllamaProcesses
+    }
+
+    # First pass without elevation, and that order is the fix.
+    #
+    # The previous version elevated everything at once, and a real run
+    # showed what that costs: Tesseract, which installs for the whole
+    # machine, was removed; Ollama and Python, which install into the
+    # user's own profile, came back "still installed" and the person had
+    # to remove Ollama by hand. An elevated winget is the wrong context
+    # for a package that belongs to the user's profile.
+    #
+    # So: ask as the user first, which is the right context for the
+    # user's own packages, and elevate afterwards only for what is
+    # actually left. Nothing is lost either way — a machine-wide package
+    # simply fails this pass and is picked up by the next.
+    foreach ($dependency in $Approved) {
+        Uninstall-WingetPackage -Id $dependency.WingetId | Out-Null
+    }
+
+    $StillThere = @($Approved | Where-Object { Test-WingetPackageInstalled -Id $_.WingetId })
+
+    if ($StillThere.Count -gt 0 -and -not (Test-IsElevated)) {
+        Write-Host "  what is left is installed for the whole machine; asking for administrator rights."
+        Invoke-ElevatedWingetUninstall -Ids @($StillThere | ForEach-Object { $_.WingetId }) | Out-Null
     }
 
     # Report what the machine says, not what the command returned.
