@@ -1,0 +1,31 @@
+# Dependabot: GitHub Actions only, on purpose.
+#
+# The workflow pins `actions/checkout@v5` and `actions/setup-python@v6`,
+# and those pins go stale silently — a released action is not a thing the
+# repository can notice on its own, and the last bump (commit 9611931) was
+# done by hand after the fact. Weekly is enough for something that moves a
+# few times a year.
+#
+# **Python dependencies are deliberately left out.** `requirements.txt`
+# pins versions because this project's dependency set breaks on Python
+# 3.13 and 3.14 (see the README's Requirements section), and the installer
+# reinstalls whenever that file's hash changes. Version-update pull
+# requests would therefore argue every week against a choice the project
+# made on purpose, and each one would trigger a dependency reinstall on
+# every machine that pulled it.
+#
+# Genuine vulnerabilities are a different question, and are handled by
+# Dependabot *alerts* and *security updates* — repository settings, not
+# this file — which only speak up when a pinned version is actually known
+# to be affected. That is the signal worth having; a weekly upgrade
+# treadmill is not.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
