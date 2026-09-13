@@ -25,6 +25,7 @@ and the presence of the sensor DLLs comes from `sensors.dll_path`/
 
 from __future__ import annotations
 
+import re
 import shutil
 
 from .hardware import _detect_nvidia_gpu, _detect_wmi_gpu
@@ -33,7 +34,7 @@ from .i18n import DEFAULT_LANGUAGE, translate
 from .sensors import DLL_NAME, dll_path, unavailable_reason
 from .tools import find as find_tool
 from .subprocess_utils import run_hidden
-from .web.ollama_models import list_installed_models
+from .web.ollama_models import list_installed_models, model_downloaded_on_disk
 
 _TESSERACT_COMMAND = (
     "winget install --id UB-Mannheim.TesseractOCR -e --silent "
@@ -66,9 +67,26 @@ def _hardware_sensor_dlls_command(language: str) -> str:
     return translate(language, "diagnostics.command.hardware_sensors")
 
 
+_VERSION_NUMBER = re.compile(r"\d+(?:\.\d+)+")
+_NOISE_PREFIXES = ("warning", "error", "aviso", "erro", "advertencia", "advertência")
+
+
 def _version_via_flag(binary: str, flag: str = "--version") -> str | None:
-    """First line of `binary --version` (or `flag`), or `None` on any
-    failure — never raises."""
+    """The version `binary --version` reports, or `None` — never raises.
+
+    Not simply the first line. `ollama --version` with the server down
+    prints two, and both begin with "Warning:":
+
+        Warning: could not connect to a running Ollama instance
+        Warning: client version is 0.34.0
+
+    Taking the first line put "could not connect to a running Ollama
+    instance" in the About screen's Version column, which says nothing
+    about a version and quite a lot about something else. So: the first
+    line that actually carries a version number, and when that line is a
+    warning, the number alone — a program that prefixes its own version
+    with "Warning" has already said the useful part.
+    """
     try:
         result = run_hidden([binary, flag], timeout=10)
     except Exception:
@@ -76,7 +94,16 @@ def _version_via_flag(binary: str, flag: str = "--version") -> str | None:
     output = (result.stdout or result.stderr or "").strip()
     if not output:
         return None
-    return output.splitlines()[0].strip()
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for line in lines:
+        found = _VERSION_NUMBER.search(line)
+        if not found:
+            continue
+        if line.lower().startswith(_NOISE_PREFIXES):
+            return found.group(0)
+        return line
+    return lines[0]
 
 
 def _entry(key, present, version, required, install_command=None) -> dict:
@@ -149,6 +176,16 @@ def _diagnose_ollama() -> tuple[dict, dict]:
     except Exception:
         models = []
     model_ok = DEFAULT_LOCAL_MODEL in models
+
+    # The list above comes from the Ollama server, and a stopped server
+    # returns nothing at all — which read as "the model is missing" and
+    # sent a user to re-download 3.2 GB they already had. The store on
+    # disk answers the question that was actually asked.
+    if not model_ok:
+        try:
+            model_ok = model_downloaded_on_disk(DEFAULT_LOCAL_MODEL)
+        except Exception:
+            model_ok = False
     model_item = _entry(
         "default_model",
         model_ok,
