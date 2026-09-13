@@ -1657,6 +1657,14 @@ def test_o_pedido_de_elevacao_nao_segura_a_subida_do_servidor(monkeypatch):
         subiu.set()
 
     monkeypatch.setattr(app_mod, "_request_cpu_sensor_helper", _elevacao_que_trava)
+
+    # Nenhum servidor na porta: o que se mede aqui é a subida, e desde que
+    # `start_server` passou a reconhecer um sistema já aberto, uma máquina
+    # com a 8000 ocupada fazia este teste falhar por outro motivo.
+    from gclaude_indexer import sensor_service
+
+    monkeypatch.setattr(sensor_service, "server_listening", lambda *_a: False)
+
     import uvicorn
 
     monkeypatch.setattr(uvicorn, "run", _uvicorn_falso)

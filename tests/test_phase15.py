@@ -347,10 +347,17 @@ def test_erro_ao_gravar_nao_derruba_o_auxiliar(pasta_local, monkeypatch):
 
 
 def test_a_elevacao_e_pedida_na_subida_do_servidor(monkeypatch):
+    from gclaude_indexer import sensor_service
     from gclaude_indexer.web import app as modulo_app
 
     chamadas: list[str] = []
     monkeypatch.setattr(modulo_app, "_request_cpu_sensor_helper", lambda: chamadas.append("pediu"))
+
+    # Nenhum servidor na porta. Sem isto o teste passava ou falhava
+    # conforme a máquina tivesse ou não o sistema aberto na 8000 — e
+    # desde que `start_server` passou a tratar esse caso, a diferença
+    # deixou de ser invisível.
+    monkeypatch.setattr(sensor_service, "server_listening", lambda *_a: False)
 
     import uvicorn
 
@@ -358,6 +365,36 @@ def test_a_elevacao_e_pedida_na_subida_do_servidor(monkeypatch):
     modulo_app.start_server()
 
     assert chamadas == ["pediu"], "a decisão é tomada uma vez, na abertura"
+
+
+def test_com_o_sistema_ja_aberto_o_ajudante_segue_o_servidor_que_existe(monkeypatch):
+    """O segundo atalho é clicado justamente porque o primeiro já está
+    aberto. Antes disto, esse clique subia um servidor que perdia a porta
+    para o que já estava lá e morria — levando junto o ajudante elevado,
+    cuja vida é amarrada ao processo que o pediu. O servidor que desenha
+    as telas nunca era avisado, e a tela seguia dizendo "não medido"."""
+    from gclaude_indexer import sensor_service
+    from gclaude_indexer.web import app as modulo_app
+
+    pedidos: list[int] = []
+
+    monkeypatch.setattr(sensor_service, "server_listening", lambda *_a: True)
+    monkeypatch.setattr(sensor_service, "pid_listening_on", lambda *_a: 4242)
+    monkeypatch.setattr(sensor_service, "elevation_requested", lambda: True)
+    monkeypatch.setattr(
+        sensor_service, "start_elevated_helper",
+        lambda parent_pid=None: pedidos.append(parent_pid) or "started",
+    )
+
+    import uvicorn
+
+    def nao_deveria_rodar(*_a, **_k):
+        raise AssertionError("não pode tentar tomar uma porta que já é de outro")
+
+    monkeypatch.setattr(uvicorn, "run", nao_deveria_rodar)
+    modulo_app.start_server()
+
+    assert pedidos == [4242], "o ajudante tem de acompanhar o servidor existente"
 
 
 def test_nenhuma_rota_http_pode_disparar_uac():

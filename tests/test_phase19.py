@@ -484,3 +484,70 @@ def test_o_atalho_do_sensor_nao_aparece_sozinho_numa_instalacao_silenciosa():
     # A chamada, não a palavra: o comentário cita DependencyWanted
     # justamente para dizer por que não a usa.
     assert "DependencyWanted(" not in bloco
+
+
+# --- o segundo atalho com o sistema já aberto -----------------------------
+#
+# Estes exercitam funções Python, ao contrário do resto do arquivo, porque
+# é ali que o segundo atalho deixava de funcionar: o atalho existia, era
+# clicado, e o pedido morria num processo de vida curta.
+
+import socket
+import sys
+
+sys.path.insert(0, str(RAIZ))
+
+
+def test_a_porta_ocupada_e_detectada():
+    from gclaude_indexer.sensor_service import server_listening
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        porta = servidor.getsockname()[1]
+
+        assert server_listening("127.0.0.1", porta) is True
+
+    # Fechado o socket, a mesma porta deixa de responder.
+    assert server_listening("127.0.0.1", porta) is False
+
+
+def test_o_dono_da_porta_e_identificado():
+    """O ajudante elevado sobrevive a exatamente um processo: aquele cujo
+    handle ele espera. Com o sistema já aberto, esse processo é o servidor
+    que já está rodando — e sem descobrir o pid dele o ajudante morreria
+    junto com o processo de vida curta que o pediu."""
+    import os
+
+    from gclaude_indexer.sensor_service import pid_listening_on
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        porta = servidor.getsockname()[1]
+
+        encontrado = pid_listening_on(porta)
+
+    # None é uma resposta legítima (o psutil recusa enumerar sockets de
+    # outros usuários em algumas máquinas) e quem chama trata isso.
+    if encontrado is not None:
+        assert encontrado == os.getpid()
+
+
+def test_um_segundo_servidor_nao_tenta_mais_tomar_a_porta():
+    """Guarda contra a volta do erro 10048. O log da máquina do usuário
+    tinha quatro inícios de servidor e três terminaram assim, cada um
+    deles um clique no atalho que não produziu leitura nenhuma."""
+    texto = (RAIZ / "gclaude_indexer" / "web" / "app.py").read_text(encoding="utf-8")
+    inicio = texto.index("def start_server(")
+    bloco = texto[inicio:]
+
+    guarda = bloco.find("server_listening(host, port)")
+    execucao = bloco.find("uvicorn.run(")
+    assert guarda != -1, "não verifica se a porta já está tomada"
+    assert guarda < execucao, "verifica tarde demais"
+
+
+def test_o_ajudante_e_amarrado_ao_servidor_que_existe():
+    texto = (RAIZ / "gclaude_indexer" / "web" / "app.py").read_text(encoding="utf-8")
+    assert "start_elevated_helper(parent_pid=existing_pid)" in texto

@@ -1216,6 +1216,52 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
 
     _validate_host(host)
 
+    # The system may already be open. That is the ordinary case for the
+    # second shortcut — "GClaude Indexer (CPU sensor)" — which someone
+    # clicks precisely because the first one is running and shows no CPU
+    # temperature.
+    #
+    # What used to happen: this process asked for the helper, bound to
+    # port 8000, lost to the server already there, and died with
+    # "[Errno 10048] ... only one usage of each socket address". The
+    # helper's lifetime is tied to the process whose handle it waits on,
+    # so it died with it — and the server actually serving the pages had
+    # never been told anything. Three of those errors sat in the log of a
+    # machine where the user saw "not measured" and no explanation.
+    from ..sensor_service import (
+        elevation_requested,
+        pid_listening_on,
+        server_listening,
+        start_elevated_helper,
+        write_launch_status,
+    )
+
+    if server_listening(host, port):
+        existing_pid = pid_listening_on(port)
+
+        if not elevation_requested():
+            print(f"[server] already running on {host}:{port} — nothing to start.")
+            return
+
+        if existing_pid is None:
+            # Without the running server's pid there is nothing for the
+            # helper to outlive, and starting one anyway would raise a UAC
+            # prompt for a reader that dies seconds later.
+            write_launch_status("unavailable")
+            print(
+                f"[sensors] the system is already open on {host}:{port}, but its process "
+                "could not be identified. Close the system completely and open it again "
+                'through the "CPU sensor" shortcut.'
+            )
+            return
+
+        try:
+            outcome = start_elevated_helper(parent_pid=existing_pid)
+        except Exception:
+            outcome = "unavailable"
+        print(f"[sensors] elevated CPU sensor helper for pid {existing_pid}: {outcome}")
+        return
+
     # Numa thread, e nunca antes do `uvicorn.run`.
     #
     # `start_elevated_helper()` chama `ShellExecuteW` com o verbo "runas",
