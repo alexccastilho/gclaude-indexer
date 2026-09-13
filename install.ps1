@@ -160,10 +160,56 @@ param(
     [switch]$CpuSensorShortcut,
     [switch]$AutoInstall,
     [string]$OcrLanguage = "",
-    [switch]$SkipGpuCheck
+    [switch]$SkipGpuCheck,
+    # Phase 19. The graphical installer offers the model as an unticked
+    # option: several gigabytes started without being asked for is how an
+    # installation someone expected to take a minute becomes twenty. It
+    # therefore needs a way to say "everything else, yes; the model, no",
+    # which `-AutoInstall` alone cannot express.
+    [switch]$SkipModelDownload,
+    # Phase 19. Path the installer polls to keep its progress label
+    # truthful. Empty means nobody is watching — the default for anyone
+    # running this script by hand, who sees no difference at all.
+    [string]$StatusFile = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+function Write-InstallStatus {
+    <#
+    .SYNOPSIS
+        Publishes the current step for a graphical installer to read.
+    .DESCRIPTION
+        The file is rewritten whole on every call, never appended to. The
+        installer polls it while this script writes, and a reader that
+        caught a half-written append would show a step that is not the
+        current one.
+
+        Two lines, UTF-8 without BOM. The first is for the machine
+        (`<step>|<total>|<key>`), the second is the prose to display. The
+        contract is fixed in the phase 19 design, section 6.2, because it
+        is shared by two components written in different languages.
+
+        Progress is a courtesy. Failing to write it must never fail an
+        installation, which is why everything here is swallowed.
+    #>
+    param(
+        [Parameter(Mandatory)][int]$Step,
+        [Parameter(Mandatory)][int]$Total,
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Text
+    )
+
+    if (-not $StatusFile) { return }
+
+    try {
+        $content = "$Step|$Total|$Key`n$Text`n"
+        [System.IO.File]::WriteAllText(
+            $StatusFile, $content, (New-Object System.Text.UTF8Encoding($false)))
+    } catch {
+        # Deliberately silent: see above.
+    }
+}
 
 function Invoke-NativeCommand {
     <#
@@ -639,6 +685,7 @@ Write-Host "This machine's local folder: $LocalFolder"
 Write-Host ""
 
 # --- 1. Base Python: installed when missing, only to create the venv -------
+Write-InstallStatus -Step 1 -Total 8 -Key "python" -Text "Verificando o Python 3.12"
 
 # The version matters, it is not a detail: `requirements.txt` pins versions
 # that do not build on 3.13+. Taking the first Python on PATH is how a
@@ -1096,6 +1143,7 @@ if (-not $PythonBase) {
 Write-Host "Base Python found: $PythonBase (version $RequiredPythonVersion)"
 
 # --- 2. Local virtual environment (section 11.1/11.2) -----------------------
+Write-InstallStatus -Step 2 -Total 8 -Key "venv" -Text "Criando o ambiente virtual"
 
 if (Test-Path (Join-Path $VenvFolder "Scripts\python.exe")) {
     Write-Host "Virtual environment already exists at $VenvFolder."
@@ -1113,6 +1161,7 @@ if (Test-Path (Join-Path $VenvFolder "Scripts\python.exe")) {
 $VenvPython = Join-Path $VenvFolder "Scripts\python.exe"
 
 # --- 3. Python dependencies, only if requirements.txt changed (section 11.2)
+Write-InstallStatus -Step 3 -Total 8 -Key "deps" -Text "Instalando as dependencias do Python"
 
 function Get-FileChecksum([string]$Path) {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLower()
@@ -1143,6 +1192,7 @@ if ($CurrentHash -eq $PreviousHash) {
 }
 
 # --- 4. Tesseract and Ghostscript, actually installed when missing ---------
+Write-InstallStatus -Step 4 -Total 8 -Key "tesseract" -Text "Verificando o Tesseract (OCR)"
 # (section 10.3; Phase 13 Task 13: a warning alone was not enough on a new
 # machine)
 
@@ -1231,6 +1281,7 @@ function Install-IfMissing {
 # helpers above: section 1 downloads the python.org installer through it.
 
 # --- 4b. Ghostscript: unpacked into this user's own folder -----------------
+Write-InstallStatus -Step 5 -Total 8 -Key "ghostscript" -Text "Verificando o Ghostscript"
 #
 # `ocrmypdf` will not start without `gswin64c` on PATH, so this is not an
 # optional nicety: no Ghostscript means no OCR at all, which means the
@@ -1965,6 +2016,7 @@ if (-not $TesseractOk) {
 }
 
 # --- 4d. Ollama and default model (optional; large downloads) --------------
+Write-InstallStatus -Step 6 -Total 8 -Key "ollama" -Text "Verificando o Ollama"
 # Asked separately from the block above: Ollama itself is already a few
 # dozen MB, and the default model is several GB — the user should be able
 # to say no to this even after saying yes to Tesseract/Ghostscript.
@@ -2030,13 +2082,18 @@ if ($OllamaPath) {
         } else {
             Write-Host "Default model ($DefaultModel) is not downloaded." -ForegroundColor Yellow
             $ModelCommand = "ollama pull $DefaultModel"
-            $Proceed = [bool]$AutoInstall
+            # `-SkipModelDownload` overrides `-AutoInstall` for this one
+            # download, and only this one: the graphical installer says
+            # yes to everything else while leaving the several-gigabyte
+            # model as an option the user ticks deliberately.
+            $Proceed = [bool]$AutoInstall -and (-not $SkipModelDownload)
             if (-not $AutoInstall) {
                 Write-Host "  The default model download is large (several GB)." -ForegroundColor Yellow
                 $answer = Read-Host "  Download the default model now? (Y/N)"
                 $Proceed = $answer -match '^[SsYy]'
             }
             if ($Proceed) {
+                Write-InstallStatus -Step 7 -Total 8 -Key "model" -Text "Baixando o modelo de classificacao (varios GB)"
                 Write-Host "  downloading $DefaultModel (this can take a while) ..." -ForegroundColor Cyan
                 Invoke-NativeCommand { & $OllamaPath pull $DefaultModel }
                 if ($LASTEXITCODE -eq 0) {
@@ -2436,6 +2493,7 @@ if ($SkipGpuCheck) {
 }
 
 # --- 4h. Sensor libraries: temperature, power and clocks -------------------
+Write-InstallStatus -Step 8 -Total 8 -Key "sensors" -Text "Instalando as bibliotecas de sensor"
 #
 # `sensors.py` reads GPU/CPU temperature, power draw and clocks through
 # LibreHardwareMonitorLib plus the .NET Framework shims it needs at load
