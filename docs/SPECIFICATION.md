@@ -104,6 +104,17 @@ CREATE TABLE removed_file (
     removed_at    TEXT NOT NULL
 );
 
+-- Phase 18: the state the four artifacts describe, written when they are
+-- generated. One row, always id 1. See section 6, "Reports that have
+-- fallen behind".
+CREATE TABLE artifact_state (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    generated_at  TEXT NOT NULL,
+    files         INTEGER NOT NULL,
+    windows_done  INTEGER NOT NULL,
+    items         INTEGER NOT NULL
+);
+
 CREATE TABLE page (
     id            INTEGER PRIMARY KEY,
     file_id       INTEGER NOT NULL REFERENCES file(id),
@@ -398,6 +409,39 @@ before extraction, so the screen states that rather than estimating it.
 The `GET` writes nothing. The `POST` is refused while a run is in
 progress, and refused with the plan's fingerprint if the folder changed
 while the screen was open.
+
+**Reports that have fallen behind (phase 18).** Steps 7 and 8 — importing
+the classified items and writing the four files — are not part of "run all
+steps"; they sit behind their own button. So classification can finish and
+leave the four files describing an earlier state, which is what happened
+to a real collection: three documents scanned, converted, extracted and
+classified, and `review.md` still reporting the previous thirteen files
+and 307 windows.
+
+`generate_all_artifacts` therefore records into `artifact_state` the three
+counts the files describe. When they no longer match the database, two
+screens say so, each carrying the regenerate button:
+
+- **Result** — whenever the counts differ, naming what changed since the
+  files were written. The files on display genuinely predate the project
+  whatever else is happening, so the notice has no further condition.
+- **Execution** — only once nothing is left to process, meaning no file in
+  `discovered`/`converted` and no window `pending`. With windows still
+  queued for the model, generating would produce reports incomplete the
+  moment they were written, and the screen's existing advice — run the
+  steps — is the honest one.
+
+Note that this is a *different* pending-work test from the one that
+silences the update banner above, which deliberately ignores pending
+windows so that stopping classification part-way does not hide the banner
+forever. The two questions share a word and must not share a predicate.
+
+Counts, not file modification times: the output folder is synced (section
+11.1) and the client rewrites timestamps on files whose bytes never
+changed — the same trap step 0's detection avoids. A project carrying no
+recorded state is never reported stale; there is nothing to compare
+against, and the first generation on this version establishes the
+baseline.
 
 A fragment route, `GET /projects/{project_id}/update/banner`, backs the
 notice on the Execution screen. It is fetched by HTMX after that page
@@ -734,8 +778,9 @@ letting the user continue.
 
 ## 12. Implementation status
 
-The system is complete through phase 17 (incremental update), with the
-full test suite passing (537 tests as of this document). Phase-by-phase
+The system is complete through phase 18 (reports that report their own
+staleness), with the full test suite passing (552 tests as of this
+document). Phase-by-phase
 detail, including every user-requested deviation from this specification
 and why, lives in [CHANGELOG.md](../CHANGELOG.md) — this section
 intentionally does not duplicate that history.
@@ -751,6 +796,10 @@ still true as of phase 17:
 - **Sheet references are renumbered from the divergence point** on an
   update, not recomputed for the whole group. The original specification
   did not contemplate a group being processed in more than one pass.
+- **The artifacts now carry a record of what they describe**
+  (`artifact_state`, section 6). The original design treated generation as
+  a terminal step and never asked whether its output was still current —
+  which it stops being the moment any later step runs.
 
 - **Local model choice.** Section 10.2's original VRAM-tiered `qwen2.5`
   table was replaced by a single fixed default (`qwen3.5:4b`) with an
