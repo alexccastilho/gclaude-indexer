@@ -304,29 +304,6 @@ function Get-KnownProjectFolders {
     return $folders
 }
 
-function Uninstall-WingetPackage {
-    <#
-    .SYNOPSIS
-        Removes a package through winget. $true when winget reports success.
-    #>
-    param([Parameter(Mandatory)][string]$Id)
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $false }
-    Invoke-NativeCommand {
-        winget uninstall --id $Id -e --silent --disable-interactivity | Out-Null
-    }
-    return ($LASTEXITCODE -eq 0)
-}
-
-function Test-IsElevated {
-    <#
-    .SYNOPSIS
-        $true when this process may remove machine-wide packages.
-    #>
-    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
-    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
 function Test-WingetPackageInstalled {
     <#
     .SYNOPSIS
@@ -345,6 +322,52 @@ function Test-WingetPackageInstalled {
         winget list --id $Id -e --disable-interactivity | Out-Null
     }
     return ($LASTEXITCODE -eq 0)
+}
+
+function Uninstall-WingetPackage {
+    <#
+    .SYNOPSIS
+        Removes a package through winget. $true when it is gone afterwards.
+
+    .DESCRIPTION
+        Twice, and the second attempt is the one that removed Ollama.
+
+        `--silent` asks winget to run the package's own silent uninstall
+        command, and a package whose manifest has no working one refuses
+        the whole request. Ollama is such a package: three runs in a row
+        reported "still installed", and the same command without
+        `--silent` printed "Successfully uninstalled" on the first try.
+
+        `--disable-interactivity` stays on both attempts. It is what
+        forbids winget from stopping to ask something — which is the
+        promise being kept here — and it is not the flag that was
+        breaking the removal.
+
+        The verdict is the machine's, not the exit code's: winget can
+        report success for an uninstall that left the package in place.
+    #>
+    param([Parameter(Mandatory)][string]$Id)
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $false }
+
+    Invoke-NativeCommand {
+        winget uninstall --id $Id -e --silent --disable-interactivity | Out-Null
+    }
+    if (-not (Test-WingetPackageInstalled -Id $Id)) { return $true }
+
+    Invoke-NativeCommand {
+        winget uninstall --id $Id -e --disable-interactivity | Out-Null
+    }
+    return (-not (Test-WingetPackageInstalled -Id $Id))
+}
+
+function Test-IsElevated {
+    <#
+    .SYNOPSIS
+        $true when this process may remove machine-wide packages.
+    #>
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 function Stop-OllamaProcesses {
@@ -412,7 +435,12 @@ function Invoke-ElevatedWingetUninstall {
     #>
     param([Parameter(Mandatory)][string[]]$Ids)
     $lines = $Ids | ForEach-Object {
-        "winget uninstall --id $_ -e --silent --disable-interactivity | Out-Null"
+        # As duas variantes, pelo mesmo motivo de `Uninstall-WingetPackage`:
+        # um pacote sem comando de desinstalação silenciosa no manifesto
+        # recusa `--silent` inteiro. A segunda linha não faz nada quando a
+        # primeira funcionou — winget não encontra o pacote e sai.
+        "winget uninstall --id $_ -e --silent --disable-interactivity | Out-Null; " +
+        "winget uninstall --id $_ -e --disable-interactivity | Out-Null"
     }
     $encoded = [Convert]::ToBase64String(
         [Text.Encoding]::Unicode.GetBytes(($lines -join "; ")))

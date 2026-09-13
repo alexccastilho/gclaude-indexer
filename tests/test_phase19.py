@@ -618,3 +618,157 @@ def test_fechar_o_ollama_funciona_com_ele_ausente():
     resultado = _rodar_ps(script)
     linhas = [l for l in resultado.stdout.splitlines() if l.strip()]
     assert linhas and linhas[-1].strip() == "SOBREVIVEU", resultado.stderr
+
+
+# --- "não consegui perguntar" não é "não tem" ------------------------------
+#
+# Do lado do aplicativo, mas do mesmo defeito desta fase: o instalador
+# baixa o modelo e a tela Sobre diz que ele está ausente.
+
+
+def test_o_modelo_baixado_e_encontrado_no_disco(tmp_path, monkeypatch):
+    from gclaude_indexer.web.ollama_models import model_downloaded_on_disk
+
+    manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /
+                 "library" / "qwen3.5" / "4b")
+    manifesto.parent.mkdir(parents=True)
+    manifesto.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path))
+    assert model_downloaded_on_disk("qwen3.5:4b") is True
+    assert model_downloaded_on_disk("qwen3.5:32b") is False
+    assert model_downloaded_on_disk("llama3:8b") is False
+
+
+def test_sem_tag_o_padrao_do_ollama_e_latest(tmp_path, monkeypatch):
+    from gclaude_indexer.web.ollama_models import model_downloaded_on_disk
+
+    manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /
+                 "library" / "mistral" / "latest")
+    manifesto.parent.mkdir(parents=True)
+    manifesto.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path))
+    assert model_downloaded_on_disk("mistral") is True
+
+
+def test_com_o_ollama_parado_o_modelo_no_disco_conta(tmp_path, monkeypatch):
+    """O caso real: 3,2 GB baixados, servidor fora do ar, e a tela
+    oferecendo baixar tudo de novo. A lista de modelos vem do servidor, e
+    um servidor parado devolve vazio — indistinguível de uma máquina sem
+    modelo nenhum, se ninguém olhar o disco."""
+    from gclaude_indexer import install_diagnostics
+    from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
+
+    nome, _, tag = DEFAULT_LOCAL_MODEL.partition(":")
+    manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /
+                 "library" / nome / (tag or "latest"))
+    manifesto.parent.mkdir(parents=True)
+    manifesto.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path))
+    monkeypatch.setattr(install_diagnostics, "list_installed_models", lambda: [])
+
+    _, modelo = install_diagnostics._diagnose_ollama()
+    assert modelo["present"] is True
+    assert modelo["version"] == DEFAULT_LOCAL_MODEL
+    assert modelo["install_command"] is None
+
+
+def test_modelo_realmente_ausente_continua_ausente(tmp_path, monkeypatch):
+    """A correção não pode virar um sim automático: sem manifesto e sem
+    servidor, a resposta certa continua sendo que falta."""
+    from gclaude_indexer import install_diagnostics
+
+    (tmp_path / "manifests").mkdir()
+    monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path))
+    monkeypatch.setattr(install_diagnostics, "list_installed_models", lambda: [])
+
+    _, modelo = install_diagnostics._diagnose_ollama()
+    assert modelo["present"] is False
+    assert modelo["install_command"], "sem o modelo, a tela tem de dizer como obtê-lo"
+
+
+def test_a_coluna_versao_nao_mostra_recado_de_conexao(monkeypatch):
+    """`ollama --version` com o servidor parado imprime duas linhas, e as
+    duas começam com "Warning:":
+
+        Warning: could not connect to a running Ollama instance
+        Warning: client version is 0.34.0
+
+    Pegar a primeira punha "could not connect to a running Ollama
+    instance" na coluna Versão da tela Sobre."""
+    from gclaude_indexer import install_diagnostics
+
+    class _Saida:
+        stdout = ("Warning: could not connect to a running Ollama instance\n"
+                  "Warning: client version is 0.34.0\n")
+        stderr = ""
+
+    monkeypatch.setattr(install_diagnostics, "run_hidden", lambda *_a, **_k: _Saida())
+    assert install_diagnostics._version_via_flag("ollama") == "0.34.0"
+
+
+def test_uma_versao_comum_continua_inteira(monkeypatch):
+    """Só a linha ruidosa é reduzida ao número. "tesseract 5.4.0" diz mais
+    completo do que "5.4.0" e continua como está."""
+    from gclaude_indexer import install_diagnostics
+
+    class _Saida:
+        stdout = "tesseract 5.4.0\n leptonica-1.84.1\n"
+        stderr = ""
+
+    monkeypatch.setattr(install_diagnostics, "run_hidden", lambda *_a, **_k: _Saida())
+    assert install_diagnostics._version_via_flag("tesseract") == "tesseract 5.4.0"
+
+
+# --- o --silent que impedia a desinstalação -------------------------------
+
+
+def test_a_remocao_tenta_de_novo_sem_o_modo_silencioso():
+    """Três desinstalações seguidas relataram "Ollama: still installed", e
+    o mesmo comando sem `--silent` respondeu "Successfully uninstalled" na
+    primeira tentativa.
+
+    `--silent` pede que o winget rode o comando de desinstalação
+    silenciosa do próprio pacote, e um pacote cujo manifesto não tem um
+    que funcione recusa o pedido inteiro."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.index("function Uninstall-WingetPackage")
+    bloco = texto[inicio:texto.index("function ", inicio + 10)]
+
+    com_silent = bloco.find("--silent")
+    sem_silent = bloco.find("winget uninstall --id $Id -e --disable-interactivity")
+
+    assert com_silent != -1, "a tentativa silenciosa sumiu"
+    assert sem_silent != -1, "não há segunda tentativa"
+    assert com_silent < sem_silent, "o silencioso tem de vir primeiro"
+
+
+def test_a_interatividade_continua_proibida_nas_duas_tentativas():
+    """--disable-interactivity é o que impede o winget de parar para
+    perguntar, que é a promessa desta instalação. Não era ele que
+    impedia a remoção, e não sai."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    for linha in texto.splitlines():
+        if "winget uninstall" in linha and "--id" in linha:
+            assert "--disable-interactivity" in linha, linha
+
+
+def test_o_veredito_e_da_maquina_e_nao_do_codigo_de_saida():
+    """O winget relata sucesso para desinstalação que deixou o pacote no
+    lugar — foi assim que três execuções disseram ter corrido bem."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.index("function Uninstall-WingetPackage")
+    bloco = texto[inicio:texto.index("function ", inicio + 10)]
+
+    assert "return (-not (Test-WingetPackageInstalled -Id $Id))" in bloco
+    assert "$LASTEXITCODE" not in bloco, "voltou a confiar no código de saída"
+
+
+def test_a_checagem_e_definida_antes_de_quem_a_usa():
+    """Guarda de leitura: `Uninstall-WingetPackage` agora decide com
+    `Test-WingetPackageInstalled`."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    assert (texto.index("function Test-WingetPackageInstalled")
+            < texto.index("function Uninstall-WingetPackage"))
