@@ -420,6 +420,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.title": "Sobre",
         "about.version_label": "Versão",
         "about.author_label": "Autor",
+        "about.project_label": "Página do projeto",
         "about.description": (
             "Transforma uma pasta de documentos legais/arquivísticos num índice, cronologia e "
             "instruções prontas para um Claude Project — offline, processando tudo nesta máquina."
@@ -1350,6 +1351,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.title": "About",
         "about.version_label": "Version",
         "about.author_label": "Author",
+        "about.project_label": "Project page",
         "about.description": (
             "Turns a folder of legal/archival documents into an index, chronology and instructions "
             "ready for a Claude Project — offline, processing everything on this machine."
@@ -2257,6 +2259,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.title": "Acerca de",
         "about.version_label": "Versión",
         "about.author_label": "Autor",
+        "about.project_label": "Página del proyecto",
         "about.description": (
             "Convierte una carpeta de documentos legales/archivísticos en un índice, cronología e "
             "instrucciones listas para un Claude Project — offline, procesando todo en esta "

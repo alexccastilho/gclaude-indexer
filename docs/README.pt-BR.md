@@ -135,7 +135,27 @@ programação para isto. Você precisa conseguir abrir uma pasta no
 Explorador de Arquivos e rodar um comando num terminal — os dois passos são
 explicados abaixo.
 
-**Instalação rápida:** execute o `Indexer.bat` e siga as instruções.
+**Jeito mais fácil — o instalador do Windows.** Baixe o
+`GClaude-Indexer-Setup-1.3.0.exe` na
+[versão mais recente](https://github.com/alexccastilho/gclaude-indexer/releases/latest)
+e dê dois cliques. Ele pergunta onde instalar (só para você ou para
+todos os usuários da máquina), mostra a licença, deixa você marcar quais
+dependências quer, e baixa e instala todas — Python 3.12, Tesseract com
+o idioma português, Ghostscript, Ollama e o modelo de classificação —
+com barra de progresso e sem abrir nenhuma janela de terminal.
+Desinstalar é pelo Configurações > Aplicativos, como qualquer programa,
+e ele pergunta uma a uma quais dependências compartilhadas devem sair
+junto.
+
+O SmartScreen do Windows vai avisar antes de executar: o instalador não
+é assinado digitalmente, porque um certificado custa dinheiro que este
+projeto não tem. Clique em "Mais informações" e depois em "Executar
+assim mesmo". Você pode conferir o que baixou pelo SHA-256 publicado
+junto de cada versão.
+
+**Sem o instalador:** execute o `Indexer.bat` e siga as instruções. É o
+caminho descrito no resto desta página, e funciona também numa máquina
+onde você não pode instalar programas.
 
 ---
 

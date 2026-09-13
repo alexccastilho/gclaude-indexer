@@ -75,8 +75,11 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.2.0"
+SYSTEM_VERSION = "1.3.0"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
+# Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
+# três cópias dele seriam três oportunidades de divergir.
+PROJECT_URL = "https://github.com/alexccastilho/gclaude-indexer"
 
 # 50 lines covered less than a minute of scanning on a real collection — the
 # panel would scroll out before there was time to read it. 200 fits in
@@ -123,6 +126,7 @@ def render(request: Request, template_name: str, context: dict | None = None, st
     full_context.setdefault("current_layout", layout)
     full_context.setdefault("available_layouts", AVAILABLE_LAYOUTS)
     full_context.setdefault("system_version", SYSTEM_VERSION)
+    full_context.setdefault("project_url", PROJECT_URL)
     # Em toda tela, e não só na de Execução: um servidor rodando código
     # antigo produz resultado errado em qualquer etapa, e o usuário precisa
     # ver isso onde quer que esteja (ver `staleness.py`).
