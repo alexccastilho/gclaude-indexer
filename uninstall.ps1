@@ -66,6 +66,14 @@ param(
     # away the record of what you indexed with it, and the second one has
     # to be asked for by name.
     [switch]$RemoveUserData,
+    # Phase 19. Granular removal: name exactly which shared components go.
+    # Valid names: tesseract, ghostscript, ollama, models, python.
+    #
+    # All-or-nothing was the only choice before, and it is the wrong shape
+    # for this question — someone who wants Ollama gone may well be using
+    # Ghostscript for something else. When this list is given it decides
+    # the shared components on its own; anything not named stays.
+    [string[]]$Components = @(),
     # Test door: define the functions and return without uninstalling
     # anything, so `Confirm-Step` can be exercised on its own.
     [switch]$DryRunContract
@@ -120,7 +128,9 @@ function Confirm-Step {
         # The user's own work, as opposed to this installation's leavings.
         # There are three kinds of thing here, not two, and treating the
         # third as the second is what cost a real user their project list.
-        [switch]$IsUserData
+        [switch]$IsUserData,
+        # Name under which `-Components` may ask for this one specifically.
+        [string]$Component = ""
     )
 
     Write-Host ""
@@ -128,6 +138,19 @@ function Confirm-Step {
     if ($Detail) { Write-Host "  $Detail" }
 
     if ($WhatIfOnly) { return $false }
+
+    # Granular mode. A named component obeys the list and nothing else —
+    # not -RemoveAll, not -KeepDependencies — because the caller has said
+    # precisely what it wants and guessing past that would be a worse
+    # answer than the one it gave.
+    if ($Component -and $Components.Count -gt 0) {
+        if ($Components -contains $Component) {
+            Write-Host "  yes (-Components)" -ForegroundColor Yellow
+            return $true
+        }
+        Write-Host "  no (not in -Components)" -ForegroundColor Green
+        return $false
+    }
 
     # User data first, ahead of -RemoveAll. `-RemoveAll` is what the
     # Windows uninstaller's "also remove the dependencies" checkbox sends,
@@ -292,6 +315,79 @@ function Uninstall-WingetPackage {
         winget uninstall --id $Id -e --silent --disable-interactivity | Out-Null
     }
     return ($LASTEXITCODE -eq 0)
+}
+
+function Test-IsElevated {
+    <#
+    .SYNOPSIS
+        $true when this process may remove machine-wide packages.
+    #>
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Test-WingetPackageInstalled {
+    <#
+    .SYNOPSIS
+        $true when winget still finds the package on this machine.
+
+    .DESCRIPTION
+        The exit code of `winget uninstall` is not enough to report with.
+        It answers "did the command succeed", and a user reading the
+        summary is asking "is it gone" - two different questions whenever
+        the command failed for a reason winget swallowed. Asking the
+        machine afterwards answers the one that was asked.
+    #>
+    param([Parameter(Mandatory)][string]$Id)
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $false }
+    Invoke-NativeCommand {
+        winget list --id $Id -e --disable-interactivity | Out-Null
+    }
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Invoke-ElevatedWingetUninstall {
+    <#
+    .SYNOPSIS
+        Removes several packages in one elevated pass. $true if the
+        elevated process ran at all.
+
+    .DESCRIPTION
+        Tesseract, Ghostscript and Python install for the whole machine,
+        and this uninstaller inherits the installation's privileges -
+        which, for the per-user install that is the default, are none.
+        Without elevation winget refuses every one of them and the
+        uninstaller reports a clean run having removed nothing. That is
+        what a real user saw.
+
+        One elevated process for the whole list, not one per package: the
+        UAC prompt is the expensive part, and four of them for one
+        decision the person already made is four chances to give up
+        halfway.
+
+        The command is passed base64-encoded because it crosses a process
+        boundary as a single string, and package ids are the kind of thing
+        that eventually contains a character the quoting rules disagree
+        about.
+    #>
+    param([Parameter(Mandatory)][string[]]$Ids)
+    $lines = $Ids | ForEach-Object {
+        "winget uninstall --id $_ -e --silent --disable-interactivity | Out-Null"
+    }
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes(($lines -join "; ")))
+    try {
+        Start-Process -FilePath "powershell.exe" -Verb RunAs -WindowStyle Hidden -Wait `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass",
+                            "-EncodedCommand", $encoded) | Out-Null
+        return $true
+    } catch {
+        # Declining the UAC prompt lands here. It is an answer, not a
+        # failure: nothing was removed and the summary will say so.
+        Write-Host "  administrator rights were declined." -ForegroundColor Yellow
+        return $false
+    }
 }
 
 # --- 0. What is on this machine ---------------------------------------------
@@ -468,18 +564,21 @@ $SharedDependencies = @(
         Detail = "The OCR engine. Also used by other scanning and PDF tools."
         Command = "tesseract"
         WingetId = "UB-Mannheim.TesseractOCR"
+        Component = "tesseract"
     },
     @{
         Title = "Ghostscript (system-wide install)"
         Detail = "PDF/PostScript processing. Used by many PDF and printing tools."
         Command = "gswin64c"
         WingetId = "ArtifexSoftware.GhostScript"
+        Component = "ghostscript"
     },
     @{
         Title = "Ollama"
         Detail = "The local model server. Removing it does NOT remove the downloaded models — that is the next question."
         Command = "ollama"
         WingetId = "Ollama.Ollama"
+        Component = "ollama"
     },
     @{
         # Offered by winget id rather than by looking for `python` on PATH:
@@ -490,8 +589,14 @@ $SharedDependencies = @(
         Detail = "The interpreter. Almost certainly used by other things on this machine — say no unless you are sure."
         Command = $null
         WingetId = "Python.Python.3.12"
+        Component = "python"
     }
 )
+
+# Decide everything first, remove afterwards. The removal needs
+# administrator rights that this process does not have, and collecting
+# the answers before asking for them turns four UAC prompts into one.
+$Approved = New-Object System.Collections.Generic.List[hashtable]
 
 foreach ($dependency in $SharedDependencies) {
     if ($dependency.Command) {
@@ -502,15 +607,32 @@ foreach ($dependency in $SharedDependencies) {
             continue
         }
     }
-    if (Confirm-Step -Title $dependency.Title -Detail $dependency.Detail -IsSharedDependency) {
-        Write-Host "  removing through winget..."
-        if (Uninstall-WingetPackage -Id $dependency.WingetId) {
-            $Removed.Add($dependency.Title)
-            Write-Host "  removed." -ForegroundColor Green
-        } else {
-            Write-Host "  winget could not remove it. Use Settings > Apps > Installed apps." -ForegroundColor Yellow
-        }
+    if (Confirm-Step -Title $dependency.Title -Detail $dependency.Detail `
+            -IsSharedDependency -Component $dependency.Component) {
+        $Approved.Add($dependency)
     } else { $Kept.Add($dependency.Title) }
+}
+
+if ($Approved.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Removing shared packages through winget..." -ForegroundColor Cyan
+    $ids = @($Approved | ForEach-Object { $_.WingetId })
+    if (Test-IsElevated) {
+        foreach ($id in $ids) { Uninstall-WingetPackage -Id $id | Out-Null }
+    } else {
+        Write-Host "  these are installed for the whole machine; asking for administrator rights."
+        Invoke-ElevatedWingetUninstall -Ids $ids | Out-Null
+    }
+
+    # Report what the machine says, not what the command returned.
+    foreach ($dependency in $Approved) {
+        if (Test-WingetPackageInstalled -Id $dependency.WingetId) {
+            Write-Host ("  {0}: still installed. Remove it from Settings > Apps > Installed apps." -f $dependency.Title) -ForegroundColor Yellow
+        } else {
+            $Removed.Add($dependency.Title)
+            Write-Host ("  {0}: removed." -f $dependency.Title) -ForegroundColor Green
+        }
+    }
 }
 
 # The model store, asked separately from Ollama itself: this is tens of
@@ -520,7 +642,7 @@ $ModelStore = Join-Path $env:USERPROFILE ".ollama\models"
 if (Test-Path -LiteralPath $ModelStore) {
     if (Confirm-Step -Title "Downloaded Ollama models" `
             -Detail ("$ModelStore ({0} MB). Re-downloading these takes hours." -f (Get-FolderSizeMb $ModelStore)) `
-            -IsSharedDependency) {
+            -IsSharedDependency -Component "models") {
         Remove-ItemSafely -Path $ModelStore -Label "Ollama models" | Out-Null
     } else { $Kept.Add("Ollama models") }
 }

@@ -71,6 +71,12 @@ brazilianportuguese.RemoveDeps=Remover também Tesseract, Ghostscript, Ollama e 
 brazilianportuguese.RemoveDepsAsk=Deseja remover TAMBÉM o Tesseract, o Ghostscript, o Ollama e o Python 3.12?%n%nResponda Não se outro programa desta máquina usar algum deles.
 brazilianportuguese.DepsFailed=O aplicativo foi instalado, mas nem toda dependência pôde ser instalada. Abra o aplicativo e veja a tela Sobre para o diagnóstico.
 brazilianportuguese.OpenLog=Deseja abrir o registro da instalação para ver o que houve?
+brazilianportuguese.UninstallIntro=O GClaude Indexer será removido. Marque abaixo o que deve sair junto — deixe desmarcado o que outro programa desta máquina usar.
+brazilianportuguese.CompTesseract=Tesseract (OCR) e os dados de idioma
+brazilianportuguese.CompGhostscript=Ghostscript
+brazilianportuguese.CompOllama=Ollama (o servidor de modelos)
+brazilianportuguese.CompModels=Modelos já baixados do Ollama (vários GB; rebaixar leva horas)
+brazilianportuguese.CompPython=Python 3.12
 
 english.OptionalGroup=Optional:
 english.DownloadModel=Download the local classification model now (about 3.2 GB)
@@ -81,6 +87,12 @@ english.RemoveDeps=Also remove Tesseract, Ghostscript, Ollama and Python 3.12
 english.RemoveDepsAsk=Do you also want to remove Tesseract, Ghostscript, Ollama and Python 3.12?%n%nAnswer No if another program on this machine uses any of them.
 english.DepsFailed=The application was installed, but not every dependency could be. Open the application and check the About screen for the diagnosis.
 english.OpenLog=Do you want to open the installation log to see what happened?
+english.UninstallIntro=GClaude Indexer will be removed. Tick below whatever should go with it — leave unticked anything another program on this machine uses.
+english.CompTesseract=Tesseract (OCR) and its language data
+english.CompGhostscript=Ghostscript
+english.CompOllama=Ollama (the model server)
+english.CompModels=Models already downloaded by Ollama (several GB; re-downloading takes hours)
+english.CompPython=Python 3.12
 
 spanish.OptionalGroup=Opcionales:
 spanish.DownloadModel=Descargar ahora el modelo de clasificación local (unos 3,2 GB)
@@ -91,6 +103,12 @@ spanish.RemoveDeps=Eliminar también Tesseract, Ghostscript, Ollama y Python 3.1
 spanish.RemoveDepsAsk=¿Desea eliminar TAMBIÉN Tesseract, Ghostscript, Ollama y Python 3.12?%n%nResponda No si otro programa de esta máquina usa alguno de ellos.
 spanish.DepsFailed=La aplicación se instaló, pero no todas las dependencias pudieron instalarse. Abra la aplicación y consulte la pantalla Acerca de para el diagnóstico.
 spanish.OpenLog=¿Desea abrir el registro de instalación para ver qué ocurrió?
+spanish.UninstallIntro=GClaude Indexer será eliminado. Marque abajo lo que debe irse con él — deje sin marcar lo que otro programa de esta máquina use.
+spanish.CompTesseract=Tesseract (OCR) y sus datos de idioma
+spanish.CompGhostscript=Ghostscript
+spanish.CompOllama=Ollama (el servidor de modelos)
+spanish.CompModels=Modelos ya descargados por Ollama (varios GB; volver a descargarlos lleva horas)
+spanish.CompPython=Python 3.12
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -135,7 +153,7 @@ var
   DoneFilePath: String;
   LogFilePath: String;
   DepsExitCode: Integer;
-  RemoveDependencies: Boolean;
+  RemoveComponents: String;
   DepsPage: TOutputProgressWizardPage;
 
 function BuildCommandLine(): String;
@@ -297,23 +315,107 @@ begin
   end;
 end;
 
+function AddComponentBox(Owner: TSetupForm; Parent: TWinControl; Caption: String;
+                         var Top: Integer): TNewCheckBox;
+begin
+  Result := TNewCheckBox.Create(Owner);
+  Result.Parent := Parent;
+  Result.Left := ScaleX(8);
+  Result.Top := Top;
+  Result.Width := Parent.ClientWidth - ScaleX(24);
+  Result.Height := ScaleY(19);
+  Result.Checked := False;
+  Result.Caption := Caption;
+  Top := Top + ScaleY(23);
+end;
+
 function InitializeUninstall(): Boolean;
+var
+  Form: TSetupForm;
+  Intro: TNewStaticText;
+  Top: Integer;
+  Ok, Cancel: TNewButton;
+  BoxTesseract, BoxGhostscript, BoxOllama, BoxModels, BoxPython: TNewCheckBox;
+  Parts: String;
 begin
   Result := True;
-  RemoveDependencies := False;
+  RemoveComponents := '';
 
-  { Asked here, before anything is removed. The first version of this put
-    a checkbox on UninstallProgressForm, which is the *progress* page —
-    it only appears once the uninstall is already running, so the box was
-    there but could never be ticked in time. A question the user cannot
-    answer before the work starts is not a question. }
+  { Asked here, before anything is removed. The first attempt put a
+    checkbox on UninstallProgressForm — the *progress* page, which only
+    appears once the uninstall is already running, so the box was there
+    but could never be ticked in time. A question the user cannot answer
+    before the work starts is not a question.
+
+    The second attempt was a single yes/no for all four dependencies at
+    once, which is the wrong shape: someone who wants Ollama gone may
+    well still be using Ghostscript. One box each. }
   if UninstallSilent then
     exit;
 
-  RemoveDependencies :=
-    MsgBox(ExpandConstant('{cm:KeepCollections}') + #13#10#13#10
-           + ExpandConstant('{cm:RemoveDepsAsk}'),
-           mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  { Built by hand, not with CreateCustomForm: that helper belongs to the
+    setup side and is not registered in the uninstaller's script context. }
+  Form := TSetupForm.Create(nil);
+  try
+    Form.Caption := '{#AppName}';
+    Form.ClientWidth := ScaleX(440);
+    Form.ClientHeight := ScaleY(300);
+    Form.Position := poScreenCenter;
+
+    Intro := TNewStaticText.Create(Form);
+    Intro.Parent := Form;
+    Intro.Left := ScaleX(8);
+    Intro.Top := ScaleY(8);
+    Intro.Width := Form.ClientWidth - ScaleX(20);
+    Intro.WordWrap := True;
+    Intro.AutoSize := True;
+    Intro.Caption := ExpandConstant('{cm:UninstallIntro}') + #13#10#13#10
+                   + ExpandConstant('{cm:KeepCollections}');
+
+    Top := Intro.Top + Intro.Height + ScaleY(14);
+    BoxTesseract   := AddComponentBox(Form, Form, ExpandConstant('{cm:CompTesseract}'), Top);
+    BoxGhostscript := AddComponentBox(Form, Form, ExpandConstant('{cm:CompGhostscript}'), Top);
+    BoxOllama      := AddComponentBox(Form, Form, ExpandConstant('{cm:CompOllama}'), Top);
+    BoxModels      := AddComponentBox(Form, Form, ExpandConstant('{cm:CompModels}'), Top);
+    BoxPython      := AddComponentBox(Form, Form, ExpandConstant('{cm:CompPython}'), Top);
+
+    Ok := TNewButton.Create(Form);
+    Ok.Parent := Form;
+    Ok.Width := ScaleX(90);
+    Ok.Height := ScaleY(25);
+    Ok.Left := Form.ClientWidth - ScaleX(196);
+    Ok.Top := Form.ClientHeight - ScaleY(35);
+    Ok.Caption := SetupMessage(msgButtonOK);
+    Ok.ModalResult := mrOk;
+    Ok.Default := True;
+
+    Cancel := TNewButton.Create(Form);
+    Cancel.Parent := Form;
+    Cancel.Width := ScaleX(90);
+    Cancel.Height := ScaleY(25);
+    Cancel.Left := Form.ClientWidth - ScaleX(98);
+    Cancel.Top := Ok.Top;
+    Cancel.Caption := SetupMessage(msgButtonCancel);
+    Cancel.ModalResult := mrCancel;
+    Cancel.Cancel := True;
+
+    if Form.ShowModal() <> mrOk then
+    begin
+      Result := False;
+      exit;
+    end;
+
+    Parts := '';
+    if BoxTesseract.Checked then Parts := Parts + 'tesseract,';
+    if BoxGhostscript.Checked then Parts := Parts + 'ghostscript,';
+    if BoxOllama.Checked then Parts := Parts + 'ollama,';
+    if BoxModels.Checked then Parts := Parts + 'models,';
+    if BoxPython.Checked then Parts := Parts + 'python,';
+    if Parts <> '' then
+      RemoveComponents := Copy(Parts, 1, Length(Parts) - 1);
+  finally
+    Form.Free();
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -329,15 +431,27 @@ begin
   if not FileExists(Script) then
     exit;
 
-  { Neither branch touches the user's project list: -RemoveAll covers the
-    shared dependencies and this installation's own leavings, and the
-    catalogue is behind -RemoveUserData, which nothing here passes. }
-  if RemoveDependencies then
-    Args := '-RemoveAll'
-  else
-    Args := '-KeepDependencies';
+  { -KeepDependencies always, and the ticked boxes on top of it. The
+    granular list decides the shared components on its own; the flag
+    decides everything else, which is what this installation owns and is
+    going anyway. With no box ticked the list is empty, the flag applies
+    to everything, and nothing shared is touched.
 
-  Exec('powershell.exe',
-       '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" ' + Args,
+    Neither path removes the project list: that lives behind
+    -RemoveUserData, which nothing here passes. }
+  Args := '-KeepDependencies';
+  if RemoveComponents <> '' then
+    Args := Args + ' -Components ' + RemoveComponents;
+
+  { Logged, for the same reason the install is. The first version ran this
+    hidden and silent, and when a user reported that nothing had been
+    removed there was no way to tell whether the script had failed, run
+    partially, or done its job while they looked too early. }
+  LogFilePath := ExpandConstant('{localappdata}\GClaudeIndexer\uninstall-log.txt');
+  ForceDirectories(ExpandConstant('{localappdata}\GClaudeIndexer'));
+
+  Exec(ExpandConstant('{cmd}'),
+       '/c ""powershell.exe" -NoProfile -ExecutionPolicy Bypass -File ""' + Script + '"" '
+       + Args + ' > ""' + LogFilePath + '"" 2>&1"',
        ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

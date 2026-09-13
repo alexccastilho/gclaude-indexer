@@ -16,6 +16,7 @@ PowerShell instalada, ou um catálogo de projetos tratado como cache.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -137,3 +138,119 @@ def test_a_elevacao_esconde_a_janela_mas_nao_tenta_esconder_o_uac():
 
     assert '$startArguments["Verb"] = "RunAs"' in bloco
     assert '$startArguments["WindowStyle"] = "Hidden"' in bloco
+
+
+# --- remoção por componente, não tudo ou nada -------------------------------
+
+
+def test_componente_nomeado_e_removido():
+    assert _confirm_step(
+        "-IsSharedDependency -Component 'ollama'", "-Components ollama"
+    ) == "REMOVE"
+
+
+def test_componente_nao_nomeado_fica():
+    """O caso que motivou a mudança: quem quer o Ollama fora pode muito
+    bem continuar usando o Ghostscript."""
+    assert _confirm_step(
+        "-IsSharedDependency -Component 'ghostscript'", "-Components ollama"
+    ) == "MANTEM"
+
+
+def test_a_lista_vence_o_remove_all():
+    """Uma lista explícita é mais informativa que um 'sim para tudo'.
+    Adivinhar por cima dela seria dar uma resposta pior que a recebida."""
+    assert _confirm_step(
+        "-IsSharedDependency -Component 'python'", "-Components ollama -RemoveAll"
+    ) == "MANTEM"
+
+
+def test_a_lista_vence_o_keep_dependencies():
+    assert _confirm_step(
+        "-IsSharedDependency -Component 'tesseract'",
+        "-Components tesseract -KeepDependencies"
+    ) == "REMOVE"
+
+
+def test_sem_lista_nada_muda_para_quem_ja_usava_os_modos_antigos():
+    assert _confirm_step("-IsSharedDependency", "-RemoveAll") == "REMOVE"
+    assert _confirm_step("-IsSharedDependency", "-KeepDependencies") == "MANTEM"
+
+
+def test_o_que_a_instalacao_possui_sai_mesmo_em_modo_granular():
+    """O instalador passa -KeepDependencies junto da lista: os componentes
+    nomeados obedecem à lista, e o resto — que é desta instalação e vai
+    embora de qualquer forma — obedece à flag."""
+    assert _confirm_step("", "-Components ollama -KeepDependencies") == "REMOVE"
+
+
+def test_toda_dependencia_pode_ser_escolhida():
+    """Guarda contra uma dependência nova entrar sem poder ser escolhida:
+    ela cairia no modo antigo e sairia junto sem ninguém marcar."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    wingets = texto.count("WingetId = ")
+    componentes = set(re.findall(r'-?Component\s*=?\s*"([a-z]+)"', texto))
+
+    assert len(componentes) >= wingets, (
+        f"{wingets} dependências mas só {len(componentes)} nomes de componente"
+    )
+
+
+def test_a_tela_do_desinstalador_oferece_todos_os_componentes():
+    """O nome do componente é um contrato entre duas linguagens: o Pascal
+    do instalador o escreve na linha de comando, o PowerShell o lê. Um
+    lado que ganhe um componente sem o outro produz ou uma caixinha que
+    não faz nada, ou uma dependência que ninguém consegue remover."""
+    ps = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    iss = (RAIZ / "installer" / "GClaudeIndexer.iss").read_text(encoding="utf-8")
+
+    no_script = set(re.findall(r'-?Component\s*=?\s*"([a-z]+)"', ps))
+    na_tela = set(re.findall(r"Parts \+ '([a-z]+),'", iss))
+
+    assert no_script == na_tela, (
+        f"só no script: {sorted(no_script - na_tela)}; "
+        f"só na tela: {sorted(na_tela - no_script)}"
+    )
+
+
+# --- remover de verdade exige direitos que o desinstalador não tem ---------
+
+
+def test_a_deteccao_de_elevacao_responde():
+    """Tesseract, Ghostscript e Python são instalados para a máquina toda,
+    e o desinstalador herda os privilégios da instalação — que numa
+    instalação por usuário são nenhum. Sem pedir elevação, o winget recusa
+    os três e o desinstalador termina dizendo que correu bem sem ter
+    removido nada. Foi o que um usuário real viu."""
+    script = (
+        f". '{RAIZ / 'uninstall.ps1'}' -DryRunContract; "
+        "if (Test-IsElevated) { 'ELEVADO' } else { 'COMUM' }"
+    )
+    saida = _rodar_ps(script).stdout.strip()
+    assert saida in ("ELEVADO", "COMUM"), saida
+
+
+def test_a_remocao_compartilhada_passa_por_um_caminho_elevado():
+    """Guarda estrutural: um `winget uninstall` chamado direto do laço,
+    sem o ramo elevado, volta a falhar em silêncio."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("$Approved = New-Object")
+    assert inicio != -1, "laço de dependências compartilhadas não encontrado"
+    bloco = texto[inicio:]
+
+    assert "Test-IsElevated" in bloco
+    assert "Invoke-ElevatedWingetUninstall" in bloco
+
+
+def test_o_resumo_conta_o_que_a_maquina_diz():
+    """O código de saída do winget responde 'o comando deu certo'. Quem lê
+    o resumo está perguntando 'sumiu?'. São perguntas diferentes sempre que
+    o comando falha por um motivo que o winget engoliu."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("$Approved = New-Object")
+    bloco = texto[inicio:]
+
+    verificacao = bloco.find("Test-WingetPackageInstalled")
+    registro = bloco.find("$Removed.Add($dependency.Title)")
+    assert verificacao != -1, "resultado não é conferido depois da remoção"
+    assert verificacao < registro, "conta como removido antes de conferir"
