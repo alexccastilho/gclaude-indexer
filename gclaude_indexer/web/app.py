@@ -6,9 +6,9 @@
 # Software Foundation, either version 3 of the License, or (at your option)
 # any later version. See the LICENSE file for details.
 
-"""Web interface (section 6): four screens — Projects, New project,
-Execution and Result — served by FastAPI + Jinja2, with HTMX for the parts
-that update themselves. No front-end framework, no JavaScript build: HTML
+"""Web interface (section 6): five screens — Projects, New project,
+Execution, Update collection and Result — served by FastAPI + Jinja2, with
+HTMX for the parts that update themselves. No front-end framework, no JavaScript build: HTML
 served by Python itself; the only script is HTMX, vendored in
 `static/htmx.min.js` (no network call at runtime).
 
@@ -75,7 +75,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.1.0"
+SYSTEM_VERSION = "1.2.0"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 
 # 50 lines covered less than a minute of scanning on a real collection — the

@@ -10,6 +10,57 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.2.0] — 2026-09-13
+
+Phase 18. The reports say when they have fallen behind.
+
+### Added
+
+- **A notice when the four generated files no longer describe the
+  project.** This came out of a real collection: three documents were
+  added, the pipeline scanned, converted, extracted 426 pages, built 71
+  windows and classified every one of them — and `index.md`, `timeline.md`,
+  `review.md` and `project_instructions.md` went on reporting the previous
+  13 files and 307 windows, because generating them is a separate step,
+  behind its own button, that had not been run. The Result screen showed
+  those files with nothing to say they were out of date. The owner found
+  out by reading the numbers by hand.
+
+  `generate_all_artifacts` now records, in a one-row table, the three
+  counts the files describe: documents, classified windows, and items.
+  When they stop matching the database, two screens say so, each with the
+  regenerate button beside it — the Result screen whenever they differ,
+  naming what changed since the files were written; the Execution screen
+  only once there is nothing left to process.
+
+  The two screens use different conditions on purpose. With windows still
+  waiting for the model, telling someone to generate the reports would
+  produce reports that are incomplete the moment they are written, so the
+  Execution screen stays quiet and the honest advice — keep running the
+  steps — is what the screen already shows. On the Result screen the files
+  on display genuinely do predate the project whatever else is happening,
+  so the notice is unconditional.
+
+  Counts, not file timestamps: the output folder is synced by Google
+  Drive, and the client rewrites the modification time of files whose
+  bytes never changed. Comparing dates here would repeat the mistake the
+  update's own detection is built to avoid.
+
+  A project from any earlier version carries no recorded state and is
+  never reported stale — there is nothing to compare against, and a
+  warning with no ground under it is worse than none. The first generation
+  on this version records the state; every one after it is checked.
+
+### Fixed
+
+- **`review.md` counted five of the six file statuses.** The coverage list
+  ran through `discovered`, `converted`, `extracted`, `failed` and
+  `skipped`, but not `duplicate` — so a file that entered as a copy of one
+  already indexed disappeared from the report, and the coverage simply
+  failed to add up to the collection with nothing to explain the
+  difference. A test now walks every status `scanning.py` writes, so the
+  same gap cannot reopen through a status added later.
+
 ## [1.1.0] — 2026-09-13
 
 Phase 17. A collection stops having to be reindexed from scratch every
