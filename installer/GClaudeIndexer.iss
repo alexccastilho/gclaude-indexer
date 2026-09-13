@@ -510,14 +510,31 @@ begin
   if UninstallSilent then
     exit;
 
-  { Built by hand, not with CreateCustomForm: that helper belongs to the
-    setup side and is not registered in the uninstaller's script context. }
-  Form := TSetupForm.Create(nil);
+  { CreateNew, not Create, and the difference is the whole bug.
+
+    Create loads the form's .dfm resource by class name. That resource is
+    linked into the setup binary and NOT into the uninstaller, so the call
+    compiles and then dies at run time with "Resource TSetupForm not
+    found" — which is exactly what a user got when they opened Programs
+    and Features. CreateNew builds the form from nothing and asks for no
+    resource, which is why everything below sets its own size, position
+    and border: there is no .dfm left to inherit them from.
+
+    Measured rather than reasoned about: a throwaway installer was built
+    that tries all four constructors inside the uninstaller and writes
+    down which survive. Create failed with that exact message; CreateNew
+    worked, including with a TNewCheckBox parented to it. }
+  Form := TSetupForm.CreateNew(nil, 0);
   try
     Form.Caption := '{#AppName}';
     Form.ClientWidth := ScaleX(440);
     Form.ClientHeight := ScaleY(300);
     Form.Position := poScreenCenter;
+    Form.BorderStyle := bsDialog;
+    { A form with no .dfm also inherits no font, and the default is the
+      1995 one. }
+    Form.Font.Name := 'Segoe UI';
+    Form.Font.Size := 9;
 
     Intro := TNewStaticText.Create(Form);
     Intro.Parent := Form;

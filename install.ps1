@@ -649,6 +649,85 @@ function Test-WingetAvailable {
     return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
 
+function Test-OllamaResponding {
+    <#
+    .SYNOPSIS
+        $true when something is listening on Ollama's port.
+
+    .DESCRIPTION
+        A TCP connect, not an HTTP request: all we need to know is whether
+        the server is up, and a bare connect answers that in milliseconds
+        without depending on any endpoint staying where it is.
+    #>
+    param([int]$TimeoutMs = 1500)
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $pending = $client.BeginConnect("127.0.0.1", 11434, $null, $null)
+        $answered = $pending.AsyncWaitHandle.WaitOne($TimeoutMs)
+        if ($answered) { $client.EndConnect($pending) }
+        return $answered
+    } catch {
+        return $false
+    } finally {
+        if ($client) { $client.Close() }
+    }
+}
+
+function Start-OllamaIfNeeded {
+    <#
+    .SYNOPSIS
+        Brings up `ollama serve` when nothing is listening. $true when the
+        server answers by the end.
+
+    .DESCRIPTION
+        Every ollama subcommand that matters here — `list`, `pull`, `run` —
+        is a client of a server on 127.0.0.1:11434. Having the binary on
+        disk is not the same as having the server up, and after a fresh
+        winget install it usually is not: the tray application that starts
+        it has not been launched yet.
+
+        On a real machine that produced two wrong answers in a row from one
+        installation. `ollama list` failed, so the script concluded the
+        default model was missing; then `ollama pull` failed with
+        "connectex: the target machine actively refused it" and the user
+        was told to run the command by hand. Neither was true — nothing was
+        wrong except that nobody had started the server.
+
+        Left running on purpose. The GPU verification a few blocks below
+        loads a model through this same server, and the application needs
+        it at classification time anyway (`engine_local.py` starts it
+        itself when it has to, which is the behaviour this mirrors).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$OllamaPath,
+        [int]$WaitSeconds = 40
+    )
+
+    if (Test-OllamaResponding) { return $true }
+
+    Write-Host "  the Ollama server is not answering on 127.0.0.1:11434; starting it ..." -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath $OllamaPath -ArgumentList "serve" -WindowStyle Hidden | Out-Null
+    } catch {
+        Write-Host "  could not start it: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+
+    $waited = 0
+    while ($waited -lt $WaitSeconds) {
+        Start-Sleep -Seconds 2
+        $waited += 2
+        if (Test-OllamaResponding) {
+            Write-Host ("  the Ollama server answered after {0} s." -f $waited) -ForegroundColor Green
+            return $true
+        }
+    }
+
+    Write-Host ("  the Ollama server did not come up within {0} s." -f $WaitSeconds) -ForegroundColor Yellow
+    return $false
+}
+
 function Get-VerifiedDownload {
     <#
     .SYNOPSIS
@@ -2134,8 +2213,14 @@ if ($OllamaPath) {
     $DefaultModel = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL; print(DEFAULT_LOCAL_MODEL)" })".Trim()
 
     if ($DefaultModel) {
-        # Straight after Ollama is installed its service may still be
-        # starting, and `ollama list` then writes a connection error and
+        # Before asking Ollama anything at all. Both questions below go to
+        # a server, and with the server down the answers are not "no" —
+        # they are nothing, which is worse, because the script would print
+        # "not downloaded" for a model that might be right there.
+        Start-OllamaIfNeeded -OllamaPath $OllamaPath | Out-Null
+
+        # Kept anyway: the server can be up and still be finishing its own
+        # startup, and `ollama list` then writes a connection error and
         # exits non-zero. That used to end the installation right here.
         $ModelList = Invoke-NativeCommand { & $OllamaPath list 2>$null }
         $HasDefaultModel = ($LASTEXITCODE -eq 0) -and ($ModelList -match [regex]::Escape($DefaultModel))

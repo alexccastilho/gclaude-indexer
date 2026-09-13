@@ -363,3 +363,86 @@ def test_as_opcoes_da_tela_viram_argumentos():
                    "-CpuSensorShortcut"):
         assert switch in bloco, f"{switch} não é passado pela tela"
         assert f"${switch[1:]}" in ps, f"{switch} não existe em install.ps1"
+
+
+# --- o Ollama precisa estar no ar, não só instalado -----------------------
+
+
+def _carregar_funcoes(nomes):
+    """Carrega funções soltas do install.ps1 sem executar o script.
+
+    O script instala cinco programas ao ser carregado, então dot-source
+    está fora de questão. O parser do próprio PowerShell devolve o texto
+    exato de cada função, que é tudo o que um teste precisa.
+    """
+    lista = ", ".join(f"'{n}'" for n in nomes)
+    return (
+        f"$caminho = '{RAIZ / 'install.ps1'}'; "
+        "$ast = [System.Management.Automation.Language.Parser]::ParseFile("
+        "$caminho, [ref]$null, [ref]$null); "
+        f"$alvos = @({lista}); "
+        "$ast.FindAll({ param($n) "
+        "$n -is [System.Management.Automation.Language.FunctionDefinitionAst] "
+        "-and $alvos -contains $n.Name }, $true) | "
+        "ForEach-Object { Invoke-Expression $_.Extent.Text }; "
+    )
+
+
+def test_o_instalador_sobe_o_ollama_antes_de_perguntar_qualquer_coisa():
+    """Ter o binário no disco não é ter o servidor no ar, e depois de uma
+    instalação nova do winget normalmente não está. Numa máquina real isso
+    produziu duas respostas erradas na mesma execução: `ollama list` falhou
+    e o script concluiu que o modelo faltava, e em seguida `ollama pull`
+    devolveu "a máquina de destino as recusou ativamente" e o usuário foi
+    mandado rodar o comando à mão. Nada disso era verdade."""
+    texto = (RAIZ / "install.ps1").read_text(encoding="utf-8")
+
+    subida = texto.find("Start-OllamaIfNeeded -OllamaPath $OllamaPath")
+    listagem = texto.find("& $OllamaPath list")
+    baixada = texto.find("& $OllamaPath pull $DefaultModel")
+
+    assert subida != -1, "o servidor nunca é iniciado"
+    assert subida < listagem, "pergunta a lista antes de haver servidor"
+    assert subida < baixada, "tenta baixar antes de haver servidor"
+
+
+def test_a_deteccao_do_servidor_ollama_responde_sem_lancar():
+    """A detecção é um connect TCP: precisa responder sim ou não em
+    milissegundos, e nunca derrubar a instalação por não conseguir."""
+    script = _carregar_funcoes(["Test-OllamaResponding"]) + (
+        "if (Test-OllamaResponding -TimeoutMs 200) { 'SIM' } else { 'NAO' }"
+    )
+    linhas = [l for l in _rodar_ps(script).stdout.splitlines() if l.strip()]
+    assert linhas and linhas[-1].strip() in ("SIM", "NAO")
+
+
+# --- o construtor que existe no instalador e não no desinstalador ---------
+
+
+def test_o_formulario_do_desinstalador_nao_usa_o_construtor_que_falha():
+    """`TSetupForm.Create` carrega o recurso .dfm da classe. Esse recurso
+    está ligado ao binário do instalador e não ao do desinstalador, então
+    a chamada compila e morre em execução com "Resource TSetupForm not
+    found" — foi o que apareceu ao abrir Programas e Recursos.
+
+    Medido, não deduzido: um instalador descartável foi construído para
+    tentar os quatro construtores dentro do desinstalador e anotar quais
+    sobrevivem. `Create` falhou com essa mensagem exata; `CreateNew`
+    funcionou, inclusive com um TNewCheckBox dentro."""
+    texto = ISS.read_text(encoding="utf-8")
+
+    assert "TSetupForm.Create(nil)" not in texto
+    assert "TSetupForm.CreateNew(nil, 0)" in texto
+
+
+def test_um_formulario_sem_dfm_define_o_que_o_dfm_daria():
+    """CreateNew não herda nada: tamanho, posição, borda e fonte deixam de
+    vir prontos e passam a ser responsabilidade de quem constrói."""
+    texto = ISS.read_text(encoding="utf-8")
+    inicio = texto.find("Form := TSetupForm.CreateNew(nil, 0);")
+    assert inicio != -1
+    bloco = texto[inicio:inicio + 900]
+
+    for propriedade in ("Form.ClientWidth", "Form.ClientHeight",
+                        "Form.Position", "Form.BorderStyle", "Form.Font.Name"):
+        assert propriedade in bloco, f"{propriedade} não é definida"
