@@ -379,6 +379,18 @@ function Start-ProcessElevated {
         $startArguments["NoNewWindow"] = $true
     } else {
         $startArguments["Verb"] = "RunAs"
+        # Phase 19. `RunAs` and `NoNewWindow` are mutually exclusive — the
+        # verb needs ShellExecute, which always creates a window — so the
+        # window has to be hidden instead of suppressed. Without this a
+        # black console flashes up, or sits there, in the middle of a
+        # graphical installation: reported by a user who watched a terminal
+        # open while the wizard was running.
+        #
+        # The UAC prompt itself still appears, and must: Windows draws it
+        # on the secure desktop and no application gets to suppress that.
+        # Everything launched through here carries silent flags, so there
+        # is nothing in the hidden window for anyone to answer.
+        $startArguments["WindowStyle"] = "Hidden"
     }
 
     try {
@@ -1577,7 +1589,7 @@ function Test-Answers {
     }
 }
 
-`$process = Start-Process -FilePath `$installer -ArgumentList "/S /D=`$destination" -PassThru
+`$process = Start-Process -FilePath `$installer -ArgumentList "/S /D=`$destination" -PassThru -WindowStyle Hidden
 `$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 `$ready = `$false
 while (`$true) {

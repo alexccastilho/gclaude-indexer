@@ -88,3 +88,52 @@ def test_o_catalogo_nao_esta_na_lista_de_estado_descartavel():
     assert "projects.json" not in bloco
     assert "settings.json" not in bloco
     assert "tools.json" in bloco
+
+
+# --- nenhum terminal, em momento nenhum ------------------------------------
+
+
+def test_nenhum_start_process_do_instalador_abre_janela():
+    """O instalador é gráfico. Um console preto piscando no meio dele —
+    ou pior, ficando aberto — é o que o usuário relatou ver.
+
+    `Start-Process` cria janela por padrão. Com `-Verb RunAs` não se pode
+    usar `-NoNewWindow`, porque o verbo exige ShellExecute; nesse caso a
+    janela tem de ser escondida com `-WindowStyle Hidden`. Qualquer
+    chamada nova precisa de uma das duas.
+    """
+    texto = (RAIZ / "install.ps1").read_text(encoding="utf-8")
+    linhas = texto.splitlines()
+
+    for numero, linha in enumerate(linhas, start=1):
+        nua = linha.strip()
+        # Só invocações: `Start-ProcessElevated` é o nome de uma função
+        # daqui e contém a cadeia procurada, e uma definição não abre
+        # janela nenhuma.
+        if "Start-Process " not in linha and "Start-Process@" not in linha:
+            continue
+        if nua.startswith("#") or nua.startswith("function "):
+            continue
+        if "Start-ProcessElevated" in linha:
+            continue
+        # Chamadas por splatting: a decisão está no dicionário montado
+        # nas linhas acima.
+        contexto = "\n".join(linhas[max(0, numero - 25):numero + 1])
+        assert ("WindowStyle" in contexto) or ("NoNewWindow" in contexto), (
+            f"Start-Process na linha {numero} pode abrir uma janela visível"
+        )
+
+
+def test_a_elevacao_esconde_a_janela_mas_nao_tenta_esconder_o_uac():
+    """A janela do processo elevado é nossa e fica oculta. O prompt do UAC
+    é do Windows, desenhado na área de trabalho segura, e nenhum programa
+    pode suprimi-lo — nem deveria."""
+    texto = (RAIZ / "install.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("function Start-ProcessElevated")
+    assert inicio != -1
+    # A função é precedida de um docstring longo; a janela precisa
+    # alcançar o corpo, que é onde a decisão mora.
+    bloco = texto[inicio:inicio + 4000]
+
+    assert '$startArguments["Verb"] = "RunAs"' in bloco
+    assert '$startArguments["WindowStyle"] = "Hidden"' in bloco
