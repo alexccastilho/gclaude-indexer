@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import MISSING
+from dataclasses import MISSING, replace
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -48,6 +48,8 @@ from ..install_diagnostics import check_installation
 from ..events import list_events
 from ..deletion import delete_project
 from ..import_items import import_and_consolidate
+from ..invalidation import PlanExpired, apply_update_plan
+from ..update_plan import SourceFolderUnavailable, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
 from ..engine_claude_code import command_for_language, prepare, sync_progress
 from ..claude_package import generate_claude_project_package
@@ -72,7 +74,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.0.1"
+SYSTEM_VERSION = "1.1.0"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 
 # 50 lines covered less than a minute of scanning on a real collection — the
@@ -588,6 +590,157 @@ def run_screen(request: Request, project_id: int):
             "claude_code_status": claude_code_status,
         },
     )
+
+
+def _pipeline_has_pending_work(conn) -> bool:
+    """Whether documents are still waiting to be converted or extracted.
+
+    Used only to silence the update banner, and only for that one case:
+    while a file sits in `'discovered'` or `'converted'`, the honest next
+    action is to run the steps — `convert()` selects the first,
+    `extract_pages()` the second — not to diagnose the folder again. It
+    is deliberately *not* "did an update just happen": nothing records
+    that, and inferring it from a flag would be one more value derived
+    twice.
+
+    Statuses left out on purpose. `'extracted'` is a finished file;
+    `'failed'`, `'skipped'` and `'duplicate'` are terminal for this run —
+    no step picks them up, so a collection holding only those has no
+    pending work and the notice is honest again.
+
+    Pending *windows* are not consulted, though the classification
+    engines do select `window.status = 'pending'`. The only transition
+    in the codebase is `pending -> 'done'` on success, so a user who
+    stops classification part-way — an ordinary thing to do at roughly
+    thirty seconds a window, and the Execution screen offers the button
+    — would leave windows pending forever and never see the banner
+    again for that project. Nor did the clause earn its place: after an
+    apply of a pure addition nothing is `'discovered'` or `'converted'`
+    and the discarded tail windows are gone, so the predicate was
+    already False and the banner returned anyway. Applying the same plan
+    twice is prevented by the key-based layout comparison in
+    `update_plan._layout_disagrees`, not by this guard.
+    """
+    return conn.execute(
+        "SELECT 1 FROM file WHERE status IN ('discovered', 'converted') LIMIT 1"
+    ).fetchone() is not None
+
+
+@app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
+def update_banner(request: Request, project_id: int):
+    """The "the folder changed" notice on the Execution screen.
+
+    Fetched by HTMX after the page renders, never before it: on a large
+    Drive-synced collection the walk takes seconds, and paying them before
+    the first pixel would trade one problem for another. An unreachable
+    source folder renders nothing — the screen is not the place to shout
+    about a disconnected drive, and `SourceFolderUnavailable` never
+    becomes a removal proposal.
+
+    `record_warnings=False`: this runs on every open of the Execution
+    screen, so it must not be able to write a single row.
+    """
+    with _open_project(project_id) as (entry, config, conn):
+        if _pipeline_has_pending_work(conn):
+            return HTMLResponse("")
+        try:
+            plan = build_update_plan(conn, config, record_warnings=False)
+        except SourceFolderUnavailable:
+            return HTMLResponse("")
+        if plan.is_empty:
+            return HTMLResponse("")
+        return render(
+            request, "_update_banner.html",
+            {"project": entry, "plan": plan, "config": config},
+        )
+
+
+@app.get("/projects/{project_id}/update", response_class=HTMLResponse)
+def update_screen(request: Request, project_id: int):
+    """The confirmation. Read-only: it never writes to the project.
+
+    `record_warnings=False` is what makes that categorical rather than
+    merely usual — see `build_update_plan`.
+    """
+    with _open_project(project_id) as (entry, config, conn):
+        try:
+            plan = build_update_plan(conn, config, record_warnings=False)
+        except SourceFolderUnavailable:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.source_unavailable"},
+                status_code=409,
+            )
+        return render(
+            request, "update_project.html",
+            {"project": entry, "config": config, "plan": plan, "error": None},
+        )
+
+
+@app.post("/projects/{project_id}/update", response_class=HTMLResponse)
+async def update_apply(request: Request, project_id: int):
+    """Applies the plan, then sends the user to the Execution screen.
+
+    The stale-plan check lives in `apply_update_plan`, not here: it is the
+    invariant of the invalidation itself, and putting it there keeps it
+    testable without a web server and keeps this route from walking the
+    folder a third time. The route rebuilds the plan the form refers to,
+    hands it over, and turns a refusal into a screen.
+
+    `record_warnings=False` here too, and for a different reason than on
+    the GET routes: `apply_update_plan` builds its own plan and records
+    the layout warning itself, so leaving it on would log the same
+    mismatch twice for one action — and once on a refusal that applied
+    nothing at all.
+    """
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    form = await request.form()
+
+    with _open_project(project_id) as (entry, config, conn):
+        # `_open_project`'s lock is the cross-machine one and the running
+        # step already holds it, so it protects nothing here. SQLite
+        # covers most of the database side, but `_prune_raw_items` is
+        # outside it: it streams `raw_items.jsonl` to a temporary file
+        # and renames it over the original while `classify_pending` may
+        # be appending, so classifications written during the copy are
+        # lost, or a stale line survives and is imported against pages
+        # that have since moved.
+        current_task = task_manager.latest_for_project(project_id)
+        if current_task is not None and current_task.running:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.run_in_progress"},
+                status_code=409,
+            )
+
+        try:
+            plan = build_update_plan(conn, config, record_warnings=False)
+        except SourceFolderUnavailable:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": None,
+                 "error": "update.source_unavailable"},
+                status_code=409,
+            )
+
+        # What the user actually saw. If the folder moved since the screen
+        # rendered, this no longer matches the plan just rebuilt.
+        seen = str(form.get("fingerprint", ""))
+        try:
+            apply_update_plan(
+                conn, config, replace(plan, fingerprint=seen), language
+            )
+        except PlanExpired:
+            return render(
+                request, "update_project.html",
+                {"project": entry, "config": config, "plan": plan,
+                 "error": "update.plan_expired"},
+                status_code=409,
+            )
+
+    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
 
 
 @app.get("/projects/{project_id}/run/log", response_class=HTMLResponse)

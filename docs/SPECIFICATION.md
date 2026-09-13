@@ -89,11 +89,19 @@ CREATE TABLE file (
     extension     TEXT NOT NULL,
     size          INTEGER NOT NULL,
     sha256_hash   TEXT NOT NULL,
+    mtime         REAL,             -- modification time, for the update's fast path (section 5.0)
     group_key     TEXT,             -- volume, subfolder or subject, per config.group_mode
     page_count    INTEGER,
     needs_ocr     INTEGER NOT NULL DEFAULT 0,
     status        TEXT NOT NULL,    -- discovered|converted|extracted|failed|duplicate|skipped
     error         TEXT
+);
+
+CREATE TABLE removed_file (
+    id            INTEGER PRIMARY KEY,
+    relative_path TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    removed_at    TEXT NOT NULL
 );
 
 CREATE TABLE page (
@@ -185,6 +193,60 @@ computer is meaningless on the next.
 Each step is an independent function that reads from and writes to the
 database, can be run on its own, and is safe to repeat.
 
+**0. Update (only for a collection already indexed).** Not a step of the
+pipeline and not a mode of one: an invalidation that runs *before* the
+eight steps below and returns the database to a state they already know
+how to resume from. Their sequence, their contracts and the criteria by
+which each picks its work are unchanged.
+
+It has three phases.
+
+*Plan — read-only.* Compares the source folder with the index and reports
+what is new, edited and removed, plus what invalidating that would cost.
+It writes nothing, which is what lets it run every time the Execution
+screen is opened. Detection compares size and modification time first and
+hashes only the candidates that differ, because hashing a Drive-synced
+collection on every open would force the client to download files nobody
+asked for; the hash still decides, because Drive rewrites modification
+times on files whose content never changed. If the source folder cannot be
+read — missing, or empty while the index is not — the plan is an error,
+never a proposal to remove everything.
+
+*Invalidation — transactional.* Deletes the windows the change invalidates
+and the pages that must be renumbered, removes files that vanished
+(recording them in `removed_file`), prunes the discarded windows' items
+from `raw_items.jsonl`, and returns each remaining file to the status the
+pipeline resumes from. All database work in one transaction; files are
+removed from disk only after it commits. The plan the user confirmed is
+re-derived and its fingerprint re-checked before anything is written, so a
+folder that changed while the confirmation screen was open produces a
+refusal rather than a write.
+
+*Re-execution.* The eight steps below, unchanged.
+
+**Granularity, and why it is not per file.** Outside library mode a page's
+reference (`f. N`) is counted running through the whole group, so a file
+that gains or loses pages shifts the numbering of every file after it.
+Invalidation is therefore "from this point of the group onward", where the
+point is the first position at which the intended file order stops
+matching the stored one. Everything before it keeps its pages, its
+references and its classification. Windows are discarded from the first
+one that covers a moved page — and also the group's last window when it
+was truncated by the old page count, since appending pages extends it.
+
+**Cost.** Files after the divergence that did not themselves change are
+returned to `converted`, not `discovered`: extraction re-reads them from
+`<output_folder>/converted/` and no OCR is run. Only a file whose own
+content changed pays that. When the converted artifact is missing — the
+user cleared intermediates from the Result screen — the file goes to
+`discovered` instead and is converted again, which is slower and correct.
+
+**Safety net.** If the window layout derived from the current pages
+disagrees with the window rows actually stored, the derived layout is not
+trusted: every window of that group is discarded and an event records why.
+Discarding is the conservative direction, and the event makes the cost
+visible instead of silent.
+
 **1. Scan.** Walks the source folder recursively. Hashes every file (SHA-256).
 A file whose hash is already recorded is skipped as a duplicate (recorded
 with `status = 'duplicate'`, not silently dropped, so scan-progress counts
@@ -267,7 +329,7 @@ following steps never need to know which engine ran.
 **`local` engine.** An open model served by Ollama on
 `http://127.0.0.1:11434`. No account, no key, no external network traffic
 after the model is downloaded once. The default model is
-`gemma4:e4b` (`engine_local.py:DEFAULT_LOCAL_MODEL`), used regardless of
+`qwen3.5:4b` (`engine_local.py:DEFAULT_LOCAL_MODEL`), used regardless of
 hardware unless the project's "Local model" field names a different,
 already-installed Ollama model — that field is fed by `GET /api/tags`
 against the local Ollama instance, with a free-text fallback when Ollama
@@ -316,15 +378,34 @@ user entered in the New Project form.
 
 ## 6. Interface
 
-Four screens plus an "About" page, served on `http://127.0.0.1:8000`.
+Five screens plus an "About" page, served on `http://127.0.0.1:8000`.
 
 | Screen | Route |
 |---|---|
 | Projects | `GET /projects` |
 | New project | `GET /projects/new`, `POST /projects/new` |
 | Execution | `GET /projects/{project_id}/run` |
+| Update collection | `GET /projects/{project_id}/update`, `POST /projects/{project_id}/update` |
 | Result | `GET /projects/{project_id}/result` |
 | About | `GET /about` |
+
+**Update collection.** Shows the plan from step 0: documents new, edited
+and removed, named rather than counted, with the cost of confirming —
+files that will go through OCR again, windows that will be reclassified,
+windows that keep their classification. The first two numbers are exact;
+the windows a new document will add depend on its page count, unknown
+before extraction, so the screen states that rather than estimating it.
+The `GET` writes nothing. The `POST` is refused while a run is in
+progress, and refused with the plan's fingerprint if the folder changed
+while the screen was open.
+
+A fragment route, `GET /projects/{project_id}/update/banner`, backs the
+notice on the Execution screen. It is fetched by HTMX after that page
+renders, never inline: on a large Drive-synced collection the folder walk
+takes seconds, and paying them before the first pixel would trade one
+problem for another. An unreachable source folder renders nothing there —
+the explanation belongs on the update screen, not as an alarm on a screen
+the user opened for something else.
 
 **Projects.** Lists existing projects with creation date and status. Button
 to create a new one.
@@ -350,7 +431,7 @@ also the HTTP form field names, so the two never drift apart.
 | `chars_per_page` | number | 2000 | how much text goes into classification |
 | `ocr_language` | choice | `por` | Tesseract language code |
 | `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
-| `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `gemma4:e4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
+| `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `qwen3.5:4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
 | `processing_mode` | choice | `automatic` | `automatic`/`gpu` use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
 | `parallelism` | choice | `automatic` | `economy` (1 worker), `automatic` (physical cores minus one), `maximum` (all physical cores) — see section 5.2 |
 | `review_low_confidence` | checkbox | off | reprocess only low-confidence items with another engine |
@@ -485,7 +566,7 @@ Before installing anything, gather and record as an event:
 
 ### 10.2 Local model choice
 
-The `local` engine's model is fixed to `gemma4:e4b`
+The `local` engine's model is fixed to `qwen3.5:4b`
 (`engine_local.py:DEFAULT_LOCAL_MODEL`) by default, on any hardware, unless
 the project's "Local model" field names a different, already-installed
 model (see section 6) — in which case that model is what actually runs,
@@ -653,18 +734,26 @@ letting the user continue.
 
 ## 12. Implementation status
 
-The system is complete through phase 13 (see section 9) and phase 14
-(internationalization and open-source preparation), with the full test
-suite passing (317 tests as of this document). Phase-by-phase detail,
-including every user-requested deviation from this specification and why,
-lives in [CHANGELOG.md](../CHANGELOG.md) — this section intentionally does
-not duplicate that history.
+The system is complete through phase 17 (incremental update), with the
+full test suite passing (537 tests as of this document). Phase-by-phase
+detail, including every user-requested deviation from this specification
+and why, lives in [CHANGELOG.md](../CHANGELOG.md) — this section
+intentionally does not duplicate that history.
 
 Known, deliberate departures from earlier drafts of this specification,
-still true as of phase 14:
+still true as of phase 17:
+
+- **Updating a collection was not in the original design.** Section 5's
+  step 0, the `removed_file` table, the `file.mtime` column and the
+  "Update collection" screen were added in phase 17. The eight numbered
+  steps were left as they were: the update returns the database to a
+  state they already handled, rather than becoming a step of its own.
+- **Sheet references are renumbered from the divergence point** on an
+  update, not recomputed for the whole group. The original specification
+  did not contemplate a group being processed in more than one pass.
 
 - **Local model choice.** Section 10.2's original VRAM-tiered `qwen2.5`
-  table was replaced by a single fixed default (`gemma4:e4b`) with an
+  table was replaced by a single fixed default (`qwen3.5:4b`) with an
   optional user override that takes effect — see section 10.2 for the
   current rule.
 - **Execution logs sync with the rest of the output folder**

@@ -10,6 +10,11 @@
   <a href="/projects/{{ project.id }}/result">{{ t('run.view_result') }} {{ m.icon('open') }}</a>
 </p>
 
+<div id="update-banner"
+     hx-get="/projects/{{ project.id }}/update/banner"
+     hx-trigger="load"
+     hx-swap="innerHTML"></div>
+
 <div class="actions">
   <button hx-post="/projects/{{ project.id }}/run-next" hx-target="#steps" hx-swap="innerHTML">
     {{ m.icon('play') }} {{ t('run.run_next') }}

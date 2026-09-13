@@ -639,6 +639,36 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} janela(s) feita(s), {pending} pendente(s).",
         "run.finished_notice": "Execução concluída: {items} peça(s), pontuação de qualidade {score}/100.",
         "run.finished_view_result": "Ver resultado",
+        "update.title": "Atualizar acervo",
+        "update.banner": (
+            "A pasta de origem mudou: {new} novos, {changed} alterados, {removed} removidos."
+        ),
+        "update.new": "Documentos novos",
+        "update.changed": "Documentos alterados",
+        "update.removed": "Documentos removidos",
+        "update.cost_title": "O que a atualização vai custar",
+        "update.files_ocr": "{n} arquivos passarão por OCR novamente.",
+        "update.windows_discarded": "{n} janelas serão reclassificadas.",
+        "update.windows_kept": "{n} janelas serão preservadas com a classificação atual.",
+        "update.new_windows_unknown": (
+            "Os documentos novos acrescentam janelas além dessas. Quantas, só se sabe"
+            " depois da leitura das páginas."
+        ),
+        "update.confirm": "Atualizar",
+        "update.cancel": "Voltar sem atualizar",
+        "update.nothing_changed": "A pasta de origem está igual ao índice. Nada a fazer.",
+        "update.source_unavailable": (
+            "A pasta de origem não pode ser lida. Verifique se a unidade está conectada"
+            " e se a pasta não foi movida. Nada foi alterado."
+        ),
+        "update.plan_expired": (
+            "A pasta mudou enquanto esta tela estava aberta. Nada foi alterado."
+            " Refaça o diagnóstico."
+        ),
+        "update.run_in_progress": (
+            "Uma etapa está em execução neste projeto. Espere ela terminar, ou"
+            " pause a execução, antes de atualizar. Nada foi alterado."
+        ),
         "result.title": "Resultado",
         "result.back_to_run": "execução",
         "result.open_folder": "Abrir pasta de saída no Explorer",
@@ -750,6 +780,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "artifact.review.gaps_missing": "faltam as folhas/páginas",
         "artifact.review.failures_section": "Arquivos com falha",
         "artifact.review.failures_none": "Nenhum arquivo falhou.",
+        "artifact.review.removed_section": "Documentos removidos da pasta de origem",
+        "artifact.review.removed_none": "Nenhum documento removido.",
         "artifact.review.errors_section": "Últimos eventos de erro",
         "artifact.review.errors_none": "Nenhum evento de erro registrado.",
         "artifact.project_instructions.title": "Instruções do projeto",
@@ -844,6 +876,31 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.windows.summary": (
             "preparação de janelas concluída: {created} nova(s), {existing} já existente(s)"
+        ),
+        "log.update.layout_mismatch": (
+            "grupo {group}: o índice guarda {stored} janela(s), mas as páginas atuais dariam "
+            "{derived} — como não dá para saber quais continuam valendo, todas as janelas "
+            "deste grupo serão reclassificadas"
+        ),
+        "log.update.applied": (
+            "atualização aplicada: {windows} janela(s) descartada(s), {removed} "
+            "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
+            "renumerar"
+        ),
+        "log.update.reconversion_needed": (
+            "{count} documento(s) precisarão passar por OCR de novo porque os "
+            "arquivos intermediários da pasta converted/ foram apagados — o "
+            "conteúdo deles continua íntegro, só a releitura ficou mais lenta: "
+            "{files}"
+        ),
+        "log.update.orphan_window_file": (
+            "{count} arquivo(s) de janela não puderam ser apagados e continuam na "
+            "pasta windows/ — apague-os à mão antes de reclassificar: {files}"
+        ),
+        "log.update.raw_items_prune_failed": (
+            "não foi possível limpar raw_items.jsonl ({error}) — até uma "
+            "reindexação completa, o índice pode conter peças de documentos que "
+            "não estão mais no acervo"
         ),
         "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
         "log.rules.summary": (
@@ -1480,6 +1537,36 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} window(s) done, {pending} pending.",
         "run.finished_notice": "Execution finished: {items} piece(s), quality score {score}/100.",
         "run.finished_view_result": "View result",
+        "update.title": "Update collection",
+        "update.banner": (
+            "The source folder changed: {new} new, {changed} changed, {removed} removed."
+        ),
+        "update.new": "New documents",
+        "update.changed": "Changed documents",
+        "update.removed": "Removed documents",
+        "update.cost_title": "What the update will cost",
+        "update.files_ocr": "{n} files will go through OCR again.",
+        "update.windows_discarded": "{n} windows will be reclassified.",
+        "update.windows_kept": "{n} windows keep their current classification.",
+        "update.new_windows_unknown": (
+            "New documents add windows on top of those. How many is not known until"
+            " their pages have been read."
+        ),
+        "update.confirm": "Update",
+        "update.cancel": "Back without updating",
+        "update.nothing_changed": "The source folder matches the index. Nothing to do.",
+        "update.source_unavailable": (
+            "The source folder cannot be read. Check that the drive is connected and"
+            " the folder has not been moved. Nothing was changed."
+        ),
+        "update.plan_expired": (
+            "The folder changed while this screen was open. Nothing was changed."
+            " Run the diagnosis again."
+        ),
+        "update.run_in_progress": (
+            "A step is running for this project. Wait for it to finish, or pause"
+            " the run, before updating. Nothing was changed."
+        ),
         "result.title": "Result",
         "result.back_to_run": "execution",
         "result.open_folder": "Open output folder in Explorer",
@@ -1591,6 +1678,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "artifact.review.gaps_missing": "missing sheets/pages",
         "artifact.review.failures_section": "Failed files",
         "artifact.review.failures_none": "No file failed.",
+        "artifact.review.removed_section": "Documents removed from the source folder",
+        "artifact.review.removed_none": "No documents removed.",
         "artifact.review.errors_section": "Latest error events",
         "artifact.review.errors_none": "No error event recorded.",
         "artifact.project_instructions.title": "Project instructions",
@@ -1677,6 +1766,29 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.windows.summary": (
             "window preparation complete: {created} new, {existing} already existing"
+        ),
+        "log.update.layout_mismatch": (
+            "group {group}: the index holds {stored} window(s), but the current pages would "
+            "give {derived} — since there is no telling which ones still hold, every window "
+            "in this group will be reclassified"
+        ),
+        "log.update.applied": (
+            "update applied: {windows} window(s) discarded, {removed} document(s) "
+            "removed, {reset} to reprocess, {renumbered} to renumber"
+        ),
+        "log.update.reconversion_needed": (
+            "{count} document(s) have to go through OCR again because the "
+            "intermediate files in converted/ were deleted — their content is "
+            "intact, only re-reading them got slower: {files}"
+        ),
+        "log.update.orphan_window_file": (
+            "{count} window file(s) could not be deleted and are still in the "
+            "windows/ folder — delete them by hand before reclassifying: {files}"
+        ),
+        "log.update.raw_items_prune_failed": (
+            "raw_items.jsonl could not be cleaned up ({error}) — until a full "
+            "reindex, the index may contain items from documents that are no "
+            "longer in the collection"
         ),
         "log.rules.invalid_item": "invalid item in window {window}: {errors}",
         "log.rules.summary": (
@@ -2319,6 +2431,37 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.claude_code_windows_status": "{done} ventana(s) hecha(s), {pending} pendiente(s).",
         "run.finished_notice": "Ejecución finalizada: {items} pieza(s), puntuación de calidad {score}/100.",
         "run.finished_view_result": "Ver resultado",
+        "update.title": "Actualizar acervo",
+        "update.banner": (
+            "La carpeta de origen cambió: {new} nuevos, {changed} modificados,"
+            " {removed} eliminados."
+        ),
+        "update.new": "Documentos nuevos",
+        "update.changed": "Documentos modificados",
+        "update.removed": "Documentos eliminados",
+        "update.cost_title": "Lo que costará la actualización",
+        "update.files_ocr": "{n} archivos pasarán por OCR de nuevo.",
+        "update.windows_discarded": "{n} ventanas se reclasificarán.",
+        "update.windows_kept": "{n} ventanas conservan su clasificación actual.",
+        "update.new_windows_unknown": (
+            "Los documentos nuevos añaden ventanas además de esas. Cuántas solo se sabe"
+            " después de leer sus páginas."
+        ),
+        "update.confirm": "Actualizar",
+        "update.cancel": "Volver sin actualizar",
+        "update.nothing_changed": "La carpeta de origen coincide con el índice. Nada que hacer.",
+        "update.source_unavailable": (
+            "No se puede leer la carpeta de origen. Verifique que la unidad esté conectada"
+            " y que la carpeta no se haya movido. No se cambió nada."
+        ),
+        "update.plan_expired": (
+            "La carpeta cambió mientras esta pantalla estaba abierta. No se cambió nada."
+            " Vuelva a hacer el diagnóstico."
+        ),
+        "update.run_in_progress": (
+            "Hay una etapa en ejecución en este proyecto. Espere a que termine, o"
+            " pause la ejecución, antes de actualizar. No se cambió nada."
+        ),
         "result.title": "Resultado",
         "result.back_to_run": "ejecución",
         "result.open_folder": "Abrir carpeta de salida en el Explorador",
@@ -2430,6 +2573,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "artifact.review.gaps_missing": "faltan las hojas/páginas",
         "artifact.review.failures_section": "Archivos con fallos",
         "artifact.review.failures_none": "Ningún archivo falló.",
+        "artifact.review.removed_section": "Documentos eliminados de la carpeta de origen",
+        "artifact.review.removed_none": "Ningún documento eliminado.",
         "artifact.review.errors_section": "Últimos eventos de error",
         "artifact.review.errors_none": "Ningún evento de error registrado.",
         "artifact.project_instructions.title": "Instrucciones del proyecto",
@@ -2521,6 +2666,31 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "log.windows.summary": (
             "preparación de ventanas completa: {created} nueva(s), {existing} ya existente(s)"
+        ),
+        "log.update.layout_mismatch": (
+            "grupo {group}: el índice guarda {stored} ventana(s), pero las páginas actuales "
+            "darían {derived} — como no hay forma de saber cuáles siguen valiendo, todas las "
+            "ventanas de este grupo se reclasificarán"
+        ),
+        "log.update.applied": (
+            "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
+            "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "
+            "renumerar"
+        ),
+        "log.update.reconversion_needed": (
+            "{count} documento(s) tendrán que pasar por OCR de nuevo porque los "
+            "archivos intermedios de la carpeta converted/ fueron borrados — su "
+            "contenido sigue íntegro, solo la relectura se volvió más lenta: "
+            "{files}"
+        ),
+        "log.update.orphan_window_file": (
+            "{count} archivo(s) de ventana no pudieron borrarse y siguen en la "
+            "carpeta windows/ — bórrelos a mano antes de reclasificar: {files}"
+        ),
+        "log.update.raw_items_prune_failed": (
+            "no se pudo limpiar raw_items.jsonl ({error}) — hasta una "
+            "reindexación completa, el índice puede contener piezas de documentos "
+            "que ya no están en la colección"
         ),
         "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
         "log.rules.summary": (

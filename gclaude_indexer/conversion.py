@@ -59,6 +59,39 @@ def _destination_path(output_dir: Path, subfolder: str, relative_path: str, new_
     return destination
 
 
+def converted_artifact_path(
+    output_folder: str | Path,
+    relative_path: str,
+    extension: str,
+    needs_ocr: bool,
+) -> Path | None:
+    """The intermediate `extraction` re-reads this file from, or `None`
+    when it reads the original document in the source folder.
+
+    The single place that answers "does this file have an intermediate on
+    disk". `_process_file` below writes it and
+    `extraction._extract_file_pages` reads it, so a third party that needs
+    to know whether it is still there — the incremental update, which
+    sends a merely-renumbered file back to `'converted'` precisely so
+    extraction can re-read the intermediate instead of paying OCR again —
+    must agree with both. Agreeing means asking here, not restating the
+    rule: `cleanup.py` deletes `converted/` permanently, and a guess that
+    says "the artifact is there" when it is not costs the document.
+
+    A PDF that already had a text layer is the one case with no
+    intermediate: nothing was written to `converted/` for it and
+    extraction opens the original, so there is nothing `cleanup.py` could
+    have taken away.
+    """
+    category = category_of_extension("." + extension.lstrip("."))
+    output_dir = Path(output_folder)
+    if category == "pdf":
+        if not needs_ocr:
+            return None
+        return output_dir / "converted" / Path(relative_path).with_suffix(".pdf")
+    return output_dir / "converted" / Path(relative_path).with_suffix(".txt")
+
+
 def _pdf_needs_ocr(path: Path) -> tuple[bool, int]:
     """Returns `(needs_ocr, page_count)`. A PDF with no text layer, or with
     fewer than 100 characters per page on average, needs OCR (section 5,

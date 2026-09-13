@@ -25,6 +25,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .i18n import _REFERENCE_LANGUAGE
+from .paths import natural_sort_key
 
 CLAUDE_MD_FILENAME = "CLAUDE.md"
 
@@ -35,23 +36,74 @@ class WindowsResult:
     existing: int = 0
 
 
-def _sanitize_name(name: str) -> str:
+def sanitize_group_name(name: str) -> str:
+    """Normalize a group key into a safe filename prefix.
+
+    Replaces sequences of non-word, non-hyphen characters with underscores,
+    strips underscores from the ends, and falls back to "grupo" if the result
+    is empty. Used to generate window file names and keys.
+    """
     return re.sub(r"[^\w\-]+", "_", name).strip("_") or "grupo"
 
 
+def window_spans(page_count: int, window_size: int, overlap: int) -> list[tuple[int, int]]:
+    """`(start, end)` of each window over a group of `page_count` pages.
+
+    `start` is 0-based and `end` exclusive, so the block is `pages[start:end]`.
+    Extracted from `prepare_windows` (Phase 17) so `update_plan.py` can
+    predict the layout without duplicating the arithmetic: a plan that
+    counts windows differently from the step that creates them is a plan
+    that lies.
+
+    The step has a floor of 1. An overlap greater than or equal to the
+    window size would otherwise give a step of zero and loop forever;
+    configuration validation should prevent it, but a pure function is
+    where the guard costs nothing.
+    """
+    if page_count <= 0:
+        return []
+
+    step = max(1, window_size - overlap)
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while start < page_count:
+        end = min(start + window_size, page_count)
+        spans.append((start, end))
+        if end == page_count:
+            break
+        start += step
+    return spans
+
+
+def window_key(base_name: str, start: int, end: int) -> str:
+    """The window's identity in the `window` table: group plus position."""
+    return f"{base_name}::{start + 1:06d}-{end:06d}"
+
+
 def pages_for_group(conn, group_key: str):
-    """Pages of the group, in the order they were extracted (phase 4) — the
-    same order used to build the windows and cited by `RulesEngine`."""
-    return conn.execute(
+    """Pages of the group, in the order the windows and `RulesEngine` cite.
+
+    Ordered by natural path and page number, not by `page.id` (Phase 17).
+    The two coincide in a project built in one pass, because extraction
+    writes group by group in that same order — but not after an update,
+    where a re-extracted file's pages get the highest ids and would jump
+    to the end of the group. Natural ordering is not expressible in SQL,
+    so the final sort happens here, with the key `extraction` already uses.
+    """
+    rows = conn.execute(
         """
-        SELECT page.*, file.name AS file_name
+        SELECT page.*, file.name AS file_name, file.relative_path AS file_relative_path
         FROM page
         JOIN file ON file.id = page.file_id
         WHERE file.group_key = ?
-        ORDER BY page.id
         """,
         (group_key,),
     ).fetchall()
+
+    return sorted(
+        rows,
+        key=lambda row: (natural_sort_key(row["file_relative_path"]), row["number"]),
+    )
 
 
 def _write_window_file(path: Path, key: str, group_key: str, start_ref: str, end_ref: str, pages) -> None:
@@ -86,7 +138,6 @@ def prepare_windows(
 
     windows_dir = Path(config.output_folder) / "windows"
     window_size = config.pages_per_window
-    step = window_size - config.overlap
 
     result = WindowsResult()
 
@@ -99,17 +150,16 @@ def prepare_windows(
         if page_count == 0:
             continue
 
-        base_name = _sanitize_name(group_key)
-        start = 0
+        base_name = sanitize_group_name(group_key)
 
-        while start < page_count:
-            end = min(start + window_size, page_count)
+        for start, end in window_spans(page_count, window_size, config.overlap):
             page_block = pages[start:end]
             start_ref = page_block[0]["reference"]
             end_ref = page_block[-1]["reference"]
-            key = f"{base_name}::{start + 1:06d}-{end:06d}"
+            key = window_key(base_name, start, end)
 
-            if conn.execute("SELECT 1 FROM window WHERE key = ?", (key,)).fetchone():
+            row_exists = conn.execute("SELECT 1 FROM window WHERE key = ?", (key,)).fetchone()
+            if row_exists:
                 result.existing += 1
             else:
                 conn.execute(
@@ -123,12 +173,11 @@ def prepare_windows(
                 result.created += 1
 
             file_path = windows_dir / f"{base_name}_j{start + 1:04d}-{end:04d}.txt"
-            if not file_path.exists():
+            # Write unconditionally when this call creates the row: if unlink ever failed
+            # during invalidation, the old text must not survive. For existing windows,
+            # keep the shortcut: skip writing if the file exists and was not corrupted.
+            if not row_exists or not file_path.exists():
                 _write_window_file(file_path, key, group_key, start_ref, end_ref, page_block)
-
-            if end == page_count:
-                break
-            start += step
 
     record_event(
         conn,
