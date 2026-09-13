@@ -68,6 +68,7 @@ brazilianportuguese.CpuSensorShortcut=Criar também o atalho do sensor de CPU
 brazilianportuguese.InstallingDeps=Instalando dependências. Isto pode levar vários minutos.
 brazilianportuguese.KeepCollections=Os acervos que você já indexou NÃO serão apagados, e a sua lista de projetos também não. Os acervos ficam nas pastas de saída que você escolheu, fora da pasta de instalação.
 brazilianportuguese.RemoveDeps=Remover também Tesseract, Ghostscript, Ollama e Python 3.12
+brazilianportuguese.RemoveDepsAsk=Deseja remover TAMBÉM o Tesseract, o Ghostscript, o Ollama e o Python 3.12?%n%nResponda Não se outro programa desta máquina usar algum deles.
 brazilianportuguese.DepsFailed=O aplicativo foi instalado, mas nem toda dependência pôde ser instalada. Abra o aplicativo e veja a tela Sobre para o diagnóstico.
 brazilianportuguese.OpenLog=Deseja abrir o registro da instalação para ver o que houve?
 
@@ -77,6 +78,7 @@ english.CpuSensorShortcut=Also create the CPU sensor shortcut
 english.InstallingDeps=Installing dependencies. This can take several minutes.
 english.KeepCollections=Collections you have already indexed will NOT be deleted, and neither will your project list. The collections live in the output folders you chose, outside the installation folder.
 english.RemoveDeps=Also remove Tesseract, Ghostscript, Ollama and Python 3.12
+english.RemoveDepsAsk=Do you also want to remove Tesseract, Ghostscript, Ollama and Python 3.12?%n%nAnswer No if another program on this machine uses any of them.
 english.DepsFailed=The application was installed, but not every dependency could be. Open the application and check the About screen for the diagnosis.
 english.OpenLog=Do you want to open the installation log to see what happened?
 
@@ -86,6 +88,7 @@ spanish.CpuSensorShortcut=Crear también el acceso directo del sensor de CPU
 spanish.InstallingDeps=Instalando dependencias. Esto puede tardar varios minutos.
 spanish.KeepCollections=Las colecciones que ya indexó NO se eliminarán, ni tampoco su lista de proyectos. Las colecciones están en las carpetas de salida que usted eligió, fuera de la carpeta de instalación.
 spanish.RemoveDeps=Eliminar también Tesseract, Ghostscript, Ollama y Python 3.12
+spanish.RemoveDepsAsk=¿Desea eliminar TAMBIÉN Tesseract, Ghostscript, Ollama y Python 3.12?%n%nResponda No si otro programa de esta máquina usa alguno de ellos.
 spanish.DepsFailed=La aplicación se instaló, pero no todas las dependencias pudieron instalarse. Abra la aplicación y consulte la pantalla Acerca de para el diagnóstico.
 spanish.OpenLog=¿Desea abrir el registro de instalación para ver qué ocurrió?
 
@@ -132,7 +135,7 @@ var
   DoneFilePath: String;
   LogFilePath: String;
   DepsExitCode: Integer;
-  RemoveDepsCheckBox: TNewCheckBox;
+  RemoveDependencies: Boolean;
   DepsPage: TOutputProgressWizardPage;
 
 function BuildCommandLine(): String;
@@ -294,34 +297,23 @@ begin
   end;
 end;
 
-procedure InitializeUninstallProgressForm();
-var
-  Page: TNewNotebookPage;
-  Explanation: TNewStaticText;
+function InitializeUninstall(): Boolean;
 begin
-  { A silent uninstall has no form; CurUninstallStepChanged then finds the
-    checkbox unassigned and keeps the dependencies, which is the
-    conservative side. }
+  Result := True;
+  RemoveDependencies := False;
+
+  { Asked here, before anything is removed. The first version of this put
+    a checkbox on UninstallProgressForm, which is the *progress* page —
+    it only appears once the uninstall is already running, so the box was
+    there but could never be ticked in time. A question the user cannot
+    answer before the work starts is not a question. }
   if UninstallSilent then
     exit;
 
-  Page := UninstallProgressForm.InnerPage;
-
-  Explanation := TNewStaticText.Create(UninstallProgressForm);
-  Explanation.Parent := Page;
-  Explanation.Top := UninstallProgressForm.StatusLabel.Top + ScaleY(40);
-  Explanation.Width := Page.ClientWidth;
-  Explanation.WordWrap := True;
-  Explanation.AutoSize := True;
-  Explanation.Caption := ExpandConstant('{cm:KeepCollections}');
-
-  RemoveDepsCheckBox := TNewCheckBox.Create(UninstallProgressForm);
-  RemoveDepsCheckBox.Parent := Page;
-  RemoveDepsCheckBox.Top := Explanation.Top + Explanation.Height + ScaleY(12);
-  RemoveDepsCheckBox.Width := Page.ClientWidth;
-  RemoveDepsCheckBox.Height := ScaleY(17);
-  RemoveDepsCheckBox.Checked := False;
-  RemoveDepsCheckBox.Caption := ExpandConstant('{cm:RemoveDeps}');
+  RemoveDependencies :=
+    MsgBox(ExpandConstant('{cm:KeepCollections}') + #13#10#13#10
+           + ExpandConstant('{cm:RemoveDepsAsk}'),
+           mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -337,8 +329,10 @@ begin
   if not FileExists(Script) then
     exit;
 
-  { Assigned() guards the silent path, where the form was never built. }
-  if Assigned(RemoveDepsCheckBox) and RemoveDepsCheckBox.Checked then
+  { Neither branch touches the user's project list: -RemoveAll covers the
+    shared dependencies and this installation's own leavings, and the
+    catalogue is behind -RemoveUserData, which nothing here passes. }
+  if RemoveDependencies then
     Args := '-RemoveAll'
   else
     Args := '-KeepDependencies';
