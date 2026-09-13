@@ -175,6 +175,48 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Repair-WindowsPowerShellModulePath {
+    <#
+    .SYNOPSIS
+        Puts Windows PowerShell's own modules back at the front of
+        `PSModulePath`, so this script's cmdlets resolve.
+
+    .DESCRIPTION
+        Installing PowerShell 7 — through winget, the Store, or the MSI —
+        prepends its module directories to the machine-wide
+        `PSModulePath`. Windows PowerShell 5.1, which is what runs this
+        script, then finds PowerShell 7's `Microsoft.PowerShell.Utility`
+        first, sees a manifest declaring `CompatiblePSEditions = Core`,
+        and declines to load it. It does not fall through to its own copy.
+
+        The result is that `Get-FileHash`, `Invoke-WebRequest` and
+        `Expand-Archive` simply do not exist, and since this script runs
+        with `$ErrorActionPreference = 'Stop'`, the first call to one of
+        them ends the installation — in the middle of step 3, before
+        Tesseract, Ghostscript or Ollama are ever reached. Reported by a
+        user whose installation "completed" having installed none of them,
+        and reproduced identically on the unmodified script, so this is not
+        a regression from the phase 19 installer: it is a latent defect the
+        installer made visible by running the script where nobody could see
+        its output.
+
+        Rebuilding the variable rather than filtering it: the three folders
+        below are the whole of Windows PowerShell's own search path, and an
+        entry added by anything else has no business shadowing them for the
+        few minutes this script runs. The change is to this process only —
+        nothing is written to the registry, and no other program is
+        affected.
+    #>
+    $own = @(
+        (Join-Path $env:SystemRoot "system32\WindowsPowerShell\v1.0\Modules"),
+        (Join-Path $env:ProgramFiles "WindowsPowerShell\Modules"),
+        (Join-Path ([Environment]::GetFolderPath('MyDocuments')) "WindowsPowerShell\Modules")
+    )
+    $env:PSModulePath = ($own | Where-Object { $_ }) -join ';'
+}
+
+Repair-WindowsPowerShellModulePath
+
 function Write-InstallStatus {
     <#
     .SYNOPSIS
