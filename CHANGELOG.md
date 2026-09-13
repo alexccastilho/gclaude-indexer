@@ -10,6 +10,139 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.1.0] — 2026-09-13
+
+Phase 17. A collection stops having to be reindexed from scratch every
+time it changes.
+
+### Added
+
+- **Incremental update.** Point the app at a project whose source folder
+  has changed and it now detects what is new, what was edited and what was
+  removed, invalidates only what the change actually affects, and
+  reprocesses that. Adding one document to a 500-page collection
+  reclassifies **one window instead of thirty-six** — roughly a minute
+  against eighteen and a half.
+
+  The reason it can be that cheap is the shape of the invalidation.
+  Documents are grouped, a group's pages are concatenated, and the
+  concatenation is sliced into fixed-size overlapping windows. A change
+  does not invalidate a file; it invalidates the group *from the first
+  page that moved onward*, because outside library mode a page's reference
+  (`f. N`) is counted running through the whole group, so a file that
+  gains or loses pages shifts the numbering of every file after it.
+  Everything before that point keeps its pages, its references and its
+  classification.
+
+  Files after the divergence that did not themselves change are returned
+  to `converted`, not `discovered`: extraction re-reads them from the
+  already-converted artifact and **they do not pay OCR again**.
+
+- **A confirmation screen, and a notice on the Execution screen.** Opening
+  a project whose folder has changed shows how many documents are new,
+  edited and removed. The confirmation names the files that will be
+  reprocessed and states the cost: how many go through OCR again, how many
+  windows are reclassified, how many keep their classification. Two of
+  those numbers are exact; the windows a *new* document will add depend on
+  its page count, which nothing knows before extraction, so the screen
+  says so rather than estimating.
+
+  The notice is fetched after the page renders rather than before it. On a
+  large Drive-synced collection the folder walk takes seconds, and paying
+  them before the first pixel would trade one problem for another.
+
+- **Removed documents are reported.** A document taken out of the source
+  folder leaves `index.md` and `timeline.md`, which describe the
+  collection as it is today, and appears in `review.md` — already the
+  report of gaps and failures — with the moment it went. A new
+  `removed_file` table holds that as state rather than as a log entry,
+  which would vanish if the log were cleared.
+
+### Changed
+
+- **Detection reads size and modification time before it reads bytes.**
+  The diagnosis runs every time the Execution screen opens, and hashing an
+  entire Drive-synced collection each time would force the client to
+  download files nobody asked for. The hash still has the last word,
+  because Drive rewrites modification times on files whose content never
+  changed — without that tie-break the app would report "changed"
+  constantly, which is the worst defect a warning can have. A new
+  `file.mtime` column stores the comparison value.
+
+- **A group's pages are ordered deterministically** by natural path and
+  page number instead of by insertion order. The two coincided in a
+  project built in one pass; after an update they would not, and a
+  corrected document would have jumped to the end of its group.
+
+### Fixed
+
+Four paths to a wrong index with no error and no warning, three of them
+reachable in ordinary use and all found before release:
+
+- **Page geometry was derived from two different sources.** One module
+  summed `file.page_count`, another counted rows in the `page` table. A
+  file that converts successfully and then fails extraction keeps a
+  nonzero count with no pages — one unreadable PDF in a collection — and
+  the two disagreed, leaving a window classified over pages that had moved
+  beneath it.
+
+- **Classified items outlived their windows.** The invalidation deleted
+  window rows, their text files and their pages, but never pruned
+  `raw_items.jsonl`, which the classification engine appends to and the
+  import step re-reads whole. Items from discarded windows survived with
+  stale references, passed validation because the range still fit the
+  group, and were merged into live items — so an updated `index.md` could
+  attribute pages to a document no longer in the collection.
+
+- **A renamed document was treated as a duplicate of itself.** Its content
+  matched the row the update was about to delete, so it was dropped from
+  the plan; the following scan then saw a brand-new file and inserted
+  pages the plan had never accounted for.
+
+- **The state a successful update leaves behind was misread as a corrupt
+  layout**, because the check compared window counts rather than window
+  keys. The screen then invited a second update that would have discarded
+  everything the first one preserved.
+
+Three further defects, one of them a regression this phase would have
+introduced:
+
+- **Clearing intermediate files no longer breaks the next update.** The
+  Result screen's "free up disk space" button deletes the `converted/`
+  folder, and the renumbering path assumed it was still there: every
+  unchanged document after the divergence would have been marked `failed`
+  and disappeared from the index permanently, unrecoverable because
+  conversion only picks up `discovered` files and a rescan skips them. The
+  update now checks the artifact exists and pays OCR again when it does
+  not.
+
+- **An unsupported file no longer invalidates a whole collection.**
+  Dropping a `readme.txt` into a PDF-only project, or a duplicate copy of
+  a document already indexed, made the plan invalidate the entire group
+  for a file the pipeline would never index.
+
+- **A recreated window writes its new text.** The text file's name derives
+  from window positions, so a document corrected without changing its page
+  count produced the same name, and the old text survived beside the new
+  classification.
+
+### Migration
+
+Nothing to do. A project created by 1.0.1 opens on 1.1.0 with no manual
+step: `removed_file` is created by `CREATE TABLE IF NOT EXISTS` and
+`file.mtime` by an `ALTER TABLE` guarded by `PRAGMA table_info`, both
+re-executed every time a project is opened. The column starts empty, so
+the first update of an existing project hashes the collection once to fill
+it in; from the second onward the fast path applies.
+
+### Tests
+
+537 passing, up from 456. The phase adds 81, of which the one that matters
+most is an equivalence test: an incremental update must produce artifacts
+indistinguishable from a full reindex over the same final folder. Every
+other test in the phase exists to explain *why* that one failed when it
+fails. It is what caught the `raw_items.jsonl` defect above.
+
 ## [1.0.1] — 2026-09-03
 
 The release that goes out with the project's first public announcement.

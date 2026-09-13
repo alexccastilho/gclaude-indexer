@@ -9,10 +9,10 @@ Project.
 Google Drive hosts the files; the Claude Project reads them through the
 index.
 
-![The four screens of GClaude Indexer](demo.gif)
+![GClaude Indexer in use](demo.gif)
 
-*The four screens in the order you meet them — projects, new project,
-execution, result.*
+*A first run, in the order you meet it — projects, new project, execution,
+result. Updating a collection, added later, is described below.*
 
 ## What it does
 
@@ -27,6 +27,13 @@ report listing gaps and failures, and a set of **project instructions** ready
 to paste into a new Claude Project. The original documents are never
 modified — everything the tool produces is new files written next to your
 originals, in a separate output folder you choose.
+
+A collection is rarely finished. When documents are added to the source
+folder, corrected, or taken out of it, the app detects what changed and
+reprocesses only that — adding one document to a 500-page collection
+reclassifies one window instead of thirty-six, about a minute instead of
+eighteen and a half. It shows you what it found and what it will cost
+before it touches anything.
 
 Classification — the step that decides what each page is, who wrote it and
 when — can be done four different ways, described below. Three of those four
@@ -46,6 +53,10 @@ of which classification engine you pick.
   monitoring), the Windows registry (for the Tesseract data location and
   locale detection) and the Performance Counters subsystem (for live
   CPU/GPU graphs). It does not run on Linux or macOS.
+- **Incremental updates.** A collection already indexed absorbs new,
+  edited and removed documents without being processed again from
+  scratch. Only what the change actually affects is redone, and you see
+  what that will cost before confirming it.
 - **Interface in three languages** — English, Brazilian Portuguese and
   Spanish, selectable at any time from a dropdown in the page header. The
   default is detected automatically from your Windows display language.
@@ -271,7 +282,7 @@ delete it there if you want it gone from every computer.
 
 ## Using the app
 
-The interface has four screens, plus an "About" page:
+The interface has five screens, plus an "About" page:
 
 1. **Projects** — lists every project you have opened, with its creation
    date and current status. This is where you land when you open the app.
@@ -297,8 +308,19 @@ The interface has four screens, plus an "About" page:
    A live log and a CPU/RAM/GPU usage graph are shown below. A separate
    button, "Import and generate reports", runs the last two steps (turning
    classified items into the four output files) once classification is
-   done.
-4. **Result** — a preview of the four generated files, a button to open the
+   done. If the source folder has changed since the last run, a notice
+   appears at the top a moment after the page loads, with a link to the
+   next screen.
+4. **Update collection** — reached from that notice, or directly. It lists
+   the documents that are new, edited and removed, names the ones that
+   will be reprocessed, and states the cost: how many files go through OCR
+   again, how many windows are reclassified, and how many keep the
+   classification they already have. Nothing is changed until you confirm.
+   If the source folder cannot be read — a disconnected drive, a folder
+   that moved — it says so and offers nothing, because an unreachable
+   folder must never be mistaken for a collection whose documents were all
+   deleted.
+5. **Result** — a preview of the four generated files, a button to open the
    output folder directly in File Explorer, a report of anything still
    pending, and a button to free up disk space by deleting intermediate
    files (the OCR'd PDFs and text slices) once you are happy with the
@@ -308,6 +330,42 @@ The interface has four screens, plus an "About" page:
 A language selector and a theme selector (four color themes) sit in the
 header of every screen; both choices are remembered in your browser between
 visits.
+
+## Keeping a collection up to date
+
+A collection changes. Documents arrive, a scan gets replaced by a better
+one, something is taken out. None of that requires indexing everything
+again.
+
+Open the project. A few seconds after the Execution screen appears, if
+anything in the source folder has changed, a notice says how much —
+"14 new, 3 edited, 1 removed". Follow it to the **Update collection**
+screen, read what it plans to do, and confirm. Then run the steps as
+usual: they will find only the work the update left for them.
+
+**What it costs, and why it is not the whole collection.** Documents are
+grouped, and a group's pages are read as one long sequence sliced into
+overlapping windows — the windows are what the classification engine
+actually reads. A change does not invalidate a document; it invalidates
+the group from the first page that moved onward. Everything before that
+point keeps its pages and its classification untouched. A document added
+at the end of a group therefore costs almost nothing, while one inserted
+at the beginning shifts every page after it and costs more. The screen
+tells you which case you are in before you commit to it.
+
+Documents that only need renumbering do not go through OCR again — the
+converted files are still on disk and are simply re-read. Only a document
+whose own content changed pays that cost.
+
+**If you cleared intermediate files** from the Result screen, the
+converted files are gone, and documents that would have been re-read must
+be converted again. The update handles this correctly; it just takes
+longer.
+
+**If the source folder cannot be reached** — the drive is disconnected,
+the folder was moved or renamed — nothing is offered and nothing is
+changed. An unreachable folder is not a collection whose documents were
+all deleted, and the app will not treat it as one.
 
 ## Getting a good classification
 
@@ -421,7 +479,11 @@ interface is set to at the time you generate them:
 - `index.md` — a catalog of every classified item, with its origin, type,
   date, author and summary.
 - `timeline.md` — the dated items in chronological order.
-- `review.md` — a coverage report: gaps, failures, anything still pending.
+- `review.md` — a coverage report: gaps, failures, anything still pending,
+  and the documents that have been removed from the source folder, with
+  the moment each one went. The index and the timeline describe the
+  collection as it is today; this is where you find out what used to be in
+  it.
 - `project_instructions.md` — ready-to-paste instructions for a new Claude
   Project, built from a template with the fields you filled in on the New
   Project form.
@@ -469,7 +531,7 @@ installer created (not whatever `python` your PATH resolves to — see
 A correct run ends with a line like:
 
 ```
-317 passed, 6 warnings in 147.01s (0:02:27)
+537 passed, 7 warnings in 167.09s (0:02:47)
 ```
 
 (The warning count may vary slightly by machine; they come from third-party
