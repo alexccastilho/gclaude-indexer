@@ -670,6 +670,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             " pause a execução, antes de atualizar. Nada foi alterado."
         ),
         "result.title": "Resultado",
+        "result.stale_title": "Estes relatórios são anteriores ao estado atual do projeto",
+        "result.stale_explanation": (
+            "Foram gerados em {generated_at}, quando o projeto tinha {was_files} arquivo(s), "
+            "{was_windows} janela(s) classificada(s) e {was_items} peça(s). Agora tem "
+            "{now_files}, {now_windows} e {now_items}. Gere os relatórios de novo para "
+            "incluir o que falta."
+        ),
+        "result.stale_regenerate": "Gerar relatórios agora",
+        "run.stale_artifacts": (
+            "A classificação terminou, mas os relatórios ainda descrevem o estado "
+            "anterior — {was_files} arquivo(s) contra os {now_files} de agora."
+        ),
         "result.back_to_run": "execução",
         "result.open_folder": "Abrir pasta de saída no Explorer",
         "result.pending_title": "Pendências",
@@ -1568,6 +1580,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             " the run, before updating. Nothing was changed."
         ),
         "result.title": "Result",
+        "result.stale_title": "These reports predate the project's current state",
+        "result.stale_explanation": (
+            "They were generated on {generated_at}, when the project had {was_files} "
+            "file(s), {was_windows} classified window(s) and {was_items} item(s). It now "
+            "has {now_files}, {now_windows} and {now_items}. Generate the reports again "
+            "to include what is missing."
+        ),
+        "result.stale_regenerate": "Generate reports now",
+        "run.stale_artifacts": (
+            "Classification has finished, but the reports still describe the previous "
+            "state — {was_files} file(s) against the current {now_files}."
+        ),
         "result.back_to_run": "execution",
         "result.open_folder": "Open output folder in Explorer",
         "result.pending_title": "Pending items",
@@ -2463,6 +2487,18 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             " pause la ejecución, antes de actualizar. No se cambió nada."
         ),
         "result.title": "Resultado",
+        "result.stale_title": "Estos informes son anteriores al estado actual del proyecto",
+        "result.stale_explanation": (
+            "Se generaron el {generated_at}, cuando el proyecto tenía {was_files} "
+            "archivo(s), {was_windows} ventana(s) clasificada(s) y {was_items} pieza(s). "
+            "Ahora tiene {now_files}, {now_windows} y {now_items}. Genere los informes de "
+            "nuevo para incluir lo que falta."
+        ),
+        "result.stale_regenerate": "Generar informes ahora",
+        "run.stale_artifacts": (
+            "La clasificación terminó, pero los informes aún describen el estado "
+            "anterior — {was_files} archivo(s) frente a los {now_files} actuales."
+        ),
         "result.back_to_run": "ejecución",
         "result.open_folder": "Abrir carpeta de salida en el Explorador",
         "result.pending_title": "Pendientes",

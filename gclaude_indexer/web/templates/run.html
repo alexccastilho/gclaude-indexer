@@ -15,6 +15,17 @@
      hx-trigger="load"
      hx-swap="innerHTML"></div>
 
+{% if stale %}
+<div id="stale-artifacts" class="notice">
+  {{ t('run.stale_artifacts', **stale_numbers) }}
+  <form method="post" action="/projects/{{ project.id }}/import-and-generate" style="display:inline">
+    <button type="submit" class="button-primary">
+      {{ m.icon('download') }} {{ t('result.stale_regenerate') }}
+    </button>
+  </form>
+</div>
+{% endif %}
+
 <div class="actions">
   <button hx-post="/projects/{{ project.id }}/run-next" hx-target="#steps" hx-swap="innerHTML">
     {{ m.icon('play') }} {{ t('run.run_next') }}

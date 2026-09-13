@@ -10,6 +10,18 @@
   <a href="/projects/{{ project.id }}/run">{{ m.icon('back') }} {{ t('result.back_to_run') }}</a>
 </p>
 
+{% if stale %}
+<div id="stale-artifacts" class="notice">
+  <strong>{{ t('result.stale_title') }}</strong>
+  <p>{{ t('result.stale_explanation', **stale_numbers) }}</p>
+  <form method="post" action="/projects/{{ project.id }}/import-and-generate" style="display:inline">
+    <button type="submit" class="button-primary">
+      {{ m.icon('download') }} {{ t('result.stale_regenerate') }}
+    </button>
+  </form>
+</div>
+{% endif %}
+
 <form method="post" action="/projects/{{ project.id }}/open-folder" style="display:inline">
   <button type="submit">{{ m.icon('explorer') }} {{ t('result.open_folder') }}</button>
 </form>

@@ -117,6 +117,27 @@ CREATE TABLE IF NOT EXISTS removed_file (
     removed_at    TEXT NOT NULL
 );
 
+-- Phase 18: the state the four artifacts describe, written when they are
+-- generated. One row, always id 1.
+--
+-- Without it there is no way to tell a current report from one written
+-- before the last classification finished, and the difference is invisible
+-- to the eye: a collection gained three documents, the pipeline converted,
+-- extracted and classified all of them, and `review.md` went on reporting
+-- the previous thirteen files and 307 windows because generating the
+-- reports is a separate step nobody had run yet. Comparing counts is exact
+-- and costs three `COUNT(*)`; comparing the files' modification times would
+-- not work here, since the output folder is synced by Google Drive and the
+-- client rewrites timestamps on files whose bytes never changed (the same
+-- trap `update_plan.py` documents for detection).
+CREATE TABLE IF NOT EXISTS artifact_state (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    generated_at  TEXT NOT NULL,
+    files         INTEGER NOT NULL,
+    windows_done  INTEGER NOT NULL,
+    items         INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_file_status ON file(status);
 CREATE INDEX IF NOT EXISTS idx_page_file_id ON page(file_id);
 CREATE INDEX IF NOT EXISTS idx_item_group_key_order ON item(group_key, start_order);
