@@ -59,7 +59,16 @@
 param(
     [switch]$RemoveAll,
     [switch]$KeepDependencies,
-    [switch]$WhatIfOnly
+    [switch]$WhatIfOnly,
+    # Phase 19. Your project list and your shared-catalog setting. Kept by
+    # every other mode, including -RemoveAll, and removed only when this
+    # is passed. Uninstalling the program is not the same act as throwing
+    # away the record of what you indexed with it, and the second one has
+    # to be asked for by name.
+    [switch]$RemoveUserData,
+    # Test door: define the functions and return without uninstalling
+    # anything, so `Confirm-Step` can be exercised on its own.
+    [switch]$DryRunContract
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,7 +116,11 @@ function Confirm-Step {
     param(
         [Parameter(Mandatory)][string]$Title,
         [string]$Detail = "",
-        [switch]$IsSharedDependency
+        [switch]$IsSharedDependency,
+        # The user's own work, as opposed to this installation's leavings.
+        # There are three kinds of thing here, not two, and treating the
+        # third as the second is what cost a real user their project list.
+        [switch]$IsUserData
     )
 
     Write-Host ""
@@ -115,6 +128,26 @@ function Confirm-Step {
     if ($Detail) { Write-Host "  $Detail" }
 
     if ($WhatIfOnly) { return $false }
+
+    # User data first, ahead of -RemoveAll. `-RemoveAll` is what the
+    # Windows uninstaller's "also remove the dependencies" checkbox sends,
+    # and that checkbox names Tesseract, Ghostscript, Ollama and Python —
+    # it says nothing about the project list. A switch that answers yes to
+    # everything must still not answer yes to something the person was
+    # never asked about.
+    if ($IsUserData) {
+        if ($RemoveUserData) {
+            Write-Host "  yes (-RemoveUserData)" -ForegroundColor Yellow
+            return $true
+        }
+        if ($RemoveAll -or $KeepDependencies) {
+            Write-Host "  no (your own data; pass -RemoveUserData to remove it)" -ForegroundColor Green
+            return $false
+        }
+        $answer = Read-Host "  Remove YOUR OWN data? (y/N)"
+        return $answer -match '^[SsYy]'
+    }
+
     if ($RemoveAll) { Write-Host "  yes (-RemoveAll)" -ForegroundColor Yellow; return $true }
     if ($IsSharedDependency -and $KeepDependencies) {
         Write-Host "  no (-KeepDependencies)" -ForegroundColor Yellow
@@ -263,6 +296,8 @@ function Uninstall-WingetPackage {
 
 # --- 0. What is on this machine ---------------------------------------------
 
+if ($DryRunContract) { return }
+
 Write-Host "=== GClaude Indexer Uninstaller ===" -ForegroundColor Cyan
 Write-Host "Project folder (synced, never touched): $ProjectRoot"
 Write-Host "This machine's local folder:            $LocalFolder"
@@ -344,27 +379,51 @@ if (Test-Path -LiteralPath $LocalGhostscript) {
     } else { $Kept.Add("local Ghostscript") }
 }
 
-if (Confirm-Step -Title "Local settings, project catalog and cached state" `
-        -Detail ("$LocalFolder — the project list, the shared-catalog setting, tools.json, " +
-                 "the sensor snapshot and the server log. Your projects themselves are NOT here.")) {
-    # The remaining contents, one by one rather than the folder wholesale:
-    # something above may have been kept, and this must not take it with it.
+# Two groups, deliberately separate, because they answer to different
+# questions. What this installation left behind is rubbish once the
+# program is gone. What the user built is not, and it used to be swept up
+# with the rubbish: a real uninstall took `projects.json` with it, and the
+# owner lost the list of every collection they had indexed. The
+# collections survived — they live in their own output folders — but
+# finding them again meant remembering where each one was.
+#
+# Installation state: regenerated on the next run, worth nothing to keep.
+if (Confirm-Step -Title "Installation state (caches, logs, helper)" `
+        -Detail ("$LocalFolder — tools.json, the requirements hash, the sensor snapshot " +
+                 "and the server log. All of it is rebuilt automatically.")) {
+    # One by one rather than the folder wholesale: something above may
+    # have been kept, and this must not take it with it.
     foreach ($name in @(
-        "projects.json", "settings.json", "tools.json", "sincronizacao.json",
-        "requirements.sha256", "sensor_snapshot.json", "sensor_helper_status.txt",
-        "servidor.log", "helper"
+        "tools.json", "sincronizacao.json", "requirements.sha256",
+        "sensor_snapshot.json", "sensor_helper_status.txt", "servidor.log", "helper"
     )) {
         $path = Join-Path $LocalFolder $name
         if (Test-Path -LiteralPath $path) {
-            Remove-ItemSafely -Path $path -Label "local state: $name" | Out-Null
+            Remove-ItemSafely -Path $path -Label "installation state: $name" | Out-Null
         }
     }
-    # And the folder itself, only if nothing was kept inside it.
-    if ((Test-Path -LiteralPath $LocalFolder) -and
-        -not (Get-ChildItem -LiteralPath $LocalFolder -Force -ErrorAction SilentlyContinue)) {
-        Remove-ItemSafely -Path $LocalFolder -Label "local folder" | Out-Null
+} else { $Kept.Add("installation state") }
+
+# Your own data: the list of what you indexed, and where your shared
+# catalogue lives. Kept by every mode except an explicit -RemoveUserData.
+if (Confirm-Step -IsUserData -Title "Your project list and settings" `
+        -Detail ("$LocalFolder — projects.json (every collection you have opened) and " +
+                 "settings.json. Removing this does NOT delete a single document: your " +
+                 "collections stay in their own output folders. What you lose is the list, " +
+                 "and with it the need to find each folder by hand again.")) {
+    foreach ($name in @("projects.json", "settings.json")) {
+        $path = Join-Path $LocalFolder $name
+        if (Test-Path -LiteralPath $path) {
+            Remove-ItemSafely -Path $path -Label "your data: $name" | Out-Null
+        }
     }
-} else { $Kept.Add("local settings and catalog") }
+} else { $Kept.Add("your project list and settings") }
+
+# The folder itself, only when nothing at all was kept inside it.
+if ((Test-Path -LiteralPath $LocalFolder) -and
+    -not (Get-ChildItem -LiteralPath $LocalFolder -Force -ErrorAction SilentlyContinue)) {
+    Remove-ItemSafely -Path $LocalFolder -Label "local folder" | Out-Null
+}
 
 # The environment variables install.ps1 wrote for Ollama's benefit. Removed
 # only when they still hold the values this installation set: a user who
