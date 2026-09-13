@@ -218,6 +218,45 @@ def _shell_execute_runas(program: str, arguments: str, working_directory: str) -
     return int(result or 0)
 
 
+def server_listening(host: str, port: int) -> bool:
+    """`True` when something already answers on that address.
+
+    A connect, not a bind attempt: binding to find out would take the port
+    for an instant and race with the server being asked about.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex((host, port)) == 0
+
+
+def pid_listening_on(port: int) -> int | None:
+    """Which process holds that port, or `None` when it cannot be told.
+
+    Here, and not with the web server, because this exists for one reason:
+    the helper outlives exactly one process — the one whose handle it waits
+    on — and when the system is already open, that process is the server
+    already running, not the short-lived one asking on its behalf.
+    """
+    try:
+        import psutil
+
+        for connection in psutil.net_connections(kind="tcp"):
+            if (
+                connection.laddr
+                and connection.laddr.port == port
+                and connection.status == psutil.CONN_LISTEN
+                and connection.pid
+            ):
+                return int(connection.pid)
+    except Exception:
+        # psutil refuses to enumerate other users' sockets on some
+        # machines. Not knowing is an answer the caller handles.
+        return None
+    return None
+
+
 def start_elevated_helper(parent_pid: int | None = None) -> str:
     """Asks for the elevated helper, if this run asked for it.
 

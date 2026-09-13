@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from ..engine_local import DEFAULT_LOCAL_MODEL, OLLAMA_BASE_URL
 
-__all__ = ["DEFAULT_LOCAL_MODEL", "list_installed_models"]
+__all__ = ["DEFAULT_LOCAL_MODEL", "list_installed_models", "model_downloaded_on_disk"]
 
 
 def list_installed_models(timeout_s: float = 2.0) -> list[str]:
@@ -48,3 +50,43 @@ def list_installed_models(timeout_s: float = 2.0) -> list[str]:
         if isinstance(model, dict) and isinstance(model.get("name"), str) and model["name"]
     }
     return sorted(names)
+
+
+def model_downloaded_on_disk(name: str) -> bool:
+    """`True` when the model's manifest is in the local store.
+
+    The answer to "is this model downloaded" and the answer to "is Ollama
+    running" are different questions, and `list_installed_models` can only
+    answer the first by asking the second: it talks to the server, and a
+    stopped server gives back an empty list that is indistinguishable from
+    an empty machine.
+
+    That cost a real user an afternoon. The model was downloaded — 3.2 GB
+    of it, sitting in the store — the server was simply not up, and the
+    About screen reported "missing" and offered to download it again.
+
+    Ollama lays the store out as
+    `models/manifests/<registry>/<namespace>/<model>/<tag>`, with
+    `library` as the namespace for official models and `latest` as the
+    implied tag. The registry is walked rather than named, so a model
+    pulled from somewhere other than registry.ollama.ai still counts.
+    """
+    root = os.environ.get("OLLAMA_MODELS") or (Path.home() / ".ollama" / "models")
+    manifests = Path(root) / "manifests"
+    if not manifests.is_dir():
+        return False
+
+    reference, _, tag = name.partition(":")
+    tag = tag or "latest"
+    if "/" in reference:
+        namespace, _, model = reference.rpartition("/")
+    else:
+        namespace, model = "library", reference
+
+    try:
+        for registry in manifests.iterdir():
+            if (registry / namespace / model / tag).is_file():
+                return True
+    except OSError:
+        return False
+    return False

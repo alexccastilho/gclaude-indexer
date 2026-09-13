@@ -39,3 +39,7 @@ pecas_brutas.jsonl
 # appear inside a project's output folder, which lives outside this
 # repository, and listing them here would silently swallow a legitimate
 # docs/index.md later.
+
+# Phase 19: the compiled installer. Built from source by
+# installer/build.ps1 and published as a release asset, never committed.
+dist/

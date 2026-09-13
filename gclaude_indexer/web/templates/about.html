@@ -5,7 +5,7 @@
 <p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a></p>
 
 <div class="card about-header">
-  <img src="/static/logo.jpg" alt="{{ t('app.name') }}">
+  <img src="/static/logo.png" alt="{{ t('app.name') }}">
   <div>
     <h1 style="margin-bottom:0.2rem">{{ t('app.name') }}</h1>
     <span class="about-version">{{ t('about.version_label') }} {{ system_version }}</span>
@@ -16,6 +16,14 @@
 <p class="help">{{ t('about.technology') }}</p>
 
 <p>{{ t('about.author_label') }}: <strong>{{ autor }}</strong></p>
+
+{# O único link para fora em todo o sistema. Não fere a promessa de
+   processamento local: nada é buscado, nada é enviado, e a página só
+   abre se a pessoa clicar. `noopener noreferrer` porque um link com
+   target="_blank" dá à página de destino acesso à janela de origem. #}
+<p>{{ t('about.project_label') }}:
+  <a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">{{ project_url }}</a>
+</p>
 
 <h2>{{ t('diagnostics.title') }}</h2>
 <div class="table-scrollable">

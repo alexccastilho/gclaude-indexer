@@ -160,10 +160,104 @@ param(
     [switch]$CpuSensorShortcut,
     [switch]$AutoInstall,
     [string]$OcrLanguage = "",
-    [switch]$SkipGpuCheck
+    [switch]$SkipGpuCheck,
+    # Phase 19. The graphical installer offers the model as an unticked
+    # option: several gigabytes started without being asked for is how an
+    # installation someone expected to take a minute becomes twenty. It
+    # therefore needs a way to say "everything else, yes; the model, no",
+    # which `-AutoInstall` alone cannot express.
+    [switch]$SkipModelDownload,
+    # Phase 19. The graphical installer shows every dependency on one page
+    # and lets the optional ones be unticked. Tesseract, Ghostscript and
+    # the Portuguese language file have no switch on purpose: without them
+    # the system cannot read a scanned page, which is the whole job.
+    [switch]$SkipOllama,
+    [switch]$SkipSensors,
+    # Phase 19. Path the installer polls to keep its progress label
+    # truthful. Empty means nobody is watching — the default for anyone
+    # running this script by hand, who sees no difference at all.
+    [string]$StatusFile = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+function Repair-WindowsPowerShellModulePath {
+    <#
+    .SYNOPSIS
+        Puts Windows PowerShell's own modules back at the front of
+        `PSModulePath`, so this script's cmdlets resolve.
+
+    .DESCRIPTION
+        Installing PowerShell 7 — through winget, the Store, or the MSI —
+        prepends its module directories to the machine-wide
+        `PSModulePath`. Windows PowerShell 5.1, which is what runs this
+        script, then finds PowerShell 7's `Microsoft.PowerShell.Utility`
+        first, sees a manifest declaring `CompatiblePSEditions = Core`,
+        and declines to load it. It does not fall through to its own copy.
+
+        The result is that `Get-FileHash`, `Invoke-WebRequest` and
+        `Expand-Archive` simply do not exist, and since this script runs
+        with `$ErrorActionPreference = 'Stop'`, the first call to one of
+        them ends the installation — in the middle of step 3, before
+        Tesseract, Ghostscript or Ollama are ever reached. Reported by a
+        user whose installation "completed" having installed none of them,
+        and reproduced identically on the unmodified script, so this is not
+        a regression from the phase 19 installer: it is a latent defect the
+        installer made visible by running the script where nobody could see
+        its output.
+
+        Rebuilding the variable rather than filtering it: the three folders
+        below are the whole of Windows PowerShell's own search path, and an
+        entry added by anything else has no business shadowing them for the
+        few minutes this script runs. The change is to this process only —
+        nothing is written to the registry, and no other program is
+        affected.
+    #>
+    $own = @(
+        (Join-Path $env:SystemRoot "system32\WindowsPowerShell\v1.0\Modules"),
+        (Join-Path $env:ProgramFiles "WindowsPowerShell\Modules"),
+        (Join-Path ([Environment]::GetFolderPath('MyDocuments')) "WindowsPowerShell\Modules")
+    )
+    $env:PSModulePath = ($own | Where-Object { $_ }) -join ';'
+}
+
+Repair-WindowsPowerShellModulePath
+
+function Write-InstallStatus {
+    <#
+    .SYNOPSIS
+        Publishes the current step for a graphical installer to read.
+    .DESCRIPTION
+        The file is rewritten whole on every call, never appended to. The
+        installer polls it while this script writes, and a reader that
+        caught a half-written append would show a step that is not the
+        current one.
+
+        Two lines, UTF-8 without BOM. The first is for the machine
+        (`<step>|<total>|<key>`), the second is the prose to display. The
+        contract is fixed in the phase 19 design, section 6.2, because it
+        is shared by two components written in different languages.
+
+        Progress is a courtesy. Failing to write it must never fail an
+        installation, which is why everything here is swallowed.
+    #>
+    param(
+        [Parameter(Mandatory)][int]$Step,
+        [Parameter(Mandatory)][int]$Total,
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Text
+    )
+
+    if (-not $StatusFile) { return }
+
+    try {
+        $content = "$Step|$Total|$Key`n$Text`n"
+        [System.IO.File]::WriteAllText(
+            $StatusFile, $content, (New-Object System.Text.UTF8Encoding($false)))
+    } catch {
+        # Deliberately silent: see above.
+    }
+}
 
 function Invoke-NativeCommand {
     <#
@@ -291,6 +385,18 @@ function Start-ProcessElevated {
         $startArguments["NoNewWindow"] = $true
     } else {
         $startArguments["Verb"] = "RunAs"
+        # Phase 19. `RunAs` and `NoNewWindow` are mutually exclusive — the
+        # verb needs ShellExecute, which always creates a window — so the
+        # window has to be hidden instead of suppressed. Without this a
+        # black console flashes up, or sits there, in the middle of a
+        # graphical installation: reported by a user who watched a terminal
+        # open while the wizard was running.
+        #
+        # The UAC prompt itself still appears, and must: Windows draws it
+        # on the secure desktop and no application gets to suppress that.
+        # Everything launched through here carries silent flags, so there
+        # is nothing in the hidden window for anyone to answer.
+        $startArguments["WindowStyle"] = "Hidden"
     }
 
     try {
@@ -543,6 +649,85 @@ function Test-WingetAvailable {
     return [bool](Get-Command winget -ErrorAction SilentlyContinue)
 }
 
+function Test-OllamaResponding {
+    <#
+    .SYNOPSIS
+        $true when something is listening on Ollama's port.
+
+    .DESCRIPTION
+        A TCP connect, not an HTTP request: all we need to know is whether
+        the server is up, and a bare connect answers that in milliseconds
+        without depending on any endpoint staying where it is.
+    #>
+    param([int]$TimeoutMs = 1500)
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $pending = $client.BeginConnect("127.0.0.1", 11434, $null, $null)
+        $answered = $pending.AsyncWaitHandle.WaitOne($TimeoutMs)
+        if ($answered) { $client.EndConnect($pending) }
+        return $answered
+    } catch {
+        return $false
+    } finally {
+        if ($client) { $client.Close() }
+    }
+}
+
+function Start-OllamaIfNeeded {
+    <#
+    .SYNOPSIS
+        Brings up `ollama serve` when nothing is listening. $true when the
+        server answers by the end.
+
+    .DESCRIPTION
+        Every ollama subcommand that matters here — `list`, `pull`, `run` —
+        is a client of a server on 127.0.0.1:11434. Having the binary on
+        disk is not the same as having the server up, and after a fresh
+        winget install it usually is not: the tray application that starts
+        it has not been launched yet.
+
+        On a real machine that produced two wrong answers in a row from one
+        installation. `ollama list` failed, so the script concluded the
+        default model was missing; then `ollama pull` failed with
+        "connectex: the target machine actively refused it" and the user
+        was told to run the command by hand. Neither was true — nothing was
+        wrong except that nobody had started the server.
+
+        Left running on purpose. The GPU verification a few blocks below
+        loads a model through this same server, and the application needs
+        it at classification time anyway (`engine_local.py` starts it
+        itself when it has to, which is the behaviour this mirrors).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$OllamaPath,
+        [int]$WaitSeconds = 40
+    )
+
+    if (Test-OllamaResponding) { return $true }
+
+    Write-Host "  the Ollama server is not answering on 127.0.0.1:11434; starting it ..." -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath $OllamaPath -ArgumentList "serve" -WindowStyle Hidden | Out-Null
+    } catch {
+        Write-Host "  could not start it: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+
+    $waited = 0
+    while ($waited -lt $WaitSeconds) {
+        Start-Sleep -Seconds 2
+        $waited += 2
+        if (Test-OllamaResponding) {
+            Write-Host ("  the Ollama server answered after {0} s." -f $waited) -ForegroundColor Green
+            return $true
+        }
+    }
+
+    Write-Host ("  the Ollama server did not come up within {0} s." -f $WaitSeconds) -ForegroundColor Yellow
+    return $false
+}
+
 function Get-VerifiedDownload {
     <#
     .SYNOPSIS
@@ -639,6 +824,7 @@ Write-Host "This machine's local folder: $LocalFolder"
 Write-Host ""
 
 # --- 1. Base Python: installed when missing, only to create the venv -------
+Write-InstallStatus -Step 1 -Total 8 -Key "python" -Text "Verificando o Python 3.12"
 
 # The version matters, it is not a detail: `requirements.txt` pins versions
 # that do not build on 3.13+. Taking the first Python on PATH is how a
@@ -1096,6 +1282,7 @@ if (-not $PythonBase) {
 Write-Host "Base Python found: $PythonBase (version $RequiredPythonVersion)"
 
 # --- 2. Local virtual environment (section 11.1/11.2) -----------------------
+Write-InstallStatus -Step 2 -Total 8 -Key "venv" -Text "Criando o ambiente virtual"
 
 if (Test-Path (Join-Path $VenvFolder "Scripts\python.exe")) {
     Write-Host "Virtual environment already exists at $VenvFolder."
@@ -1113,6 +1300,7 @@ if (Test-Path (Join-Path $VenvFolder "Scripts\python.exe")) {
 $VenvPython = Join-Path $VenvFolder "Scripts\python.exe"
 
 # --- 3. Python dependencies, only if requirements.txt changed (section 11.2)
+Write-InstallStatus -Step 3 -Total 8 -Key "deps" -Text "Instalando as dependencias do Python"
 
 function Get-FileChecksum([string]$Path) {
     return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLower()
@@ -1143,6 +1331,7 @@ if ($CurrentHash -eq $PreviousHash) {
 }
 
 # --- 4. Tesseract and Ghostscript, actually installed when missing ---------
+Write-InstallStatus -Step 4 -Total 8 -Key "tesseract" -Text "Verificando o Tesseract (OCR)"
 # (section 10.3; Phase 13 Task 13: a warning alone was not enough on a new
 # machine)
 
@@ -1231,6 +1420,7 @@ function Install-IfMissing {
 # helpers above: section 1 downloads the python.org installer through it.
 
 # --- 4b. Ghostscript: unpacked into this user's own folder -----------------
+Write-InstallStatus -Step 5 -Total 8 -Key "ghostscript" -Text "Verificando o Ghostscript"
 #
 # `ocrmypdf` will not start without `gswin64c` on PATH, so this is not an
 # optional nicety: no Ghostscript means no OCR at all, which means the
@@ -1484,7 +1674,7 @@ function Test-Answers {
     }
 }
 
-`$process = Start-Process -FilePath `$installer -ArgumentList "/S /D=`$destination" -PassThru
+`$process = Start-Process -FilePath `$installer -ArgumentList "/S /D=`$destination" -PassThru -WindowStyle Hidden
 `$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 `$ready = `$false
 while (`$true) {
@@ -1965,6 +2155,7 @@ if (-not $TesseractOk) {
 }
 
 # --- 4d. Ollama and default model (optional; large downloads) --------------
+Write-InstallStatus -Step 6 -Total 8 -Key "ollama" -Text "Verificando o Ollama"
 # Asked separately from the block above: Ollama itself is already a few
 # dozen MB, and the default model is several GB — the user should be able
 # to say no to this even after saying yes to Tesseract/Ghostscript.
@@ -1984,7 +2175,10 @@ if ($OllamaPath) {
         Write-Host "  winget is not available on this machine. Install manually:" -ForegroundColor Yellow
         Write-Host "  $OllamaCommand" -ForegroundColor Yellow
     } else {
-        $Proceed = [bool]$AutoInstall
+        $Proceed = [bool]$AutoInstall -and (-not $SkipOllama)
+        if ($SkipOllama) {
+            Write-Host "  not selected in the installer; skipping." -ForegroundColor Yellow
+        }
         if (-not $AutoInstall) {
             Write-Host "  The Ollama installer is a few dozen MB." -ForegroundColor Yellow
             $answer = Read-Host "  Install Ollama now with winget? (Y/N)"
@@ -2019,8 +2213,14 @@ if ($OllamaPath) {
     $DefaultModel = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL; print(DEFAULT_LOCAL_MODEL)" })".Trim()
 
     if ($DefaultModel) {
-        # Straight after Ollama is installed its service may still be
-        # starting, and `ollama list` then writes a connection error and
+        # Before asking Ollama anything at all. Both questions below go to
+        # a server, and with the server down the answers are not "no" —
+        # they are nothing, which is worse, because the script would print
+        # "not downloaded" for a model that might be right there.
+        Start-OllamaIfNeeded -OllamaPath $OllamaPath | Out-Null
+
+        # Kept anyway: the server can be up and still be finishing its own
+        # startup, and `ollama list` then writes a connection error and
         # exits non-zero. That used to end the installation right here.
         $ModelList = Invoke-NativeCommand { & $OllamaPath list 2>$null }
         $HasDefaultModel = ($LASTEXITCODE -eq 0) -and ($ModelList -match [regex]::Escape($DefaultModel))
@@ -2030,13 +2230,18 @@ if ($OllamaPath) {
         } else {
             Write-Host "Default model ($DefaultModel) is not downloaded." -ForegroundColor Yellow
             $ModelCommand = "ollama pull $DefaultModel"
-            $Proceed = [bool]$AutoInstall
+            # `-SkipModelDownload` overrides `-AutoInstall` for this one
+            # download, and only this one: the graphical installer says
+            # yes to everything else while leaving the several-gigabyte
+            # model as an option the user ticks deliberately.
+            $Proceed = [bool]$AutoInstall -and (-not $SkipModelDownload)
             if (-not $AutoInstall) {
                 Write-Host "  The default model download is large (several GB)." -ForegroundColor Yellow
                 $answer = Read-Host "  Download the default model now? (Y/N)"
                 $Proceed = $answer -match '^[SsYy]'
             }
             if ($Proceed) {
+                Write-InstallStatus -Step 7 -Total 8 -Key "model" -Text "Baixando o modelo de classificacao (varios GB)"
                 Write-Host "  downloading $DefaultModel (this can take a while) ..." -ForegroundColor Cyan
                 Invoke-NativeCommand { & $OllamaPath pull $DefaultModel }
                 if ($LASTEXITCODE -eq 0) {
@@ -2436,6 +2641,7 @@ if ($SkipGpuCheck) {
 }
 
 # --- 4h. Sensor libraries: temperature, power and clocks -------------------
+Write-InstallStatus -Step 8 -Total 8 -Key "sensors" -Text "Instalando as bibliotecas de sensor"
 #
 # `sensors.py` reads GPU/CPU temperature, power draw and clocks through
 # LibreHardwareMonitorLib plus the .NET Framework shims it needs at load
@@ -2633,7 +2839,10 @@ function Install-SensorLibrary {
 }
 
 $SensorArchitecture = "$env:PROCESSOR_ARCHITECTURE"
-if ($SensorArchitecture -ne "AMD64") {
+if ($SkipSensors) {
+    Write-Host "Sensor libraries: not selected in the installer; skipping." -ForegroundColor Yellow
+    Write-Host "Everything else works; the Run screen will report temperature, power and clocks as unavailable." -ForegroundColor Yellow
+} elseif ($SensorArchitecture -ne "AMD64") {
     Write-Host "Windows on $SensorArchitecture — the sensor libraries are pinned to the verified 64-bit x86 build," -ForegroundColor Yellow
     Write-Host "so they are not installed here. Everything else works; the Run screen will simply report" -ForegroundColor Yellow
     Write-Host "temperature, power and clocks as unavailable." -ForegroundColor Yellow

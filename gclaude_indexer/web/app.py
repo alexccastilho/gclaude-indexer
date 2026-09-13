@@ -75,8 +75,11 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.2.0"
+SYSTEM_VERSION = "1.3.0"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
+# Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
+# três cópias dele seriam três oportunidades de divergir.
+PROJECT_URL = "https://github.com/alexccastilho/gclaude-indexer"
 
 # 50 lines covered less than a minute of scanning on a real collection — the
 # panel would scroll out before there was time to read it. 200 fits in
@@ -123,6 +126,7 @@ def render(request: Request, template_name: str, context: dict | None = None, st
     full_context.setdefault("current_layout", layout)
     full_context.setdefault("available_layouts", AVAILABLE_LAYOUTS)
     full_context.setdefault("system_version", SYSTEM_VERSION)
+    full_context.setdefault("project_url", PROJECT_URL)
     # Em toda tela, e não só na de Execução: um servidor rodando código
     # antigo produz resultado errado em qualquer etapa, e o usuário precisa
     # ver isso onde quer que esteja (ver `staleness.py`).
@@ -1215,6 +1219,52 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     record_loaded_source()
 
     _validate_host(host)
+
+    # The system may already be open. That is the ordinary case for the
+    # second shortcut — "GClaude Indexer (CPU sensor)" — which someone
+    # clicks precisely because the first one is running and shows no CPU
+    # temperature.
+    #
+    # What used to happen: this process asked for the helper, bound to
+    # port 8000, lost to the server already there, and died with
+    # "[Errno 10048] ... only one usage of each socket address". The
+    # helper's lifetime is tied to the process whose handle it waits on,
+    # so it died with it — and the server actually serving the pages had
+    # never been told anything. Three of those errors sat in the log of a
+    # machine where the user saw "not measured" and no explanation.
+    from ..sensor_service import (
+        elevation_requested,
+        pid_listening_on,
+        server_listening,
+        start_elevated_helper,
+        write_launch_status,
+    )
+
+    if server_listening(host, port):
+        existing_pid = pid_listening_on(port)
+
+        if not elevation_requested():
+            print(f"[server] already running on {host}:{port} — nothing to start.")
+            return
+
+        if existing_pid is None:
+            # Without the running server's pid there is nothing for the
+            # helper to outlive, and starting one anyway would raise a UAC
+            # prompt for a reader that dies seconds later.
+            write_launch_status("unavailable")
+            print(
+                f"[sensors] the system is already open on {host}:{port}, but its process "
+                "could not be identified. Close the system completely and open it again "
+                'through the "CPU sensor" shortcut.'
+            )
+            return
+
+        try:
+            outcome = start_elevated_helper(parent_pid=existing_pid)
+        except Exception:
+            outcome = "unavailable"
+        print(f"[sensors] elevated CPU sensor helper for pid {existing_pid}: {outcome}")
+        return
 
     # Numa thread, e nunca antes do `uvicorn.run`.
     #

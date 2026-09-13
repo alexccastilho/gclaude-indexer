@@ -10,6 +10,133 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.3.0] — 2026-09-13
+
+Phase 19. An installer for people who do not open a terminal.
+
+### Added
+
+- **A Windows installer.** `GClaude-Indexer-Setup-1.3.0.exe`, built with
+  Inno Setup from `installer/GClaudeIndexer.iss`. It asks where to install
+  (per-user or for the whole machine), shows the GPL-3.0 text — the licence
+  being granted, not terms being imposed — and puts every dependency on one
+  page with a checkbox each: Tesseract and Ghostscript ticked and locked
+  because without OCR the program cannot do the job it exists for, and
+  Ollama, the classification model, the sensor libraries and the CPU-sensor
+  shortcut left to the person installing. Everything is downloaded and
+  installed with a progress bar and without a terminal window appearing at
+  any point.
+
+  It is not code-signed. A certificate costs money this project does not
+  have, so SmartScreen warns before it runs; each release publishes the
+  SHA-256 of the file.
+
+- **An uninstaller that asks what should go.** Removing the program from
+  Settings > Apps opens a dialog with one checkbox per shared dependency —
+  Tesseract, Ghostscript, Ollama, the downloaded models, Python 3.12 — and
+  removes what is ticked and nothing else. Someone who wants Ollama gone
+  may well still be using Ghostscript. The project list is never touched:
+  it lives behind a switch nothing in the installer passes.
+
+- **A log for both.** `%LOCALAPPDATA%\\GClaudeIndexer\\install-log.txt` and
+  `uninstall-log.txt`, in UTF-8. The first version of this ran hidden and
+  silent, and when a user reported that nothing had been installed there
+  was no way to tell whether the script had failed, run partially, or
+  worked while they looked too early.
+
+- **The project page on the About screen.** The only outbound link in the
+  system, and it does not weaken the offline promise: nothing is fetched
+  and nothing is sent — the page opens only if the person clicks it.
+
+### Fixed
+
+- **The installer ran nothing at all in the default folder.** It built one
+  `cmd /c ""powershell.exe" -File ""<path>"" ..."` command line, and the
+  doubled quotes cmd's own parsing needs did not survive PowerShell's: in
+  `C:\\Program Files\\GClaude Indexer` the path was cut at the space,
+  PowerShell refused `-File 'C:\\Program'` and fell through to its
+  interactive prompt — a black window in front of an installation where not
+  one dependency had been installed. The sentinel hid it: `& echo
+  %ERRORLEVEL%` ran whether or not PowerShell had ever started, so the
+  wizard read a code and went to its final page. The uninstaller used the
+  same command line and failed the same way, without even leaving a log,
+  because the redirection was part of the line that never ran. There is no
+  `cmd.exe` in the project any more: the installer writes a `.ps1` with the
+  paths already embedded and runs that.
+
+- **The Ollama model was never downloaded.** `ollama list` and `ollama
+  pull` are both clients of a server on 127.0.0.1:11434, and having the
+  binary on disk is not having the server up — after a fresh winget install
+  it usually is not. That produced two wrong answers in one run: the script
+  concluded the model was missing, then the download was refused with "the
+  target machine actively refused it". The installer now starts `ollama
+  serve` before asking anything and waits up to forty seconds for the port.
+
+- **Removing a user-scope package needs an unelevated winget.** The
+  uninstaller removed Tesseract, which installs machine-wide, and left
+  Ollama and Python, which install into the user's own profile. Removal is
+  now attempted as the user first and elevated afterwards only for what is
+  still installed.
+
+- **`--silent` stopped the removal instead of quieting it.** It asks winget
+  to run the package's own silent uninstall command, and a package whose
+  manifest has none refuses the whole request — three runs reported "Ollama:
+  still installed" while the same command without the flag removed it on
+  the first try. Both variants are attempted now, and the verdict comes
+  from asking the machine rather than from winget's exit code, which
+  reported success for an uninstall that changed nothing.
+
+- **The CPU-sensor shortcut was never created.** Its whole block in
+  `install.ps1` sits behind `if (-not $NoShortcut)`, and `-NoShortcut` is
+  what the installer always passes so that uninstalling removes the
+  shortcuts. Ticking the box passed `-CpuSensorShortcut` into a script that
+  had already decided to create none, while the application told the user
+  to open the shortcut that was not there. The `[Icons]` section owns it
+  now.
+
+- **The CPU-sensor shortcut did nothing when the system was already open** —
+  which is exactly when someone clicks it. Each click started a second
+  server that asked for the elevated helper, lost port 8000 to the server
+  already running and died; the helper's lifetime is tied to the process
+  that asked for it, so it died too, and the server drawing the screens was
+  never told. The helper is now attached to the server that is already
+  running.
+
+- **A downloaded model was reported as missing.** The list of models comes
+  from the Ollama server, and a stopped server returns an empty list that
+  is indistinguishable from an empty machine — so the About screen offered
+  to re-download 3.2 GB that were already on disk. The store on disk is
+  consulted when the server does not answer.
+
+- **The About screen showed a connection warning in the Version column.**
+  `ollama --version` with the server down prints two lines and both begin
+  with "Warning:"; the first is about the connection and the second carries
+  the version.
+
+- **`PSModulePath` from PowerShell 7 killed the installation at step 3.**
+  Installing PowerShell 7 prepends its module directories machine-wide, and
+  Windows PowerShell 5.1 — which runs the installer — then loaded the wrong
+  `Microsoft.PowerShell.Utility` and lost `Get-FileHash`. Reproduced on the
+  pre-phase-19 script: a latent defect, not a regression.
+
+- **The uninstaller deleted the project list.** `projects.json` is the list
+  of collections the user has opened; losing it deletes no document but
+  makes every collection have to be found by hand again. It is now user
+  data, which only `-RemoveUserData` removes — not even the "remove the
+  dependencies too" option touches it.
+
+- **`review.md` did not count duplicate files.** The coverage loop skipped
+  the `duplicate` state, so a collection with repeated documents reported
+  fewer files than it had.
+
+### Changed
+
+- **New logotype, with real transparency.** The previous one was a JPEG, a
+  format with no alpha channel — the transparency was not being lost in
+  conversion, it could never exist. The icon carries ten sizes from 16 to
+  256, each resampled here rather than by the Windows shell at display
+  time.
+
 ## [1.2.0] — 2026-09-13
 
 Phase 18. The reports say when they have fallen behind.

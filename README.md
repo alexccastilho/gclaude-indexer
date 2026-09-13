@@ -123,7 +123,26 @@ You do not need Git, a GitHub account, or any programming experience for
 this. You do need to be able to open a folder in File Explorer and run one
 command in a terminal — both are explained step by step below.
 
-**Fast install:** run `Indexer.bat` and follow the instructions.
+**Easiest way — the Windows installer.** Download
+`GClaude-Indexer-Setup-1.3.0.exe` from the
+[latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest)
+and double-click it. It asks where to install (just for you, or for
+everyone on the machine), shows the licence, lets you tick which
+dependencies to fetch, and downloads and installs all of them — Python
+3.12, Tesseract with the Portuguese language data, Ghostscript, Ollama
+and the classification model — with a progress bar and no terminal
+window at any point. Uninstalling is in Settings > Apps like any other
+program, and it asks, one by one, which shared dependencies should go
+with it.
+
+Windows SmartScreen will warn you before it runs: the installer is not
+code-signed, because a certificate costs money this project does not
+have. Click "More info" and then "Run anyway". You can check what you
+downloaded against the SHA-256 published with each release.
+
+**Without the installer:** run `Indexer.bat` and follow the
+instructions. Everything below describes this path, which also works on
+a machine where you cannot install programs.
 
 ---
 
