@@ -444,6 +444,27 @@ being used and, on the Result screen, the score is broken down into
 confidence, field completion and penalties, so you can see which of the
 three is costing you.
 
+### What the index guarantees
+
+Two properties hold no matter how well the model does its job, because the
+code enforces them rather than asking for them.
+
+**Every page reaches the index.** A page the model never mentioned still
+gets an entry — with its reference, its file and its own text as the
+summary — because the grouping walks the window's pages, not the model's
+answer. A piece that fails validation is discarded, but the pages it
+covered are picked up again as a low-confidence entry instead of
+disappearing with it. An index that silently omits a page is worse than no
+index at all: what is missing is invisible.
+
+**Dates keep the precision the document actually has.** Documents dated by
+period — "competência 01/2020", "exercício 2019" — are stored as `2020-01`
+and `2019`, not padded out to a first-of-the-month the page never stated.
+ISO 8601 allows the reduced form, and it still sorts correctly in
+`timeline.md`. A date whose day does not exist (`2021-09-31`) drops to the
+month; text that is not a date at all leaves the field empty, and the
+piece keeps everything else.
+
 ### Windows, blocks and OCR
 
 **Pages per window** is the setting that decides quality: it is how many
@@ -627,6 +648,8 @@ libraries, not from this project's own code.) See
   specification: data model, every processing step, security rules and
   design decisions, in more detail than this file.
 - [CHANGELOG.md](CHANGELOG.md) — what changed, release by release.
+  Translations: [Portuguese](docs/CHANGELOG.pt-BR.md),
+  [Spanish](docs/CHANGELOG.es.md).
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards for
   contributors.

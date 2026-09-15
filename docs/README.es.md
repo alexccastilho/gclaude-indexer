@@ -472,6 +472,28 @@ Si la nota de calidad parece baja, abra el registro: ahora informa cómo se
 está usando la GPU y, en la pantalla de Resultado, la nota viene desglosada
 en confianza, completitud de campos y penalizaciones.
 
+### Qué garantiza el índice
+
+Dos propiedades se cumplen por bien o mal que el modelo haga su trabajo,
+porque el código las impone en lugar de pedirlas.
+
+**Toda página llega al índice.** Una página que el modelo nunca mencionó
+recibe igualmente una entrada — con su referencia, su archivo y su propio
+texto como resumen — porque la agrupación recorre las páginas de la
+ventana, no la respuesta del modelo. Una pieza que no pasa la validación
+se descarta, pero las páginas que cubría se recogen de nuevo como entrada
+de confianza baja, en lugar de desaparecer con ella. Un índice que omite
+una página en silencio es peor que ningún índice: lo que falta es
+invisible.
+
+**Las fechas conservan la precisión que el documento realmente tiene.**
+Los documentos fechados por período — "competência 01/2020", "exercício
+2019" — se guardan como `2020-01` y `2019`, y no se rellenan hasta un
+primer día de mes que la página nunca afirmó. La ISO 8601 admite la forma
+reducida, y sigue ordenando correctamente en `timeline.md`. Una fecha cuyo
+día no existe (`2021-09-31`) baja al mes; el texto que no es fecha en
+absoluto deja el campo vacío, y la pieza conserva todo lo demás.
+
 ### Ventanas, bloques y OCR
 
 **Páginas por ventana** es el campo que decide la calidad: es cuántas
@@ -655,8 +677,9 @@ de un entorno de desarrollo.
   completa, en inglés: modelo de datos, cada paso del procesamiento,
   reglas de seguridad y decisiones de diseño, con más detalle que este
   archivo.
-- [CHANGELOG.md](../CHANGELOG.md) — qué cambió, versión por versión (en
-  inglés, convención del formato).
+- [CHANGELOG.es.md](CHANGELOG.es.md) — qué cambió, versión por versión.
+  El original es el [CHANGELOG.md](../CHANGELOG.md) en inglés (convención
+  del formato); si ambos divergen, vale el inglés.
 - [SECURITY.md](../SECURITY.md) — cómo reportar una vulnerabilidad (en
   inglés).
 - [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) — normas de convivencia para
