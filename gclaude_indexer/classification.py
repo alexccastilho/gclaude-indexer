@@ -132,7 +132,7 @@ def item_to_dict(item: ClassifiedItem, window_key: str, group: str) -> dict:
         "order_start": item.start_order,
         "order_end": item.end_order,
         "type": normalize_type(item.type),
-        "date": item.date,
+        "date": normalize_date(item.date),
         "author": item.author,
         "summary": item.summary,
         "has_table": bool(item.has_table),
@@ -144,6 +144,51 @@ def item_to_dict(item: ClassifiedItem, window_key: str, group: str) -> dict:
 
 
 _ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ISO_MONTH_REGEX = re.compile(r"^\d{4}-\d{2}$")
+_ISO_YEAR_REGEX = re.compile(r"^\d{4}$")
+
+
+def normalize_date(value: object) -> str | None:
+    """A data na maior precisão que ela realmente sustenta, ou `None`.
+
+    Documentos contábeis e administrativos datam por competência — "jan/
+    2020", "exercício 2019" — e o modelo devolve `2020-01` porque é o que
+    o documento diz. Exigir `AAAA-MM-DD` fazia a peça INTEIRA ser
+    descartada por causa de um campo opcional: numa corrida real de 2904
+    páginas foram 20 peças perdidas, todas por isso.
+
+    A precisão reduzida é ISO 8601 legítima e, o que decide aqui, ordena
+    corretamente na ordenação lexicográfica que `artifacts.py` usa na
+    linha do tempo (`2019-12` < `2020-01` < `2020-01-05`). Então ela é
+    guardada como veio, em vez de virar um dia 1 que o documento não
+    afirma.
+
+    Quando a precisão mais fina não se sustenta, cai um degrau em vez de
+    sumir: `2021-09-31` (dia que não existe) vira `2021-09`, porque o mês
+    continua confiável. O que não é data nenhuma — um intervalo, uma data
+    em formato brasileiro — vira `None`, e a peça segue sem ela.
+    """
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+
+    if _ISO_DATE_REGEX.match(text):
+        try:
+            date.fromisoformat(text)
+            return text
+        except ValueError:
+            text = text[:7]  # o dia não existe; o mês ainda pode valer
+
+    if _ISO_MONTH_REGEX.match(text):
+        if 1 <= int(text[5:7]) <= 12:
+            return text
+        text = text[:4]  # mês impossível; sobra o ano
+
+    if _ISO_YEAR_REGEX.match(text):
+        return text
+
+    return None
 
 
 def validate_item(item: dict) -> list[str]:
@@ -174,13 +219,15 @@ def validate_item(item: dict) -> list[str]:
 
     date_str = item.get("date")
     if date_str is not None:
-        if not isinstance(date_str, str) or not _ISO_DATE_REGEX.match(date_str):
-            errors.append(f"data fora do formato ISO (AAAA-MM-DD): {date_str!r}")
-        else:
-            try:
-                date.fromisoformat(date_str)
-            except ValueError:
-                errors.append(f"data não é uma data de calendário válida: {date_str!r}")
+        # A forma canônica é o que `normalize_date` devolveria: AAAA,
+        # AAAA-MM ou AAAA-MM-DD, esta última existindo no calendário.
+        # Qualquer outra coisa não passou por `item_to_dict` e a
+        # validação segue sendo a rede de segurança.
+        canonical = normalize_date(date_str)
+        if canonical is None:
+            errors.append(f"data fora do formato ISO (AAAA, AAAA-MM ou AAAA-MM-DD): {date_str!r}")
+        elif canonical != date_str:
+            errors.append(f"data não é uma data de calendário válida: {date_str!r}")
 
     if item.get("engine") not in VALID_ENGINES:
         errors.append(f"motor inválido: {item.get('engine')!r}")

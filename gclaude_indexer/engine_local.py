@@ -328,22 +328,36 @@ class LocalEngine:
     def plan_gpu_use(self, prompt: str, page_count: int = 0) -> dict | None:
         """Replaces `num_gpu = -1` with a measured layer count.
 
-        Called once per run, with the first window's prompt as the sample
-        for how wide the context has to be. Returns the details of the
-        decision (for the log) or `None` when nothing could be measured and
-        the previous behaviour stands.
+        Runs on the first window and again whenever a later window needs
+        more context than the one measured so far. Returns the details of
+        the decision (for the log) or `None` when nothing could be measured
+        and the previous behaviour stands.
+
+        It used to run exactly once, sizing the whole run by the first
+        window. A denser window further in then overflowed the context the
+        first one had asked for, Ollama truncated the answer, the JSON came
+        back unclosed and the parser got zero rows — the window reached the
+        index with no classification at all. Measured on a real 2904-page
+        run: 72 of 484 windows.
+
+        The context only ever grows. A `num_ctx` that oscillates makes
+        Ollama reload the model between windows, which is what the single
+        measurement was avoiding in the first place.
 
         Never runs in "cpu" mode (`num_gpu == 0`): that is the user asking
         for the CPU on purpose, and no measurement overrides it.
         """
-        if self._planned or self.num_gpu == 0:
+        if self.num_gpu == 0:
+            return self.gpu_plan
+
+        context = context_tokens_for(prompt, page_count=page_count)
+        if self._planned and context <= (self.num_ctx or 0):
             return self.gpu_plan
         self._planned = True
 
         try:
             from .gpu_budget import plan
 
-            context = context_tokens_for(prompt, page_count=page_count)
             layers, details = plan(self.model, self.url_base, context)
         except Exception:
             # A measurement that fails must cost nothing: the run carries
@@ -1161,18 +1175,8 @@ def classify_pending(
                 items = rules_fallback_engine.classify(pages)
                 result.windows_via_rules_fallback += 1
 
-            # Garantia de cobertura (requisito central: nada pode faltar do
-            # índice). Feita aqui, e não dentro de `classify`, para valer
-            # também quando a janela falhou e caiu no motor de regras.
-            faltando = _uncovered_pages(pages, items)
-            if faltando:
-                items = items + _coverage_items(faltando)
-                record_event(
-                    conn, "classification", "warning", "log.local_engine.coverage_filled",
-                    {"window": window["key"], "pages": len(faltando)}, language=language,
-                )
-
-            for item in items:
+            def escrever(item: ClassifiedItem) -> bool:
+                """Valida e grava a peça. `False` quando ela foi recusada."""
                 item_dict = item_to_dict(item, window["key"], window["group_key"])
                 errors = validate_item(item_dict)
                 if errors:
@@ -1182,7 +1186,7 @@ def classify_pending(
                         {"engine": item.engine, "window": window["key"], "errors": "; ".join(errors)},
                         language=language,
                     )
-                    continue
+                    return False
 
                 jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
                 result.items_generated += 1
@@ -1192,6 +1196,27 @@ def classify_pending(
                     result.medium_confidence += 1
                 else:
                     result.low_confidence += 1
+                return True
+
+            gravadas = [item for item in items if escrever(item)]
+
+            # Garantia de cobertura (requisito central: nada pode faltar do
+            # índice). Feita aqui, e não dentro de `classify`, para valer
+            # também quando a janela falhou e caiu no motor de regras.
+            #
+            # Depois da validação, e não antes: uma peça recusada não pode
+            # levar as páginas dela junto. Medido numa corrida real — 20
+            # peças recusadas por causa da data eram 20 faixas de páginas
+            # que sumiam do índice sem deixar rastro, porque a cobertura
+            # já tinha sido calculada contando com elas.
+            faltando = _uncovered_pages(pages, gravadas)
+            if faltando:
+                record_event(
+                    conn, "classification", "warning", "log.local_engine.coverage_filled",
+                    {"window": window["key"], "pages": len(faltando)}, language=language,
+                )
+                for item in _coverage_items(faltando):
+                    escrever(item)
 
             conn.execute("UPDATE window SET status = 'done' WHERE id = ?", (window["id"],))
             conn.commit()

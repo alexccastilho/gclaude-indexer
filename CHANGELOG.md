@@ -10,6 +10,56 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.3.1] — 2026-09-15
+
+Phase 20. Three things a real run was losing in silence.
+
+Found by reading the log of a 2904-page indexing run (44 files, 484
+windows, `qwen3.5:4b` on an RTX 3060 Laptop). Nothing had crashed — the
+run reported `0 falhou(aram)` at every step — and that was the problem:
+all three defects reported themselves as warnings, or as nothing at all.
+
+### Fixed
+
+- **A piece is no longer thrown away because of the precision of its
+  date.** Accounting and administrative documents are dated by period —
+  "competência 01/2020", "exercício 2019" — and the model returns
+  `2020-01` because that is what the page says. Validation demanded a
+  strict `AAAA-MM-DD` and dropped the *entire* piece — type, author,
+  summary and all — over one optional field. That was all 20 of the run's
+  20 rejected pieces.
+
+  Reduced precision is now kept as it came. It is legitimate ISO 8601 and,
+  what settles it here, it sorts correctly under the lexicographic sort
+  the timeline in `artifacts.py` already uses (`2019-12` < `2020-01` <
+  `2020-01-05`) — so there is nothing to gain by inventing a first-of-the-
+  month the document never stated. A date whose finer precision does not
+  hold drops one step instead of vanishing: `2021-09-31`, a day that does
+  not exist, becomes `2021-09`, because the month is still good. Text that
+  is not a date at all — a range, a Brazilian-format date — clears the
+  field and the piece is written without it.
+
+- **A rejected piece no longer takes its pages out of the index with it.**
+  The coverage guarantee ran *before* validation, so pages covered only by
+  a piece that validation then refused ended up in no piece at all —
+  silently, since the coverage warning had already decided nothing was
+  missing. In the observed run that was 20 stretches of pages absent from
+  an index whose whole purpose is to say which page a thing is on.
+  Coverage is now computed from the pieces that actually survived
+  validation.
+
+- **The Ollama context is measured per window, not once per run.** It was
+  sized from the first window's prompt and frozen there. A denser window
+  further in overflowed it, the answer came back truncated, the JSON never
+  closed and the parser got zero rows — the window reached the index with
+  no classification at all, only a warning saying the model had not
+  answered about any of its pages. That was 72 of the run's 484 windows
+  (~15%), which is most of what the run reported as medium confidence. The
+  context is now remeasured whenever a window needs more than the widest
+  one so far, and only ever grows — an oscillating `num_ctx` would make
+  Ollama reload the model between windows, which is what the single
+  measurement was avoiding in the first place.
+
 ## [1.3.0] — 2026-09-13
 
 Phase 19. An installer for people who do not open a terminal.
