@@ -26,6 +26,8 @@ from gclaude_indexer.engine_local import (
     Generation,
     LocalEngine,
     _group_pages_into_items,
+    _looks_truncated,
+    context_tokens_for,
 )
 from gclaude_indexer.quality import _coverage
 
@@ -193,3 +195,49 @@ def test_generate_devolve_a_telemetria(monkeypatch):
     assert resultado.prompt_tokens == 5091
     assert resultado.response_tokens == 422
     assert resultado.context == 6144
+
+
+# --- A razão caracteres/token: constante chutada vs. medida ---------------
+
+def test_contexto_cresce_quando_a_razao_cai():
+    """O mesmo prompt precisa de mais contexto quando o conteúdo tokeniza
+    pior. Medido no acervo: prosa a 3,3 caracteres por token, tabela
+    contábil a 1,45."""
+    prompt = "x" * 9000
+
+    prosa = context_tokens_for(prompt, page_count=4, chars_per_token=3.0)
+    tabela = context_tokens_for(prompt, page_count=4, chars_per_token=1.45)
+
+    assert tabela > prosa
+
+
+def test_calibracao_aprende_a_razao_do_acervo():
+    """A janela íntegra ensina a razão real: 8241 caracteres que o modelo
+    leu como 5091 tokens são 1,62 caracteres por token, e não os 3,0 que a
+    constante supunha."""
+    motor = LocalEngine(model="fake", url_base="http://127.0.0.1:9")
+    assert motor._chars_per_token == 3.0
+
+    motor._calibrate("x" * 8241, Generation(text="{}", prompt_tokens=5091, context=8192))
+
+    assert motor._chars_per_token < 1.7
+
+
+def test_calibracao_ignora_a_chamada_truncada():
+    """Num prompt cortado, `prompt_eval_count` descreve o pedaço que sobrou
+    e não o prompt inteiro. Calibrar por ele ensinaria a razão errada."""
+    motor = LocalEngine(model="fake", url_base="http://127.0.0.1:9")
+
+    # 2050 tokens num contexto de 4096: a assinatura do truncamento.
+    motor._calibrate("x" * 8241, Generation(text="", prompt_tokens=2050, context=4096))
+
+    assert motor._chars_per_token == 3.0
+
+
+def test_assinatura_do_truncamento():
+    """Medido no Ollama 0.34: ele corta o prompt em exatamente metade do
+    contexto — 1026/2048, 1538/3072, 2050/4096."""
+    assert _looks_truncated(Generation(text="", prompt_tokens=2050, context=4096))
+    assert _looks_truncated(Generation(text="", prompt_tokens=1026, context=2048))
+    assert not _looks_truncated(Generation(text="", prompt_tokens=5091, context=6144))
+    assert not _looks_truncated(Generation(text="", prompt_tokens=0, context=0))

@@ -227,6 +227,17 @@ def _num_gpu_for(processing_mode: str) -> int:
 # never saw.
 _CHARS_PER_TOKEN = 3.0
 
+# Piso da calibração. Uma razão abaixo disto não descreve texto nenhum —
+# é resposta corrompida ou telemetria absurda — e aceitá-la infla o
+# contexto de todas as janelas seguintes, já que ele só cresce.
+_CHARS_PER_TOKEN_FLOOR = 1.2
+
+# Folga para reconhecer a assinatura do truncamento. O Ollama 0.34 corta o
+# prompt em exatamente metade do `num_ctx`, medido em 1026/2048,
+# 1538/3072 e 2050/4096 — sempre dois tokens acima da metade exata. 64 é
+# folga larga para uma assinatura que vem com erro de 2.
+_TRUNCATION_TOLERANCE = 64
+
 # Room for the model's own answer on top of the prompt.
 #
 # 1024 was sized for the ranges mode, whose reply is a handful of items. The
@@ -271,7 +282,27 @@ _CONTEXT_GRANULARITY = 1024
 _OLLAMA_DEFAULT_CONTEXT = 4096
 
 
-def context_tokens_for(prompt: str, model_limit: int = 0, page_count: int = 0) -> int:
+def _looks_truncated(generation: "Generation") -> bool:
+    """Se o Ollama cortou este prompt.
+
+    Comportamento observado, não documentado: quando o prompt não cabe, o
+    Ollama o trunca para metade do contexto pedido. É comportamento interno
+    e pode mudar de versão — por isso ele NUNCA decide sozinho se a janela
+    falhou (esse critério é o número de linhas devolvidas, em
+    `_classify_pages`). Serve para escolher o próximo `num_ctx` e para
+    descartar uma calibração que ensinaria a razão errada.
+    """
+    if not generation.context or not generation.prompt_tokens:
+        return False
+    return abs(generation.prompt_tokens - generation.context / 2) <= _TRUNCATION_TOLERANCE
+
+
+def context_tokens_for(
+    prompt: str,
+    model_limit: int = 0,
+    page_count: int = 0,
+    chars_per_token: float = _CHARS_PER_TOKEN,
+) -> int:
     """Context size to request for `prompt`.
 
     Never below Ollama's own default, so this can only ever widen the
@@ -282,7 +313,7 @@ def context_tokens_for(prompt: str, model_limit: int = 0, page_count: int = 0) -
     per-page mode — the reply grows with it, and a budget that does not
     grow along truncates the answer (see `_RESPONSE_TOKENS_PER_PAGE`).
     """
-    estimated = int(len(prompt) / _CHARS_PER_TOKEN) + _response_tokens_for(page_count)
+    estimated = int(len(prompt) / chars_per_token) + _response_tokens_for(page_count)
     rounded = -(-estimated // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
     wanted = max(_OLLAMA_DEFAULT_CONTEXT, rounded)
     if model_limit and model_limit > 0:
@@ -341,6 +372,27 @@ class LocalEngine:
     # and neither the card's capacity nor the model changes during a run.
     gpu_plan: dict | None = field(default=None, repr=False)
     _planned: bool = field(default=False, repr=False)
+    # A razão caracteres/token deste acervo, aprendida durante a corrida.
+    # `_CHARS_PER_TOKEN` é só a semente da primeira janela, quando ainda não
+    # há medição. Guardamos o MÍNIMO observado, e não a média, pela mesma
+    # assimetria que justificava a constante: superestimar custa um pouco de
+    # VRAM, subestimar custa a janela inteira.
+    _chars_per_token: float = field(default=_CHARS_PER_TOKEN, repr=False)
+
+    def _calibrate(self, prompt: str, generation: "Generation") -> None:
+        """Aprende a razão caracteres/token com o que o modelo acabou de ler.
+
+        Só vale para a chamada íntegra: num prompt truncado,
+        `prompt_eval_count` conta o pedaço que sobrou, e a razão calculada
+        sobre o prompt inteiro sairia otimista — exatamente o erro que se
+        quer corrigir.
+        """
+        if not generation.prompt_tokens or _looks_truncated(generation):
+            return
+        observada = len(prompt) / generation.prompt_tokens
+        self._chars_per_token = max(
+            _CHARS_PER_TOKEN_FLOOR, min(self._chars_per_token, observada)
+        )
 
     def plan_gpu_use(self, prompt: str, page_count: int = 0) -> dict | None:
         """Replaces `num_gpu = -1` with a measured layer count.
@@ -367,7 +419,9 @@ class LocalEngine:
         if self.num_gpu == 0:
             return self.gpu_plan
 
-        context = context_tokens_for(prompt, page_count=page_count)
+        context = context_tokens_for(
+            prompt, page_count=page_count, chars_per_token=self._chars_per_token
+        )
         if self._planned and context <= (self.num_ctx or 0):
             return self.gpu_plan
         self._planned = True
