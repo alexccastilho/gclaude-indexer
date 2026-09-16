@@ -238,6 +238,12 @@ _CHARS_PER_TOKEN_FLOOR = 1.2
 # folga larga para uma assinatura que vem com erro de 2.
 _TRUNCATION_TOLERANCE = 64
 
+# Contextos testados, do maior para o menor, ao medir o teto da placa. O
+# teto é o maior deles que o `gpu_budget` ainda consegue planejar sem
+# empurrar camadas para a RAM — medido numa RTX 3060 Laptop de 6 GB com
+# `qwen3.5:4b`: 33 de 33 camadas até 8192, nenhum plano em 12288.
+_CONTEXT_CEILING_CANDIDATES = (16384, 12288, 8192, 6144, 4096)
+
 # Room for the model's own answer on top of the prompt.
 #
 # 1024 was sized for the ranges mode, whose reply is a handful of items. The
@@ -378,6 +384,31 @@ class LocalEngine:
     # assimetria que justificava a constante: superestimar custa um pouco de
     # VRAM, subestimar custa a janela inteira.
     _chars_per_token: float = field(default=_CHARS_PER_TOKEN, repr=False)
+    # Maior `num_ctx` que a placa comporta sem transbordar para a RAM.
+    # Medido uma vez por corrida, junto do plano de GPU.
+    context_ceiling: int = field(default=0, repr=False)
+
+    def _measure_ceiling(self) -> int:
+        """O maior contexto que ainda cabe na placa.
+
+        Uma janela que precise de mais que isto é subdividida, e não
+        empurrada para a RAM: o acervo tem 1449 janelas, e uma janela seis
+        vezes mais lenta multiplicada por algumas centenas custa horas.
+        """
+        if self.context_ceiling:
+            return self.context_ceiling
+        from .gpu_budget import plan
+
+        self.context_ceiling = _OLLAMA_DEFAULT_CONTEXT
+        for candidato in _CONTEXT_CEILING_CANDIDATES:
+            try:
+                layers, _details = plan(self.model, self.url_base, candidato)
+            except Exception:
+                continue
+            if layers is not None:
+                self.context_ceiling = candidato
+                break
+        return self.context_ceiling
 
     def _calibrate(self, prompt: str, generation: "Generation") -> None:
         """Aprende a razão caracteres/token com o que o modelo acabou de ler.
@@ -394,7 +425,7 @@ class LocalEngine:
             _CHARS_PER_TOKEN_FLOOR, min(self._chars_per_token, observada)
         )
 
-    def plan_gpu_use(self, prompt: str, page_count: int = 0) -> dict | None:
+    def plan_gpu_use(self, prompt: str, page_count: int = 0, minimum: int = 0) -> dict | None:
         """Replaces `num_gpu = -1` with a measured layer count.
 
         Runs on the first window and again whenever a later window needs
@@ -422,6 +453,10 @@ class LocalEngine:
         context = context_tokens_for(
             prompt, page_count=page_count, chars_per_token=self._chars_per_token
         )
+        context = max(context, minimum)
+        teto = self._measure_ceiling()
+        if teto:
+            context = min(context, teto)
         if self._planned and context <= (self.num_ctx or 0):
             return self.gpu_plan
         self._planned = True
@@ -450,9 +485,38 @@ class LocalEngine:
         forma — com o que se souber dela.
         """
         self.last_window_warnings = []
+        return self._classify_pages(pages)
+
+    def _classify_pages(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
+        """A janela, subindo o contexto enquanto a resposta não a cobrir.
+
+        O gatilho é `linhas devolvidas < páginas`, e não a assinatura do
+        truncamento: o número de linhas é o que de fato importa e não
+        depende de comportamento interno do Ollama. A telemetria só escolhe
+        o próximo `num_ctx`.
+        """
         prompt = _build_page_prompt(pages, self.config)
         self.plan_gpu_use(prompt, page_count=len(pages))
-        rows = _pages_json(self._generate(prompt).text)
+        generation = self._generate(prompt)
+        self._calibrate(prompt, generation)
+        rows = _pages_json(generation.text)
+
+        if len(rows) < len(pages):
+            alvo = self._context_needed(generation, len(pages))
+            if alvo > (self.num_ctx or 0):
+                self.plan_gpu_use(prompt, page_count=len(pages), minimum=alvo)
+                generation = self._generate(prompt)
+                self._calibrate(prompt, generation)
+                novas = _pages_json(generation.text)
+                if len(novas) > len(rows):
+                    rows = novas
+
+        # Ainda faltando e há o que dividir: duas janelas menores cabem
+        # onde uma não coube. As PEÇAS são concatenadas, e não as linhas —
+        # cada metade numera as suas páginas de 1 a N.
+        if len(rows) < len(pages) and len(pages) > 1:
+            meio = len(pages) // 2
+            return self._classify_pages(pages[:meio]) + self._classify_pages(pages[meio:])
 
         faltantes = max(0, len(pages) - len(rows))
         if faltantes:
@@ -464,6 +528,22 @@ class LocalEngine:
                 {"missing": faltantes, "total": len(pages)},
             ))
         return _group_pages_into_items(pages, rows)
+
+    def _context_needed(self, generation: "Generation", page_count: int) -> int:
+        """O contexto que esta janela pedia, lido da tentativa que falhou.
+
+        Quando o prompt foi cortado não dá para saber de quanto ele
+        precisava — `prompt_eval_count` conta só o pedaço lido. Dobrar o
+        contexto é o passo que cobre a maior janela deste acervo numa
+        tentativa só: 4096 vira 8192, e a janela de 5091 tokens cabe.
+        """
+        if _looks_truncated(generation):
+            alvo = generation.context * 2
+        else:
+            alvo = generation.prompt_tokens + _response_tokens_for(page_count)
+        alvo = -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+        teto = self._measure_ceiling()
+        return min(alvo, teto) if teto else alvo
 
     def is_available(self) -> bool:
         request = urllib.request.Request(f"{self.url_base}/api/version", method="GET")
