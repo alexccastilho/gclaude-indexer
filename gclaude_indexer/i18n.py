@@ -706,6 +706,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "result.quality_missing_type": "{n} peça(s) sem tipo",
         "result.quality_missing_date": "{n} peça(s) sem data",
         "result.quality_missing_summary": "{n} peça(s) sem resumo",
+        "result.quality_pages_classified": "{n} de {total} página(s) descrita(s) pelo modelo",
         "result.quality_score_label": "Pontuação",
         "result.quality_warning": (
             "Esta pontuação mede a autoconfiança que o próprio motor declarou e o quanto ele "
@@ -1617,6 +1618,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "result.quality_missing_type": "{n} piece(s) missing type",
         "result.quality_missing_date": "{n} piece(s) missing date",
         "result.quality_missing_summary": "{n} piece(s) missing summary",
+        "result.quality_pages_classified": "{n} of {total} page(s) described by the model",
         "result.quality_score_label": "Score",
         "result.quality_warning": (
             "This score measures the confidence the engine itself declared and how many fields "
@@ -2525,6 +2527,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "result.quality_missing_type": "{n} pieza(s) sin tipo",
         "result.quality_missing_date": "{n} pieza(s) sin fecha",
         "result.quality_missing_summary": "{n} pieza(s) sin resumen",
+        "result.quality_pages_classified": "{n} de {total} página(s) descrita(s) por el modelo",
         "result.quality_score_label": "Puntuación",
         "result.quality_warning": (
             "Esta puntuación mide la autoconfianza que el propio motor declaró y cuánto completó "
