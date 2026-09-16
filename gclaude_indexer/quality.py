@@ -79,6 +79,45 @@ def _fill_rate(total: int, missing_type: int, missing_date: int) -> tuple[float,
     return 1 - (missing_type / total), False
 
 
+def _coverage(conn) -> tuple[int, int, int]:
+    """`(total, cobertas, classificadas)` das páginas do acervo.
+
+    *Coberta* é a página que cai dentro de alguma peça **do seu próprio
+    grupo**. *Classificada* é a página coberta por uma peça que o modelo de
+    fato descreveu — uma peça de confiança `low` é a garantia de cobertura
+    funcionando, não classificação.
+
+    A consulta anterior fazia isto em SQL e comparava `page.number`, que é
+    a página dentro do arquivo (1..391 no maior PDF do acervo), com
+    `item.start_order`, que é a folha do grupo (1..2830), sem join. Os dois
+    números não têm relação: removendo 967 peças do índice — um buraco de
+    500 folhas — ela seguiu marcando 100,0% contra 82,7% reais. A folha
+    sai de `page.reference` por `reference_number`, que é a mesma função
+    que gerou `item.start_order`.
+    """
+    from .classification import reference_number
+
+    faixas: dict[str, list[tuple[int, int, str]]] = {}
+    for group_key, start, end, confidence in conn.execute(
+        "SELECT group_key, start_order, end_order, confidence FROM item"
+    ):
+        faixas.setdefault(group_key, []).append((start, end, confidence))
+
+    total = cobertas = classificadas = 0
+    for group_key, reference in conn.execute(
+        "SELECT file.group_key, page.reference "
+        "FROM page JOIN file ON file.id = page.file_id"
+    ):
+        total += 1
+        folha = reference_number(reference or "")
+        dentro = [c for inicio, fim, c in faixas.get(group_key, []) if inicio <= folha <= fim]
+        if dentro:
+            cobertas += 1
+            if any(c != "low" for c in dentro):
+                classificadas += 1
+    return total, cobertas, classificadas
+
+
 def quality_summary(conn, config: ProjectConfig) -> dict:
     total_items = conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]
 
@@ -120,17 +159,14 @@ def quality_summary(conn, config: ProjectConfig) -> dict:
     # devolveram de 0 a 3 peças cobrindo 9,7% das páginas, TODAS com
     # confiança "high" e todos os campos preenchidos. Pela fórmula anterior
     # aquilo pontuava perto de 100 — a nota não olhava para o buraco.
-    total_pages = conn.execute("SELECT COUNT(*) FROM page").fetchone()[0]
-    covered_pages = conn.execute(
-        """
-        SELECT COUNT(*) FROM page
-        WHERE EXISTS (
-            SELECT 1 FROM item
-            WHERE page.number BETWEEN item.start_order AND item.end_order
-        )
-        """
-    ).fetchone()[0]
-    coverage = (covered_pages / total_pages) if total_pages else 0.0
+    total_pages, covered_pages, classified_pages = _coverage(conn)
+    # A nota mede a cobertura CLASSIFICADA, não a presença no índice.
+    # `_group_pages_into_items` emite uma peça para toda página da janela,
+    # então a presença é garantida por construção e valeria 40 de 40 pontos
+    # mesmo numa corrida em que o modelo não respondeu nada. `covered_pages`
+    # continua sendo reportado, porque distingue um buraco no índice — que
+    # não tem conserto a jusante — de uma página presente e mal descrita.
+    coverage = (classified_pages / total_pages) if total_pages else 0.0
 
     confidence_weight = 0.0
     fill_rate = 0.0
@@ -172,6 +208,8 @@ def quality_summary(conn, config: ProjectConfig) -> dict:
         "coverage_pct": round(coverage * 100, 1),
         "pages_total": total_pages,
         "pages_covered": covered_pages,
+        "pages_classified": classified_pages,
+        "classified_pct": round(coverage * 100, 1),
         "coverage_points": round(0.40 * coverage * 100, 1) if total_items else 0.0,
         "confidence_points": round(0.35 * confidence_weight * 100, 1) if total_items else 0.0,
         "fill_points": round(0.25 * fill_rate * 100, 1) if total_items else 0.0,

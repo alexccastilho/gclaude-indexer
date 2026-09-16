@@ -137,7 +137,7 @@ esto. Sí necesita poder abrir una carpeta en el Explorador de archivos y
 ejecutar un comando en una terminal — ambos se explican paso a paso abajo.
 
 **La forma más fácil — el instalador de Windows.** Descargue
-`GClaude-Indexer-Setup-1.3.1.exe` desde la
+`GClaude-Indexer-Setup-1.3.2.exe` desde la
 [versión más reciente](https://github.com/alexccastilho/gclaude-indexer/releases/latest)
 y haga doble clic. Pregunta dónde instalar (solo para usted o para todos
 los usuarios de la máquina), muestra la licencia, permite marcar qué

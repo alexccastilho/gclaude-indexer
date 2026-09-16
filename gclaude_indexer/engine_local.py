@@ -227,6 +227,23 @@ def _num_gpu_for(processing_mode: str) -> int:
 # never saw.
 _CHARS_PER_TOKEN = 3.0
 
+# Piso da calibração. Uma razão abaixo disto não descreve texto nenhum —
+# é resposta corrompida ou telemetria absurda — e aceitá-la infla o
+# contexto de todas as janelas seguintes, já que ele só cresce.
+_CHARS_PER_TOKEN_FLOOR = 1.2
+
+# Folga para reconhecer a assinatura do truncamento. O Ollama 0.34 corta o
+# prompt em exatamente metade do `num_ctx`, medido em 1026/2048,
+# 1538/3072 e 2050/4096 — sempre dois tokens acima da metade exata. 64 é
+# folga larga para uma assinatura que vem com erro de 2.
+_TRUNCATION_TOLERANCE = 64
+
+# Contextos testados, do maior para o menor, ao medir o teto da placa. O
+# teto é o maior deles que o `gpu_budget` ainda consegue planejar sem
+# empurrar camadas para a RAM — medido numa RTX 3060 Laptop de 6 GB com
+# `qwen3.5:4b`: 33 de 33 camadas até 8192, nenhum plano em 12288.
+_CONTEXT_CEILING_CANDIDATES = (16384, 12288, 8192, 6144, 4096)
+
 # Room for the model's own answer on top of the prompt.
 #
 # 1024 was sized for the ranges mode, whose reply is a handful of items. The
@@ -271,7 +288,27 @@ _CONTEXT_GRANULARITY = 1024
 _OLLAMA_DEFAULT_CONTEXT = 4096
 
 
-def context_tokens_for(prompt: str, model_limit: int = 0, page_count: int = 0) -> int:
+def _looks_truncated(generation: "Generation") -> bool:
+    """Se o Ollama cortou este prompt.
+
+    Comportamento observado, não documentado: quando o prompt não cabe, o
+    Ollama o trunca para metade do contexto pedido. É comportamento interno
+    e pode mudar de versão — por isso ele NUNCA decide sozinho se a janela
+    falhou (esse critério é o número de linhas devolvidas, em
+    `_classify_pages`). Serve para escolher o próximo `num_ctx` e para
+    descartar uma calibração que ensinaria a razão errada.
+    """
+    if not generation.context or not generation.prompt_tokens:
+        return False
+    return abs(generation.prompt_tokens - generation.context / 2) <= _TRUNCATION_TOLERANCE
+
+
+def context_tokens_for(
+    prompt: str,
+    model_limit: int = 0,
+    page_count: int = 0,
+    chars_per_token: float = _CHARS_PER_TOKEN,
+) -> int:
     """Context size to request for `prompt`.
 
     Never below Ollama's own default, so this can only ever widen the
@@ -282,12 +319,29 @@ def context_tokens_for(prompt: str, model_limit: int = 0, page_count: int = 0) -
     per-page mode — the reply grows with it, and a budget that does not
     grow along truncates the answer (see `_RESPONSE_TOKENS_PER_PAGE`).
     """
-    estimated = int(len(prompt) / _CHARS_PER_TOKEN) + _response_tokens_for(page_count)
+    estimated = int(len(prompt) / chars_per_token) + _response_tokens_for(page_count)
     rounded = -(-estimated // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
     wanted = max(_OLLAMA_DEFAULT_CONTEXT, rounded)
     if model_limit and model_limit > 0:
         wanted = min(wanted, model_limit)
     return wanted
+
+
+@dataclass
+class Generation:
+    """O que uma chamada ao Ollama devolveu, com a telemetria junto.
+
+    `prompt_tokens` é `prompt_eval_count`: quantos tokens do prompt o
+    modelo realmente leu, contados pelo tokenizador dele. Quando é menor
+    que o prompt enviado, o prompt foi cortado — e essa é a única forma de
+    saber, já que o Ollama trunca em silêncio e a versão 0.34 não expõe
+    endpoint de tokenização.
+    """
+
+    text: str
+    prompt_tokens: int = 0
+    response_tokens: int = 0
+    context: int = 0
 
 
 @dataclass
@@ -324,8 +378,54 @@ class LocalEngine:
     # and neither the card's capacity nor the model changes during a run.
     gpu_plan: dict | None = field(default=None, repr=False)
     _planned: bool = field(default=False, repr=False)
+    # A razão caracteres/token deste acervo, aprendida durante a corrida.
+    # `_CHARS_PER_TOKEN` é só a semente da primeira janela, quando ainda não
+    # há medição. Guardamos o MÍNIMO observado, e não a média, pela mesma
+    # assimetria que justificava a constante: superestimar custa um pouco de
+    # VRAM, subestimar custa a janela inteira.
+    _chars_per_token: float = field(default=_CHARS_PER_TOKEN, repr=False)
+    # Maior `num_ctx` que a placa comporta sem transbordar para a RAM.
+    # Medido uma vez por corrida, junto do plano de GPU.
+    context_ceiling: int = field(default=0, repr=False)
 
-    def plan_gpu_use(self, prompt: str, page_count: int = 0) -> dict | None:
+    def _measure_ceiling(self) -> int:
+        """O maior contexto que ainda cabe na placa.
+
+        Uma janela que precise de mais que isto é subdividida, e não
+        empurrada para a RAM: o acervo tem 1449 janelas, e uma janela seis
+        vezes mais lenta multiplicada por algumas centenas custa horas.
+        """
+        if self.context_ceiling:
+            return self.context_ceiling
+        from .gpu_budget import plan
+
+        self.context_ceiling = _OLLAMA_DEFAULT_CONTEXT
+        for candidato in _CONTEXT_CEILING_CANDIDATES:
+            try:
+                layers, _details = plan(self.model, self.url_base, candidato)
+            except Exception:
+                continue
+            if layers is not None:
+                self.context_ceiling = candidato
+                break
+        return self.context_ceiling
+
+    def _calibrate(self, prompt: str, generation: "Generation") -> None:
+        """Aprende a razão caracteres/token com o que o modelo acabou de ler.
+
+        Só vale para a chamada íntegra: num prompt truncado,
+        `prompt_eval_count` conta o pedaço que sobrou, e a razão calculada
+        sobre o prompt inteiro sairia otimista — exatamente o erro que se
+        quer corrigir.
+        """
+        if not generation.prompt_tokens or _looks_truncated(generation):
+            return
+        observada = len(prompt) / generation.prompt_tokens
+        self._chars_per_token = max(
+            _CHARS_PER_TOKEN_FLOOR, min(self._chars_per_token, observada)
+        )
+
+    def plan_gpu_use(self, prompt: str, page_count: int = 0, minimum: int = 0) -> dict | None:
         """Replaces `num_gpu = -1` with a measured layer count.
 
         Runs on the first window and again whenever a later window needs
@@ -350,7 +450,13 @@ class LocalEngine:
         if self.num_gpu == 0:
             return self.gpu_plan
 
-        context = context_tokens_for(prompt, page_count=page_count)
+        context = context_tokens_for(
+            prompt, page_count=page_count, chars_per_token=self._chars_per_token
+        )
+        context = max(context, minimum)
+        teto = self._measure_ceiling()
+        if teto:
+            context = min(context, teto)
         if self._planned and context <= (self.num_ctx or 0):
             return self.gpu_plan
         self._planned = True
@@ -379,9 +485,38 @@ class LocalEngine:
         forma — com o que se souber dela.
         """
         self.last_window_warnings = []
+        return self._classify_pages(pages)
+
+    def _classify_pages(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
+        """A janela, subindo o contexto enquanto a resposta não a cobrir.
+
+        O gatilho é `linhas devolvidas < páginas`, e não a assinatura do
+        truncamento: o número de linhas é o que de fato importa e não
+        depende de comportamento interno do Ollama. A telemetria só escolhe
+        o próximo `num_ctx`.
+        """
         prompt = _build_page_prompt(pages, self.config)
         self.plan_gpu_use(prompt, page_count=len(pages))
-        rows = _pages_json(self._generate(prompt))
+        generation = self._generate(prompt)
+        self._calibrate(prompt, generation)
+        rows = _pages_json(generation.text)
+
+        if len(rows) < len(pages):
+            alvo = self._context_needed(generation, len(pages))
+            if alvo > (self.num_ctx or 0):
+                self.plan_gpu_use(prompt, page_count=len(pages), minimum=alvo)
+                generation = self._generate(prompt)
+                self._calibrate(prompt, generation)
+                novas = _pages_json(generation.text)
+                if len(novas) > len(rows):
+                    rows = novas
+
+        # Ainda faltando e há o que dividir: duas janelas menores cabem
+        # onde uma não coube. As PEÇAS são concatenadas, e não as linhas —
+        # cada metade numera as suas páginas de 1 a N.
+        if len(rows) < len(pages) and len(pages) > 1:
+            meio = len(pages) // 2
+            return self._classify_pages(pages[:meio]) + self._classify_pages(pages[meio:])
 
         faltantes = max(0, len(pages) - len(rows))
         if faltantes:
@@ -393,6 +528,22 @@ class LocalEngine:
                 {"missing": faltantes, "total": len(pages)},
             ))
         return _group_pages_into_items(pages, rows)
+
+    def _context_needed(self, generation: "Generation", page_count: int) -> int:
+        """O contexto que esta janela pedia, lido da tentativa que falhou.
+
+        Quando o prompt foi cortado não dá para saber de quanto ele
+        precisava — `prompt_eval_count` conta só o pedaço lido. Dobrar o
+        contexto é o passo que cobre a maior janela deste acervo numa
+        tentativa só: 4096 vira 8192, e a janela de 5091 tokens cabe.
+        """
+        if _looks_truncated(generation):
+            alvo = generation.context * 2
+        else:
+            alvo = generation.prompt_tokens + _response_tokens_for(page_count)
+        alvo = -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+        teto = self._measure_ceiling()
+        return min(alvo, teto) if teto else alvo
 
     def is_available(self) -> bool:
         request = urllib.request.Request(f"{self.url_base}/api/version", method="GET")
@@ -408,7 +559,7 @@ class LocalEngine:
             return self.classify_per_page(pages)
         prompt = _build_prompt(pages, self.config)
         self.plan_gpu_use(prompt)
-        response_text = self._generate(prompt)
+        response_text = self._generate(prompt).text
         raw_items = _extract_items_json(response_text)
         reference_map = _reference_map(pages)
 
@@ -432,7 +583,7 @@ class LocalEngine:
         self.last_window_warnings = warnings
         return items
 
-    def _generate(self, prompt: str) -> str:
+    def _generate(self, prompt: str) -> Generation:
         options: dict = {
             "temperature": 0,
             # How many of the model's layers run on the GPU. `-1` asks
@@ -482,7 +633,12 @@ class LocalEngine:
         # some reason (model ignores `think`, old Ollama version) the text
         # still comes back in `thinking` with an empty `response`, use it
         # instead of treating the answer as empty.
-        return data.get("response") or data.get("thinking") or ""
+        return Generation(
+            text=data.get("response") or data.get("thinking") or "",
+            prompt_tokens=int(data.get("prompt_eval_count") or 0),
+            response_tokens=int(data.get("eval_count") or 0),
+            context=int(options.get("num_ctx") or 0),
+        )
 
 
 # How each `collection_type` reads in the prompt. The stored values are
@@ -794,7 +950,19 @@ def _group_pages_into_items(
         if assunto and resumo and not resumo.lower().startswith(assunto.lower()[:20]):
             resumo = f"{assunto}: {resumo}"[:_SUMMARY_CHAR_LIMIT]
 
-        confianca = "high" if dados.get("type") and dados.get("detail") else "medium"
+        # Três casos, não dois. Uma página sobre a qual o modelo não disse
+        # NADA entra no índice pelo agrupamento — essa garantia é o que
+        # impede a perda — mas não pode chegar ao relatório com a mesma
+        # confiança de uma linha que ele respondeu pela metade. Medido numa
+        # corrida real: 612 peças cegas saíram como `medium`, o resumo da
+        # etapa 6 fechou em `baixa=0` e a nota deu 89/100.
+        respondida = any(linha for _pagina, linha in atual)
+        if dados.get("type") and dados.get("detail"):
+            confianca = "high"
+        elif respondida:
+            confianca = "medium"
+        else:
+            confianca = "low"
         itens.append(ClassifiedItem(
             start_ref=primeira.reference,
             end_ref=ultima.reference,

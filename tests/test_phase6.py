@@ -255,7 +255,12 @@ def test_gerar_todos_os_artefatos_cria_os_quatro_arquivos(tmp_path):
 
     caminhos = generate_all_artifacts(conn, config, "pt")
 
-    assert set(caminhos) == {"index", "timeline", "review", "project_instructions"}
+    # Os quatro continuam sendo os artefatos do projeto. Desde a fase 21, o
+    # `index.md` é o sumário e cada grupo ganha o seu `index-<grupo>.md`,
+    # que entra no dicionário sob a chave `index:<arquivo>` — 5443 linhas
+    # num arquivo só eram demais para um Projeto do Claude consultar.
+    assert {"index", "timeline", "review", "project_instructions"} <= set(caminhos)
+    assert any(chave.startswith("index:") for chave in caminhos)
     for caminho in caminhos.values():
         assert caminho.exists()
         assert caminho.stat().st_size > 0
@@ -268,10 +273,16 @@ def test_indice_lista_peca_por_agrupador(tmp_path):
     _escrever_jsonl(saida, [_peca(type="MEMORANDO", summary="resumo do memorando")])
     import_and_consolidate(conn, config)
 
-    conteudo = generate_index_md(conn, config, "pt").read_text(encoding="utf-8")
-    assert "## volume_1" in conteudo
-    assert "MEMORANDO" in conteudo
-    assert "resumo do memorando" in conteudo
+    # Desde a fase 21 o `index.md` é o sumário: ele aponta o grupo e o
+    # arquivo onde está a tabela. A peça em si vive no índice do grupo.
+    caminhos = generate_index_md(conn, config, "pt")
+    sumario = caminhos[0].read_text(encoding="utf-8")
+    assert "volume_1" in sumario
+    assert "index-volume_1.md" in sumario
+
+    do_grupo = caminhos[1].read_text(encoding="utf-8")
+    assert "MEMORANDO" in do_grupo
+    assert "resumo do memorando" in do_grupo
 
 
 def test_cronologia_so_lista_pecas_com_data(tmp_path):

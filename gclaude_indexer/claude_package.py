@@ -41,8 +41,11 @@ projeto "{name}", mais este guia.
    comportar neste acervo, inclusive a regra de sempre confirmar valores
    no documento original antes de citar.
 3. Em **"Project knowledge"** (arquivos do projeto), envie os quatro
-   arquivos deste pacote: `index.md`, `timeline.md`, `review.md` e
-   `project_instructions.md` — o Claude usa o índice e a cronologia para
+   arquivos deste pacote: `index.md` (o sumário dos grupos), os
+   `index-<grupo>.md` de cada grupo, `timeline.md`, `review.md` e
+   `project_instructions.md` — para achar um documento, o Claude lê o
+   sumário, escolhe o grupo e abre o índice daquele grupo, e usa a
+   cronologia para
    localizar a peça certa, e a conferência para saber o que ainda está
    pendente.
 4. Mantenha a pasta de origem original (com os documentos-fonte)
@@ -73,8 +76,10 @@ project "{name}", plus this guide.
    Claude should behave for this collection, including the rule to always
    confirm values in the original document before citing them.
 3. In **"Project knowledge"**, upload all four files in this package:
-   `index.md`, `timeline.md`, `review.md` and
-   `project_instructions.md` — Claude uses the index and the chronology to
+   `index.md` (the summary of groups), one `index-<group>.md` per
+   group, `timeline.md`, `review.md` and `project_instructions.md` — to
+   find a document, Claude reads the summary, picks the group and opens
+   that group's index, and uses the chronology to
    locate the right piece, and the coverage report to know what is still
    pending.
 4. Keep the original source folder (with the source documents)
@@ -106,8 +111,10 @@ el proyecto "{name}", más esta guía.
    confirmar siempre los valores en el documento original antes de
    citarlos.
 3. En **"Project knowledge"**, suba los cuatro archivos de este paquete:
-   `index.md`, `timeline.md`, `review.md` e
-   `project_instructions.md` — Claude usa el índice y la cronología para
+   `index.md` (el resumen de los grupos), los `index-<grupo>.md` de cada
+   grupo, `timeline.md`, `review.md` y `project_instructions.md` — para
+   encontrar un documento, Claude lee el resumen, elige el grupo y abre el
+   índice de ese grupo, y usa la cronología para
    ubicar la pieza correcta, y el informe de cobertura para saber qué
    sigue pendiente.
 4. Mantenga la carpeta de origen original (con los documentos fuente)
@@ -145,5 +152,10 @@ def generate_claude_project_package(config: ProjectConfig, language: str) -> byt
             path = output_folder / file_name
             if path.exists():
                 zip_file.write(path, arcname=file_name)
+
+        # Os índices por grupo (fase 21). O `index.md` virou sumário: sem
+        # estes, o pacote leva o mapa e deixa o território para trás.
+        for extra in sorted(output_folder.glob("index-*.md")):
+            zip_file.write(extra, arcname=extra.name)
 
     return buffer.getvalue()

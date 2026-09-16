@@ -129,7 +129,7 @@ def _config_e_conn_vazios(tmp_path):
 def test_indice_em_ingles_nao_tem_texto_em_portugues(tmp_path):
     config, conn = _config_e_conn_vazios(tmp_path)
 
-    conteudo = generate_index_md(conn, config, "en").read_text(encoding="utf-8")
+    conteudo = generate_index_md(conn, config, "en")[0].read_text(encoding="utf-8")
 
     assert "# Index —" in conteudo
     assert "No item classified yet." in conteudo
@@ -142,7 +142,7 @@ def test_indice_em_ingles_nao_tem_texto_em_portugues(tmp_path):
 def test_indice_em_espanhol_traduz_titulo_e_texto_vazio(tmp_path):
     config, conn = _config_e_conn_vazios(tmp_path)
 
-    conteudo = generate_index_md(conn, config, "es").read_text(encoding="utf-8")
+    conteudo = generate_index_md(conn, config, "es")[0].read_text(encoding="utf-8")
 
     assert "# Índice —" in conteudo  # "Índice" também é a palavra em espanhol
     assert "Ninguna pieza clasificada hasta el momento." in conteudo

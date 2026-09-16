@@ -1360,8 +1360,12 @@ def test_a_cobertura_pesa_na_nota_de_qualidade(tmp_path):
     conn = connect(tmp_path / "p.db")
     init_schema(conn)
     conn.execute(
-        "INSERT INTO file (relative_path, name, extension, size, sha256, status) "
-        "VALUES ('a.pdf','a.pdf','pdf',1,'h','extracted')"
+        "INSERT INTO file (relative_path, name, extension, size, sha256, status, group_key) "
+        # `group_key` porque a cobertura passou a casar a folha da página com
+        # a faixa da peça DO MESMO grupo (fase 21): a consulta anterior
+        # comparava page.number com item.start_order sem join nenhum, e
+        # nenhum arquivo real chega aqui sem grupo.
+        "VALUES ('a.pdf','a.pdf','pdf',1,'h','extracted','g')"
     )
     for numero in range(1, 32):  # 31 páginas, como o laudo do benchmark
         conn.execute(

@@ -10,6 +10,72 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.3.2] — 2026-09-16
+
+### Fase 21 — contexto calibrado e nota honesta
+
+A fase 20 corrigiu o mecanismo e manteve o número errado que o alimenta.
+Numa indexação real de 2904 páginas na 1.3.1, **153 de 1449 janelas
+entraram no índice sem classificação nenhuma** — 612 peças, 11% do
+índice, com tipo, data e autor vazios e o OCR cru no lugar do resumo. O
+log fechou em `baixa=0` e a nota deu 89/100.
+
+#### Corrigido
+
+- **A razão caracteres/token deixa de ser um palpite.** `_CHARS_PER_TOKEN`
+  valia 3,0, medida em prosa portuguesa. O acervo é um processo com
+  volumes de prestação de contas, e tabela contábil tokeniza a **1,45** —
+  o recálculo por janela da fase 20 rodava e chegava curto toda vez. A
+  razão passa a ser aprendida durante a corrida com o `prompt_eval_count`
+  que o Ollama já devolve e o código descartava, guardando o mínimo
+  observado, com piso de 1,2. Medido no acervo real: a razão converge para
+  1,45 e as janelas que davam 0 de 4 páginas passam a sair com 4 de 4,
+  todas de confiança alta.
+
+- **Escada de retentativa.** O gatilho é "linhas devolvidas < páginas da
+  janela", que não depende de comportamento interno do Ollama. A
+  telemetria só escolhe o próximo contexto: prompt cortado dobra, prompt
+  íntegro com resposta faminta usa `prompt_eval + páginas × 220`. Acima do
+  teto da placa, medido por corrida, a janela é subdividida em vez de
+  transbordar para a RAM.
+
+- **A resposta sem orçamento.** Modo de falha que ninguém tinha visto: em
+  `num_ctx` 5120 o prompt de 5091 tokens cabe inteiro e sobram 29 para
+  responder. O JSON sai cortado e o log diz a mesma coisa do truncamento,
+  por causa oposta. A detecção passa a olhar os dois lados.
+
+- **A cobertura media coisa nenhuma.** A consulta comparava `page.number`,
+  que é a página dentro do arquivo, com `item.start_order`, que é a folha
+  do grupo, sem join por grupo. Prova direta: removendo 967 peças do
+  índice — um buraco de 500 folhas — ela seguiu marcando 100,0% onde o
+  valor real era 82,7%.
+
+- **A nota deixa de se pagar sozinha.** Os 40 pontos de cobertura eram
+  tautológicos: o agrupamento emite uma peça por página da janela, então a
+  página está sempre dentro de alguma peça. Passam a medir cobertura
+  *classificada* — páginas que o modelo descreveu. A mesma corrida que
+  valia 89 vale **83**, e é sobre 83 que a correção mostra ganho.
+
+- **A peça cega para de se passar por mediana.** A página sobre a qual o
+  modelo não disse nada continua entrando no índice pelo agrupamento —
+  essa garantia é o que impede a perda — mas agora com confiança `baixa`.
+  É o que devolve sentido ao `baixa=` do resumo da etapa 6.
+
+### Adicionado
+
+- **A linha do índice leva à página física do PDF.** `f. 417` é a página
+  145 do `Vol 2.pdf`, e o grupo tem 21 volumes; o índice nomeava o arquivo
+  e parava aí.
+
+- **Índice por grupo, com sumário.** O `index.md` saía com 5443 linhas e
+  1,58 MB num arquivo só, demais para um Projeto do Claude consultar de
+  forma confiável. Ele vira um sumário de poucos KB que aponta o grupo e o
+  arquivo; a tabela de cada grupo vai para `index-<grupo>.md`, e o pacote
+  do Projeto leva todos.
+
+638 testes passando, contra 618.
+
+
 ## [1.3.1] — 2026-09-15
 
 Phase 20. Three things a real run was losing in silence.

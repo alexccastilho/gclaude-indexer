@@ -1889,7 +1889,7 @@ def test_classificar_pendentes_registra_aviso_quando_peca_e_recusada_por_referen
     from gclaude_indexer.events import list_events
     from gclaude_indexer.extraction import extract_pages
     from gclaude_indexer.windows_prep import prepare_windows
-    from gclaude_indexer.engine_local import LocalEngine, classify_pending
+    from gclaude_indexer.engine_local import Generation, LocalEngine, classify_pending
     from gclaude_indexer.scanning import scan
 
     origem = tmp_path / "origem"
@@ -1921,7 +1921,12 @@ def test_classificar_pendentes_registra_aviso_quando_peca_e_recusada_por_referen
     monkeypatch.setattr(motor, "is_available", lambda: True)
     monkeypatch.setattr(
         motor, "_generate",
-        lambda prompt: '{"items": [{"ref_start": "f. 99", "ref_end": "f. 99", "confidence": "high"}]}',
+        # `Generation` desde a fase 21: `_generate` devolve a telemetria da
+        # chamada junto do texto, porque `prompt_eval_count` é o que
+        # denuncia um prompt truncado.
+        lambda prompt: Generation(
+            '{"items": [{"ref_start": "f. 99", "ref_end": "f. 99", "confidence": "high"}]}'
+        ),
     )
 
     resultado = classify_pending(conn, config, local_engine=motor)
