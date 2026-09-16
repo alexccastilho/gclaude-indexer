@@ -22,7 +22,11 @@ import json
 import sqlite3
 
 from gclaude_indexer import gpu_budget
-from gclaude_indexer.artifacts import _physical_pages
+from gclaude_indexer.artifacts import (
+    _physical_pages,
+    generate_index_md,
+    group_index_filename,
+)
 from gclaude_indexer.classification import WindowPage
 from gclaude_indexer.engine_local import (
     Generation,
@@ -423,3 +427,86 @@ def test_indice_sabe_a_pagina_fisica_do_pdf():
 
     assert mapa[("Processo", 3)] == ("vol1.pdf", 3)
     assert mapa[("Avulsos", 2)] == ("anexo.pdf", 2)
+
+
+def _config_minima(tmp_path):
+    from gclaude_indexer.config import ProjectConfig
+
+    return ProjectConfig(name="Acervo", source_folder=".", output_folder=str(tmp_path))
+
+
+def _banco_real(tmp_path):
+    """O esquema de verdade, porque `generate_index_md` lê a peça inteira —
+    faixa, tipo, data, autor, confiança, arquivo e resumo."""
+    from gclaude_indexer.db import connect, init_schema
+
+    conn = connect(tmp_path / "p.db")
+    init_schema(conn)
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, status, group_key) "
+        "VALUES ('vol1.pdf','vol1.pdf','pdf',1,'h','extracted','Processo')"
+    )
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, status, group_key) "
+        "VALUES ('anexo.pdf','anexo.pdf','pdf',1,'i','extracted','Avulsos')"
+    )
+    for numero in range(1, 5):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count, has_table, text) "
+            "VALUES (1, ?, ?, 100, 0, 0, 'x')", (numero, f"f. {numero}"),
+        )
+    for numero in range(1, 3):
+        conn.execute(
+            "INSERT INTO page (file_id, number, reference, char_count, image_count, has_table, text) "
+            "VALUES (2, ?, ?, 100, 0, 0, 'x')", (numero, f"f. {numero}"),
+        )
+    conn.commit()
+    return conn
+
+
+def test_indice_sai_em_sumario_mais_um_arquivo_por_grupo(tmp_path):
+    """5443 linhas e 1,58 MB num arquivo só é demais para um Projeto do
+    Claude recuperar de forma confiável. O sumário cabe em poucos KB e diz
+    qual arquivo abrir."""
+    conn = _banco_real(tmp_path)
+    conn.execute(
+        "INSERT INTO item (group_key, start_ref, end_ref, start_order, end_order, "
+        "type, date, engine, confidence, files) "
+        "VALUES ('Processo','f. 1','f. 4',1,4,'LAUDO','2026-01-01','local','high','vol1.pdf')"
+    )
+    conn.execute(
+        "INSERT INTO item (group_key, start_ref, end_ref, start_order, end_order, "
+        "type, date, engine, confidence, files) "
+        "VALUES ('Avulsos','f. 1','f. 2',1,2,'OFICIO','2026-01-02','local','high','anexo.pdf')"
+    )
+    conn.commit()
+
+    caminhos = generate_index_md(conn, _config_minima(tmp_path), "pt-BR")
+    conn.close()
+
+    nomes = [caminho.name for caminho in caminhos]
+    assert nomes[0] == "index.md"
+    assert group_index_filename("Processo") in nomes
+    assert group_index_filename("Avulsos") in nomes
+
+    sumario = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "Processo" in sumario and "Avulsos" in sumario
+    assert group_index_filename("Processo") in sumario, "o sumario aponta o caminho"
+    assert len(sumario) < 2000, "o sumario tem de ser pequeno"
+
+
+def test_linha_do_indice_por_grupo_traz_a_pagina_fisica(tmp_path):
+    """A folha do processo nao diz em que pagina de qual volume ela esta."""
+    conn = _banco_real(tmp_path)
+    conn.execute(
+        "INSERT INTO item (group_key, start_ref, end_ref, start_order, end_order, "
+        "type, date, engine, confidence, files) "
+        "VALUES ('Processo','f. 3','f. 4',3,4,'LAUDO','2026-01-01','local','high','vol1.pdf')"
+    )
+    conn.commit()
+
+    generate_index_md(conn, _config_minima(tmp_path), "pt-BR")
+    conn.close()
+
+    tabela = (tmp_path / group_index_filename("Processo")).read_text(encoding="utf-8")
+    assert "vol1.pdf, p. 3" in tabela

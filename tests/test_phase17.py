@@ -2550,7 +2550,11 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
     conn_completo, _ = _rodar_pipeline_completo(origem, completo)
     conn_completo.close()
 
-    for nome in ("index.md", "timeline.md", "review.md", "project_instructions.md"):
+    # `index-origem.md` desde a fase 21: o `index.md` virou sumário dos
+    # grupos e a tabela das peças passou para o índice de cada grupo. A
+    # equivalência tem de ser provada onde a tabela está.
+    for nome in ("index.md", "index-origem.md", "timeline.md", "review.md",
+                 "project_instructions.md"):
         if nome == "review.md":
             # The one artifact that legitimately differs: the updated
             # project knows about the removal and reports it, while the
@@ -2571,7 +2575,7 @@ def test_atualizar_produz_o_mesmo_que_reindexar_do_zero(tmp_path):
         atualizado = _sem_carimbo((incremental / nome).read_text(encoding="utf-8"))
         do_zero = _sem_carimbo((completo / nome).read_text(encoding="utf-8"))
 
-        if nome == "index.md":
+        if nome == "index-origem.md":
             # Non-vacuity guard, and part of the same defence as the plan
             # assertions above: two empty files compare equal. Without
             # this, an `index.md` that lost its table — or a collection

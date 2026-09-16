@@ -75,10 +75,21 @@ def _cell(value) -> str:
 # docstring. Shared with `web/app.py` (Result screen listing/preview) and
 # `claude_package.py` (Claude Project zip) so the four names live in one
 # place.
+# Quebra de linha dos artefatos, nomeada para nao se perder em escapes.
+NL = chr(10)
+
 INDEX_FILENAME = "index.md"
 TIMELINE_FILENAME = "timeline.md"
 REVIEW_FILENAME = "review.md"
 PROJECT_INSTRUCTIONS_FILENAME = "project_instructions.md"
+
+
+def group_index_filename(group_key: str) -> str:
+    """`index-<grupo>.md`, com o nome do grupo reduzido a caracteres
+    seguros para nome de arquivo em qualquer sistema."""
+    seguro = "".join(c if c.isalnum() or c in "-_" else "-" for c in group_key)
+    seguro = "-".join(parte for parte in seguro.split("-") if parte)
+    return f"index-{seguro or 'grupo'}.md"
 
 
 def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
@@ -103,52 +114,84 @@ def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
 # --- index.md ---------------------------------------------------------
 
 
-def generate_index_md(conn, config: ProjectConfig, language: str) -> Path:
+def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
+    """O sumário dos grupos, mais um índice por grupo.
+
+    Saía tudo num arquivo só: 5443 linhas e 1,58 MB na coleção que motivou
+    isto, demais para um Projeto do Claude recuperar de forma confiável. O
+    sumário cabe em poucos KB e diz qual arquivo abrir; a linha de cada
+    peça traz a página física do PDF, porque a folha do processo não diz
+    em que página de qual volume ela está.
+    """
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     items = _items(conn)
+    physical = _physical_pages(conn)
     by_group: dict[str, list] = {}
     for item in items:
         by_group.setdefault(item["group_key"], []).append(item)
 
-    lines = [
+    saida = Path(config.output_folder)
+    header = (
+        f"| {t('artifact.index.table_range')} | {t('artifact.index.table_type')} | "
+        f"{t('artifact.index.table_date')} | {t('artifact.index.table_author')} | "
+        f"{t('artifact.index.table_confidence')} | {t('artifact.index.table_source')} | "
+        f"{t('artifact.index.table_summary')} |"
+    )
+
+    resumo = [
         f"# {t('artifact.index.title')} — {config.name}",
         "",
         t("artifact.index.generated", timestamp=_now_iso(), count=len(items)),
     ]
-
     if not items:
-        lines += ["", t("artifact.index.empty")]
+        resumo += ["", t("artifact.index.empty")]
     else:
-        header = (
-            f"| {t('artifact.index.table_range')} | {t('artifact.index.table_type')} | "
-            f"{t('artifact.index.table_date')} | {t('artifact.index.table_author')} | "
-            f"{t('artifact.index.table_confidence')} | {t('artifact.index.table_source')} | "
-            f"{t('artifact.index.table_summary')} |"
-        )
-        for group in sorted(by_group):
-            lines += ["", f"## {group}", "", header, "|---|---|---|---|---|---|---|"]
-            for item in by_group[group]:
-                span = f"{item['start_ref']} – {item['end_ref']}"
-                lines.append(
-                    "| "
-                    + " | ".join(
-                        _cell(v)
-                        for v in (
-                            span,
-                            item["type"],
-                            item["date"],
-                            item["author"],
-                            item["confidence"],
-                            item["files"],
-                            item["summary"],
-                        )
-                    )
-                    + " |"
-                )
+        resumo += ["", f"## {t('artifact.index.summary_title')}", ""]
 
-    path = Path(config.output_folder) / INDEX_FILENAME
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+    caminhos: list[Path] = []
+    for group in sorted(by_group):
+        do_grupo = by_group[group]
+        nome = group_index_filename(group)
+        folhas = [item["start_order"] for item in do_grupo]
+        folhas += [item["end_order"] for item in do_grupo]
+        arquivos = {
+            physical[(group, item["start_order"])][0]
+            for item in do_grupo
+            if (group, item["start_order"]) in physical
+        }
+        resumo.append(t(
+            "artifact.index.summary_row",
+            group=group,
+            sheets=f"f. {min(folhas)}–{max(folhas)}" if folhas else "—",
+            files=len(arquivos),
+            file=nome,
+        ))
+
+        corpo = [
+            f"# {t('artifact.index.title')} — {group}", "",
+            header, "|---|---|---|---|---|---|---|",
+        ]
+        for item in do_grupo:
+            span = f"{item['start_ref']} – {item['end_ref']}"
+            origem = physical.get((group, item["start_order"]))
+            if origem:
+                arquivo, pagina = origem
+                span = f"{span} ({arquivo}, p. {pagina})"
+            corpo.append(
+                "| " + " | ".join(
+                    _cell(v) for v in (
+                        span, item["type"], item["date"], item["author"],
+                        item["confidence"], item["files"], item["summary"],
+                    )
+                ) + " |"
+            )
+        caminho = saida / nome
+        caminho.write_text(NL.join(corpo) + NL, encoding="utf-8")
+        caminhos.append(caminho)
+
+    principal = saida / INDEX_FILENAME
+    principal.write_text(NL.join(resumo) + NL, encoding="utf-8")
+    return [principal] + caminhos
 
 
 # --- timeline.md -------------------------------------------------------
@@ -474,12 +517,15 @@ def stale_artifacts(conn: sqlite3.Connection) -> ArtifactStaleness | None:
 
 
 def generate_all_artifacts(conn, config: ProjectConfig, language: str) -> dict[str, Path]:
+    indices = generate_index_md(conn, config, language)
     written = {
-        "index": generate_index_md(conn, config, language),
+        "index": indices[0],
         "timeline": generate_timeline_md(conn, config, language),
         "review": generate_review_md(conn, config, language),
         "project_instructions": generate_project_instructions_md(conn, config, language),
     }
+    for extra in indices[1:]:
+        written[f"index:{extra.stem}"] = extra
     # Last, and only on success: a state recorded for files that failed to
     # be written would claim they describe something they do not.
     record_artifact_state(conn)
