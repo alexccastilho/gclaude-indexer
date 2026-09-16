@@ -510,3 +510,24 @@ def test_linha_do_indice_por_grupo_traz_a_pagina_fisica(tmp_path):
 
     tabela = (tmp_path / group_index_filename("Processo")).read_text(encoding="utf-8")
     assert "vol1.pdf, p. 3" in tabela
+
+
+def test_pacote_do_projeto_leva_os_indices_por_grupo(tmp_path):
+    """O sumário sem os índices dos grupos é o mapa sem o território."""
+    import io as _io
+    import zipfile
+
+    from gclaude_indexer.claude_package import generate_claude_project_package
+
+    for nome in ("index.md", group_index_filename("Processo"),
+                 group_index_filename("Avulsos"), "timeline.md", "review.md",
+                 "project_instructions.md"):
+        (tmp_path / nome).write_text("conteudo", encoding="utf-8")
+
+    dados = generate_claude_project_package(_config_minima(tmp_path), "pt-BR")
+
+    with zipfile.ZipFile(_io.BytesIO(dados)) as zf:
+        nomes = zf.namelist()
+    assert group_index_filename("Processo") in nomes
+    assert group_index_filename("Avulsos") in nomes
+    assert "index.md" in nomes
