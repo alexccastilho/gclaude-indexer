@@ -22,6 +22,7 @@ import json
 import sqlite3
 
 from gclaude_indexer import gpu_budget
+from gclaude_indexer.artifacts import _physical_pages
 from gclaude_indexer.classification import WindowPage
 from gclaude_indexer.engine_local import (
     Generation,
@@ -409,3 +410,16 @@ def test_janela_de_uma_pagina_nao_entra_em_recursao(monkeypatch):
 
     assert [item.confidence for item in itens] == ["low"]
     assert motor.last_window_warnings, "a perda tem de ficar registrada"
+
+
+# --- O índice como ferramenta de consulta ----------------------------------
+
+def test_indice_sabe_a_pagina_fisica_do_pdf():
+    """f. 417 é a página 145 do Vol 2.pdf. Sem isso, quem consulta o índice
+    sabe o arquivo e não sabe onde abrir — o grupo Solstic tem 21 PDFs."""
+    conn = _banco_com_duas_familias()
+
+    mapa = _physical_pages(conn)
+
+    assert mapa[("Processo", 3)] == ("vol1.pdf", 3)
+    assert mapa[("Avulsos", 2)] == ("anexo.pdf", 2)

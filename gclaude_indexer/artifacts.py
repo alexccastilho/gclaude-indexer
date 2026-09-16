@@ -81,6 +81,25 @@ REVIEW_FILENAME = "review.md"
 PROJECT_INSTRUCTIONS_FILENAME = "project_instructions.md"
 
 
+def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
+    """De `(grupo, folha)` para `(arquivo, página dentro do arquivo)`.
+
+    A folha é a numeração do processo, contínua entre os PDFs do grupo; a
+    página é a do arquivo, que recomeça em 1 a cada volume. O índice trazia
+    só o nome do arquivo, e num grupo de 21 volumes isso não diz onde
+    abrir — `f. 417` é a página 145 do Vol 2.
+    """
+    from .classification import reference_number
+
+    mapa: dict[tuple[str, int], tuple[str, int]] = {}
+    for group_key, name, number, reference in conn.execute(
+        "SELECT file.group_key, file.name, page.number, page.reference "
+        "FROM page JOIN file ON file.id = page.file_id"
+    ):
+        mapa[(group_key, reference_number(reference or ""))] = (name, number)
+    return mapa
+
+
 # --- index.md ---------------------------------------------------------
 
 
