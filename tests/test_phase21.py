@@ -18,10 +18,15 @@ classificação nenhuma, e a nota declarou 89/100.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from gclaude_indexer.classification import WindowPage
-from gclaude_indexer.engine_local import _group_pages_into_items
+from gclaude_indexer.engine_local import (
+    Generation,
+    LocalEngine,
+    _group_pages_into_items,
+)
 from gclaude_indexer.quality import _coverage
 
 
@@ -138,3 +143,53 @@ def test_cobertura_classificada_ignora_peca_cega():
 
     assert (total, cobertas) == (6, 6), "toda pagina segue no indice"
     assert classificadas == 4, "as duas folhas cegas nao contam como classificadas"
+
+
+# --- A telemetria que o Ollama devolve e o código jogava fora --------------
+
+class _Resposta:
+    def __init__(self, dados: dict):
+        self._dados = dados
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return json.dumps(self._dados).encode("utf-8")
+
+
+class _OllamaFalso:
+    """Substitui `urlopen`. Guarda o `num_ctx` pedido em cada chamada e
+    devolve a telemetria que o Ollama real devolve."""
+
+    def __init__(self, respostas: list[dict]):
+        self.respostas = list(respostas)
+        self.contextos: list[int] = []
+
+    def __call__(self, request, timeout=None):
+        corpo = json.loads(request.data.decode("utf-8"))
+        self.contextos.append(corpo["options"].get("num_ctx"))
+        return _Resposta(self.respostas.pop(0))
+
+
+def test_generate_devolve_a_telemetria(monkeypatch):
+    """`prompt_eval_count` é a contagem de tokens do tokenizador do próprio
+    modelo. É o dado que denuncia o truncamento, e ele vinha sendo
+    descartado."""
+    falso = _OllamaFalso([
+        {"response": '{"pages": []}', "prompt_eval_count": 5091, "eval_count": 422}
+    ])
+    monkeypatch.setattr("gclaude_indexer.engine_local.urllib.request.urlopen", falso)
+    motor = LocalEngine(model="fake", url_base="http://127.0.0.1:9")
+    motor.num_ctx = 6144
+
+    resultado = motor._generate("prompt qualquer")
+
+    assert isinstance(resultado, Generation)
+    assert resultado.text == '{"pages": []}'
+    assert resultado.prompt_tokens == 5091
+    assert resultado.response_tokens == 422
+    assert resultado.context == 6144

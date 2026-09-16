@@ -291,6 +291,23 @@ def context_tokens_for(prompt: str, model_limit: int = 0, page_count: int = 0) -
 
 
 @dataclass
+class Generation:
+    """O que uma chamada ao Ollama devolveu, com a telemetria junto.
+
+    `prompt_tokens` é `prompt_eval_count`: quantos tokens do prompt o
+    modelo realmente leu, contados pelo tokenizador dele. Quando é menor
+    que o prompt enviado, o prompt foi cortado — e essa é a única forma de
+    saber, já que o Ollama trunca em silêncio e a versão 0.34 não expõe
+    endpoint de tokenização.
+    """
+
+    text: str
+    prompt_tokens: int = 0
+    response_tokens: int = 0
+    context: int = 0
+
+
+@dataclass
 class LocalEngine:
     model: str
     url_base: str = OLLAMA_BASE_URL
@@ -381,7 +398,7 @@ class LocalEngine:
         self.last_window_warnings = []
         prompt = _build_page_prompt(pages, self.config)
         self.plan_gpu_use(prompt, page_count=len(pages))
-        rows = _pages_json(self._generate(prompt))
+        rows = _pages_json(self._generate(prompt).text)
 
         faltantes = max(0, len(pages) - len(rows))
         if faltantes:
@@ -408,7 +425,7 @@ class LocalEngine:
             return self.classify_per_page(pages)
         prompt = _build_prompt(pages, self.config)
         self.plan_gpu_use(prompt)
-        response_text = self._generate(prompt)
+        response_text = self._generate(prompt).text
         raw_items = _extract_items_json(response_text)
         reference_map = _reference_map(pages)
 
@@ -432,7 +449,7 @@ class LocalEngine:
         self.last_window_warnings = warnings
         return items
 
-    def _generate(self, prompt: str) -> str:
+    def _generate(self, prompt: str) -> Generation:
         options: dict = {
             "temperature": 0,
             # How many of the model's layers run on the GPU. `-1` asks
@@ -482,7 +499,12 @@ class LocalEngine:
         # some reason (model ignores `think`, old Ollama version) the text
         # still comes back in `thinking` with an empty `response`, use it
         # instead of treating the answer as empty.
-        return data.get("response") or data.get("thinking") or ""
+        return Generation(
+            text=data.get("response") or data.get("thinking") or "",
+            prompt_tokens=int(data.get("prompt_eval_count") or 0),
+            response_tokens=int(data.get("eval_count") or 0),
+            context=int(options.get("num_ctx") or 0),
+        )
 
 
 # How each `collection_type` reads in the prompt. The stored values are
