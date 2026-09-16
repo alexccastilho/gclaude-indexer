@@ -794,7 +794,19 @@ def _group_pages_into_items(
         if assunto and resumo and not resumo.lower().startswith(assunto.lower()[:20]):
             resumo = f"{assunto}: {resumo}"[:_SUMMARY_CHAR_LIMIT]
 
-        confianca = "high" if dados.get("type") and dados.get("detail") else "medium"
+        # Três casos, não dois. Uma página sobre a qual o modelo não disse
+        # NADA entra no índice pelo agrupamento — essa garantia é o que
+        # impede a perda — mas não pode chegar ao relatório com a mesma
+        # confiança de uma linha que ele respondeu pela metade. Medido numa
+        # corrida real: 612 peças cegas saíram como `medium`, o resumo da
+        # etapa 6 fechou em `baixa=0` e a nota deu 89/100.
+        respondida = any(linha for _pagina, linha in atual)
+        if dados.get("type") and dados.get("detail"):
+            confianca = "high"
+        elif respondida:
+            confianca = "medium"
+        else:
+            confianca = "low"
         itens.append(ClassifiedItem(
             start_ref=primeira.reference,
             end_ref=ultima.reference,
