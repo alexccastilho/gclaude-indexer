@@ -363,3 +363,49 @@ def test_janela_que_responde_de_primeira_nao_repete(monkeypatch):
     motor.classify_per_page(pages)
 
     assert len(ollama.contextos) == 1
+
+
+def test_janela_acima_do_teto_e_subdividida(monkeypatch):
+    """Nem no contexto máximo da placa a janela cabe. Em vez de transbordar
+    para a RAM — uma janela seis vezes mais lenta, multiplicada por
+    centenas, custa horas —, ela é partida, e nenhuma página fica sem
+    descrição."""
+    _plan_com_teto(monkeypatch, teto=4096)
+
+    class _SoAceitaMetade(_OllamaSimulado):
+        """A janela inteira nunca cabe; as metades cabem."""
+
+        def __call__(self, request, timeout=None):
+            corpo = json.loads(request.data.decode("utf-8"))
+            paginas = corpo["prompt"].count("--- Página ")
+            self.prompt_tokens = 9000 if paginas > 2 else 1500
+            self.paginas = paginas
+            return super().__call__(request, timeout)
+
+    ollama = _SoAceitaMetade(prompt_tokens=9000, paginas=4)
+    monkeypatch.setattr("gclaude_indexer.engine_local.urllib.request.urlopen", ollama)
+    motor = LocalEngine(model="fake", url_base="http://127.0.0.1:9")
+    pages = [_page(f"f. {n}", "texto " * 400) for n in range(1, 5)]
+
+    itens = motor.classify_per_page(pages)
+
+    cobertas = set()
+    for item in itens:
+        for folha in range(item.start_order, item.end_order + 1):
+            cobertas.add(folha)
+    assert cobertas == {1, 2, 3, 4}, "toda folha continua descrita"
+    assert all(item.confidence != "low" for item in itens)
+
+
+def test_janela_de_uma_pagina_nao_entra_em_recursao(monkeypatch):
+    """Não há o que subdividir numa página só. A peça entra como `low` e a
+    corrida segue — mas o processo não pode travar."""
+    _plan_com_teto(monkeypatch, teto=4096)
+    ollama = _OllamaSimulado(prompt_tokens=90000, paginas=1)
+    monkeypatch.setattr("gclaude_indexer.engine_local.urllib.request.urlopen", ollama)
+    motor = LocalEngine(model="fake", url_base="http://127.0.0.1:9")
+
+    itens = motor.classify_per_page([_page("f. 1", "texto " * 400)])
+
+    assert [item.confidence for item in itens] == ["low"]
+    assert motor.last_window_warnings, "a perda tem de ficar registrada"
