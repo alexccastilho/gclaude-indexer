@@ -20,6 +20,11 @@ _tmp_*/
 Thumbs.db
 desktop.ini
 
+# Arte-fonte da marca, guardada fora do repositório: as versões que o
+# produto usa (logo.png, logo.ico, o ícone da web e as prévias sociais)
+# já estão versionadas.
+GClaude Indexer Logo.png
+
 # Project output — never commit a processed collection.
 # Both the current names and the pre-Phase-14 Portuguese ones: a folder
 # processed by an older version still carries the old names.
