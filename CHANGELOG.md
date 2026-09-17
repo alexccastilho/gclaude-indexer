@@ -10,9 +10,15 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
-## [Unreleased]
+## [1.3.4] — 2026-09-17
 
-### Added
+### Maintenance — a tools directory, and four pins moved forward
+
+No behaviour of the application changes in this release. What changes is
+what the repository carries alongside it, and which versions a fresh
+install pulls.
+
+#### Added
 
 - **`tools/`, for operations the product does not offer.** Maintenance
   scripts run by hand against an indexed project's output folder; the
@@ -25,6 +31,24 @@ carrying as unreleased.
   untouched it invalidates nothing. It refuses to reopen a window the
   acquis no longer has, and refuses failures that retrying cannot fix.
   Covered by `tests/test_tools_reprocessamento.py`.
+
+#### Changed
+
+- **Four pinned versions moved forward**, each merged with the full suite
+  green: `pillow` 10.4.0 → 12.3.0, `jinja2` 3.1.4 → 3.1.6,
+  `python-multipart` 0.0.12 → 0.0.31 and `pytest` 8.3.3 → 9.0.3. The CI
+  actions moved too: `actions/checkout` 5 → 7 and `actions/setup-python`
+  6 → 7.
+
+  This matters more than a routine bump because the installer ships
+  `requirements.txt` and `install.ps1` runs `pip install -r` from it on the
+  user's machine: until this release, a fresh install pulled the versions
+  pinned back in 1.3.0. The `jinja2` advisories are for its sandboxed
+  environment, which this project does not use — it renders its own
+  templates through `Jinja2Templates` — so the bump is hygiene, not an
+  exposure being closed. `pillow` is the one that earned a check beyond the
+  suite: it is a two-major jump, and it is reached from
+  `_extract_text_image`, the OCR path for loose image files.
 
 ## [1.3.3] — 2026-09-17
 

@@ -17,9 +17,15 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
-## [Não lançado]
+## [1.3.4] — 2026-09-17
 
-### Adicionado
+### Manutenção — um diretório de ferramentas, e quatro versões adiante
+
+Nenhum comportamento do aplicativo muda nesta versão. O que muda é o que o
+repositório carrega ao lado dele, e quais versões uma instalação nova
+baixa.
+
+#### Adicionado
 
 - **`tools/`, para operações que o produto não oferece.** Scripts de
   manutenção rodados à mão contra a pasta de saída de um projeto já
@@ -32,6 +38,23 @@ não lançado.
   origem*, então com os PDFs intactos ela não invalida nada. Ele se recusa
   a reabrir uma janela que o acervo não tem mais, e a reabrir falhas que
   repetir não resolve. Coberto por `tests/test_tools_reprocessamento.py`.
+
+#### Alterado
+
+- **Quatro versões fixadas foram adiante**, cada uma mergeada com a suíte
+  inteira verde: `pillow` 10.4.0 → 12.3.0, `jinja2` 3.1.4 → 3.1.6,
+  `python-multipart` 0.0.12 → 0.0.31 e `pytest` 8.3.3 → 9.0.3. As ações do
+  CI também: `actions/checkout` 5 → 7 e `actions/setup-python` 6 → 7.
+
+  Isso pesa mais do que uma atualização de rotina porque o instalador
+  empacota o `requirements.txt` e o `install.ps1` roda `pip install -r` a
+  partir dele na máquina do usuário: até esta versão, uma instalação nova
+  baixava as versões fixadas lá na 1.3.0. Os avisos do `jinja2` são sobre o
+  ambiente com sandbox, que este projeto não usa — ele renderiza os
+  próprios modelos via `Jinja2Templates` — então a atualização é higiene,
+  não uma exposição sendo fechada. O `pillow` é o que mereceu conferência
+  além da suíte: são dois majors de salto, e ele é alcançado por
+  `_extract_text_image`, o caminho de OCR de arquivos de imagem soltos.
 
 ## [1.3.3] — 2026-09-17
 
