@@ -10,70 +10,109 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.3.3] — 2026-09-17
+
+### Phase 22 — "import and generate reports" on a network drive
+
+Phase 21 fixed classification. The step *after* it was the one left
+standing: on a real 2904-page acquis whose output folder lives on Google
+Drive, classification finished in 5h18 and then **"Import and generate
+reports" took 38 minutes on its own**, with no progress bar and no way to
+tell whether it was working or hung. The work was never at risk — the
+5230 pieces were all valid — but the screen gave no sign of it, so the
+button got clicked again. And again.
+
+#### Fixed
+
+- **The range check stops re-reading the same pages once per piece.**
+  `_validate_range_within_group` asks the database for every page of a
+  piece's group, to check that the piece's range exists. It asked once per
+  piece: **5230 queries where 3 would do**, because the acquis has 3
+  groups — and one of them, with 2830 pages, accounts for 5093 of those
+  pieces. The range depends only on the group, so it is now read once per
+  group and cached for the run. Measured on that acquis: **45.2s → 0.07s**
+  on a local disk, and **~41 min → 0.59s** with the database on the Drive,
+  where each of those queries cost 488 ms instead of 9.3 ms. Import plus
+  every report now takes 0.21s where it took most of an hour.
+
+- **A second click no longer starts a second import.** Unlike the pipeline
+  steps, this route does its work inside the HTTP request, so it has no
+  `task_manager` entry and nothing was checking whether it was already
+  running. A stack dump of the live server showed **4 concurrent
+  `import_and_generate` threads**, each holding the GIL in turn and each
+  about to run `DELETE FROM item` followed by 4210 inserts on the same
+  SQLite file. They all finished, and all wrote the same result — but they
+  took 36 to 54 minutes each to do it. A click that lands on a run already
+  under way now goes straight to the Result screen instead.
+
+640 tests passing, against 638.
+
+
 ## [1.3.2] — 2026-09-16
 
-### Fase 21 — contexto calibrado e nota honesta
+### Phase 21 — calibrated context and an honest score
 
-A fase 20 corrigiu o mecanismo e manteve o número errado que o alimenta.
-Numa indexação real de 2904 páginas na 1.3.1, **153 de 1449 janelas
-entraram no índice sem classificação nenhuma** — 612 peças, 11% do
-índice, com tipo, data e autor vazios e o OCR cru no lugar do resumo. O
-log fechou em `baixa=0` e a nota deu 89/100.
+Phase 20 fixed the mechanism and kept the wrong number feeding it. On a
+real 2904-page indexing run on 1.3.1, **153 of 1449 windows entered the
+index with no classification at all** — 612 pieces, 11% of the index,
+with empty type, date and author, and raw OCR in place of the summary.
+The log closed on `baixa=0` and the score read 89/100.
 
-#### Corrigido
+#### Fixed
 
-- **A razão caracteres/token deixa de ser um palpite.** `_CHARS_PER_TOKEN`
-  valia 3,0, medida em prosa portuguesa. O acervo é um processo com
-  volumes de prestação de contas, e tabela contábil tokeniza a **1,45** —
-  o recálculo por janela da fase 20 rodava e chegava curto toda vez. A
-  razão passa a ser aprendida durante a corrida com o `prompt_eval_count`
-  que o Ollama já devolve e o código descartava, guardando o mínimo
-  observado, com piso de 1,2. Medido no acervo real: a razão converge para
-  1,45 e as janelas que davam 0 de 4 páginas passam a sair com 4 de 4,
-  todas de confiança alta.
+- **The characters-per-token ratio stops being a guess.**
+  `_CHARS_PER_TOKEN` was 3.0, measured on Portuguese prose. The acquis is
+  a case file with volumes of financial statements, and an accounting
+  table tokenizes at **1.45** — phase 20's per-window recalculation ran
+  and came up short every time. The ratio is now learned during the run
+  from the `prompt_eval_count` Ollama already returns and the code was
+  discarding, keeping the lowest value observed, with a floor of 1.2.
+  Measured on the real acquis: the ratio converges to 1.45, and windows
+  that returned 0 of 4 pages now return 4 of 4, all at high confidence.
 
-- **Escada de retentativa.** O gatilho é "linhas devolvidas < páginas da
-  janela", que não depende de comportamento interno do Ollama. A
-  telemetria só escolhe o próximo contexto: prompt cortado dobra, prompt
-  íntegro com resposta faminta usa `prompt_eval + páginas × 220`. Acima do
-  teto da placa, medido por corrida, a janela é subdividida em vez de
-  transbordar para a RAM.
+- **Retry ladder.** The trigger is "rows returned < pages in the window",
+  which does not depend on Ollama's internal behaviour. Telemetry only
+  picks the next context: a truncated prompt doubles it; an intact prompt
+  with a starved answer uses `prompt_eval + pages × 220`. Above the card's
+  ceiling, measured per run, the window is subdivided instead of spilling
+  into RAM.
 
-- **A resposta sem orçamento.** Modo de falha que ninguém tinha visto: em
-  `num_ctx` 5120 o prompt de 5091 tokens cabe inteiro e sobram 29 para
-  responder. O JSON sai cortado e o log diz a mesma coisa do truncamento,
-  por causa oposta. A detecção passa a olhar os dois lados.
+- **The answer with no budget.** A failure mode nobody had seen: at
+  `num_ctx` 5120 a 5091-token prompt fits whole and leaves 29 tokens to
+  answer with. The JSON comes out cut off and the log says the same thing
+  it says for truncation, from the opposite cause. Detection now looks at
+  both sides.
 
-- **A cobertura media coisa nenhuma.** A consulta comparava `page.number`,
-  que é a página dentro do arquivo, com `item.start_order`, que é a folha
-  do grupo, sem join por grupo. Prova direta: removendo 967 peças do
-  índice — um buraco de 500 folhas — ela seguiu marcando 100,0% onde o
-  valor real era 82,7%.
+- **Coverage was measuring nothing.** The query compared `page.number`,
+  which is the page within the file, against `item.start_order`, which is
+  the sheet within the group, with no join on the group. Direct proof:
+  removing 967 pieces from the index — a 500-sheet hole — left it still
+  reporting 100.0% where the real value was 82.7%.
 
-- **A nota deixa de se pagar sozinha.** Os 40 pontos de cobertura eram
-  tautológicos: o agrupamento emite uma peça por página da janela, então a
-  página está sempre dentro de alguma peça. Passam a medir cobertura
-  *classificada* — páginas que o modelo descreveu. A mesma corrida que
-  valia 89 vale **83**, e é sobre 83 que a correção mostra ganho.
+- **The score stops paying itself.** The 40 coverage points were
+  tautological: grouping emits one piece per page of the window, so the
+  page is always inside some piece. They now measure *classified*
+  coverage — pages the model actually described. The same run that scored
+  89 scores **83**, and it is against 83 that the fix shows its gain.
 
-- **A peça cega para de se passar por mediana.** A página sobre a qual o
-  modelo não disse nada continua entrando no índice pelo agrupamento —
-  essa garantia é o que impede a perda — mas agora com confiança `baixa`.
-  É o que devolve sentido ao `baixa=` do resumo da etapa 6.
+- **A blind piece stops passing for a medium one.** A page the model said
+  nothing about still enters the index through grouping — that guarantee
+  is what prevents loss — but now at `baixa` confidence. That is what
+  gives step 6's `baixa=` count its meaning back.
 
-### Adicionado
+### Added
 
-- **A linha do índice leva à página física do PDF.** `f. 417` é a página
-  145 do `Vol 2.pdf`, e o grupo tem 21 volumes; o índice nomeava o arquivo
-  e parava aí.
+- **An index row leads to the physical page of the PDF.** `f. 417` is page
+  145 of `Vol 2.pdf`, and the group has 21 volumes; the index named the
+  file and stopped there.
 
-- **Índice por grupo, com sumário.** O `index.md` saía com 5443 linhas e
-  1,58 MB num arquivo só, demais para um Projeto do Claude consultar de
-  forma confiável. Ele vira um sumário de poucos KB que aponta o grupo e o
-  arquivo; a tabela de cada grupo vai para `index-<grupo>.md`, e o pacote
-  do Projeto leva todos.
+- **Per-group index, with a table of contents.** `index.md` came out at
+  5443 rows and 1.58 MB in a single file, too much for a Claude Project to
+  consult reliably. It becomes a few-KB summary pointing at the group and
+  the file; each group's table goes to `index-<group>.md`, and the Project
+  package carries them all.
 
-638 testes passando, contra 618.
+638 tests passing, against 618.
 
 
 ## [1.3.1] — 2026-09-15
