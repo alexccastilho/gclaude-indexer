@@ -9,6 +9,7 @@ venv/
 # Machine-local development history (not part of the product)
 .remember/
 .superpowers/
+.claude/
 
 # Test and tooling artifacts
 .playwright-mcp/
