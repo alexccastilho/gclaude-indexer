@@ -17,6 +17,22 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [Não lançado]
+
+### Adicionado
+
+- **`tools/`, para operações que o produto não oferece.** Scripts de
+  manutenção rodados à mão contra a pasta de saída de um projeto já
+  indexado; o instalador não os distribui e a interface não os chama. O
+  primeiro, `reprocessar_janelas_com_falha.py`, devolve para `pending`
+  apenas as janelas que falharam numa corrida da etapa 6, para que uma
+  nova classificação tente de novo só essas em vez de reindexar o acervo
+  inteiro — a única transição de janela no código é `pending -> done`, e a
+  atualização incremental (fase 17) reage a mudanças nos *arquivos de
+  origem*, então com os PDFs intactos ela não invalida nada. Ele se recusa
+  a reabrir uma janela que o acervo não tem mais, e a reabrir falhas que
+  repetir não resolve. Coberto por `tests/test_tools_reprocessamento.py`.
+
 ## [1.3.3] — 2026-09-17
 
 ### Fase 22 — "Importar e gerar relatórios" num drive de rede

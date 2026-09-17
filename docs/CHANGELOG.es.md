@@ -17,6 +17,23 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [No publicado]
+
+### Añadido
+
+- **`tools/`, para operaciones que el producto no ofrece.** Scripts de
+  mantenimiento ejecutados a mano contra la carpeta de salida de un
+  proyecto ya indexado; el instalador no los distribuye y la interfaz no
+  los llama. El primero, `reprocessar_janelas_com_falha.py`, devuelve a
+  `pending` solo las ventanas que fallaron en una ejecución del paso 6,
+  para que una nueva clasificación reintente solo esas en lugar de
+  reindexar todo el acervo — la única transición de ventana en el código
+  es `pending -> done`, y la actualización incremental (fase 17) reacciona
+  a cambios en los *archivos de origen*, así que con los PDF intactos no
+  invalida nada. Se niega a reabrir una ventana que el acervo ya no tiene,
+  y a reabrir fallos que reintentar no resuelve. Cubierto por
+  `tests/test_tools_reprocessamento.py`.
+
 ## [1.3.3] — 2026-09-17
 
 ### Fase 22 — "Importar y generar informes" en una unidad de red

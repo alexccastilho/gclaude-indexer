@@ -10,6 +10,22 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [Unreleased]
+
+### Added
+
+- **`tools/`, for operations the product does not offer.** Maintenance
+  scripts run by hand against an indexed project's output folder; the
+  installer does not ship them and the interface does not call them. The
+  first one, `reprocessar_janelas_com_falha.py`, returns only the windows
+  that failed in a step-6 run to `pending`, so a new classification retries
+  just those instead of reindexing the whole acquis — the pipeline's only
+  window transition is `pending -> done`, and the incremental update
+  (phase 17) reacts to changes in the *source files*, so with the PDFs
+  untouched it invalidates nothing. It refuses to reopen a window the
+  acquis no longer has, and refuses failures that retrying cannot fix.
+  Covered by `tests/test_tools_reprocessamento.py`.
+
 ## [1.3.3] — 2026-09-17
 
 ### Phase 22 — "import and generate reports" on a network drive
