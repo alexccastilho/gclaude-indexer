@@ -17,6 +17,117 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.3.3] — 2026-09-17
+
+### Fase 22 — "Importar y generar informes" en una unidad de red
+
+La fase 21 corrigió la clasificación. La que quedó en pie fue la etapa
+*posterior*: en un acervo real de 2904 páginas cuya carpeta de salida está
+en Google Drive, la clasificación tardó 5h18 y entonces **"Importar y
+generar informes" tardó 38 minutos más por su cuenta**, sin barra de
+progreso y sin ninguna señal de que estuviera trabajando en vez de
+colgada. El trabajo nunca estuvo en riesgo — las 5230 piezas eran todas
+válidas — pero la pantalla no lo decía, así que se volvió a pulsar el
+botón. Y otra vez.
+
+#### Corregido
+
+- **La comprobación de rango deja de releer las mismas páginas una vez por
+  pieza.** `_validate_range_within_group` le pide a la base de datos todas
+  las páginas del agrupador de la pieza, para comprobar que su rango
+  existe. Lo pedía una vez por pieza: **5230 consultas donde bastaban 3**,
+  porque el acervo tiene 3 agrupadores — y uno de ellos, con 2830 páginas,
+  concentra 5093 de esas piezas. El rango solo depende del agrupador, así
+  que ahora se lee una vez por agrupador y se guarda durante la corrida.
+  Medido en ese acervo: **45,2s → 0,07s** en disco local, y **~41 min →
+  0,59s** con la base en la unidad de Drive, donde cada una de esas
+  consultas costaba 488 ms en lugar de 9,3 ms. La importación más todos
+  los informes ahora tarda 0,21s donde tardaba casi una hora.
+
+- **Un segundo clic ya no inicia una segunda importación.** A diferencia
+  de las etapas del pipeline, esta ruta hace su trabajo dentro de la
+  petición HTTP, por lo que no tiene entrada en `task_manager` y nada
+  comprobaba si ya estaba en marcha. Un volcado de pila del servidor en
+  uso mostró **4 hilos `import_and_generate` simultáneos**, cada uno
+  tomando el GIL por turnos y cada uno a punto de ejecutar
+  `DELETE FROM item` seguido de 4210 inserciones sobre el mismo archivo
+  SQLite. Todos terminaron, y todos escribieron el mismo resultado — pero
+  tardaron entre 36 y 54 minutos cada uno. Un clic que cae sobre una
+  corrida ya en marcha ahora va directo a la pantalla de Resultado.
+
+640 pruebas pasando, frente a 638.
+
+
+## [1.3.2] — 2026-09-16
+
+### Fase 21 — contexto calibrado y nota honesta
+
+La fase 20 corrigió el mecanismo y mantuvo el número equivocado que lo
+alimenta. En una indexación real de 2904 páginas en la 1.3.1, **153 de
+1449 ventanas entraron en el índice sin clasificación alguna** — 612
+piezas, el 11% del índice, con tipo, fecha y autor vacíos y el OCR en
+bruto en lugar del resumen. El registro cerró en `baixa=0` y la nota dio
+89/100.
+
+#### Corregido
+
+- **La razón caracteres/token deja de ser una conjetura.**
+  `_CHARS_PER_TOKEN` valía 3,0, medida en prosa portuguesa. El acervo es
+  un expediente con volúmenes de rendición de cuentas, y una tabla
+  contable tokeniza a **1,45** — el recálculo por ventana de la fase 20 se
+  ejecutaba y se quedaba corto siempre. La razón pasa a aprenderse durante
+  la corrida con el `prompt_eval_count` que Ollama ya devuelve y el código
+  descartaba, guardando el mínimo observado, con un suelo de 1,2. Medido
+  en el acervo real: la razón converge a 1,45 y las ventanas que daban 0
+  de 4 páginas pasan a salir con 4 de 4, todas de confianza alta.
+
+- **Escalera de reintento.** El disparador es "filas devueltas < páginas
+  de la ventana", que no depende del comportamiento interno de Ollama. La
+  telemetría solo elige el siguiente contexto: un prompt truncado lo
+  duplica; un prompt íntegro con respuesta hambrienta usa
+  `prompt_eval + páginas × 220`. Por encima del techo de la tarjeta,
+  medido por corrida, la ventana se subdivide en vez de desbordar a la
+  RAM.
+
+- **La respuesta sin presupuesto.** Un modo de fallo que nadie había
+  visto: con `num_ctx` 5120 el prompt de 5091 tokens cabe entero y sobran
+  29 para responder. El JSON sale cortado y el registro dice lo mismo que
+  para el truncamiento, por la causa opuesta. La detección pasa a mirar
+  ambos lados.
+
+- **La cobertura no medía nada.** La consulta comparaba `page.number`, que
+  es la página dentro del archivo, con `item.start_order`, que es el folio
+  del grupo, sin join por grupo. Prueba directa: quitando 967 piezas del
+  índice — un hueco de 500 folios — siguió marcando 100,0% donde el valor
+  real era 82,7%.
+
+- **La nota deja de pagarse sola.** Los 40 puntos de cobertura eran
+  tautológicos: la agrupación emite una pieza por página de la ventana, así
+  que la página siempre está dentro de alguna pieza. Pasan a medir
+  cobertura *clasificada* — páginas que el modelo describió. La misma
+  corrida que valía 89 vale **83**, y es sobre 83 que la corrección muestra
+  su ganancia.
+
+- **La pieza ciega deja de pasar por mediana.** La página sobre la que el
+  modelo no dijo nada sigue entrando en el índice por la agrupación — esa
+  garantía es lo que impide la pérdida — pero ahora con confianza `baixa`.
+  Es lo que le devuelve sentido al `baixa=` del resumen de la etapa 6.
+
+### Añadido
+
+- **La fila del índice lleva a la página física del PDF.** `f. 417` es la
+  página 145 de `Vol 2.pdf`, y el grupo tiene 21 volúmenes; el índice
+  nombraba el archivo y se detenía ahí.
+
+- **Índice por grupo, con sumario.** El `index.md` salía con 5443 filas y
+  1,58 MB en un solo archivo, demasiado para que un Proyecto de Claude lo
+  consulte de forma fiable. Pasa a ser un sumario de pocos KB que apunta al
+  grupo y al archivo; la tabla de cada grupo va a `index-<grupo>.md`, y el
+  paquete del Proyecto los lleva todos.
+
+638 pruebas pasando, frente a 618.
+
+
 ## [1.3.1] — 2026-09-15
 
 Fase 20. Tres cosas que una ejecución real perdía en silencio.

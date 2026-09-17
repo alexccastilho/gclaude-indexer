@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import MISSING, replace
@@ -75,7 +76,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.3.2"
+SYSTEM_VERSION = "1.3.3"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -965,12 +966,37 @@ def recheck_claude_code(request: Request, project_id: int):
     )
 
 
+# Guards "import and generate" against a second click while the first one is
+# still running. Unlike the pipeline steps, this route does its work inside
+# the HTTP handler, so it has no `task_manager` entry to check — and each
+# extra run would repeat `DELETE FROM item` plus thousands of inserts on the
+# same database. Seen live: 4 concurrent runs on a 5230-item project.
+_IMPORTS_IN_PROGRESS: set[int] = set()
+_IMPORTS_IN_PROGRESS_LOCK = threading.Lock()
+
+
 @app.post("/projects/{project_id}/import-and-generate", response_class=HTMLResponse)
 def import_and_generate(request: Request, project_id: int):
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    with _open_project(project_id) as (_entry, config, conn):
-        import_and_consolidate(conn, config, language=language)
-        generate_all_artifacts(conn, config, language)
+
+    with _IMPORTS_IN_PROGRESS_LOCK:
+        already_running = project_id in _IMPORTS_IN_PROGRESS
+        if not already_running:
+            _IMPORTS_IN_PROGRESS.add(project_id)
+
+    if already_running:
+        # The click landed on a run already under way: send the user to the
+        # result instead of starting a duplicate.
+        return RedirectResponse(url=f"/projects/{project_id}/result", status_code=303)
+
+    try:
+        with _open_project(project_id) as (_entry, config, conn):
+            import_and_consolidate(conn, config, language=language)
+            generate_all_artifacts(conn, config, language)
+    finally:
+        with _IMPORTS_IN_PROGRESS_LOCK:
+            _IMPORTS_IN_PROGRESS.discard(project_id)
+
     return RedirectResponse(url=f"/projects/{project_id}/result", status_code=303)
 
 
