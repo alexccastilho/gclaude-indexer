@@ -124,7 +124,7 @@ this. You do need to be able to open a folder in File Explorer and run one
 command in a terminal — both are explained step by step below.
 
 **Easiest way — the Windows installer.** Download
-`GClaude-Indexer-Setup-1.3.3.exe` from the
+`GClaude-Indexer-Setup-1.3.4.exe` from the
 [latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest)
 and double-click it. It asks where to install (just for you, or for
 everyone on the machine), shows the licence, lets you tick which
