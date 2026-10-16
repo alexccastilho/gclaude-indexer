@@ -150,7 +150,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\gclaude_indexer\*"; DestDir: "{app}\gclaude_indexer"; Flags: recursesubdirs ignoreversion; Excludes: "__pycache__,*.pyc"
 Source: "..\config\*"; DestDir: "{app}\config"; Flags: recursesubdirs ignoreversion
-Source: "..\docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs ignoreversion
+; docs\media holds the README GIFs and screenshots (~15 MB): GitHub needs
+; them, the installed app does not.
+Source: "..\docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs ignoreversion; Excludes: "media"
 Source: "..\install.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\uninstall.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\Indexer.bat"; DestDir: "{app}"; Flags: ignoreversion
