@@ -89,6 +89,16 @@ def merge_managed(
     return text
 
 
+def without_managed_block(existing: str) -> str:
+    """The file as the user would have it with the system gone."""
+    parts = _split(existing)
+    if parts is None:
+        return existing
+    before, after = parts[0].rstrip(), parts[1].strip()
+    text = before + ("\n\n" + after if before and after else after)
+    return text + "\n" if text else ""
+
+
 def write_managed(
     path: Path,
     generated: str,

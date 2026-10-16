@@ -82,9 +82,35 @@ def is_stale() -> bool:
     unanswerable question is not a reason to put a warning on the screen.
     Never raises.
     """
+    global _last_signature, _last_answer
     if _loaded_fingerprint is None:
         return False
     try:
-        return source_fingerprint() != _loaded_fingerprint
+        # Every screen asks, and the Execution screen asks several times
+        # every two seconds: reading and hashing the whole package from a
+        # Drive-synced folder on each of those was the heaviest thing the
+        # server did while idle. A `stat` per file is enough to know that
+        # nothing changed; the content is hashed only when something did,
+        # so a timestamp Drive rewrote still never raises a false alarm.
+        signature = _stat_signature()
+        if signature != _last_signature:
+            _last_answer = source_fingerprint() != _loaded_fingerprint
+            _last_signature = signature
+        return _last_answer
     except Exception:
         return False
+
+
+_last_signature: tuple | None = None
+_last_answer = False
+
+
+def _stat_signature() -> tuple:
+    entries = []
+    for path in sorted(_package_folder().rglob("*.py")):
+        try:
+            info = path.stat()
+        except OSError:
+            continue
+        entries.append((path.as_posix(), info.st_mtime_ns, info.st_size))
+    return (_loaded_fingerprint, tuple(entries))

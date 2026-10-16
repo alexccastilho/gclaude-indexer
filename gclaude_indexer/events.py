@@ -146,7 +146,14 @@ def record_event(
     return cursor.lastrowid
 
 
-def list_events(conn: sqlite3.Connection, step: str | None = None, language: str | None = None) -> list[dict]:
+def list_events(
+    conn: sqlite3.Connection,
+    step: str | None = None,
+    language: str | None = None,
+    *,
+    since: int | None = None,
+    last: int | None = None,
+) -> list[dict]:
     """Lists events, oldest first (optionally filtered by `step`).
 
     `language`, when given, retranslates every event that has a
@@ -156,13 +163,25 @@ def list_events(conn: sqlite3.Connection, step: str | None = None, language: str
     as stored (the language in effect at write time) — the on-disk log
     file already behaves this way (section 11.1), so this default keeps
     both readings consistent for a caller with no language of its own
-    (tests included)."""
-    if step is None:
-        cursor = conn.execute("SELECT * FROM event ORDER BY id")
-    else:
-        cursor = conn.execute("SELECT * FROM event WHERE step = ? ORDER BY id", (step,))
+    (tests included).
 
-    rows = [dict(row) for row in cursor.fetchall()]
+    `since` keeps only events after that id, and `last` only the newest N —
+    both in SQL, so the live log polled every two seconds reads a handful
+    of rows instead of the whole table, and translates only those."""
+    conditions, params = [], []
+    if step is not None:
+        conditions.append("step = ?")
+        params.append(step)
+    if since is not None:
+        conditions.append("id > ?")
+        params.append(since)
+    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+    if last is None:
+        cursor = conn.execute(f"SELECT * FROM event{where} ORDER BY id", params)
+        rows = [dict(row) for row in cursor.fetchall()]
+    else:
+        cursor = conn.execute(f"SELECT * FROM event{where} ORDER BY id DESC LIMIT ?", [*params, last])
+        rows = [dict(row) for row in reversed(cursor.fetchall())]
     if language is not None:
         for row in rows:
             message_key = row.get("message_key")

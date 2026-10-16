@@ -34,3 +34,22 @@ sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 os.environ.setdefault("GCLAUDE_INDEXER_LANGUAGE", "pt")
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _test_client_host():
+    """`TestClient` talks to the app as `http://testserver`. The app accepts
+    only loopback hosts (see `_request_is_trusted` in `web/app.py`), so the
+    suite adds that one name — for its own run, never in the shipped code."""
+    app_module = sys.modules.get("gclaude_indexer.web.app")
+    if app_module is None:
+        yield
+        return
+    added = "testserver" not in app_module.ALLOWED_HOSTS
+    app_module.ALLOWED_HOSTS.add("testserver")
+    yield
+    if added:
+        app_module.ALLOWED_HOSTS.discard("testserver")

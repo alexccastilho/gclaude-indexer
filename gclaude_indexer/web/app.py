@@ -27,8 +27,10 @@ import time
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import MISSING, replace
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -147,6 +149,72 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="GClaude Indexer", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
+
+
+# --- only the program's own pages may talk to the program --------------------
+#
+# The server listens on 127.0.0.1, but every page open in the user's browser
+# can send requests there. Without these checks a malicious site could post
+# "delete this project with its files", create projects in any folder, or
+# make Windows authenticate to its own server by asking this one to look at a
+# `\\attacker\share` path. Three checks, cheapest first:
+#
+# - `Host` must be loopback: a DNS-rebinding page reaches 127.0.0.1 under its
+#   own domain name, and is refused here before it can read any answer.
+# - `Sec-Fetch-Site` (sent by every current browser): a request another site
+#   started is refused — except a plain link with no parameters, so a
+#   bookmark or a link in a document still opens the screen.
+# - `Origin` on anything that changes state: the classic CSRF check, for a
+#   browser that does not send `Sec-Fetch-Site`.
+#
+# UNC paths are deliberately still accepted from the program's own forms:
+# corporate collections live on `\\server\share`, and the danger was never
+# the path, it was who chose it.
+ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _host_name(host_header: str) -> str:
+    host = host_header.strip().lower()
+    if host.startswith("["):  # IPv6 literal — never ours, which listens on 127.0.0.1
+        return host
+    return host.rsplit(":", 1)[0]
+
+
+def _request_is_trusted(request: Request) -> bool:
+    host_header = request.headers.get("host", "")
+    if _host_name(host_header) not in ALLOWED_HOSTS:
+        return False
+
+    site = request.headers.get("sec-fetch-site")
+    if site in ("cross-site", "same-site"):
+        return (
+            request.method in _SAFE_METHODS
+            and request.headers.get("sec-fetch-mode") == "navigate"
+            and not request.url.query
+        )
+
+    if request.method not in _SAFE_METHODS:
+        origin = request.headers.get("origin")
+        if origin is not None:
+            from urllib.parse import urlparse
+
+            if origin == "null" or urlparse(origin).netloc.lower() != host_header.strip().lower():
+                return False
+    return True
+
+
+@app.middleware("http")
+async def _only_own_pages(request: Request, call_next):
+    if not _request_is_trusted(request):
+        return Response(
+            "Pedido recusado: ele não veio das telas do GClaude Indexer. / "
+            "Request refused: it did not come from GClaude Indexer's own screens. / "
+            "Solicitud rechazada: no vino de las pantallas de GClaude Indexer.",
+            status_code=403,
+            media_type="text/plain; charset=utf-8",
+        )
+    return await call_next(request)
 
 
 class LockBlockedError(Exception):
@@ -341,6 +409,11 @@ def projects_screen(request: Request):
 
 @app.post("/projects/shared-catalog", response_class=HTMLResponse)
 async def set_shared_catalog(request: Request):
+    form = await request.form()
+    return await run_in_threadpool(_set_shared_catalog_body, request, form)
+
+
+def _set_shared_catalog_body(request: Request, form):
     """Points the catalog at a folder on the Drive (or clears it).
 
     Adopting the machine's existing projects into the shared file is part
@@ -352,7 +425,6 @@ async def set_shared_catalog(request: Request):
     from ..catalog import adopt_local_projects
     from ..settings import set_shared_catalog_folder
 
-    form = await request.form()
     set_shared_catalog_folder(str(form.get("shared_catalog_folder", "")))
     try:
         adopt_local_projects()
@@ -387,6 +459,10 @@ def new_project_screen(request: Request):
 @app.post("/projects/new", response_class=HTMLResponse)
 async def create_new_project(request: Request):
     form = await request.form()
+    return await run_in_threadpool(_create_new_project_body, request, form)
+
+
+def _create_new_project_body(request: Request, form):
 
     data: dict = {}
     for field in TEXT_FIELDS:
@@ -474,6 +550,11 @@ def open_project_screen(request: Request, folder: str = ""):
 
 @app.post("/projects/open", response_class=HTMLResponse)
 async def open_project(request: Request):
+    form = await request.form()
+    return await run_in_threadpool(_open_project_body, request, form)
+
+
+def _open_project_body(request: Request, form):
     """Two steps in one route: inspect, then (on confirmation) adopt.
 
     The inspection is read-only (`describe_project` opens the database with
@@ -483,7 +564,6 @@ async def open_project(request: Request):
     """
     from ..project import describe_project
 
-    form = await request.form()
     folder = str(form.get("existing_output_folder", "")).strip()
     confirmed = "confirm" in form
 
@@ -512,6 +592,10 @@ async def open_project(request: Request):
 @app.post("/select-folder", response_class=HTMLResponse)
 async def select_folder(request: Request):
     form = await request.form()
+    return await run_in_threadpool(_select_folder_body, request, form)
+
+
+def _select_folder_body(request: Request, form):
     # `field` is the form's internal DOM id/hook (see `_folder_field.html`,
     # `new_project.html`) — the same string as the input's `name=` (what
     # actually reaches the POST body) since both were unified to the
@@ -575,7 +659,7 @@ def run_screen(request: Request, project_id: int):
         # the JavaScript scrolled to the *bottom* on every refresh: the two
         # halves disagreed, so following the run meant being dragged to the
         # oldest of the visible lines every two seconds.
-        events = list_events(conn, language=language)[-LOG_LINES:]
+        events = list_events(conn, language=language, last=LOG_LINES)
         claude_code_status = None
         if config.classification_engine == "claude_code":
             # `prepare()` writes `CLAUDE.md` (idempotent) and must run
@@ -729,6 +813,11 @@ def update_screen(request: Request, project_id: int):
 
 @app.post("/projects/{project_id}/update", response_class=HTMLResponse)
 async def update_apply(request: Request, project_id: int):
+    form = await request.form()
+    return await run_in_threadpool(_update_apply_body, request, project_id, form)
+
+
+def _update_apply_body(request: Request, project_id: int, form):
     """Applies the plan, then sends the user to the Execution screen.
 
     The stale-plan check lives in `apply_update_plan`, not here: it is the
@@ -744,7 +833,6 @@ async def update_apply(request: Request, project_id: int):
     nothing at all.
     """
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    form = await request.form()
 
     with _open_project(project_id) as (entry, config, conn):
         # `_open_project`'s lock is the cross-machine one and the running
@@ -811,17 +899,16 @@ def log_fragment(request: Request, project_id: int, since: int | None = None):
     events in `DEFAULT_LANGUAGE`, ignoring the interface's actual language.
     """
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    # Capped either way: a screen left open while a very long step ran must
+    # not receive thousands of lines in one response.
     with _open_project(project_id) as (_entry, _config, conn):
-        events = list_events(conn, language=language)
+        events = list_events(conn, language=language, since=since, last=LOG_LINES)
 
     if since is None:
-        log_context = {"eventos": events[-LOG_LINES:], "known_steps": LOG_KNOWN_STEPS}
+        log_context = {"eventos": events, "known_steps": LOG_KNOWN_STEPS}
         return render(request, "_log.html", log_context)
 
-    # Capped like the full listing: a screen left open while a very long
-    # step ran must not receive thousands of lines in one response.
-    newer = [event for event in events if event["id"] > since][-LOG_LINES:]
-    return render(request, "_log_items.html", {"eventos": newer, "known_steps": LOG_KNOWN_STEPS})
+    return render(request, "_log_items.html", {"eventos": events, "known_steps": LOG_KNOWN_STEPS})
 
 
 @app.get("/projects/{project_id}/run/steps", response_class=HTMLResponse)
@@ -1093,10 +1180,16 @@ def download_claude_package(request: Request, project_id: int):
         content = generate_claude_project_package(config, language)
         file_name = f"claude_project_{config.name}.zip".replace(" ", "_")
 
+    # The project name is the user's free text: quoted in RFC 5987 form, with
+    # an ASCII fallback, so a `"` cannot break the header and an accent or
+    # a dash cannot turn the download into a 500.
+    ascii_name = "".join(c if c.isascii() and c.isprintable() and c not in '"\\' else "_" for c in file_name)
     return Response(
         content=content,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(file_name)}"
+        },
     )
 
 
@@ -1113,11 +1206,15 @@ def confirm_deletion(request: Request, project_id: int):
 
 @app.post("/projects/{project_id}/delete")
 async def delete_project_route(request: Request, project_id: int):
+    form = await request.form()
+    return await run_in_threadpool(_delete_project_route_body, request, project_id, form)
+
+
+def _delete_project_route_body(request: Request, project_id: int, form):
     entry = find_project(project_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
 
-    form = await request.form()
     delete_files = str(form.get("delete_files", "")) == "all"
 
     # Releases the lock and closes this session's connection before touching
@@ -1155,6 +1252,9 @@ def _back_to(request: Request) -> str:
     from urllib.parse import urlparse
 
     path = urlparse(referer).path or "/projects"
+    # "//evil.example/x" is a path to urlparse and a host to the browser.
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return "/projects"
     return path
 
 
