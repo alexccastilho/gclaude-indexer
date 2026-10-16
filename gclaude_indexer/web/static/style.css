@@ -1002,3 +1002,185 @@ html[data-theme="dark"] .completion-notice { background: var(--color-surface-alt
   .manual { grid-template-columns: 1fr; }
   .manual-toc { position: static; }
 }
+
+/* --- Temas novos (1.4) -------------------------------------------------------
+   Cada um redefine as 31 cores inteiras — nenhum herda texto de um tema e
+   fundo de outro. O movimento mora em motion.css e vale para todos. */
+
+/* Aurora: escuro profundo com brilho de gradiente ao fundo — para quem passa
+   horas na tela e quer algo moderno sem cansar a vista. */
+html[data-theme="aurora"] {
+  --color-text: #eceaf6;
+  --color-text-weak: #a29fbd;
+  --color-bg: #07070d;
+  --color-surface: rgba(22, 21, 36, 0.78);
+  --color-surface-alt: #1d1b30;
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-accent: #9d8cff;
+  --color-accent-strong: #c2b8ff;
+  --color-accent-weak: rgba(157, 140, 255, 0.16);
+  --color-accent-text: #0b0a16;
+  --color-error: #ff8fa3;
+  --color-error-bg: rgba(255, 92, 122, 0.12);
+  --color-ok: #6ee7b7;
+  --color-ok-bg: rgba(52, 211, 153, 0.12);
+  --color-warning: #fcd581;
+  --color-warning-bg: rgba(252, 213, 129, 0.1);
+  --color-warning-text: #fcd581;
+  --color-warning-border: rgba(252, 213, 129, 0.35);
+  --color-button-hover: rgba(157, 140, 255, 0.12);
+  --color-grid: rgba(255, 255, 255, 0.07);
+  --color-log-bg: #05050a;
+  --color-log-text: #d9d6ee;
+  --color-log-time: #6f6b8c;
+  --color-log-step: #9d8cff;
+  --color-preview-bg: #12111f;
+  --color-header-bg: rgba(10, 10, 20, 0.72);
+  --color-header-bg-alt: rgba(30, 28, 50, 0.8);
+  --color-header-text: #f1effa;
+  --color-cpu: #6ee7b7;
+  --color-ram: #9d8cff;
+  --color-gpu: #ff8fa3;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-floating: 0 24px 60px -20px rgba(0, 0, 0, 0.85);
+}
+
+/* Toga: claro, sóbrio e institucional — marinho com detalhe dourado, papel
+   levemente texturizado. Pensado para escritórios e uso corporativo. */
+html[data-theme="toga"] {
+  --color-text: #1b2438;
+  --color-text-weak: #5a6478;
+  --color-bg: #f7f4ee;
+  --color-surface: #fffdf9;
+  --color-surface-alt: #f1ece2;
+  --color-border: #e3dccd;
+  --color-accent: #1f3a68;
+  --color-accent-strong: #152a4d;
+  --color-accent-weak: #e7ecf5;
+  --color-accent-text: #fffdf9;
+  --color-error: #a3261b;
+  --color-error-bg: #f8e6e2;
+  --color-ok: #2f6b3f;
+  --color-ok-bg: #e5efe3;
+  --color-warning: #8f6213;
+  --color-warning-bg: #fbf0d8;
+  --color-warning-text: #6e4a0b;
+  --color-warning-border: #e2c37e;
+  --color-button-hover: #ece6d9;
+  --color-grid: #e8e1d3;
+  --color-log-bg: #141b2b;
+  --color-log-text: #dfe3ec;
+  --color-log-time: #7c869c;
+  --color-log-step: #d4ae5c;
+  --color-preview-bg: #f3eee4;
+  --color-header-bg: #152a4d;
+  --color-header-bg-alt: #1f3a68;
+  --color-header-text: #fbf7ee;
+  --color-cpu: #2f6b3f;
+  --color-ram: #1f3a68;
+  --color-gpu: #a3261b;
+  --shadow-card: 0 1px 0 rgba(27, 36, 56, 0.04), 0 8px 30px -14px rgba(27, 36, 56, 0.18);
+  --shadow-floating: 0 22px 50px -18px rgba(21, 42, 77, 0.35);
+}
+
+/* Grafite: escuro neutro e técnico, contraste firme e acento azul elétrico. */
+html[data-theme="graphite"] {
+  --color-text: #e6e8ec;
+  --color-text-weak: #9aa1ad;
+  --color-bg: #0d0e11;
+  --color-surface: #15171b;
+  --color-surface-alt: #1c1f25;
+  --color-border: #262a31;
+  --color-accent: #5b9dff;
+  --color-accent-strong: #8ab8ff;
+  --color-accent-weak: rgba(91, 157, 255, 0.14);
+  --color-accent-text: #07101f;
+  --color-error: #ff7b72;
+  --color-error-bg: rgba(255, 123, 114, 0.12);
+  --color-ok: #56d39a;
+  --color-ok-bg: rgba(86, 211, 154, 0.12);
+  --color-warning: #e3b341;
+  --color-warning-bg: rgba(227, 179, 65, 0.1);
+  --color-warning-text: #e3b341;
+  --color-warning-border: rgba(227, 179, 65, 0.35);
+  --color-button-hover: #20242b;
+  --color-grid: #22262d;
+  --color-log-bg: #08090b;
+  --color-log-text: #d4d8de;
+  --color-log-time: #6b7280;
+  --color-log-step: #5b9dff;
+  --color-preview-bg: #111317;
+  --color-header-bg: #0a0b0d;
+  --color-header-bg-alt: #15171b;
+  --color-header-text: #f2f4f7;
+  --color-cpu: #56d39a;
+  --color-ram: #5b9dff;
+  --color-gpu: #ff7b72;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 28px -14px rgba(0, 0, 0, 0.8);
+  --shadow-floating: 0 22px 54px -18px rgba(0, 0, 0, 0.9);
+}
+
+/* Oceano: claro e arejado, prata com verde-azulado, sombras bem difusas. */
+html[data-theme="ocean"] {
+  --color-text: #13262f;
+  --color-text-weak: #557079;
+  --color-bg: #eef3f5;
+  --color-surface: #ffffff;
+  --color-surface-alt: #e8f0f2;
+  --color-border: #d6e2e6;
+  --color-accent: #0b7f86;
+  --color-accent-strong: #08636a;
+  --color-accent-weak: #ddf1f2;
+  --color-accent-text: #ffffff;
+  --color-error: #b42318;
+  --color-error-bg: #fdebe9;
+  --color-ok: #137a52;
+  --color-ok-bg: #e2f4ec;
+  --color-warning: #8a5a00;
+  --color-warning-bg: #fff3d6;
+  --color-warning-text: #6b4600;
+  --color-warning-border: #ecca83;
+  --color-button-hover: #e3f0f2;
+  --color-grid: #dde8eb;
+  --color-log-bg: #0c1a20;
+  --color-log-text: #d6e6ea;
+  --color-log-time: #6f8d96;
+  --color-log-step: #5fd3d9;
+  --color-preview-bg: #f1f6f7;
+  --color-header-bg: #0c2a33;
+  --color-header-bg-alt: #12404b;
+  --color-header-text: #effafb;
+  --color-cpu: #137a52;
+  --color-ram: #0b7f86;
+  --color-gpu: #b42318;
+  --shadow-card: 0 1px 2px rgba(19, 38, 47, 0.04), 0 14px 40px -18px rgba(11, 127, 134, 0.22);
+  --shadow-floating: 0 24px 60px -22px rgba(12, 42, 51, 0.35);
+}
+
+/* Fundo da Aurora: duas manchas de luz fixas atrás de tudo (só opacidade e
+   transform animam, e o elemento é fixo — não repinta ao rolar). */
+html[data-theme="aurora"] body { background: var(--color-bg); }
+html[data-theme="aurora"] body::before {
+  content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(40vmax 40vmax at 18% 22%, rgba(124, 92, 255, 0.28), transparent 60%),
+    radial-gradient(36vmax 36vmax at 82% 70%, rgba(16, 185, 129, 0.18), transparent 60%),
+    radial-gradient(30vmax 30vmax at 60% 10%, rgba(236, 72, 153, 0.12), transparent 60%);
+  animation: aurora-drift 28s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-3vmax, 2vmax, 0) scale(1.08); }
+}
+html[data-theme="aurora"] .header { backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); }
+
+/* Toga: textura de papel quase imperceptível, fixa e sem eventos. */
+html[data-theme="toga"] body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1000; opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+html[data-theme="toga"] h1, html[data-theme="toga"] h2 { letter-spacing: -0.01em; }
+html[data-theme="toga"] h1::after {
+  content: ""; display: block; width: 2.5rem; height: 2px; margin-top: 0.45rem;
+  background: linear-gradient(90deg, #b8913f, transparent);
+}

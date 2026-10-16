@@ -28,7 +28,11 @@ default — nothing errors.
 from __future__ import annotations
 
 DEFAULT_THEME = "light"
-AVAILABLE_THEMES: tuple[str, ...] = ("light", "dark", "sepia", "high_contrast")
+AVAILABLE_THEMES: tuple[str, ...] = (
+    "light", "dark", "sepia", "high_contrast",
+    # 1.4: themes with more depth and motion (see `motion.css`).
+    "aurora", "toga", "graphite", "ocean",
+)
 THEME_COOKIE_NAME = "theme"
 
 

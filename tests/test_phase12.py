@@ -484,7 +484,7 @@ def test_ajuda_do_modelo_local_diz_a_verdade_sobre_o_modelo_usado(cliente, monke
 def test_tema_valido_aceita_os_quatro_e_recusa_desconhecido():
     from gclaude_indexer.web.theme import AVAILABLE_THEMES, DEFAULT_THEME, valid_theme
 
-    assert AVAILABLE_THEMES == ("light", "dark", "sepia", "high_contrast")
+    assert AVAILABLE_THEMES[:4] == ("light", "dark", "sepia", "high_contrast")  # 1.4 added more after these
     for tema in AVAILABLE_THEMES:
         assert valid_theme(tema) == tema
     assert valid_theme("roxo") == DEFAULT_THEME
