@@ -21,6 +21,7 @@ through `translate()` (moved to core in this same task, see `i18n.py`).
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -29,6 +30,7 @@ from pathlib import Path
 from .classification import reference_number
 from .config import ProjectConfig
 from .i18n import translate
+from .managed_block import write_managed
 
 # Kept in Portuguese on purpose: this is default *content* written into
 # `project_instructions.md` for the collection's own Claude Project, not UI
@@ -149,9 +151,16 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
         resumo += ["", f"## {t('artifact.index.summary_title')}", ""]
 
     caminhos: list[Path] = []
+    usados: set[str] = set()
     for group in sorted(by_group):
         do_grupo = by_group[group]
         nome = group_index_filename(group)
+        if nome in usados:
+            # "A/B" e "A-B" viram o mesmo nome seguro; sem o sufixo, um
+            # grupo sobrescreveria o índice do outro sem aviso.
+            sufixo = hashlib.sha1(group.encode("utf-8")).hexdigest()[:6]
+            nome = f"{nome[:-3]}-{sufixo}.md"
+        usados.add(nome)
         folhas = [item["start_order"] for item in do_grupo]
         folhas += [item["end_order"] for item in do_grupo]
         arquivos = {
@@ -191,6 +200,16 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
 
     principal = saida / INDEX_FILENAME
     principal.write_text(NL.join(resumo) + NL, encoding="utf-8")
+
+    # O índice de um grupo que sumiu do acervo não pode ficar para trás: o
+    # pacote do Claude leva todo `index-*.md` da pasta, e o Claude acharia
+    # peças de documentos que não existem mais.
+    for velho in saida.glob("index-*.md"):
+        if velho.name not in usados:
+            try:
+                velho.unlink()
+            except OSError:
+                pass
     return [principal] + caminhos
 
 
@@ -424,9 +443,16 @@ def generate_project_instructions_md(conn, config: ProjectConfig, language: str)
         extra_rules,
     ]
 
-    path = Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+    # Complementa, não substitui: o que o usuário escreveu fora do bloco — e
+    # as instruções que ele já usava, coladas no formulário — atravessam
+    # cada regeneração. Um arquivo de versão anterior às marcas traz a regra
+    # da fonte original (sempre em português) e é inteiramente nosso.
+    return write_managed(
+        Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME,
+        "\n".join(lines),
+        is_legacy=lambda text: SOURCE_OF_TRUTH_RULE in text,
+        user_text=config.existing_instructions,
+    )
 
 
 def pending_items(conn) -> dict:

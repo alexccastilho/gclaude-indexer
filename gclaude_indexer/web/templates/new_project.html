@@ -212,6 +212,10 @@
   <fieldset>
     <legend>{{ t('new_project.section_instructions') }}</legend>
 
+    <label for="existing_instructions">{{ t('new_project.existing_instructions') }} {{ m.tooltip(t, 'hint.existing_instructions') }}</label>
+    <textarea id="existing_instructions" name="existing_instructions" rows="4"
+              placeholder="{{ t('new_project.existing_instructions_placeholder') }}">{{ values.existing_instructions }}</textarea>
+
     <label for="role_instructions">{{ t('new_project.instructions_role') }} {{ m.tooltip(t, 'hint.instructions_role') }}</label>
     <textarea id="role_instructions" name="role_instructions" rows="3"
               placeholder="{{ t('new_project.instructions_role_placeholder') }}">{{ values.role_instructions }}</textarea>

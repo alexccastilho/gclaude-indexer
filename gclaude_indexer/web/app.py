@@ -97,7 +97,7 @@ LOG_LINES = 200
 # runs inside the classification step, not a step of its own) belongs there.
 # Without this set, `_log.html` falls back to showing the raw step key
 # instead of a translated label — see `import_items.py`'s module docstring.
-LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics"}
+LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics", "update"}
 
 # Presentation order of the engines in the form, from the simplest to use to
 # the one that demands the most from the user. `CLASSIFICATION_ENGINES`
@@ -206,7 +206,7 @@ INTEGER_FIELDS = ("pages_per_block", "pages_per_window", "overlap", "chars_per_p
 TEXT_FIELDS = (
     "name", "subject", "source_folder", "output_folder", "collection_type", "group_mode",
     "group_pattern", "ocr_language", "classification_engine", "local_model", "processing_mode",
-    "parallelism", "role_instructions", "extra_rules",
+    "parallelism", "role_instructions", "extra_rules", "existing_instructions",
 )
 
 

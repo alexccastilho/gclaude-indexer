@@ -101,6 +101,9 @@ def _insert_file(
         """,
         (relative_path, name, extension, size, file_hash, mtime, group_key, status),
     )
+    # Back in the folder, so no longer "removed" — otherwise `review.md`
+    # would go on listing a document that is right there in the index.
+    conn.execute("DELETE FROM removed_file WHERE relative_path = ?", (relative_path,))
 
 
 def _update_file(

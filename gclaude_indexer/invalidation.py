@@ -300,6 +300,11 @@ def _record_removals(conn: sqlite3.Connection, plan: UpdatePlan) -> int:
     """
     moment = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for change in plan.removed:
+        # One row per path: a path removed, returned and removed again is
+        # one document that left, not two.
+        conn.execute(
+            "DELETE FROM removed_file WHERE relative_path = ?", (change.relative_path,)
+        )
         conn.execute(
             "INSERT INTO removed_file (relative_path, name, removed_at)"
             " VALUES (?, ?, ?)",
@@ -312,7 +317,7 @@ def _file_row(conn: sqlite3.Connection, relative_path: str) -> sqlite3.Row | Non
     """The columns every branch below needs: the id to write by, and the
     two that say where this file's converted artifact would be."""
     return conn.execute(
-        "SELECT id, extension, needs_ocr FROM file WHERE relative_path = ?",
+        "SELECT id, extension, needs_ocr, sha256 FROM file WHERE relative_path = ?",
         (relative_path,),
     ).fetchone()
 
@@ -405,6 +410,9 @@ def apply_update_plan(
     discarded_keys: set[str] = set()
     discarded_groups: set[str] = set()
     reconverted: list[str] = []
+    renumbered: list[str] = []
+    doomed_intermediates: list[Path] = []
+    released_copies: list[str] = []
 
     try:
         conn.execute("BEGIN")
@@ -458,6 +466,24 @@ def apply_update_plan(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
             conn.execute("DELETE FROM file WHERE id = ?", (file_id,))
+            intermediate = converted_artifact_path(
+                config.output_folder, change.relative_path,
+                row["extension"], bool(row["needs_ocr"]),
+            )
+            if intermediate is not None:
+                doomed_intermediates.append(intermediate)
+            # A copy of this document that entered as 'duplicate' was never
+            # indexed — it leaned on the original that just left. Dropping
+            # its row lets the next update see it as the new document it now
+            # is; keeping it would silently take the content out of the index
+            # while the bytes are still in the folder.
+            for copy in conn.execute(
+                "SELECT id, relative_path FROM file"
+                " WHERE status = 'duplicate' AND sha256 = ?",
+                (row["sha256"],),
+            ).fetchall():
+                conn.execute("DELETE FROM file WHERE id = ?", (copy["id"],))
+                released_copies.append(copy["relative_path"])
         result.files_removed = _record_removals(conn, current)
 
         for change in current.changed:
@@ -513,6 +539,7 @@ def apply_update_plan(
                     " WHERE id = ?",
                     (status, file_id),
                 )
+                renumbered.append(relative_path)
                 if status == "converted":
                     result.files_renumbered += 1
                 else:
@@ -539,6 +566,15 @@ def apply_update_plan(
         except OSError:
             orphans.append(path.name)
     result.windows_orphaned = len(orphans)
+
+    # The OCR output of a document that left the collection is only disk
+    # space now — nothing will ever read it again. Best effort, same reason
+    # as the window files above.
+    for path in doomed_intermediates:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # Same side of the commit as the unlinks, and for a sharper version
     # of the same reason. Pruning before the commit would, on a
@@ -584,6 +620,29 @@ def apply_update_plan(
                     "count": len(reconverted),
                     "files": ", ".join(sorted(reconverted)),
                 },
+                language=language,
+            )
+
+        if renumbered:
+            # The sheet numbers ("f. N") of these documents moved. A Claude
+            # conversation that cited the old numbers is now pointing at the
+            # wrong page, and only the user can go back and fix that.
+            record_event(
+                conn,
+                "update",
+                "warning",
+                "log.update.renumbered",
+                {"count": len(renumbered), "files": ", ".join(sorted(renumbered))},
+                language=language,
+            )
+
+        if released_copies:
+            record_event(
+                conn,
+                "update",
+                "info",
+                "log.update.duplicate_released",
+                {"count": len(released_copies), "files": ", ".join(sorted(released_copies))},
                 language=language,
             )
 

@@ -143,6 +143,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.section_instructions": "Instruções do projeto",
         "new_project.instructions_role": "Papel nas instruções",
         "new_project.instructions_role_placeholder": "em branco usa o modelo padrão",
+        "new_project.existing_instructions": "Instruções que você já usa",
+        "new_project.existing_instructions_placeholder": "cole aqui as instruções atuais do seu Projeto no Claude — elas são mantidas",
         "new_project.extra_rules": "Regras extras",
         "new_project.processing_mode": "Processamento",
         "new_project.processing_mode_automatic": "automático (usa GPU ao máximo)",
@@ -280,6 +282,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "ele deve ser/fazer neste projeto). Deixe em branco para usar o texto padrão do "
             "sistema, adequado à maioria dos acervos."
         ),
+        "hint.existing_instructions": "Se o seu Projeto no Claude já tem instruções, cole-as aqui. Elas vão para o topo de project_instructions.md, e o texto gerado pelo GClaude Indexer entra logo abaixo, entre duas marcas. Nas atualizações, só o trecho entre as marcas é refeito: o que é seu nunca é apagado. Você também pode editar o arquivo à vontade fora das marcas.",
         "hint.extra_rules": (
             "Texto livre acrescentado ao final das instruções geradas — regras específicas deste "
             'acervo, ex. "sempre responda citando o número do processo" ou um glossário de siglas '
@@ -509,6 +512,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # `diagnose`/`choose_model`). Both needed a `step.*.title` entry so
         # `_log.html` stops showing the raw event-log step key.
         "step.import.title": "Importação",
+        "step.update.title": "Atualização",
         "step.diagnostics.title": "Diagnóstico de hardware",
         "step.scan.count": "{total} arquivo(s)",
         "step.conversion.count": "{converted} convertido(s), {failed} falhou(aram), {pending} pendente(s)",
@@ -646,6 +650,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "update.new": "Documentos novos",
         "update.changed": "Documentos alterados",
+        "update.removed_explained": "O que acontece com um documento removido: as páginas e as peças dele saem do índice, a cópia com OCR guardada em converted/ é apagada para liberar espaço, e o nome dele fica registrado em review.md como \"removido\". O arquivo original não é tocado — ele já não está na pasta. Se você devolver o documento à pasta, ele volta ao índice na próxima atualização.",
+        "update.renumbered": "Documentos que vão mudar de numeração",
+        "update.renumbered_explained": "Estes documentos não mudaram, mas vêm depois de um documento novo ou removido no mesmo grupo. A numeração de folhas (f. N) é contínua dentro do grupo, então as folhas deles vão mudar de número. O texto já extraído é reaproveitado (normalmente sem OCR de novo), mas as conversas antigas no Claude que citam folhas desses documentos podem ficar desatualizadas.",
         "update.removed": "Documentos removidos",
         "update.cost_title": "O que a atualização vai custar",
         "update.files_ocr": "{n} arquivos passarão por OCR novamente.",
@@ -898,6 +905,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "{derived} — como não dá para saber quais continuam valendo, todas as janelas "
             "deste grupo serão reclassificadas"
         ),
+        "log.update.renumbered": "Atenção: como um documento saiu do meio do grupo, a numeração de folhas (f. N) de {count} documento(s) seguinte(s) mudou: {files}. Se você já tinha conversas no Claude citando folhas desses documentos, confira a nova numeração depois de gerar os relatórios.",
+        "log.update.duplicate_released": "Havia {count} cópia(s) do documento removido ainda na pasta ({files}). Elas vão aparecer como documento novo na próxima atualização, para o conteúdo não sumir do índice.",
         "log.update.applied": (
             "atualização aplicada: {windows} janela(s) descartada(s), {removed} "
             "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
@@ -1084,6 +1093,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.section_instructions": "Project instructions",
         "new_project.instructions_role": "Role in the instructions",
         "new_project.instructions_role_placeholder": "leave blank to use the default template",
+        "new_project.existing_instructions": "Instructions you already use",
+        "new_project.existing_instructions_placeholder": "paste your Claude Project's current instructions here — they are kept",
         "new_project.extra_rules": "Extra rules",
         "new_project.processing_mode": "Processing",
         "new_project.processing_mode_automatic": "automatic (uses GPU to the max)",
@@ -1219,6 +1230,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "it should be/do in this project). Leave blank to use the system's default text, "
             "suitable for most collections."
         ),
+        "hint.existing_instructions": "If your Claude Project already has instructions, paste them here. They go at the top of project_instructions.md, and the text GClaude Indexer generates goes right below, between two marks. On updates only the part between the marks is rewritten: what is yours is never deleted. You can also edit the file freely outside the marks.",
         "hint.extra_rules": (
             "Free text appended at the end of the generated instructions — rules specific to this "
             'collection, e.g. "always answer citing the case number", or a glossary of '
@@ -1420,6 +1432,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.windows.title": "5. Window preparation",
         "step.classification.title": "6. Classification",
         "step.import.title": "Import",
+        "step.update.title": "Update",
         "step.diagnostics.title": "Hardware diagnostics",
         "step.scan.count": "{total} file(s)",
         "step.conversion.count": "{converted} converted, {failed} failed, {pending} pending",
@@ -1560,6 +1573,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "update.new": "New documents",
         "update.changed": "Changed documents",
+        "update.removed_explained": "What happens to a removed document: its pages and items leave the index, the OCR copy kept in converted/ is deleted to free space, and its name is recorded in review.md as \"removed\". The original file is not touched — it is no longer in the folder. If you put the document back in the folder, it returns to the index on the next update.",
+        "update.renumbered": "Documents whose numbering will change",
+        "update.renumbered_explained": "These documents did not change, but they come after a new or removed document in the same group. Sheet numbering (f. N) is continuous within the group, so their sheets will get new numbers. The text already extracted is reused (usually no OCR again), but old Claude conversations citing sheets of these documents may become outdated.",
         "update.removed": "Removed documents",
         "update.cost_title": "What the update will cost",
         "update.files_ocr": "{n} files will go through OCR again.",
@@ -1804,6 +1820,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "give {derived} — since there is no telling which ones still hold, every window "
             "in this group will be reclassified"
         ),
+        "log.update.renumbered": "Heads up: because a document left the middle of the group, the sheet numbers (f. N) of {count} following document(s) changed: {files}. If you already had Claude conversations citing sheets of these documents, check the new numbering after generating the reports.",
+        "log.update.duplicate_released": "There were {count} copy(ies) of the removed document still in the folder ({files}). They will show up as a new document in the next update, so the content does not vanish from the index.",
         "log.update.applied": (
             "update applied: {windows} window(s) discarded, {removed} document(s) "
             "removed, {reset} to reprocess, {renumbered} to renumber"
@@ -1985,6 +2003,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.section_instructions": "Instrucciones del proyecto",
         "new_project.instructions_role": "Rol en las instrucciones",
         "new_project.instructions_role_placeholder": "en blanco usa la plantilla predeterminada",
+        "new_project.existing_instructions": "Instrucciones que ya usa",
+        "new_project.existing_instructions_placeholder": "pegue aquí las instrucciones actuales de su Proyecto en Claude — se conservan",
         "new_project.extra_rules": "Reglas adicionales",
         "new_project.processing_mode": "Procesamiento",
         "new_project.processing_mode_automatic": "automático (usa la GPU al máximo)",
@@ -2124,6 +2144,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Claude (qué debe ser/hacer en este proyecto). Déjelo en blanco para usar el texto "
             "predeterminado del sistema, adecuado para la mayoría de las colecciones."
         ),
+        "hint.existing_instructions": "Si su Proyecto en Claude ya tiene instrucciones, péguelas aquí. Van al inicio de project_instructions.md, y el texto que genera GClaude Indexer queda justo debajo, entre dos marcas. En las actualizaciones solo se rehace la parte entre las marcas: lo suyo nunca se borra. También puede editar el archivo libremente fuera de las marcas.",
         "hint.extra_rules": (
             "Texto libre agregado al final de las instrucciones generadas — reglas específicas de "
             'esta colección, ej. "responda siempre citando el número de expediente" o un glosario '
@@ -2332,6 +2353,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.windows.title": "5. Preparación de ventanas",
         "step.classification.title": "6. Clasificación",
         "step.import.title": "Importación",
+        "step.update.title": "Actualización",
         "step.diagnostics.title": "Diagnóstico de hardware",
         "step.scan.count": "{total} archivo(s)",
         "step.conversion.count": "{converted} convertido(s), {failed} fallaron, {pending} pendiente(s)",
@@ -2471,6 +2493,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "update.new": "Documentos nuevos",
         "update.changed": "Documentos modificados",
+        "update.removed_explained": "Qué pasa con un documento eliminado: sus páginas y piezas salen del índice, la copia con OCR guardada en converted/ se borra para liberar espacio, y su nombre queda registrado en review.md como \"eliminado\". El archivo original no se toca — ya no está en la carpeta. Si devuelve el documento a la carpeta, vuelve al índice en la próxima actualización.",
+        "update.renumbered": "Documentos cuya numeración va a cambiar",
+        "update.renumbered_explained": "Estos documentos no cambiaron, pero vienen después de un documento nuevo o eliminado en el mismo grupo. La numeración de folios (f. N) es continua dentro del grupo, así que sus folios recibirán números nuevos. El texto ya extraído se reaprovecha (normalmente sin OCR otra vez), pero las conversaciones antiguas en Claude que citan folios de estos documentos pueden quedar desactualizadas.",
         "update.removed": "Documentos eliminados",
         "update.cost_title": "Lo que costará la actualización",
         "update.files_ocr": "{n} archivos pasarán por OCR de nuevo.",
@@ -2720,6 +2745,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "darían {derived} — como no hay forma de saber cuáles siguen valiendo, todas las "
             "ventanas de este grupo se reclasificarán"
         ),
+        "log.update.renumbered": "Atención: como un documento salió del medio del grupo, la numeración de folios (f. N) de {count} documento(s) siguiente(s) cambió: {files}. Si ya tenía conversaciones en Claude citando folios de estos documentos, revise la nueva numeración después de generar los informes.",
+        "log.update.duplicate_released": "Había {count} copia(s) del documento eliminado todavía en la carpeta ({files}). Aparecerán como documento nuevo en la próxima actualización, para que el contenido no desaparezca del índice.",
         "log.update.applied": (
             "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
             "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "

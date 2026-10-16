@@ -20,6 +20,14 @@
 
   <h2>{{ t('update.removed') }} ({{ plan.removed | length }})</h2>
   <ul>{% for change in plan.removed %}<li><code>{{ change.relative_path }}</code></li>{% endfor %}</ul>
+  {% if plan.removed %}<p class="help">{{ t('update.removed_explained') }}</p>{% endif %}
+
+  {% set renumbered = plan.groups | map(attribute='files_to_renumber') | sum(start=()) %}
+  {% if renumbered %}
+  <h2>{{ t('update.renumbered') }} ({{ renumbered | length }})</h2>
+  <p class="help">{{ t('update.renumbered_explained') }}</p>
+  <ul>{% for path in renumbered %}<li><code>{{ path }}</code></li>{% endfor %}</ul>
+  {% endif %}
 
   <h2>{{ t('update.cost_title') }}</h2>
   <ul>

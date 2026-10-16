@@ -35,11 +35,14 @@ projeto "{name}", mais este guia.
 
 1. Em claude.ai, crie um **Project** novo (ou abra um já existente para
    este acervo).
-2. Abra `project_instructions.md` neste pacote e cole o conteúdo da seção
-   **"Papel"** (a primeira, logo no topo do arquivo) no campo **"Project
-   instructions"** do Project — é o que define como o Claude deve se
-   comportar neste acervo, inclusive a regra de sempre confirmar valores
-   no documento original antes de citar.
+2. Abra `project_instructions.md` neste pacote e cole o arquivo **inteiro**
+   no campo **"Project instructions"** do Project — é o que define como o
+   Claude deve se comportar neste acervo, inclusive a regra de sempre
+   confirmar valores no documento original antes de citar. Se o Project já
+   tinha instruções e você as colou em "Instruções que você já usa" ao
+   criar o projeto, elas já estão no topo do arquivo; se não, mantenha as
+   suas no campo e cole este arquivo **abaixo** delas, sem apagar nada. O
+   trecho entre as marcas `GCLAUDE-INDEXER` é o único que o sistema refaz.
 3. Em **"Project knowledge"** (arquivos do projeto), envie os quatro
    arquivos deste pacote: `index.md` (o sumário dos grupos), os
    `index-<grupo>.md` de cada grupo, `timeline.md`, `review.md` e
@@ -70,11 +73,15 @@ project "{name}", plus this guide.
 
 1. In claude.ai, create a new **Project** (or open an existing one for
    this collection).
-2. Open `project_instructions.md` in this package and paste the content of
-   the **"Role"** section — the first one, right at the top of the file —
-   into the Project's **"Project instructions"** field. This defines how
-   Claude should behave for this collection, including the rule to always
-   confirm values in the original document before citing them.
+2. Open `project_instructions.md` in this package and paste the **whole**
+   file into the Project's **"Project instructions"** field. This defines
+   how Claude should behave for this collection, including the rule to
+   always confirm values in the original document before citing them. If
+   the Project already had instructions and you pasted them into
+   "Instructions you already use" when creating the project, they are
+   already at the top of the file; if not, keep yours in the field and
+   paste this file **below** them, deleting nothing. The part between the
+   `GCLAUDE-INDEXER` marks is the only one the system rewrites.
 3. In **"Project knowledge"**, upload all four files in this package:
    `index.md` (the summary of groups), one `index-<group>.md` per
    group, `timeline.md`, `review.md` and `project_instructions.md` — to
@@ -104,12 +111,15 @@ el proyecto "{name}", más esta guía.
 
 1. En claude.ai, cree un **Project** nuevo (o abra uno ya existente para
    esta colección).
-2. Abra `project_instructions.md` en este paquete y pegue el contenido de
-   la sección **"Rol"** — la primera, justo al inicio del archivo — en el
-   campo **"Project instructions"** del Project: es lo que define cómo
-   debe comportarse Claude en esta colección, incluida la regla de
-   confirmar siempre los valores en el documento original antes de
-   citarlos.
+2. Abra `project_instructions.md` en este paquete y pegue el archivo
+   **completo** en el campo **"Project instructions"** del Project: es lo
+   que define cómo debe comportarse Claude en esta colección, incluida la
+   regla de confirmar siempre los valores en el documento original antes
+   de citarlos. Si el Project ya tenía instrucciones y usted las pegó en
+   "Instrucciones que ya usa" al crear el proyecto, ya están al inicio del
+   archivo; si no, mantenga las suyas en el campo y pegue este archivo
+   **debajo** de ellas, sin borrar nada. La parte entre las marcas
+   `GCLAUDE-INDEXER` es la única que el sistema rehace.
 3. En **"Project knowledge"**, suba los cuatro archivos de este paquete:
    `index.md` (el resumen de los grupos), los `index-<grupo>.md` de cada
    grupo, `timeline.md`, `review.md` y `project_instructions.md` — para

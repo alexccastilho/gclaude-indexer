@@ -89,6 +89,9 @@ class ProjectConfig:
     review_low_confidence: bool = False
     role_instructions: str = ""
     extra_rules: str = ""
+    # Instruções que o usuário já usa no Projeto do Claude: entram acima do
+    # bloco gerado em `project_instructions.md`, nunca no lugar dele.
+    existing_instructions: str = ""
 
 
 def _validate(config: ProjectConfig) -> list[ConfigErrorMessage]:

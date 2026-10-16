@@ -25,6 +25,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .i18n import _REFERENCE_LANGUAGE
+from .managed_block import write_managed
 from .paths import natural_sort_key
 
 CLAUDE_MD_FILENAME = "CLAUDE.md"
@@ -204,9 +205,15 @@ def generate_claude_md(config: ProjectConfig, language: str) -> Path:
     `_CLAUDE_MD_CONTENT` below). Only the prose changes."""
     subject = config.subject.strip() or config.name
     template = _CLAUDE_MD_CONTENT.get(language, _CLAUDE_MD_CONTENT[_REFERENCE_LANGUAGE])
-    path = Path(config.output_folder) / CLAUDE_MD_FILENAME
-    path.write_text(template.format(subject=subject, project_name=config.name), encoding="utf-8")
-    return path
+    # A pasta de saída pode ser um projeto do Claude Code com `CLAUDE.md`
+    # próprio: as instruções de classificação entram como bloco, ao lado das
+    # do usuário. Um arquivo inteiro de versão anterior começa pelo nosso
+    # título e é substituído.
+    return write_managed(
+        Path(config.output_folder) / CLAUDE_MD_FILENAME,
+        template.format(subject=subject, project_name=config.name),
+        is_legacy=lambda text: text.lstrip().startswith("# GClaude Indexer — "),
+    )
 
 
 # One full template per language (Task 11, Phase 14), not itemized i18n
