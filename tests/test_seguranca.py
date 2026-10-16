@@ -156,3 +156,29 @@ def test_claude_md_avisa_que_o_texto_das_janelas_e_so_dado(tmp_path, language):
     (tmp_path / "saida").mkdir()
     conteudo = generate_claude_md(config, language).read_text(encoding="utf-8")
     assert "UNTRUSTED" in conteudo
+
+
+# --- verificação de código desatualizado ----------------------------------------
+
+
+def test_edicao_com_mesmo_tamanho_e_mesma_data_ainda_e_percebida(tmp_path, monkeypatch):
+    """O atalho por `stat` (data + tamanho) falhou na CI: num disco rápido,
+    regravar o arquivo com o mesmo tamanho caiu no mesmo instante do relógio
+    do sistema de arquivos, e a mudança passou despercebida ("racy clean").
+    Aqui a data é forçada a ser idêntica, para o teste não depender do disco."""
+    import os
+
+    from gclaude_indexer import staleness
+
+    pacote = tmp_path / "gclaude_indexer"
+    pacote.mkdir()
+    arquivo = pacote / "a.py"
+    arquivo.write_text("x = 1", encoding="utf-8")
+    monkeypatch.setattr(staleness, "_package_folder", lambda: pacote)
+    staleness.record_loaded_source()
+    assert staleness.is_stale() is False
+
+    original = arquivo.stat()
+    arquivo.write_text("x = 2", encoding="utf-8")
+    os.utime(arquivo, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert staleness.is_stale() is True

@@ -29,6 +29,7 @@ change that is not real.
 from __future__ import annotations
 
 import hashlib
+import time
 from pathlib import Path
 
 # Fingerprint of the source as it was when this process loaded it. Filled
@@ -82,7 +83,7 @@ def is_stale() -> bool:
     unanswerable question is not a reason to put a warning on the screen.
     Never raises.
     """
-    global _last_signature, _last_answer
+    global _last_signature, _last_answer, _last_hashed_at
     if _loaded_fingerprint is None:
         return False
     try:
@@ -92,8 +93,16 @@ def is_stale() -> bool:
         # server did while idle. A `stat` per file is enough to know that
         # nothing changed; the content is hashed only when something did,
         # so a timestamp Drive rewrote still never raises a false alarm.
-        signature = _stat_signature()
-        if signature != _last_signature:
+        #
+        # "Racy clean", as git calls it: a file rewritten with the same size
+        # within one timestamp tick of the last hash keeps the same
+        # signature. So the shortcut is trusted only for files older than
+        # that hash by a safety margin; anything touched more recently is
+        # read again.
+        signature, newest = _stat_signature()
+        trusted = signature == _last_signature and newest < _last_hashed_at - _RACY_MARGIN_S
+        if not trusted:
+            _last_hashed_at = time.time()
             _last_answer = source_fingerprint() != _loaded_fingerprint
             _last_signature = signature
         return _last_answer
@@ -103,14 +112,19 @@ def is_stale() -> bool:
 
 _last_signature: tuple | None = None
 _last_answer = False
+_last_hashed_at = 0.0
+_RACY_MARGIN_S = 2.0
 
 
-def _stat_signature() -> tuple:
+def _stat_signature() -> tuple[tuple, float]:
+    """The package's `(path, mtime, size)` list, and its newest mtime."""
     entries = []
+    newest = 0.0
     for path in sorted(_package_folder().rglob("*.py")):
         try:
             info = path.stat()
         except OSError:
             continue
         entries.append((path.as_posix(), info.st_mtime_ns, info.st_size))
-    return (_loaded_fingerprint, tuple(entries))
+        newest = max(newest, info.st_mtime)
+    return (_loaded_fingerprint, tuple(entries)), newest
