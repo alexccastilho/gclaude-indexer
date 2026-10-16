@@ -17,6 +17,91 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.4.0] — 2026-10-16
+
+### Suas instruções preservadas, remoções sem perda, um manual de verdade, mais seguro por padrão
+
+#### Adicionado
+
+- **As instruções complementam as suas em vez de substituí-las.**
+  `project_instructions.md` e o `CLAUDE.md` da pasta de saída eram
+  reescritos do zero a cada execução: um `CLAUDE.md` que você já tinha
+  nessa pasta, ou uma regra acrescentada ao arquivo gerado, sumia na
+  atualização seguinte. O que o sistema escreve agora fica entre
+  `<!-- GCLAUDE-INDEXER:BEGIN … -->` e `<!-- GCLAUDE-INDEXER:END -->`;
+  tudo fora das marcas é seu e é mantido. Na primeira vez que um arquivo
+  sem marcas é tocado, o original é guardado como `<nome>.bak`. Campo novo
+  **"Instruções que você já usa"** no Novo projeto, que leva as instruções
+  atuais do seu Project para o topo do arquivo. O guia do pacote agora diz
+  para colar o arquivo inteiro.
+- **Manual completo dentro do programa** (menu **Manual**, `/help`), em
+  português, inglês e espanhol: começo rápido, cada campo, comparação dos
+  motores (velocidade, qualidade, requisitos), as etapas, os arquivos
+  gerados, uso com o Claude, atualização, uso em equipe, dicas e problemas
+  comuns. A Ajuda de cada tela leva à sua seção.
+- **Quatro temas novos** — Aurora, Toga, Grafite e Oceano — e uma camada
+  de movimento para todos os temas (`motion.css`): troca de tela suave,
+  entrada escalonada, cartões que sobem, botões que afundam, diálogos
+  animados, brilho na barra de progresso. Só `transform`/`opacity`
+  animam, e tudo se desliga quando o Windows pede menos movimento.
+
+#### Alterado
+
+- **O log ao vivo fala a língua de quem usa.** 57 mensagens reescritas nos
+  três idiomas, dizendo o que aconteceu e o que fazer; detalhes técnicos
+  só entre parênteses no fim. A coluna de etapa mostra "Atualização" em vez
+  de `update`.
+- **Remover um documento do acervo** agora: indexa uma cópia idêntica que
+  continua na pasta (antes o conteúdo sumia em silêncio), registra a
+  remoção uma vez só e a esquece quando o arquivo volta, apaga a cópia com
+  OCR em `converted/`, apaga os índices de grupos que deixaram de existir
+  (iam para o Claude), separa grupos cujos nomes seguros colidiam e avisa
+  — na tela do plano e no log — quais documentos têm as folhas (`f. N`)
+  renumeradas.
+- **Excluir um projeto "com os arquivos"** apaga só o que o programa criou
+  (banco, cópias convertidas, janelas, log, relatórios), mantém seus
+  arquivos na pasta de saída, tira só o bloco gerado dos arquivos de
+  instruções e remove a pasta apenas se ela ficar vazia. Sem `project.db`
+  na pasta, nada é apagado.
+- **Um projeto recém-criado** não mostra mais "a pasta de origem mudou: N
+  novos" antes da primeira execução.
+- **Tela Resultado** mostra o nome traduzido do motor, e o modelo só quando
+  o motor local usou um; relatórios muito grandes aparecem em prévia, não
+  inteiros.
+- **FastAPI 0.128.8 com Starlette 0.52.1 fixado**, fora da faixa afetada
+  pelos CVE-2024-47874 e CVE-2025-62727.
+
+#### Corrigido
+
+- As barras de confiança da tela Resultado estavam sem cor desde a fase
+  14: o template usava um nome de classe que a folha de estilo não define.
+
+#### Segurança
+
+- **Só as telas do programa dão ordens a ele.** O servidor confere o
+  `Host` (DNS rebinding), recusa pedidos que o navegador marca como vindos
+  de outro site (exceto um link simples sem parâmetros) e recusa POST com
+  `Origin` estranho (CSRF). Isso também fecha o vazamento de hash NTLM que
+  um site podia provocar fazendo o programa olhar um caminho
+  `\\atacante\pasta`. Caminhos UNC digitados nos formulários do próprio
+  programa continuam funcionando.
+- O `CLAUDE.md` do motor `claude_code` avisa que o texto das janelas é dado
+  não confiável e que só se pode acrescentar linhas a `raw_items.jsonl`.
+- As chamadas ao Ollama local nunca passam por proxy do sistema: numa rede
+  corporativa, o texto dos documentos não sai da máquina.
+- Sem redirecionamento aberto pelo `Referer`; o nome do pacote vai no
+  formato RFC 5987.
+
+#### Desempenho
+
+- A verificação de "código mudou desde que o servidor subiu" usa `stat` em
+  vez de reler e calcular o hash do pacote a cada tela (várias vezes a cada
+  dois segundos na tela Execução).
+- O log ao vivo lê só as linhas novas, em SQL.
+- Rotas bloqueantes (seletor de pasta, atualização, exclusão, criação) não
+  congelam mais o servidor.
+- Índices em `window(status)` e `event(level)`.
+
 ## [1.3.4] — 2026-09-17
 
 ### Manutenção — um diretório de ferramentas, e quatro versões adiante

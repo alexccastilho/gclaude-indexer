@@ -10,6 +10,90 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.4.0] — 2026-10-16
+
+### Your instructions kept, removals without loss, a real manual, safer by default
+
+#### Added
+
+- **Instructions complement yours instead of replacing them.**
+  `project_instructions.md` and the output folder's `CLAUDE.md` were
+  rewritten from scratch on every run, so a `CLAUDE.md` you already had in
+  that folder, or a rule you added to the generated file, was gone on the
+  next update. What the system writes now lives between
+  `<!-- GCLAUDE-INDEXER:BEGIN … -->` and `<!-- GCLAUDE-INDEXER:END -->`;
+  everything outside the marks is yours and is carried over untouched. The
+  first time a file without marks is touched, the original is saved as
+  `<name>.bak`. New field **"Instructions you already use"** on the New
+  project form puts your Claude Project's current instructions at the top
+  of the file. The Claude package guide now says to paste the whole file.
+- **Full manual inside the app** (menu **Manual**, `/help`), in Portuguese,
+  English and Spanish: quick start, every field, an engine comparison
+  (speed, quality, requirements), the steps, output files, using it with
+  Claude, updates, team use, tips and troubleshooting. Each screen's Help
+  dialog links to its own section.
+- **Four new themes** — Aurora, Toga, Graphite and Ocean — and a motion
+  layer for every theme (`motion.css`): smooth page transitions, staggered
+  entrance, lifting cards, pressable buttons, animated dialogs, a shimmer
+  on running progress bars. Only `transform`/`opacity` animate, and
+  everything turns off when Windows asks for reduced motion.
+
+#### Changed
+
+- **The live log speaks plainly.** 57 messages rewritten in the three
+  languages to say what happened and what to do; technical details only in
+  parentheses at the end. The step column shows "Update" instead of the raw
+  `update`.
+- **Removing a document from the collection** now: re-indexes an identical
+  copy still in the folder (it used to silently drop the content), records
+  a removal once and forgets it when the file comes back, deletes the
+  removed file's OCR copy in `converted/`, deletes per-group indexes of
+  groups that no longer exist (they were shipped to Claude), keeps groups
+  whose safe names collide in separate files, and warns — on the plan
+  screen and in the log — which documents' sheet numbers (`f. N`) shift.
+- **Deleting a project "with files"** deletes only what the app created
+  (database, converted copies, windows, log, reports), keeps your own files
+  in the output folder, strips only the generated block from instruction
+  files, and removes the folder only if it ends up empty. Without a
+  `project.db` in the folder, nothing is deleted.
+- **A brand-new project** no longer shows "the source folder changed: N
+  new" before its first run.
+- **Result screen** shows the engine's translated name, and the model only
+  when the local engine used one; very large reports are previewed, not
+  embedded whole.
+- **FastAPI 0.128.8 with Starlette 0.52.1 pinned**, leaving the range
+  affected by CVE-2024-47874 and CVE-2025-62727.
+
+#### Fixed
+
+- The confidence bars on the Result screen had no colour since phase 14:
+  the template used a class name the stylesheet never defined.
+
+#### Security
+
+- **Only the app's own screens can command it.** The server checks `Host`
+  (DNS rebinding), refuses requests the browser marks as coming from
+  another site (except a plain link with no parameters) and refuses POSTs
+  with a foreign `Origin` (CSRF). This also closes the NTLM-hash leak a
+  site could trigger by making the app look at a `\\attacker\share` path.
+  UNC paths typed in the app's own forms still work.
+- The `claude_code` engine's `CLAUDE.md` tells Claude Code that window text
+  is untrusted data and that it may only append to `raw_items.jsonl`.
+- Calls to the local Ollama never go through a system proxy, so document
+  text does not leave the machine on a corporate network.
+- No open redirect through the `Referer`; the package file name is sent in
+  RFC 5987 form.
+
+#### Performance
+
+- The "code changed since start" check uses `stat` instead of re-reading
+  and hashing the package on every screen (several times every two seconds
+  on the Execution screen).
+- The live log reads only new rows, in SQL.
+- Blocking routes (folder picker, update, delete, create) no longer freeze
+  the server.
+- Indexes on `window(status)` and `event(level)`.
+
 ## [1.3.4] — 2026-09-17
 
 ### Maintenance — a tools directory, and four pins moved forward

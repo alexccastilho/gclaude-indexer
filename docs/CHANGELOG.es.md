@@ -17,6 +17,95 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.4.0] — 2026-10-16
+
+### Sus instrucciones conservadas, eliminaciones sin pérdida, un manual de verdad, más seguro por defecto
+
+#### Añadido
+
+- **Las instrucciones complementan las suyas en lugar de reemplazarlas.**
+  `project_instructions.md` y el `CLAUDE.md` de la carpeta de salida se
+  reescribían desde cero en cada ejecución: un `CLAUDE.md` que usted ya
+  tenía en esa carpeta, o una regla añadida al archivo generado,
+  desaparecía en la siguiente actualización. Lo que escribe el sistema
+  ahora queda entre `<!-- GCLAUDE-INDEXER:BEGIN … -->` y
+  `<!-- GCLAUDE-INDEXER:END -->`; todo lo que está fuera de las marcas es
+  suyo y se conserva. La primera vez que se toca un archivo sin marcas, el
+  original se guarda como `<nombre>.bak`. Campo nuevo **"Instrucciones que
+  ya usa"** en Nuevo proyecto, que lleva las instrucciones actuales de su
+  Project al inicio del archivo. La guía del paquete ahora indica pegar el
+  archivo completo.
+- **Manual completo dentro del programa** (menú **Manual**, `/help`), en
+  portugués, inglés y español: inicio rápido, cada campo, comparación de
+  motores (velocidad, calidad, requisitos), las etapas, los archivos
+  generados, uso con Claude, actualización, trabajo en equipo, consejos y
+  problemas comunes. La Ayuda de cada pantalla lleva a su sección.
+- **Cuatro temas nuevos** — Aurora, Toga, Grafito y Océano — y una capa de
+  movimiento para todos los temas (`motion.css`): cambio de pantalla suave,
+  entrada escalonada, tarjetas que se elevan, botones que se hunden,
+  diálogos animados, brillo en la barra de progreso. Solo se animan
+  `transform`/`opacity`, y todo se desactiva cuando Windows pide menos
+  movimiento.
+
+#### Cambiado
+
+- **El registro en vivo habla claro.** 57 mensajes reescritos en los tres
+  idiomas, diciendo qué pasó y qué hacer; los detalles técnicos solo entre
+  paréntesis al final. La columna de etapa muestra "Actualización" en vez
+  de `update`.
+- **Eliminar un documento de la colección** ahora: indexa una copia
+  idéntica que sigue en la carpeta (antes el contenido desaparecía en
+  silencio), registra la eliminación una sola vez y la olvida cuando el
+  archivo vuelve, borra la copia con OCR en `converted/`, borra los índices
+  de grupos que ya no existen (se enviaban a Claude), separa grupos cuyos
+  nombres seguros coincidían y avisa — en la pantalla del plan y en el
+  registro — qué documentos cambian su numeración de folios (`f. N`).
+- **Eliminar un proyecto "con los archivos"** borra solo lo que creó el
+  programa (base de datos, copias convertidas, ventanas, registro,
+  informes), conserva sus archivos en la carpeta de salida, quita solo el
+  bloque generado de los archivos de instrucciones y elimina la carpeta
+  solo si queda vacía. Sin `project.db` en la carpeta, no se borra nada.
+- **Un proyecto recién creado** ya no muestra "la carpeta de origen
+  cambió: N nuevos" antes de su primera ejecución.
+- **La pantalla Resultado** muestra el nombre traducido del motor, y el
+  modelo solo cuando el motor local usó uno; los informes muy grandes se
+  muestran en vista previa, no enteros.
+- **FastAPI 0.128.8 con Starlette 0.52.1 fijado**, fuera del rango
+  afectado por CVE-2024-47874 y CVE-2025-62727.
+
+#### Corregido
+
+- Las barras de confianza de la pantalla Resultado no tenían color desde
+  la fase 14: la plantilla usaba un nombre de clase que la hoja de estilos
+  no define.
+
+#### Seguridad
+
+- **Solo las pantallas del programa pueden darle órdenes.** El servidor
+  verifica el `Host` (DNS rebinding), rechaza solicitudes que el navegador
+  marca como originadas en otro sitio (salvo un enlace simple sin
+  parámetros) y rechaza POST con un `Origin` ajeno (CSRF). Esto también
+  cierra la fuga de hash NTLM que un sitio podía provocar haciendo que el
+  programa mirara una ruta `\\atacante\carpeta`. Las rutas UNC escritas
+  en los formularios del propio programa siguen funcionando.
+- El `CLAUDE.md` del motor `claude_code` avisa que el texto de las ventanas
+  es dato no confiable y que solo se pueden añadir líneas a
+  `raw_items.jsonl`.
+- Las llamadas al Ollama local nunca pasan por un proxy del sistema: en una
+  red corporativa, el texto de los documentos no sale de la máquina.
+- Sin redirección abierta a través del `Referer`; el nombre del paquete se
+  envía en formato RFC 5987.
+
+#### Rendimiento
+
+- La comprobación de "el código cambió desde que arrancó el servidor" usa
+  `stat` en lugar de releer y calcular el hash del paquete en cada pantalla
+  (varias veces cada dos segundos en la pantalla Ejecución).
+- El registro en vivo lee solo las filas nuevas, en SQL.
+- Las rutas bloqueantes (selector de carpeta, actualización, eliminación,
+  creación) ya no congelan el servidor.
+- Índices en `window(status)` y `event(level)`.
+
 ## [1.3.4] — 2026-09-17
 
 ### Mantenimiento — un directorio de herramientas, y cuatro versiones adelante

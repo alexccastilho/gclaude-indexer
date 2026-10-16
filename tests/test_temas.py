@@ -57,3 +57,14 @@ def test_motion_css_e_carregado_em_todas_as_telas():
     from gclaude_indexer.web.app import app
 
     assert "/static/motion.css" in TestClient(app).get("/projects").text
+
+
+def test_barras_de_qualidade_usam_classes_que_o_css_define():
+    """O template usava `qualidade-barra-high` e o CSS, `quality-bar-high`
+    (sobra da tradução dos nomes na fase 14): as barras de confiança da
+    tela Resultado ficavam sem cor nenhuma, invisíveis."""
+    template = (STATIC.parent / "templates" / "result.html").read_text(encoding="utf-8")
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert "quality-bar-fill quality-bar-{{ nivel }}" in template
+    for nivel in ("high", "medium", "low"):
+        assert f".quality-bar-fill.quality-bar-{nivel}" in css

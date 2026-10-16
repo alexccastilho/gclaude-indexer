@@ -2,313 +2,441 @@
 
 # GClaude Indexer
 
-Una herramienta local y sin conexión que convierte una carpeta llena de
-documentos en un índice consultable, una cronología y unas instrucciones
-listas para un proyecto en Claude.
+GClaude Indexer lee una carpeta llena de documentos en su propia computadora
+con Windows (PDF, escaneos, Word, Excel, correos electrónicos y más) y arma
+un índice pequeño y ordenado de todo lo que contiene: qué es cada pieza, de
+qué fecha, de quién y en qué página está. Después usted le entrega a Claude
+ese índice, y no la pila entera de documentos. Está pensado para quien
+trabaja con acervos grandes y usa Claude: abogados, contadores,
+investigadores, organismos públicos, pequeñas empresas.
 
-Google Drive aloja los archivos; el proyecto en Claude los consulta a través
-del índice.
+![GClaude Indexer en uso](media/demo-es.gif)
 
-![GClaude Indexer en uso](../demo.gif)
+*Un recorrido rápido por el programa.*
 
-*Una primera ejecución, en el orden en que la encuentra — proyectos,
-nuevo proyecto, ejecución, resultado. La actualización de una colección,
-añadida después, se describe abajo.*
+## Para qué sirve
 
-## Qué hace
+**1. Gastar menos de su suscripción paga de Claude.** Claude cuenta cada
+página que usted le hace leer. Con GClaude Indexer, Claude lee primero un
+índice compacto, descubre qué documento y qué página responden a su
+pregunta, y abre solo esos. Ejemplo: una abogada con un expediente de 3.000
+páginas pregunta "¿cuándo se presentó el dictamen pericial?". Claude lo
+busca en el índice y abre un documento, no las 3.000 páginas.
 
-Apunte GClaude Indexer a una carpeta de documentos — PDF escaneados, Word,
-Excel, PowerPoint, imágenes, correos electrónicos, texto plano, casi
-cualquier cosa — y él recorre la carpeta, aplica OCR a las páginas
-escaneadas sin capa de texto, corta los PDF demasiado grandes en fragmentos
-legibles y lee cada página. Después clasifica el contenido en elementos
-individuales (cada uno con un tipo, una fecha cuando es posible
-encontrarla, un autor y un resumen breve) y escribe cuatro archivos en
-Markdown: un **índice** de cada elemento, una **cronología** ordenada por
-fecha, un informe de **revisión** que enumera vacíos y fallos, y un
-conjunto de **instrucciones de proyecto** listas para pegar en un nuevo
-proyecto de Claude. Los documentos originales nunca se modifican — todo lo
-que la herramienta produce son archivos nuevos, escritos junto a los
-originales, en una carpeta de salida separada que usted elige.
+**2. Trabajar con muchos más documentos de los que Claude soporta a la
+vez.** Claude tiene un límite de cuánto texto puede considerar al mismo
+tiempo. Un acervo grande no cabe, pero su índice sí: se divide en un
+archivo pequeño por grupo, así que incluso miles de páginas se convierten
+en algo que Claude puede recorrer. El texto completo queda de su lado,
+listo para abrirse página por página.
 
-Una colección rara vez está terminada. Cuando se añaden documentos a la
-carpeta de origen, se corrigen o se sacan de ella, la aplicación detecta
-qué cambió y reprocesa solo eso — añadir un documento a una colección de
-500 páginas reclasifica una ventana en vez de treinta y seis, cerca de un
-minuto en vez de dieciocho y media. Le muestra qué encontró y cuánto va a
-costar antes de tocar nada.
+**3. Sus datos se quedan con usted.** La lectura, el reconocimiento de
+texto (OCR) y la clasificación ocurren en su computadora. No se envía nada
+a ningún lado mientras se procesa el acervo. El resultado es una base de
+datos local y algunos archivos de texto, guardados en una carpeta que usted
+elige. Si esa carpeta está en Google Drive, puede abrir el mismo proyecto
+desde cualquier computadora conectada a ese Drive.
 
-La clasificación — el paso que decide qué es cada página, quién la escribió
-y cuándo — puede hacerse de cuatro formas distintas, descritas abajo. Tres
-de esas cuatro nunca salen de su máquina. El resto de los pasos (escaneo,
-OCR, extracción por página, corte, generación de los cuatro informes) se
-ejecuta siempre por completo en local, sin importar qué motor de
-clasificación elija.
+**4. Mantener el índice al día sin empezar de cero.** Los acervos crecen.
+Cuando usted agrega, modifica o elimina documentos, el programa encuentra
+lo que cambió y rehace solo esa parte. Le muestra el plan y el costo antes
+de tocar nada.
 
-## Aspectos destacados
+**5. Fácil para una persona o para una oficina entera.** Una persona puede
+usarlo en una laptop. Un equipo puede guardar los proyectos en una carpeta
+compartida de Drive o en un servidor de archivos. Ejemplo: el equipo de una
+oficina comparte una carpeta de Drive con los archivos de los clientes; un
+colega actualiza el índice por la mañana y otro abre el mismo proyecto por
+la tarde, en otra computadora.
 
-- **Sin conexión por diseño.** Salvo por el motor opcional `claude_code`
-  (vea abajo), GClaude Indexer nunca envía un documento, una página de
-  texto ni siquiera un nombre de archivo por la red. Esto importa
-  especialmente a quien trabaja con colecciones sensibles o
-  confidenciales — nada sale de la máquina, a menos que elija
-  explícitamente el único motor que sí lo hace.
-- **Solo Windows.** La aplicación habla directamente con interfaces
-  específicas de Windows — PowerShell, WMI (para la detección de hardware y
-  el monitoreo de recursos), el registro de Windows (para la ubicación de
-  los datos de Tesseract y la detección de idioma) y el subsistema de
-  Performance Counters (para los gráficos en vivo de CPU/GPU). No funciona
-  en Linux ni en macOS.
-- **Actualizaciones incrementales.** Una colección ya indexada absorbe
-  documentos nuevos, editados y eliminados sin necesidad de procesarse de
-  nuevo desde cero. Solo se rehace lo que el cambio realmente afecta, y
-  usted ve cuánto va a costar antes de confirmarlo.
-- **Interfaz en tres idiomas** — español, inglés y portugués de Brasil,
-  seleccionables en cualquier momento desde un menú en el encabezado de la
-  página. El idioma por defecto se detecta automáticamente a partir del
-  idioma de visualización de su Windows.
-- **No necesita instalador para el uso diario.** Después de la
-  configuración inicial de abajo, un acceso directo en el escritorio abre
-  la aplicación con un doble clic. Nada se compila en un único `.exe`;
-  sigue siendo scripts de Python y PowerShell simples y legibles.
-- **Licenciado bajo la GNU GPL-3.0.** Vea [Licencia](#licencia) abajo para
-  saber qué implica esto si piensa modificar o redistribuir este software.
+## Cómo funciona en un minuto
 
-*Las capturas muestran la interfaz en inglés; también está disponible en
-portugués y español.*
+```mermaid
+flowchart LR
+    A["Su carpeta de documentos<br/>PDF, escaneos, Word, Excel, correo…"] --> B["GClaude Indexer en su PC<br/>lee · OCR · clasifica"]
+    B --> C["Archivos de índice compactos<br/>index.md + un índice por grupo<br/>timeline.md · review.md<br/>project_instructions.md"]
+    C --> D["Claude lee el índice"]
+    D --> E["Claude abre solo las<br/>páginas originales que necesita"]
+    A -. "archivos originales" .-> E
+```
 
-![Pantalla de proyectos](../image.png)
+1. Usted indica al programa una carpeta de documentos. Nunca modifica esa
+   carpeta; solo la lee.
+2. En su computadora, convierte cada página en texto (con OCR en los
+   escaneos) y descubre dónde empieza y termina cada documento, su tipo,
+   fecha, autor y un resumen breve.
+3. Escribe unos pocos archivos Markdown pequeños: un sumario (`index.md`),
+   un índice por grupo de documentos, una cronología, un informe de
+   revisión e instrucciones listas para Claude.
+4. Usted le entrega esos archivos a Claude. Cuando necesita detalles, abre
+   solo la página original que indica el índice.
 
-*Proyectos — todas las colecciones indexadas en esta máquina, más el catálogo
-compartido opcional que permite abrir los mismos proyectos en otro
-computador.*
+Para que se haga una idea del tiempo: un acervo real de unas 2.900 páginas
+tardó poco más de 5 horas con el modelo local en una tarjeta gráfica común.
+Con el motor de reglas, tarda minutos.
 
-![Formulario de proyecto nuevo](../new.png)
+## Pantallas
 
-*Proyecto nuevo — carpetas, tipos de archivo, división de PDF, idioma del OCR
-y motor de clasificación, todo en una sola pantalla.*
+![Pantalla de proyectos](media/projects-es.png)
 
-![Pantalla de ejecución](../run.png)
+*Proyectos: todos los acervos que conoce esta computadora, más el catálogo compartido que permite abrir los mismos proyectos en otra computadora.*
 
-*Ejecución — los seis pasos con conteos en vivo, gráficos de CPU/RAM/GPU
-leídos de la propia máquina y un registro que sigue el final.*
+![Formulario de nuevo proyecto](media/new-es.png)
 
-![Pantalla de resultado](../result.png)
+*Nuevo proyecto: carpetas, tipos de archivo, idioma del OCR y motor de clasificación en una sola pantalla; en general basta con completar el nombre y la carpeta de origen.*
 
-*Resultado — puntuación de calidad, comparación entre los motores ejecutados
-sobre esta colección y vista previa de los cuatro archivos generados.*
+![Pantalla de ejecución](media/run-es.png)
 
-## Requisitos
+*Ejecución: los pasos con progreso en vivo, gráficos de CPU/RAM/GPU y un registro escrito en lenguaje sencillo.*
 
-- **Windows 10 u 11.** Obligatorio — vea [Aspectos destacados](#aspectos-destacados)
-  arriba para el motivo.
-- **Python 3.12** — instalado por usted si falta. Este proyecto fija
-  versiones de dependencias que los Python más nuevos (3.13, 3.14) rompen,
-  así que el instalador busca la 3.12 y, cuando la máquina no la tiene,
-  descarga e instala la 3.12.10 oficial para el usuario actual: sin
-  administrador, sin paso manual, y cualquier otro Python ya instalado en
-  la máquina se queda exactamente donde está.
-- Para **OCR** (documentos escaneados sin capa de texto): Tesseract y
-  Ghostscript. El instalador de abajo los instala automáticamente cuando
-  es posible.
-- Para el **motor de clasificación `local`** (el predeterminado
-  recomendado): [Ollama](https://ollama.com), instalado automáticamente
-  por el instalador de abajo si usted lo acepta. Una GPU con algunos
-  gigabytes de VRAM libre acelera bastante este motor, pero no es
-  obligatoria — Ollama usa toda la memoria de GPU que quepa y desborda el
-  resto a la RAM del sistema por su cuenta. Como referencia aproximada, el
-  modelo local predeterminado (`qwen3.5:4b`) pesa cerca de 3,2 GB para
-  descargar, y necesita algo más que eso sumando VRAM y RAM para
-  ejecutarse — cabe en una placa de 6 GB tan holgado como en una de 8 GB;
-  una máquina con poco de ambas cosas cae automáticamente al motor
-  `rules` (vea
-  [Motores de clasificación](#motores-de-clasificación) abajo), con una
-  explicación mostrada en pantalla.
-- El **motor `rules`** no necesita nada de lo anterior — funciona en
-  cualquier máquina Windows capaz de ejecutar Python, sin GPU, sin
-  descargas y sin software adicional.
-- Unos pocos gigabytes de espacio libre en disco para el entorno de Python
-  y, si lo usa, el modelo local de Ollama.
+![Pantalla de resultado](media/result-es.png)
 
-## Instalación (primera vez en una máquina)
+*Resultado: puntuación de calidad, pendientes, vista previa de cada archivo generado y el paquete para Claude.*
 
-No necesita Git, una cuenta de GitHub, ni experiencia de programación para
-esto. Sí necesita poder abrir una carpeta en el Explorador de archivos y
-ejecutar un comando en una terminal — ambos se explican paso a paso abajo.
+![Pantalla del manual](media/manual-es.png)
 
-**La forma más fácil — el instalador de Windows.** Descargue
-`GClaude-Indexer-Setup-1.3.4.exe` desde la
-[versión más reciente](https://github.com/alexccastilho/gclaude-indexer/releases/latest)
-y haga doble clic. Pregunta dónde instalar (solo para usted o para todos
-los usuarios de la máquina), muestra la licencia, permite marcar qué
-dependencias quiere, y descarga e instala todas — Python 3.12, Tesseract
-con el idioma portugués, Ghostscript, Ollama y el modelo de
-clasificación — con barra de progreso y sin abrir ninguna ventana de
-terminal. Desinstalar es desde Configuración > Aplicaciones, como
-cualquier programa, y pregunta una por una qué dependencias compartidas
-deben irse con él.
+*Manual: cada pantalla y cada opción explicadas dentro del programa, en su idioma.*
 
-SmartScreen de Windows advertirá antes de ejecutarlo: el instalador no
-está firmado digitalmente, porque un certificado cuesta dinero que este
-proyecto no tiene. Haga clic en "Más información" y luego en "Ejecutar
-de todos modos". Puede verificar lo que descargó con el SHA-256
+## Novedades de la versión 1.4
+
+- **Se conservan las instrucciones que ya tiene.** Lo que el programa
+  escribe en `project_instructions.md` y `CLAUDE.md` ahora queda entre dos
+  marcas (`GCLAUDE-INDEXER:BEGIN` y `GCLAUDE-INDEXER:END`). Solo ese bloque
+  se rehace; todo lo demás del archivo es suyo y se queda. La primera vez
+  se guarda una copia `.bak` de su archivo original. Un campo nuevo en
+  Nuevo proyecto, **Instrucciones que ya usa**, pone sus instrucciones al
+  principio del archivo.
+- **Eliminación de archivos más segura.** Si un documento eliminado tenía
+  una copia idéntica en la carpeta, la copia se indexa en su lugar. Cuando
+  sacar un documento del medio de un expediente cambia la numeración de los
+  folios de los documentos siguientes, se le avisa en la pantalla de
+  confirmación y en el registro. La copia convertida del archivo eliminado
+  se borra, y también los índices de los grupos que ya no existen.
+- **Manual completo dentro del programa.** El menú **Manual** explica cada
+  pantalla y cada opción, en español, portugués e inglés.
+- **Registro en vivo en lenguaje sencillo.** Los mensajes dicen qué pasó y
+  qué hacer; los detalles técnicos solo aparecen entre paréntesis al final.
+- **Cuatro temas nuevos** (Aurora, Toga, Grafito y Océano) y movimiento
+  suave entre pantallas, que se desactiva solo cuando Windows pide menos
+  movimiento.
+- **Seguridad reforzada.** El programa solo acepta solicitudes de sus
+  propias pantallas (protección contra CSRF y DNS rebinding), así que un
+  sitio web abierto en el navegador no puede darle órdenes. Eliminar un
+  proyecto borra solo lo que el programa creó. Las instrucciones del motor
+  Claude Code tratan el texto de los documentos como dato no confiable. Las
+  llamadas al modelo local nunca pasan por un proxy. Se actualizaron
+  FastAPI y Starlette.
+- **Pantallas más rápidas.** Consultas de progreso más livianas e índices
+  nuevos en la base de datos.
+
+## Instalación
+
+### Qué necesita
+
+- **Windows 10 u 11.** El programa solo funciona en Windows (detalles en
+  *Detalles técnicos*, más abajo).
+- Algunos gigabytes libres en disco.
+- Todo lo demás (Python 3.12, Tesseract, Ghostscript, Ollama y el modelo
+  local) se instala por usted.
+- Una tarjeta gráfica (GPU) con algunos gigabytes de memoria hace que el
+  modelo local sea mucho más rápido, pero no es obligatoria. El modelo
+  predeterminado (`qwen3.5:4b`) pesa cerca de 3,2 GB para descargar y cabe
+  en una tarjeta de 6 GB tan bien como en una de 8 GB. Si la máquina tiene
+  poca memoria, el programa pasa solo al motor `rules` y le explica por
+  qué.
+
+### La forma fácil: el instalador de Windows
+
+1. Descargue `GClaude-Indexer-Setup-1.4.0.exe` desde la
+   [versión más reciente](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
+2. Haga doble clic. Pregunta si la instalación es solo para usted o para
+   todos los usuarios de la máquina, muestra la licencia y le permite
+   marcar qué dependencias quiere.
+3. Descarga e instala todas (Python 3.12, Tesseract con el idioma
+   portugués, Ghostscript, Ollama y el modelo de clasificación), con barra
+   de progreso y sin abrir ninguna ventana de terminal.
+
+**SmartScreen de Windows le advertirá.** El instalador no está firmado
+digitalmente, porque un certificado cuesta dinero que este proyecto no
+tiene. Haga clic en "Más información" y luego en "Ejecutar de todos modos".
+Es una buena práctica verificar el archivo descargado con el SHA-256
 publicado junto a cada versión.
 
-**Sin el instalador:** ejecute `Indexer.bat` y siga las instrucciones.
-Es el camino descrito en el resto de esta página, y funciona también en
-una máquina donde no puede instalar programas.
+**Sobre Ollama.** Ollama es el programa gratuito que ejecuta el modelo
+local en su propia máquina. El instalador instala Ollama y el modelo
+predeterminado si usted acepta. Puede omitirlo: el motor `rules` no
+necesita nada adicional.
 
----
+**Desinstalar.** Use Configuración > Aplicaciones, como cualquier programa.
+Pregunta, una por una, qué dependencias compartidas deben irse con él.
+Nunca borra sus proyectos.
 
-**1. Ponga el código fuente en su máquina.** Si descargó este proyecto
-como un archivo `.zip`, haga clic derecho sobre él y elija "Extraer
-todo…", luego elija una carpeta común (por ejemplo, dentro de Documentos o
-una carpeta sincronizada por Google Drive montado con letra de unidad). Si
-ya lo clonó con Git, ya tiene una carpeta — de cualquier forma, recuerde
-dónde está; el resto de estas instrucciones la llama "la carpeta del
-proyecto".
+No necesita Git, una cuenta de GitHub ni experiencia en programación. Si no
+puede instalar programas en la máquina, vea *Instalación sin el
+instalador* en Detalles técnicos.
 
-**2. Abra PowerShell dentro de la carpeta del proyecto.** En el Explorador
-de archivos, abra la carpeta del proyecto y luego:
-- mantenga presionada **Shift**, haga clic derecho en un espacio vacío
-  dentro de la carpeta y elija "Abrir ventana de PowerShell aquí" (o
-  "Abrir en Terminal"), o
-- haga clic en la barra de direcciones, escriba `powershell` y presione
-  Enter.
+### Inicio rápido en 6 pasos
 
-Se abre una ventana azul u oscura — esta es PowerShell, ya "dentro" de la
-carpeta del proyecto.
+1. **Nuevo proyecto.** Haga clic en **+ Nuevo proyecto**, póngale un
+   nombre, elija la **Carpeta de origen** (donde están sus documentos) y
+   revise la **Carpeta de salida** sugerida. Lo demás puede quedar como
+   está. Haga clic en **Crear proyecto**.
+2. **Ejecutar todo.** En la pantalla Ejecución, haga clic en **Ejecutar
+   todo hasta la clasificación**. Puede dejarlo trabajando y hacer otra
+   cosa.
+3. **Generar los informes.** Cuando termine la clasificación, haga clic en
+   **Importar y generar informes**.
+4. **Revisar el resultado.** La pantalla **Resultado** muestra la
+   puntuación de calidad, los pendientes y una vista previa de cada
+   archivo.
+5. **Descargar el paquete.** En **Paquete para un Claude Project nuevo**,
+   haga clic en **Descargar paquete (.zip)**.
+6. **Usarlo en Claude.** En claude.ai, cree un Project, pegue el contenido
+   completo de `project_instructions.md` en sus instrucciones y suba los
+   demás archivos como conocimiento del proyecto. Cuando necesite el
+   contenido exacto de una pieza, envíe a Claude solo el documento original
+   que indica el índice.
 
-**3. No hace falta que instale Python usted mismo.** El instalador del
-paso 4 lo hace: este proyecto necesita Python 3.12 en concreto (las
-versiones de paquetes que fija no compilan en versiones más nuevas) y, si
-su máquina no lo tiene, el instalador descarga el 3.12 oficial de
-python.org — versión exacta, checksum verificado — y lo instala dentro de
-su propia carpeta de usuario. Ese paso no pide administrador.
+En cada pantalla, el botón **Ayuda** muestra un resumen de esa pantalla, y
+el **?** junto a cada campo lo explica.
 
-Se instala *al lado* de cualquier otro Python que tenga, no encima. Si hoy
-`python --version` muestra 3.13 o 3.14, seguirá mostrando lo mismo
-después: su comando `python`, las asociaciones de archivo y el menú Inicio
-quedan exactamente como están.
+## Uso personal o corporativo
 
-Si prefiere instalarlo usted primero, es lo mismo que hace el instalador:
+- **Carpeta de salida en Google Drive o en un servidor de archivos.** Cada
+  proyecto vive entero en su carpeta de salida. Póngala en Drive o en una
+  carpeta de red y cualquier computadora con acceso podrá abrirlo.
+- **Catálogo compartido.** En la pantalla Proyectos, indique en **Catálogo
+  compartido** una carpeta dentro de su Drive. Todas las computadoras
+  conectadas a ese Drive pasan a ver la misma lista de proyectos. Sin él,
+  la lista queda en cada máquina, aunque los proyectos se sincronicen.
+- **Una computadora a la vez.** Mientras un proyecto está abierto, queda
+  bloqueado para esa computadora. A otra computadora se le avisa quién lo
+  está usando. El bloqueo vence solo después de un tiempo sin uso.
+- **Regla de oro al cambiar de computadora:** cierre el programa en la
+  primera, espere a que Google Drive termine de sincronizar y solo entonces
+  ábralo en la segunda. El programa avisa de sincronizaciones incompletas,
+  pero no reemplaza la espera.
+
+## Privacidad y seguridad
+
+- Los documentos se leen y se clasifican **solo en su computadora**.
+  Durante el procesamiento no se envía por la red ningún documento, página
+  de texto ni siquiera un nombre de archivo. El motor local se comunica
+  únicamente con el Ollama de la misma máquina (`http://127.0.0.1:11434`),
+  nunca a través de un proxy.
+- El servidor del programa solo escucha en `127.0.0.1` (su propia máquina)
+  y nunca es accesible desde la red. Solo acepta solicitudes de sus propias
+  pantallas: un sitio web abierto en el navegador no puede darle órdenes.
+- La carpeta de origen **nunca se modifica**. Todo lo que produce el
+  programa va a la carpeta de salida, separada.
+- **La base del proyecto (`project.db`) guarda el texto de las páginas.**
+  Si el acervo contiene datos personales protegidos por leyes de
+  protección de datos (como la LGPD de Brasil o el RGPD), proteja la
+  carpeta de salida como protegería los propios documentos, también en
+  Google Drive.
+- El contenido llega a Claude **solo cuando usted lo envía**: cuando sube
+  los archivos del índice o un documento a un Project de Claude, o cuando
+  elige el motor opcional `claude_code`. Entonces ese contenido pasa por su
+  cuenta de Claude, según las condiciones de su plan.
+
+## Manual completo
+
+Abra el menú **Manual** en la parte superior de cualquier pantalla del
+programa. Cubre cada pantalla y cada opción, qué es más rápido y qué da más
+calidad, cómo usar los resultados con Claude, el uso en equipo, los
+problemas frecuentes y consejos. Está disponible en español, portugués e
+inglés.
+
+## Detalles técnicos
+
+Haga clic en un tema para abrirlo.
+
+<details>
+<summary><strong>Requisitos en detalle</strong></summary>
+
+- **Windows 10 u 11, obligatorio.** El programa habla directamente con
+  interfaces específicas de Windows: PowerShell, WMI (detección de hardware
+  y monitoreo de recursos), el registro de Windows (ubicación de los datos
+  de Tesseract y detección de idioma) y Performance Counters (gráficos en
+  vivo de CPU/GPU). No funciona en Linux ni en macOS.
+- **Python 3.12**, instalado por usted si falta. Este proyecto fija
+  versiones de dependencias que los Python más nuevos (3.13, 3.14) rompen,
+  así que el instalador busca la 3.12 y, si la máquina no la tiene,
+  descarga e instala la 3.12.10 oficial para el usuario actual: sin
+  administrador, sin paso manual, y cualquier otro Python ya instalado se
+  queda exactamente donde está.
+- **OCR** (documentos escaneados sin capa de texto) necesita Tesseract y
+  Ghostscript. El instalador instala ambos cuando es posible.
+- **El motor `local`** (el predeterminado recomendado) necesita
+  [Ollama](https://ollama.com), que el instalador instala si usted acepta.
+  Una GPU con algunos gigabytes de VRAM libre lo acelera mucho, pero no es
+  obligatoria: Ollama usa toda la memoria de GPU que quepa y desborda el
+  resto a la RAM del sistema. El modelo predeterminado (`qwen3.5:4b`) pesa
+  cerca de 3,2 GB para descargar y necesita algo más que eso, sumando VRAM
+  y RAM, para ejecutarse. Una máquina con poco de ambas cosas pasa
+  automáticamente al motor `rules`, con una explicación en pantalla.
+- **El motor `rules`** no necesita nada de eso: funciona en cualquier
+  máquina Windows capaz de ejecutar Python, sin GPU, sin descargas y sin
+  software adicional.
+- Algunos gigabytes libres en disco para el entorno de Python y, si lo usa,
+  el modelo de Ollama.
+- La interfaz está en español, inglés y portugués de Brasil, a elegir en un
+  menú del encabezado de la página. El idioma predeterminado sigue el
+  idioma de visualización de su Windows.
+- El instalador es una comodidad para la primera configuración. El
+  programa en sí no se compila en un único `.exe`: sigue siendo scripts de
+  Python y PowerShell simples y legibles, y un acceso directo en el
+  escritorio lo abre con un doble clic.
+
+</details>
+
+<details>
+<summary><strong>Instalación sin el instalador</strong></summary>
+
+Este camino funciona también en una máquina donde no puede instalar
+programas. En resumen: ejecute `Indexer.bat` y siga las instrucciones. Paso
+a paso:
+
+**1. Ponga el código fuente en su máquina.** Si descargó el proyecto como
+`.zip`, haga clic derecho, elija "Extraer todo…" y elija una carpeta común
+(por ejemplo, en Documentos, o una carpeta de Google Drive montado con
+letra de unidad). Si lo clonó con Git, ya tiene una carpeta. De cualquier
+forma, recuerde dónde está; abajo se la llama "la carpeta del proyecto".
+
+**2. Abra PowerShell en la carpeta del proyecto.** En el Explorador de
+archivos, abra la carpeta del proyecto y luego mantenga **Shift**, haga
+clic derecho en un espacio vacío y elija "Abrir ventana de PowerShell aquí"
+(o "Abrir en Terminal"), o haga clic en la barra de direcciones, escriba
+`powershell` y pulse Enter. Se abre una ventana azul u oscura, ya "dentro"
+de la carpeta del proyecto.
+
+**3. No necesita instalar Python usted mismo.** El instalador del paso 4
+lo hace: necesita Python 3.12 en concreto y, si su máquina no lo tiene,
+descarga el 3.12 oficial de python.org (versión exacta, checksum
+verificado) dentro de su propia carpeta de usuario. Ese paso no pide
+administrador. Se instala *al lado* de cualquier otro Python que tenga: si
+hoy `python --version` muestra 3.13 o 3.14, lo seguirá mostrando, y las
+asociaciones de archivos y el menú Inicio quedan como están. Si prefiere
+instalarlo usted antes, es lo mismo que hace el instalador:
 
 ```powershell
 winget install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements
 ```
 
-**4. Ejecute el instalador una vez.** Esto instala Python 3.12 si falta,
-crea un entorno de Python privado para esta aplicación (fuera de la
-carpeta del proyecto, para sobrevivir a un traslado de carpeta o a una
-nueva sincronización de Google Drive/OneDrive), instala los paquetes de
-Python necesarios, verifica Tesseract y Ghostscript (instalándolos si
-faltan y usted acepta) y ofrece crear un acceso directo en el escritorio.
+**4. Ejecute el instalador una vez.** Instala Python 3.12 si falta, crea un
+entorno de Python privado para este programa (fuera de la carpeta del
+proyecto, para sobrevivir a un cambio de carpeta o a una nueva
+sincronización de Google Drive/OneDrive), instala los paquetes de Python,
+comprueba Tesseract y Ghostscript (instalándolos si faltan y usted está de
+acuerdo) y ofrece un acceso directo en el escritorio.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Windows puede mostrar un aviso de seguridad la primera vez que ejecute
-cualquier script de PowerShell descargado de internet ("Windows protegió
-su PC") — esto es normal; la opción `-ExecutionPolicy Bypass` de arriba ya
-le indica a PowerShell que ejecute este script de todas formas, sin
-cambiar ninguna configuración permanente en su máquina.
-
-Mientras se ejecuta, el instalador muestra su progreso y pide confirmación
+Windows puede mostrar "Windows protegió su PC" la primera vez que ejecuta
+un script de PowerShell descargado de internet. Es normal: la opción
+`-ExecutionPolicy Bypass` ejecuta solo este script, sin cambiar ninguna
+configuración permanente. El instalador muestra su progreso y pregunta
 antes de instalar cualquier cosa (Tesseract, Ghostscript y, opcionalmente,
 Ollama y su modelo predeterminado, que es una descarga grande). Si algún
-paso falla, muestra el comando manual que puede ejecutar usted mismo como
-alternativa. Esta primera ejecución puede tardar varios minutos, la
-mayoría del tiempo descargando paquetes.
+paso falla, muestra el comando manual para ejecutar en su lugar. La
+primera ejecución puede tardar varios minutos, la mayor parte descargando
+paquetes.
 
-**5. Acepte la oferta del acceso directo en el escritorio** al final, si
-quiere uno — es la forma más fácil de abrir la aplicación después.
+**5. Acepte el acceso directo en el escritorio** al final, si lo quiere; es
+la forma más fácil de abrir el programa. También se ofrece un *segundo*
+acceso directo, opcional, "GClaude Indexer (CPU sensor)": acéptelo solo si
+quiere ver la temperatura y el consumo de la CPU en la pantalla Ejecución
+(vea *El sensor de CPU, opcional*). Puede cambiar de opinión después con
+`install.ps1 -CpuSensorShortcut`.
 
-A continuación el instalador ofrece un *segundo* acceso directo, opcional,
-llamado "GClaude Indexer (CPU sensor)". Acéptelo solo si quiere ver la
-temperatura y el consumo de la CPU en la pantalla de ejecución: esas dos
-lecturas requieren privilegios de administrador, así que ese acceso directo
-hace que Windows pida administrador cada vez que abre la aplicación. Todo
-lo demás — incluidas la temperatura, el consumo y la frecuencia de la GPU —
-funciona sin él. Rechazarlo es una respuesta perfectamente válida, y puede
-cambiar de idea después ejecutando `install.ps1 -CpuSensorShortcut`.
+</details>
 
-## Uso diario
+<details>
+<summary><strong>Uso diario</strong></summary>
 
-Una vez instalado, haga doble clic en el acceso directo del escritorio.
-Abre una consola parecida al Símbolo del sistema solo la primera vez (si
-el instalador todavía necesita ejecutarse); después de eso, inicia la
-aplicación sin ninguna ventana visible y abre su navegador predeterminado
-en:
+Haga doble clic en el acceso directo del escritorio. Aparece una ventana de
+consola solo la primera vez, si el instalador todavía necesita ejecutarse;
+después el programa arranca sin ninguna ventana visible y abre el
+navegador en:
 
 ```
 http://127.0.0.1:8000
 ```
 
-El servidor solo escucha en `127.0.0.1` — su propia máquina — y nunca es
-accesible desde la red ni desde ninguna otra computadora.
+El servidor solo escucha en `127.0.0.1`, su propia máquina, y nunca es
+accesible desde la red ni desde otra computadora.
 
-Si prefiere no usar el acceso directo, desde la carpeta del proyecto:
+Sin el acceso directo, desde la carpeta del proyecto:
 
 ```powershell
 python launcher.py
 ```
 
-Esto hace lo mismo que el instalador — verifica el entorno, instala lo que
-falte — antes de iniciar el servidor, así que también funciona como un
-comando "simplemente haz que funcione" en una máquina donde todavía no ha
-ejecutado el instalador.
+Esto comprueba el entorno e instala lo que falte antes de iniciar el
+servidor, así que también sirve como un comando "que simplemente funcione"
+en una máquina donde todavía no ejecutó el instalador.
 
-Para cerrar la aplicación, cierre la ventana de la terminal que abrió (o,
-si se está ejecutando oculta a través del acceso directo, busque
-`pythonw.exe` en el Administrador de tareas y finalícelo).
+Para cerrar el programa, cierre la ventana de terminal que abrió (o, si se
+ejecuta oculto mediante el acceso directo, finalice `pythonw.exe` en el
+Administrador de tareas).
 
-### El sensor de CPU, opcional
+</details>
 
-Si aceptó el acceso directo "GClaude Indexer (CPU sensor)", abrirlo hace
-que Windows pida administrador. Lo que se eleva **no** es la aplicación: es
-un proceso auxiliar pequeño cuya única tarea es leer los sensores y
-devolver los números. El servidor, la indexación y sus documentos siguen
-ejecutándose sin privilegios, y el auxiliar se cierra junto con la
-aplicación.
+<details>
+<summary><strong>El sensor de CPU, opcional</strong></summary>
 
-Responder **No** a ese aviso es seguro y no cuesta nada más: el sistema
-abre exactamente como lo haría con el acceso directo normal, mostrando la
-temperatura, el consumo y la frecuencia de la GPU, y "no medido" en los dos
-sensores de la CPU. Nada falla, y no aparece ningún error.
+El acceso directo "GClaude Indexer (CPU sensor)" hace que Windows pida
+administrador cada vez que abre el programa, porque la temperatura y el
+consumo de la CPU solo se pueden leer con ese privilegio. Lo que se eleva
+**no** es el programa: es un pequeño proceso auxiliar cuya única función
+es leer los sensores y devolver los números. El servidor, la indexación y
+sus documentos se ejecutan sin ningún privilegio, y el auxiliar se cierra
+junto con el programa.
 
-## Desinstalación
+Responder **No** es seguro y no cuesta nada más: el programa se abre
+exactamente igual que con el acceso directo común, mostrando temperatura,
+consumo y frecuencia de la GPU, y "no medido" en los dos sensores de la
+CPU. Nada falla y no aparece ningún error. Todo lo demás, incluidas las
+lecturas de la GPU, funciona sin ese acceso directo.
 
-Haga doble clic en `Desinstalar.bat`, en la carpeta del proyecto — la misma
-del `Indexer.bat`. Desde un símbolo del sistema, cualquiera de los dos:
+</details>
+
+<details>
+<summary><strong>Desinstalación en detalle</strong></summary>
+
+Si instaló con el instalador de Windows, use Configuración > Aplicaciones.
+
+Si no, haga doble clic en `Desinstalar.bat`, en la carpeta del proyecto (la
+misma de `Indexer.bat`), o desde una consola:
 
 ```powershell
 .\Desinstalar.bat
 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 ```
 
-**¿Por qué no simplemente `.\uninstall.ps1`?** Google Drive marca todo
-archivo que sincroniza como si viniera de internet, y la política de
-ejecución predeterminada de Windows (RemoteSigned) se niega a ejecutar un
-`.ps1` de esa zona sin firma digital — "el archivo no está firmado
-digitalmente". El script no tiene nada malo: `Desinstalar.bat` solo pasa
-`-ExecutionPolicy Bypass` en esa ejecución, que es lo que ya hacen todos
-los demás lanzadores de este proyecto. Ejecutar `install.ps1` también quita
-esa marca de los scripts de la carpeta, y entonces el comando directo
-funciona.
+**¿Por qué no simplemente `.\uninstall.ps1`?** Google Drive marca cada
+archivo que sincroniza como venido de internet, y la directiva de ejecución
+predeterminada de Windows (RemoteSigned) se niega a ejecutar un `.ps1` así
+sin firma digital ("el archivo no está firmado digitalmente"). No hay nada
+malo en el script: `Desinstalar.bat` pasa `-ExecutionPolicy Bypass` en esa
+ejecución, como todos los demás lanzadores de este proyecto. Ejecutar
+`install.ps1` también limpia esa marca de los scripts de la carpeta, y
+entonces el comando directo funciona.
 
 Pregunta por cada elemento por separado, y la respuesta predeterminada es
-siempre **no**. Distingue lo que esta instalación considera suyo — el
-entorno virtual, los accesos directos, las bibliotecas de sensores, la
+siempre **no**. Separa lo que es propio de esta instalación (el entorno
+virtual, los accesos directos, las bibliotecas de sensores, la
 configuración local, las entradas de PATH y las variables de entorno que
-creó — de los programas comunes que solo instaló para usted: Tesseract,
-Ghostscript, Ollama, Python y los modelos descargados de Ollama. Otro
-software de su máquina puede estar usándolos, así que cada uno se ofrece
-por separado, diciéndolo con claridad.
+creó) de los programas comunes que solo instaló por usted: Tesseract,
+Ghostscript, Ollama, Python y los modelos descargados de Ollama. Otros
+programas pueden estar usándolos, así que cada uno se ofrece por separado,
+y lo dice claramente.
 
-**Nunca elimina sus proyectos.** Las carpetas de salida, sus bases de
-datos, los PDF con OCR y los informes generados son sus documentos, no
-restos de instalación. El script indica dónde están, con su tamaño, y
+**Nunca borra sus proyectos.** Las carpetas de salida, sus bases de datos,
+los PDF con OCR y los informes generados son sus documentos, no restos de
+la instalación. El script indica dónde están, con el tamaño de cada uno, y
 deja la decisión en sus manos.
 
 Tres opciones cubren los usos no interactivos:
@@ -319,130 +447,152 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1 -KeepDependencies  # cons
 powershell -ExecutionPolicy Bypass -File uninstall.ps1 -RemoveAll         # dice sí a todo (menos a sus proyectos)
 ```
 
-La carpeta del proyecto en sí la sincroniza Google Drive y nunca se toca:
-elimínela allí si quiere que desaparezca de todas las computadoras.
+La carpeta del propio proyecto, si la sincroniza Google Drive, nunca se
+toca: bórrela allí si quiere que desaparezca de todas las computadoras.
 
-## Uso de la aplicación
+</details>
 
-La interfaz tiene cinco pantallas, más una página "Acerca de":
+<details>
+<summary><strong>Las pantallas del programa</strong></summary>
 
-1. **Proyectos** — enumera todos los proyectos que ha abierto, con su fecha
-   de creación y estado actual. Aquí es donde llega al abrir la
-   aplicación. Al final está el **Catálogo compartido**: indíquele una
-   carpeta dentro de su Google Drive y toda computadora con el mismo
-   Drive verá, abrirá, editará y eliminará los mismos proyectos. Sin él,
-   la *lista* de proyectos queda solo en esta máquina aunque los
-   proyectos sí se sincronicen — por eso otra computadora mostraría la
-   pantalla vacía. Los proyectos guardados en el disco local de otra
-   computadora aparecen marcados como fuera de alcance. **Abrir proyecto
-   existente**, junto a "Nuevo proyecto", recibe una carpeta que usted
-   indica y reabre el proyecto que haya en ella — para una reinstalación,
-   una máquina nueva, una carpeta que movió o que alguien le envió. No se
-   recrea nada: la carpeta de salida ya guarda el proyecto completo, y se
-   usa tal como está.
-2. **Nuevo proyecto** — un formulario donde elige una carpeta de origen
-   (los documentos), una carpeta de salida (a dónde van los resultados),
-   qué tipos de archivo incluir, cómo deben agruparse los documentos y qué
-   motor de clasificación usar. Cada campo ya tiene un valor por defecto
-   sensato y una pista "?" junto a su etiqueta.
-3. **Ejecución** — una fila por paso de procesamiento (escaneo,
-   conversión, extracción por página, preparación de ventanas,
-   clasificación), cada una con un botón "ejecutar este paso", una barra
-   de progreso con una estimación de tiempo, y un botón de pausa. Debajo
-   se muestran un registro en vivo y un gráfico de uso de CPU/RAM/GPU. Un
-   botón aparte, "Importar y generar informes", ejecuta los dos últimos
-   pasos (convirtiendo los elementos clasificados en los cuatro archivos
-   de salida) una vez que termina la clasificación. Si la carpeta de
-   origen cambió desde la última ejecución, un aviso aparece en la parte
-   superior un momento después de que la página carga, con un enlace a la
-   siguiente pantalla.
-4. **Actualizar colección** — a la que se llega desde ese aviso, o
-   directamente. Enumera los documentos nuevos, editados y eliminados,
-   nombra los que se van a reprocesar, y indica el costo: cuántos
-   archivos pasan de nuevo por el OCR, cuántas ventanas se reclasifican y
-   cuántas conservan la clasificación que ya tienen. Nada cambia hasta que
-   confirme. Si la carpeta de origen no se puede leer — una unidad
-   desconectada, una carpeta que se movió — lo indica y no ofrece nada,
-   porque una carpeta inalcanzable nunca debe confundirse con una
-   colección cuyos documentos fueron todos eliminados.
-5. **Resultado** — una vista previa de los cuatro archivos generados, un
-   botón para abrir la carpeta de salida directamente en el Explorador de
-   archivos, un informe de lo que sigue pendiente, y un botón para
-   liberar espacio en disco eliminando los archivos intermedios (los PDF
-   con OCR y los fragmentos de texto) una vez que esté satisfecho con el
-   resultado — la base de datos, los cuatro informes y los registros nunca
-   se ven afectados por esto.
+La interfaz tiene cinco pantallas, más **Manual** y **Acerca de**:
 
-Un selector de idioma y un selector de tema (cuatro temas de color) están
-en el encabezado de cada pantalla; ambas elecciones se recuerdan en su
-navegador entre visitas.
+1. **Proyectos**: todos los proyectos que conoce esta computadora, con su
+   fecha de creación y su estado. Es donde se abre el programa.
+   - **Catálogo compartido**: indique una carpeta dentro de Google Drive y
+     todas las computadoras conectadas a ese Drive pasan a ver, abrir,
+     editar y eliminar los mismos proyectos. Sin él, la *lista* de
+     proyectos queda solo en esta máquina, aunque los proyectos se
+     sincronicen; por eso otra computadora mostraría la pantalla vacía. Los
+     proyectos guardados en el disco local de otra computadora aparecen
+     marcados como fuera de alcance.
+   - **Abrir proyecto existente** recibe una carpeta que usted indica y
+     reabre el proyecto que contiene: después de reinstalar, en una
+     máquina nueva, para una carpeta que movió o que alguien le envió. No se
+     recrea nada; la carpeta de salida ya guarda el proyecto entero.
+   - **Eliminar** ofrece dos opciones: solo quitar el proyecto de la lista
+     (los archivos quedan en el disco) o también borrar los archivos
+     generados. En ese caso el programa borra solo lo que él mismo creó
+     (base, copias convertidas, informes). Sus propios archivos que estén
+     en la carpeta de salida se conservan, y la carpeta solo desaparece si
+     queda vacía. En `project_instructions.md` y `CLAUDE.md` se quita solo
+     el bloque generado. La carpeta de origen nunca se toca.
+2. **Nuevo proyecto**: un formulario para la carpeta de origen (los
+   documentos), la carpeta de salida (donde van los resultados), qué tipos
+   de archivo incluir, cómo agrupar los documentos y qué motor de
+   clasificación usar. Cada campo trae un valor predeterminado razonable y
+   una ayuda "?".
+3. **Ejecución**: una fila por paso (escaneo, conversión, extracción por
+   página, preparación de ventanas, clasificación), cada una con un botón
+   para ejecutarlo, una barra de progreso con estimación de tiempo y un
+   botón de pausa. Debajo, un registro en vivo en lenguaje sencillo y
+   gráficos de CPU/RAM/GPU. Un botón aparte, **Importar y generar
+   informes**, convierte los elementos clasificados en los archivos de
+   salida cuando termina la clasificación. Si la carpeta de origen cambió
+   desde la última ejecución, aparece un aviso arriba poco después de que
+   carga la página (no en un proyecto que nunca se ejecutó).
+4. **Actualizar acervo**: se llega desde ese aviso. Enumera los documentos
+   nuevos, editados y eliminados, nombra los que se reprocesarán e informa
+   el costo: cuántos archivos pasan de nuevo por OCR, cuántas ventanas se
+   reclasifican, cuántas conservan su clasificación y qué documentos
+   tendrán cambiada la numeración de folios. Nada cambia hasta que usted
+   confirma. Si la carpeta de origen no se puede leer (un disco
+   desconectado, una carpeta movida), lo dice y no ofrece nada, porque una
+   carpeta inaccesible nunca debe confundirse con un acervo cuyos
+   documentos se borraron todos.
+5. **Resultado**: la puntuación de calidad, los pendientes, una vista
+   previa de cada archivo generado (solo el comienzo de los muy grandes),
+   el paquete para Claude, un botón para abrir la carpeta de salida en el
+   Explorador de archivos y **Liberar espacio**, que borra los archivos
+   intermedios (las carpetas `converted/` y `blocks/`: PDF con OCR y
+   trozos de texto) cuando usted ya esté conforme con el resultado. La
+   base, los informes y los registros nunca se tocan con esto.
 
-## Mantener una colección actualizada
+El encabezado de cada pantalla tiene un selector de idioma, un selector de
+tema (Claro, Oscuro, Sepia, Alto contraste, Aurora, Toga, Grafito y
+Océano) y un selector de diseño (Predeterminado, Técnico, Editorial y
+Compacto). Sus elecciones se recuerdan en su navegador.
 
-Una colección cambia. Llegan documentos, un escaneo se reemplaza por uno
-mejor, algo se saca. Nada de eso requiere indexarlo todo de nuevo.
+</details>
+
+<details>
+<summary><strong>Mantener un acervo actualizado</strong></summary>
+
+Un acervo cambia: llegan documentos, un escaneo se reemplaza por uno
+mejor, algo se retira. Nada de eso exige indexar todo de nuevo.
 
 Abra el proyecto. Unos segundos después de que aparece la pantalla
-Ejecución, si algo cambió en la carpeta de origen, un aviso dice cuánto —
-"14 nuevos, 3 editados, 1 eliminado". Sígalo hasta la pantalla
-**Actualizar colección**, lea lo que planea hacer y confirme. Después
-ejecute los pasos como de costumbre: solo encontrarán el trabajo que la
-actualización les dejó.
+Ejecución, si algo cambió en la carpeta de origen, un aviso dice cuánto
+("14 nuevos, 3 editados, 1 eliminado"). Sígalo hasta **Actualizar acervo**,
+revise el plan y confirme. Después ejecute los pasos como siempre:
+encontrarán solo el trabajo que dejó la actualización. Agregar un documento
+a un acervo de 500 páginas reclasifica una ventana en vez de treinta y
+seis: cerca de un minuto en vez de dieciocho y medio.
 
-**Un paso no forma parte de "ejecutar todos los pasos".** Convertir los
-elementos clasificados en los cuatro archivos Markdown es un botón aparte —
-"Importar y generar informes" — en la misma pantalla Ejecución. Que la
-clasificación termine no los escribe. Si lo omite, los informes siguen
-describiendo la colección como era antes, lo cual es tan confuso como suena.
-La aplicación ahora avisa: en cuanto no queda nada por procesar, aparece un
-aviso con el botón dentro, y la pantalla Resultado indica claramente cuándo
-los archivos mostrados son anteriores al proyecto y qué ha cambiado desde
-entonces.
+**Un paso no forma parte de "Ejecutar todo".** Convertir los elementos
+clasificados en los archivos Markdown es un botón propio, **Importar y
+generar informes**, en la pantalla Ejecución. Que termine la clasificación
+no los escribe. Si omite ese paso, los informes siguen describiendo el
+acervo como era antes. El programa se lo recuerda: cuando no queda nada por
+procesar, aparece un aviso con el botón, y la pantalla Resultado dice
+claramente cuándo los archivos mostrados son anteriores al proyecto y qué
+cambió desde entonces. Después de actualizar, vuelva a subir los archivos a
+su Project de Claude.
 
-**Qué cuesta, y por qué no es la colección entera.** Los documentos se
-agrupan, y las páginas de un grupo se leen como una única secuencia
-larga, cortada en ventanas superpuestas — las ventanas son lo que el
-motor de clasificación realmente lee. Un cambio no invalida un
-documento; invalida el grupo desde la primera página que se desplazó en
-adelante. Todo lo anterior a ese punto conserva sus páginas y su
-clasificación intactas. Por eso un documento añadido al final de un
-grupo cuesta casi nada, mientras que uno insertado al principio desplaza
-cada página posterior y cuesta más. La pantalla le indica en qué caso
-está antes de que se comprometa.
+**Por qué no es el acervo entero.** Los documentos se agrupan, y las
+páginas de un grupo se leen como una sola secuencia larga, cortada en
+ventanas superpuestas; las ventanas son lo que lee el motor de
+clasificación. Un cambio invalida el grupo a partir de la primera página
+que se desplazó. Todo lo anterior conserva sus páginas y su
+clasificación. Un documento agregado al final de un grupo cuesta casi nada;
+uno insertado al principio desplaza todas las páginas siguientes y cuesta
+más. La pantalla le dice en qué caso está antes de confirmar.
 
-Los documentos que solo necesitan renumeración no vuelven a pasar por el
-OCR — los archivos convertidos siguen en el disco y simplemente se
-releen. Solo un documento cuyo propio contenido cambió paga ese costo.
+**Documentos eliminados.** Sus páginas y piezas salen del índice, su copia
+convertida se borra, y el nombre y el momento de la eliminación quedan
+registrados en `review.md`. Si la carpeta tenía una copia idéntica del
+documento eliminado, esa copia se indexa en su lugar. Si un grupo
+desaparece por completo, se borra su `index-<grupo>.md`.
 
-**Si borró los archivos intermedios** desde la pantalla Resultado, los
-archivos convertidos dejan de existir, y los documentos que se habrían
-releído deben convertirse de nuevo. La actualización maneja esto
-correctamente; solo tarda más.
+**Numeración de folios que cambia.** En un acervo de tipo expediente, la
+numeración de folios (f. 1, f. 2…) es continua dentro del grupo. Agregar o
+quitar un documento en el medio cambia los números de los documentos
+siguientes. La pantalla de confirmación los enumera y el registro lo
+avisa: las conversaciones antiguas con Claude que citaban esos folios
+pueden quedar desactualizadas.
 
-**Si no se puede alcanzar la carpeta de origen** — la unidad está
-desconectada, la carpeta se movió o se renombró — no se ofrece nada y no
-se cambia nada. Una carpeta inalcanzable no es una colección cuyos
-documentos fueron todos eliminados, y la aplicación no la tratará como
-tal.
+Los documentos que solo necesitan renumeración no pasan de nuevo por OCR:
+sus archivos convertidos siguen en disco y simplemente se releen. Solo un
+documento cuyo propio contenido cambió paga ese costo.
 
-## Obtener una buena clasificación
+**Si borró los archivos intermedios** con Liberar espacio, los archivos
+convertidos ya no existen, y los documentos que se habrían releído deben
+convertirse de nuevo. La actualización lo maneja correctamente; solo tarda
+más.
 
-Dos campos deciden más sobre el resultado que cualquier otra cosa, y ambos
-son fáciles de pasar por alto porque nada le obliga a pensarlos.
+**Si no se puede acceder a la carpeta de origen** (el disco está
+desconectado, la carpeta se movió o se renombró), no se ofrece nada y no se
+cambia nada.
 
-**Complete el Asunto y el Tipo de acervo en el formulario de Nuevo
-proyecto.** No son adorno: el motor `local` los muestra al modelo, y son los
-que le dicen *qué tipo de documento está leyendo*. Un acervo de material
-didáctico descrito solo con los valores por defecto termina clasificado
-contra ejemplos genéricos, y el modelo responde correctamente "no sé" para
-casi todos los tipos. Escribir una frase sobre el acervo — qué es, de dónde
-viene, qué documentos tiene — es lo más eficaz que puede hacer por el
-resultado. Las "Instrucciones de rol" y las "Reglas adicionales" también se
-transmiten, como contexto sobre el acervo.
+</details>
+
+<details>
+<summary><strong>Lograr una buena clasificación</strong></summary>
+
+Dos cosas deciden más sobre el resultado que cualquier otra.
+
+**Complete Tema de la colección y Tipo de colección en Nuevo proyecto.** El
+motor `local` se los muestra al modelo, y son lo que le dice *qué tipo de
+documento está leyendo*. Un acervo descrito solo con los valores
+predeterminados se clasifica contra ejemplos genéricos, y el modelo
+responde correctamente "no sé" para casi todos los tipos. Una frase sobre
+el acervo (qué es, de dónde viene, qué documentos tiene) es lo más eficaz
+que puede hacer por el resultado. **Rol en las instrucciones** y **Reglas
+adicionales** también se transmiten, como contexto.
 
 **Qué modelo usar.** Medido en este proyecto, sobre las mismas ventanas de
-un documento de 31 páginas, con todos los modelos ejecutándose enteramente
-en una placa de 8 GB:
+un documento de 31 páginas, con todos los modelos ejecutándose por completo
+en una tarjeta de 8 GB:
 
 | Modelo | Tamaño | Tipo completado | s/ventana |
 |---|---:|---:|---:|
@@ -452,243 +602,305 @@ en una placa de 8 GB:
 | `qwen3:8b` | 5,4 GB | 100% | 108,8 |
 | `granite4.2:8b` | 5,7 GB | 100% | 116,9 |
 
-`qwen3.5:4b` alcanza la misma calidad que el mejor de ellos en un cuarto del
-tiempo y con la mitad de la VRAM, y cabe en una placa de 6 GB tan holgado
-como en una de 8 GB. Es el predeterminado desde la versión 1.0.1; antes el
-predeterminado era `gemma4:e4b`, que sigue siendo seleccionable aquí para
-quien quiera comparar. El modelo mayor de la misma familia perdió ante el
-menor: describir una página es lectura y disciplina de formato, no
-razonamiento profundo.
+`qwen3.5:4b` alcanza la calidad del mejor de ellos en una cuarta parte del
+tiempo y con la mitad de la VRAM, y cabe en una tarjeta de 6 GB tan holgado
+como en una de 8 GB: una sola configuración para todas las máquinas. Es el
+predeterminado desde la 1.0.1; antes lo era `gemma4:e4b`, que todavía puede
+elegir para comparar. El modelo más grande de la misma familia perdió
+frente al más pequeño: describir una página es lectura y disciplina de
+formato, no razonamiento profundo, así que el tamaño no compra calidad aquí
+y cuesta tiempo.
 
-**Elija un modelo que quepa en su placa de video.** Lo que no cabe en la
-VRAM, Ollama lo ejecuta en la CPU, y la diferencia no es sutil. En la
-máquina donde se midió esto — placa de 8 GB — un modelo de 9,1 GB se
-ejecutó con el 17% de sí mismo en la GPU; uno de 5 GB se ejecutó entero en
-la GPU. La pantalla de Ejecución muestra la VRAM de su placa, la pantalla
-"Acerca de" lista los modelos instalados, y el registro avisa cuando el
-modelo elegido no cabe. Más pequeño suele ser el intercambio correcto.
+**Elija un modelo que quepa en su tarjeta gráfica.** Lo que no cabe en la
+VRAM, Ollama lo ejecuta en la CPU, y la diferencia es grande. En una
+tarjeta de 8 GB, un modelo de 9,1 GB se ejecutó con el 17% de sí mismo en
+la GPU; uno de 5 GB se ejecutó entero en la GPU. La pantalla Ejecución
+muestra la VRAM de su tarjeta, la pantalla Acerca de enumera los modelos
+instalados, y el registro avisa cuando el modelo elegido no cabe. Un modelo
+que cabe y termina vale más que uno más grande que pasa la ejecución entera
+desbordándose.
 
-Si la nota de calidad parece baja, abra el registro: ahora informa cómo se
-está usando la GPU y, en la pantalla de Resultado, la nota viene desglosada
-en confianza, completitud de campos y penalizaciones.
+Si la puntuación de calidad parece baja, abra el registro: informa cómo se
+está usando la GPU. En la pantalla Resultado, la puntuación se desglosa en
+confianza, campos completados y penalizaciones, para que vea cuál le está
+costando. La puntuación se basa en lo que declaró el propio motor; no mide
+el acierto real, así que revise algunas piezas por muestreo.
 
-### Qué garantiza el índice
+</details>
 
-Dos propiedades se cumplen por bien o mal que el modelo haga su trabajo,
-porque el código las impone en lugar de pedirlas.
+<details>
+<summary><strong>Lo que garantiza el índice</strong></summary>
 
-**Toda página llega al índice.** Una página que el modelo nunca mencionó
-recibe igualmente una entrada — con su referencia, su archivo y su propio
-texto como resumen — porque la agrupación recorre las páginas de la
-ventana, no la respuesta del modelo. Una pieza que no pasa la validación
-se descarta, pero las páginas que cubría se recogen de nuevo como entrada
-de confianza baja, en lugar de desaparecer con ella. Un índice que omite
-una página en silencio es peor que ningún índice: lo que falta es
-invisible.
+Dos propiedades se cumplen sin importar qué tan bien haga el modelo su
+trabajo, porque el código las impone.
 
-**Las fechas conservan la precisión que el documento realmente tiene.**
-Los documentos fechados por período — "competência 01/2020", "exercício
-2019" — se guardan como `2020-01` y `2019`, y no se rellenan hasta un
-primer día de mes que la página nunca afirmó. La ISO 8601 admite la forma
-reducida, y sigue ordenando correctamente en `timeline.md`. Una fecha cuyo
-día no existe (`2021-09-31`) baja al mes; el texto que no es fecha en
-absoluto deja el campo vacío, y la pieza conserva todo lo demás.
+**Cada página llega al índice.** Una página que el modelo nunca mencionó
+igual recibe una entrada, con su referencia, su archivo y su propio texto
+como resumen, porque el agrupamiento recorre las páginas de la ventana, no
+la respuesta del modelo. Una pieza que no pasa la validación se descarta,
+pero sus páginas vuelven como entrada de confianza baja en lugar de
+desaparecer con ella. Un índice que omite una página en silencio es peor
+que ningún índice: lo que falta es invisible.
 
-### Ventanas, bloques y OCR
+**Las fechas conservan la precisión que el documento realmente tiene.** Los
+documentos fechados por período ("competência 01/2020", "exercício 2019")
+se guardan como `2020-01` y `2019`, sin completarlos con un primer día de
+mes que la página nunca indicó. La ISO 8601 admite la forma reducida, y
+sigue ordenándose correctamente en `timeline.md`. Una fecha cuyo día no
+existe (`2021-09-31`) baja al mes; un texto que no es una fecha deja el
+campo vacío, y la pieza conserva todo lo demás.
 
-**Páginas por ventana** es el campo que decide la calidad: es cuántas
-páginas van en cada pedido al modelo, y él responde con una línea por
-página. **8 es el valor recomendado.** Con 16, solo la respuesta supera los
-3.500 tokens y empieza a truncarse — fue la causa de todos los malos
-resultados medidos durante el ajuste. Con 4 se triplican los pedidos sin
-ganancia.
+</details>
 
-**Páginas por bloque** *no* afecta al índice. Solo corta PDF muy grandes en
-archivos auxiliares dentro de `salida/blocks/`, que nada más lee y que el
-botón "liberar espacio" borra. Déjelo en 80.
+<details>
+<summary><strong>Ventanas, bloques y OCR</strong></summary>
 
-**OCR** solo se aplica a PDF sin capa de texto — el sistema lo detecta por
-archivo y lo omite cuando el texto ya existe.
+Una **ventana** es una serie de páginas seguidas que el clasificador lee de
+una vez para descubrir dónde empieza y termina cada pieza.
 
-## Motores de clasificación
+**Páginas por ventana** es lo que más afecta la calidad: es cuántas páginas
+van en cada solicitud al modelo, que responde con una línea por página. El
+valor predeterminado del formulario es 16. Cuando se ajustó el motor
+local, 8 dio los mejores resultados: con 16, la respuesta sola pasaba de
+3.500 tokens y se truncaba, y con 4 se triplica el número de solicitudes
+sin ganancia. Desde la 1.3.2, el motor local nota cuando una respuesta
+vuelve incompleta y reintenta con un contexto mayor o dividiendo la
+ventana. Si la puntuación es baja con el modelo local, pruebe con 8.
+Muchos documentos cortos mezclados funcionan mejor con ventanas más
+pequeñas; los documentos largos y estandarizados toleran ventanas más
+grandes.
 
-La clasificación — decidir qué es cada página, quién la escribió y cuándo —
-es el único paso de todo el flujo en el que usted elige *cómo* se hace el
-trabajo. Todo lo demás en el flujo (escaneo, OCR, extracción, generación de
-informes) es idéntico sin importar qué motor elija aquí.
+**Páginas por bloque** *no* afecta el índice. Solo corta los PDF muy
+grandes en archivos auxiliares dentro de `blocks/`, en la carpeta de
+salida, que nada más lee y que Liberar espacio borra. Déjelo en 80; bájelo
+solo si un PDF muy grande (más de 500 páginas) hace que la conversión se
+quede sin memoria.
+
+**OCR** solo se aplica a los PDF sin capa de texto; el programa lo detecta
+archivo por archivo y lo omite cuando el texto ya existe. Entonces lo que
+importa es que el **Idioma del OCR** coincida con sus documentos.
+
+</details>
+
+<details>
+<summary><strong>Motores de clasificación</strong></summary>
+
+La clasificación (decidir qué es cada página, quién la escribió y cuándo)
+es el único paso en el que usted elige *cómo* se hace el trabajo. Todos los
+demás (escaneo, OCR, extracción, generación de informes) son idénticos sea
+cual sea el motor elegido, y siempre se ejecutan en local.
 
 | Motor | Costo | ¿Sale de la máquina? | Necesita |
 |---|---|---|---|
-| `rules` | gratis | no | nada — funciona en cualquier máquina Windows |
-| `local` | gratis | no | Ollama, instalado automáticamente; más rápido con GPU, funciona sin ella |
-| `claude_code` | su suscripción existente de Claude Code | **sí** | Claude Code ya instalado en esta máquina |
-| `automatic` | — | — | elige `local` si el hardware lo permite, si no recurre a `rules`; nunca elige `claude_code` por su cuenta |
+| `rules` | gratuito | no | nada: funciona en cualquier máquina Windows |
+| `local` | gratuito | no | Ollama, instalado automáticamente; más rápido con GPU, funciona sin ella |
+| `claude_code` | su suscripción de Claude ya existente | **sí** | Claude Code ya instalado en esta máquina |
+| `automatic` | — | — | elige `local` si el hardware lo soporta, si no `rules`; nunca elige `claude_code` por su cuenta |
 
-**`claude_code` es completamente opcional.** GClaude Indexer funciona de
-principio a fin sin él, usando `rules` o `local` — ninguno de los dos
-necesita nada más allá de lo que ya prepara el instalador. Elija
-`claude_code` solo si ya usa Claude Code y quiere específicamente que la
-clasificación se haga a través de él; en ese caso, la aplicación prepara
-los archivos y le muestra un comando para pegar en Claude Code, y luego
-importa el resultado en cuanto Claude Code termina.
+**`claude_code` es totalmente opcional.** El programa funciona de principio
+a fin sin él. Elíjalo solo si ya usa Claude Code y quiere que haga la
+clasificación. El programa escribe entonces un `CLAUDE.md` en la carpeta de
+salida y le muestra una frase para decirle a Claude Code (`procese las
+ventanas`); abra Claude Code en la carpeta de salida, diga la frase y,
+cuando termine, haga clic en **Comprobar de nuevo si las ventanas
+terminaron**. Ese `CLAUDE.md` le indica a Claude Code que trate el texto
+de los documentos como dato no confiable, nunca como instrucciones.
 
-`rules` es un motor determinista — busca marcadores conocidos de tipo de
-documento, patrones de fecha y bloques de firma, sin ningún modelo de
-aprendizaje automático involucrado, así que su salida es totalmente
-reproducible y no necesita ninguna instalación. `local` usa un modelo
-abierto servido por [Ollama](https://ollama.com) en su propia máquina
-(`http://127.0.0.1:11434`, nunca una dirección remota) y por lo general
-produce mejores resultados que `rules`, a costa del espacio en disco, la
-descarga y (opcionalmente) la GPU listados en [Requisitos](#requisitos).
+`rules` es determinista: busca marcadores conocidos de tipo de documento,
+patrones de fecha y bloques de firma, sin ningún modelo de aprendizaje
+automático, así que su resultado es totalmente reproducible y no necesita
+instalación. `local` usa un modelo abierto servido por
+[Ollama](https://ollama.com) en su propia máquina
+(`http://127.0.0.1:11434`, nunca una dirección remota, nunca a través de
+un proxy) y en general da mejores resultados que `rules`, a costa del
+espacio en disco, la descarga y (opcionalmente) la GPU indicados en
+Requisitos.
 
-Una opción "revisar elementos de confianza baja" también está disponible
-en el formulario de Nuevo proyecto: ejecuta `rules` sobre todo, y después
-vuelve a procesar solo los elementos de confianza baja con un segundo
-motor de su elección — un punto medio entre el costo cero de `rules` y la
-mejor precisión de un motor más caro, solo en las páginas que realmente lo
-necesitan.
+**Revisar confianza baja**, en Nuevo proyecto, ejecuta `rules` sobre todo y
+envía solo las piezas de confianza baja a un segundo motor de su elección:
+un punto intermedio entre el costo cero de `rules` y la precisión de un
+motor más fuerte en las páginas que lo necesitan. La pantalla Resultado
+tiene una tabla para comparar motores y modelos ejecutados sobre el mismo
+acervo.
 
-## Archivos de salida
+</details>
 
-Escritos en la carpeta de salida que eligió, siempre en el idioma en el
-que esté la interfaz en el momento en que los genere:
+<details>
+<summary><strong>Archivos de salida</strong></summary>
 
-- `index.md` — un catálogo de cada elemento clasificado, con su origen,
-  tipo, fecha, autor y resumen.
-- `timeline.md` — los elementos con fecha en orden cronológico.
-- `review.md` — un informe de cobertura: vacíos, fallos, lo que sigue
-  pendiente, y los documentos que se eliminaron de la carpeta de origen,
-  con el momento en que cada uno salió. El índice y la cronología
-  describen la colección tal como está hoy; aquí es donde descubre qué
-  solía haber en ella.
-- `project_instructions.md` — instrucciones listas para pegar en un nuevo
-  proyecto de Claude, construidas a partir de una plantilla con los campos
-  que completó en el formulario de Nuevo proyecto.
+Se escriben en la carpeta de salida que eligió, en el idioma en que esté la
+interfaz cuando los genere:
 
-La pantalla Resultado también ofrece un paquete `.zip` que contiene estos
-cuatro archivos más una guía breve, del tamaño adecuado para pegar
-directamente en un proyecto nuevo de Claude.
+- `index.md`: el sumario. Enumera los grupos y dice qué archivo de índice
+  abrir para cada uno.
+- `index-<grupo>.md`: un índice por grupo. Cada pieza con sus folios o
+  páginas, tipo, fecha, autor, archivo y página dentro del PDF, y un
+  resumen.
+- `timeline.md`: las piezas fechadas en orden cronológico.
+- `review.md`: un informe de revisión: qué se leyó, vacíos, fallos, lo que
+  sigue pendiente, y los documentos eliminados de la carpeta de origen,
+  con el momento en que salió cada uno. El índice y la cronología
+  describen el acervo tal como está hoy; aquí descubre lo que antes había
+  en él.
+- `project_instructions.md`: instrucciones para un Project de Claude,
+  armadas con los campos que completó en Nuevo proyecto, incluidas cómo
+  usar el índice y la regla de confirmar siempre los valores en el
+  documento original.
+- `project.db`: la base del proyecto. Guarda todo, incluido el texto de
+  cada página.
+- `CLAUDE.md`: solo cuando usa el motor `claude_code`.
 
-## OCR e idioma de los documentos
+**Su propio texto en estos archivos se conserva.** En
+`project_instructions.md` y `CLAUDE.md`, el contenido generado queda entre
+`<!-- GCLAUDE-INDEXER:BEGIN … -->` y `<!-- GCLAUDE-INDEXER:END -->`. Volver
+a generar los archivos rehace solo ese bloque; lo que usted escribió fuera
+de él se queda. Si la carpeta de salida ya tenía un `CLAUDE.md` suyo, se
+conserva y se le agrega el bloque, y la primera vez se guarda una copia
+`.bak` del original. El texto pegado en **Instrucciones que ya usa** va al
+principio de `project_instructions.md`.
 
-El OCR de Tesseract usa portugués (`por`) por defecto en los proyectos
-nuevos, ya que este proyecto nació para colecciones documentales en
-portugués de Brasil.
+La pantalla Resultado también ofrece un paquete `.zip` con estos archivos y
+una guía breve. La guía indica pegar el `project_instructions.md`
+**completo** en las instrucciones del Project y subir `index.md`, los
+archivos `index-<grupo>.md`, `timeline.md` y `review.md` como conocimiento
+del proyecto.
+
+</details>
+
+<details>
+<summary><strong>OCR e idioma de los documentos</strong></summary>
+
+Los proyectos nuevos usan OCR en portugués (`por`) de forma
+predeterminada, ya que el proyecto nació para acervos en portugués de
+Brasil.
 
 El paquete de Tesseract para Windows trae solo `eng` y `osd`, así que
-`install.ps1` descarga e instala el idioma para el que el proyecto está
-configurado (`por`, por defecto) en la carpeta `tessdata` de Tesseract. Pide
-elevación a Windows solo para esa copia de archivo, y verifica el SHA-256
-antes de instalarlo.
+`install.ps1` descarga los datos del idioma que usa el proyecto (`por`,
+por defecto) en la carpeta `tessdata` de Tesseract. Pide permisos de
+administrador a Windows solo para esa copia de archivo, y verifica el
+SHA-256 antes de instalarlo.
 
-Si su colección está en otro idioma, cambie el campo "Idioma del OCR" en el
-formulario de Nuevo proyecto al código de idioma de Tesseract correspondiente
-(por ejemplo, `eng` para inglés o `spa` para español) e instale el paquete de
-datos de ese idioma ejecutando el instalador con el código que necesita:
+Si su acervo está en otro idioma, cambie el **Idioma del OCR** en Nuevo
+proyecto al código correspondiente de Tesseract (por ejemplo `eng` para
+inglés, `spa` para español, o `por+eng` para ambos en el mismo acervo) e
+instale los datos de ese idioma:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -OcrLanguage spa
 ```
 
-El instalador solo instala idiomas cuyo SHA-256 tiene fijado — hoy `por`,
-`eng`, `spa` y `osd`. Nunca descarga un archivo que no puede verificar; para
-cualquier otro idioma muestra dónde conseguirlo y dónde ponerlo, y continúa.
+El instalador solo instala idiomas cuyo SHA-256 tiene fijado: hoy `por`,
+`eng`, `spa` y `osd`. Nunca descarga un archivo que no puede verificar;
+para cualquier otro idioma, indica dónde conseguir el archivo y dónde
+ponerlo, y sigue adelante.
 
-## Ejecutar la suite de pruebas
+</details>
 
-Si está contribuyendo cambios, o solo quiere confirmar que todo funciona
-después de instalar, usando el intérprete de Python dentro del entorno que
-creó el instalador (no el `python` que resuelva su `PATH` por su cuenta —
-vea [Requisitos](#requisitos)):
+<details>
+<summary><strong>Ejecutar la suite de pruebas</strong></summary>
+
+Si está contribuyendo con cambios, o quiere confirmar que todo funciona
+después de instalar, use el Python del entorno que creó el instalador (no
+el `python` que encuentre su PATH):
 
 ```powershell
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest -q
 ```
 
-Una ejecución correcta termina con una línea como:
+Una ejecución correcta termina con una línea como `704 passed, … warnings
+in …s` y ningún fallo. El número de pruebas crece con el tiempo; los avisos
+vienen de bibliotecas de terceros, no del código de este proyecto, y su
+cantidad puede variar según la máquina. Vea
+[CONTRIBUTING.es.md](CONTRIBUTING.es.md) (original en inglés:
+[CONTRIBUTING.md](../CONTRIBUTING.md)) para la configuración completa de un
+entorno de desarrollo.
 
-```
-552 passed, 7 warnings in 181.23s (0:03:01)
-```
+</details>
 
-(El número de avisos puede variar ligeramente según la máquina; provienen
-de bibliotecas de terceros, no del código propio de este proyecto.) Vea
-[CONTRIBUTING.md](../CONTRIBUTING.md) (en inglés; vea también
-[CONTRIBUTING.es.md](CONTRIBUTING.es.md)) para la configuración completa
-de un entorno de desarrollo.
-
-## Solución de problemas
+<details>
+<summary><strong>Solución de problemas</strong></summary>
 
 - **Aparece un aviso de que el sistema se actualizó después de abrir la
-  ventana.** El código en disco cambió mientras este servidor se ejecutaba, y
-  Python carga los módulos una sola vez, al arrancar. Cierre el sistema y
-  ábralo de nuevo con el acceso directo.
+  ventana.** El código en disco cambió mientras el servidor se ejecutaba,
+  y Python carga los módulos una sola vez, al arrancar. Cierre el programa
+  y ábralo de nuevo con el acceso directo; una ejecución iniciada antes
+  usaría el código antiguo.
 - **El navegador se abre pero la página nunca carga.** Espere unos
-  segundos — el servidor puede tardar un momento en iniciar en la primera
-  ejecución. Si sigue sin cargar, compruebe si otro programa ya está
-  usando el puerto 8000.
-- **"python no se reconoce…" en PowerShell.** Python no está en el `PATH`
-  de su sistema. Reinstálelo con el comando `winget` en
-  [Instalación](#instalación-primera-vez-en-una-máquina) e inténtelo de
-  nuevo, o use la ruta completa al intérprete, como se muestra en
-  [Ejecutar la suite de pruebas](#ejecutar-la-suite-de-pruebas).
-- **El OCR falla o no produce texto.** Confirme que Tesseract y
-  Ghostscript están instalados (`install.ps1` lo verifica
-  automáticamente) y que el paquete de idioma correspondiente a sus
-  documentos está instalado — vea
-  [OCR e idioma de los documentos](#ocr-e-idioma-de-los-documentos).
-- **El motor `local` recurre a `rules` con un aviso de memoria.** La suma
-  de su VRAM de GPU y la RAM del sistema está por debajo de lo que
-  necesita el modelo local — vea [Requisitos](#requisitos). Esto no es un
-  error: la aplicación se degrada a propósito en lugar de fallar
-  directamente.
-- **Nada funciona hasta que reinicio después de instalar.** Esto se
-  corrigió: el instalador ahora anota dónde puso cada programa y el
-  `Indexer.bat` recarga el PATH desde el registro, de modo que ninguno de
-  los dos depende de que el Explorador de Windows note el cambio. Si le
-  ocurre en una instalación antigua, ejecute `install.ps1` una vez más —
-  ya no hace falta cerrar la sesión.
-- **Reinstalé (o formateé) y mis proyectos desaparecieron de la lista.**
-  No desaparecieron — los proyectos están en sus carpetas de salida; lo
-  que se recreó vacío fue la lista. Use **Proyectos → Abrir proyecto
-  existente** e indique la carpeta de salida de un proyecto; se reabre con
-  su configuración y con todo lo ya procesado. Nunca apunte "Nuevo
-  proyecto" a una carpeta que ya tiene un proyecto: la aplicación ahora lo
-  impide, pero la intención allí es *abrir*, no crear.
+  segundos en la primera ejecución. Si sigue sin cargar, compruebe si otro
+  programa está usando el puerto 8000.
+- **Aparece "Solicitud rechazada".** Algo que no son las pantallas del
+  propio programa (en general un sitio web) intentó enviar un comando y
+  fue bloqueado. Abra siempre el programa con su acceso directo o en
+  `http://127.0.0.1:8000`.
+- **"python no se reconoce…" en PowerShell.** Python no está en el PATH.
+  Reinstálelo con el comando `winget` de *Instalación sin el instalador*,
+  o use la ruta completa al intérprete que aparece en *Ejecutar la suite
+  de pruebas*.
+- **El OCR falla o no produce texto.** Compruebe que Tesseract y
+  Ghostscript estén instalados (`install.ps1` lo verifica) y que el paquete
+  de idioma de sus documentos esté instalado (vea *OCR e idioma de los
+  documentos*).
+- **El motor `local` pasa a `rules`.** O Ollama no se está ejecutando, o la
+  suma de su VRAM y la RAM del sistema está por debajo de lo que necesita
+  el modelo (vea *Requisitos en detalle*). No es un error: el programa se
+  degrada a propósito en lugar de fallar. Abra Ollama y ejecute la
+  clasificación de nuevo; la pantalla Acerca de muestra el diagnóstico de
+  la instalación.
+- **Nada funciona hasta que reinicio después de instalar.** Corregido: el
+  instalador anota dónde puso cada programa y `Indexer.bat` recarga el PATH
+  desde el registro. En una instalación antigua, ejecute `install.ps1` una
+  vez más; ya no hace falta cerrar la sesión.
+- **Reinstalé (o formateé) y mis proyectos desaparecieron de la lista.** No
+  desaparecieron: los proyectos están en sus carpetas de salida, y solo la
+  lista se recreó vacía. Use **Proyectos → Abrir proyecto existente** e
+  indique la carpeta de salida de un proyecto; se reabre con su
+  configuración y con todo lo ya procesado. Nunca apunte **Nuevo proyecto**
+  a una carpeta que ya tiene un proyecto: el programa lo impide, porque la
+  intención allí es *abrir*, no crear.
 - **Mis proyectos no aparecen en la otra computadora.** Los proyectos se
-  sincronizan por Drive, pero la lista es por máquina hasta que configure
-  un catálogo compartido. Abra **Proyectos → Catálogo compartido**, elija
-  una carpeta dentro de su Drive y guarde — en ambas computadoras,
-  apuntando a la misma carpeta. Sus proyectos actuales se copian allí
-  automáticamente.
-- **Abrir el mismo proyecto en una segunda máquina justo después de la
-  primera.** Espere a que Google Drive (o lo que sea que sincronice su
-  carpeta de salida) termine de sincronizar antes de abrirlo en otro
-  lugar — la aplicación detecta y avisa sobre sincronizaciones
-  incompletas y sobre el bloqueo activo de otra máquina, pero no sustituye
-  el hecho de esperar.
+  sincronizan por Drive, pero la lista es de cada máquina hasta que
+  configure un catálogo compartido. Abra **Proyectos → Catálogo
+  compartido**, elija una carpeta dentro de su Drive y guarde, en ambas
+  computadoras, apuntando a la misma carpeta. Sus proyectos actuales se
+  copian allí automáticamente.
+- **"Proyecto en uso en otra máquina".** Cierre el programa en la otra
+  computadora. Si se colgó o se apagó, espere a que venza el bloqueo o
+  elija **Asumir de todos modos**, solo si está seguro de que la otra no lo
+  está usando.
+- **"Posible sincronización incompleta" al abrir un proyecto en una
+  segunda máquina justo después de la primera.** Espere a que Google Drive
+  (o lo que sincronice su carpeta de salida) termine antes de abrirlo en
+  otro lugar. El programa detecta sincronizaciones incompletas y el
+  bloqueo de otra máquina, pero no reemplaza la espera.
+- **Archivos con fallo en los pendientes.** En general son archivos
+  protegidos con contraseña o dañados. Guarde una copia sin protección en
+  la carpeta de origen y actualice el acervo.
 
-## Documentación
+</details>
 
-- [CONTRIBUTING.es.md](CONTRIBUTING.es.md) — configuración del entorno de
-  desarrollo, cómo ejecutar una sola prueba, y las convenciones del
+<details>
+<summary><strong>Documentación</strong></summary>
+
+- [CONTRIBUTING.es.md](CONTRIBUTING.es.md): configuración del entorno de
+  desarrollo, cómo ejecutar una sola prueba y las convenciones del
   proyecto.
-- [SPECIFICATION.md](SPECIFICATION.md) — la especificación técnica
+- [SPECIFICATION.md](SPECIFICATION.md): la especificación técnica
   completa, en inglés: modelo de datos, cada paso del procesamiento,
-  reglas de seguridad y decisiones de diseño, con más detalle que este
-  archivo.
-- [CHANGELOG.es.md](CHANGELOG.es.md) — qué cambió, versión por versión.
-  El original es el [CHANGELOG.md](../CHANGELOG.md) en inglés (convención
-  del formato); si ambos divergen, vale el inglés.
-- [SECURITY.md](../SECURITY.md) — cómo reportar una vulnerabilidad (en
+  reglas de seguridad y decisiones de diseño.
+- [CHANGELOG.es.md](CHANGELOG.es.md): qué cambió, versión por versión. El
+  original es el [CHANGELOG.md](../CHANGELOG.md) en inglés (convención del
+  formato); si ambos divergen, vale el inglés.
+- [SECURITY.md](../SECURITY.md): cómo reportar una vulnerabilidad (en
   inglés).
-- [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) — normas de convivencia para
+- [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md): normas de convivencia para
   quienes contribuyen (en inglés).
+
+</details>
 
 ## Licencia
 
 GClaude Indexer está licenciado bajo la **GNU General Public License v3.0**
-(GPL-3.0) — vea [LICENSE](../LICENSE) para el texto completo. En resumen:
+(GPL-3.0); vea [LICENSE](../LICENSE) para el texto completo. En resumen:
 usted es libre de usar, estudiar, modificar y redistribuir este software,
 incluso comercialmente, pero cualquier versión modificada que distribuya
 también debe licenciarse bajo la GPL-3.0, con su código fuente disponible.
