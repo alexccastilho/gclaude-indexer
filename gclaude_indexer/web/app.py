@@ -1247,6 +1247,16 @@ def _delete_project_route_body(request: Request, project_id: int, form):
 # --- About (explicit user request) --------------------------------------------
 
 
+@app.get("/help", response_class=HTMLResponse)
+def manual_screen(request: Request):
+    """The full user manual, one document per language (same pattern as
+    the Claude package guide): flowing text with tables and examples, which
+    itemized i18n keys would chop into fragments. Each screen's help modal
+    links to its own section here."""
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    return render(request, "help.html", {"manual_template": f"manual/{language}.html"})
+
+
 @app.get("/about", response_class=HTMLResponse)
 def about_screen(request: Request):
     # `language` (Task 18, Phase 14): `check_installation()`'s diagnostic

@@ -324,6 +324,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.unknown_field": "campo desconhecido: {field}",
         "config_error.type_error": "configuração inválida: {detail}",
         "nav.about": "Sobre",
+        "nav.manual": "Manual",
+        "manual.title": "Manual do GClaude Indexer",
+        "manual.subtitle": "Tudo o que o sistema faz, passo a passo: cada tela, cada opção, o que é mais rápido, o que dá mais qualidade e dicas de uso.",
+        "help.open_manual": "Abrir o manual completo",
         "nav.help": "Ajuda",
         "general.close": "Fechar",
         "general.cancel": "Cancelar",
@@ -338,11 +342,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Tira o projeto desta lista, mas mantém a pasta de saída intacta no disco — pode "
             "reabri-lo depois criando um projeto novo apontando para a mesma pasta."
         ),
-        "delete.option_delete_all": "Remover da lista e apagar a pasta de saída",
-        "delete.option_delete_all_explanation": (
-            "Apaga também o banco de dados, os arquivos convertidos e os relatórios gerados — a "
-            "pasta de saída inteira. A pasta de origem nunca é afetada. Não pode ser desfeito."
-        ),
+        "delete.option_delete_all": "Remover da lista e apagar os arquivos gerados",
+        "delete.option_delete_all_explanation": "Apaga o que o GClaude Indexer criou na pasta de saída: o banco de dados, as cópias convertidas, as janelas, o log e os relatórios. Arquivos seus que estiverem nessa pasta são mantidos, e nas instruções (CLAUDE.md, project_instructions.md) só o trecho gerado pelo sistema sai. A pasta só é removida se ficar vazia. A pasta de origem nunca é afetada. Não pode ser desfeito.",
         "delete.confirm": "Excluir definitivamente",
         "help.projects.title": "Ajuda — Projetos",
         "help.projects.p1": (
@@ -568,10 +569,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "new_project.folder_in_use_open": "Abrir o projeto existente",
         "new_project.folder_in_use_or": "ou escolha outra pasta de saída no formulário abaixo.",
-        "log.project.duplicate_config": (
-            "banco com {count} configurações de projeto gravadas; usando a original "
-            "(id {kept}). As demais foram mantidas no banco, sem uso."
-        ),
+        "log.project.duplicate_config": "Este projeto tinha {count} configurações salvas; usamos a original (nº {kept}). As outras ficaram guardadas, sem uso, e nada foi apagado.",
         "help.open_project.title": "Ajuda — Abrir projeto existente",
         "help.open_project.p1": (
             "A pasta de saída é o projeto. O arquivo project.db dentro dela guarda a "
@@ -845,189 +843,62 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # (Task 9b).
         "log.common.yes": "sim",
         "log.common.no": "não",
-        "log.hardware.no_gpu": "nenhuma GPU detectada",
-        "log.hardware.diagnose": (
-            "hardware: {gpu}, RAM {ram} MB, espaço livre {free_space} MB em {folder}; "
-            "tesseract={tesseract}, ghostscript={ghostscript}, ollama={ollama}"
-        ),
+        "log.hardware.no_gpu": "nenhuma placa de vídeo detectada",
+        "log.hardware.diagnose": "Resumo do hardware: placa de vídeo {gpu}; memória RAM de {ram} MB; {free_space} MB livres em disco na pasta {folder}. Programas auxiliares encontrados: reconhecimento de texto (Tesseract): {tesseract}; ferramenta de PDF (Ghostscript): {ghostscript}; modelo local (Ollama): {ollama}.",
         "log.hardware.real_size": "tamanho real",
-        "log.hardware.estimated_size": (
-            "tamanho estimado (calibrado para qwen3.5:4b; Ollama não informou o tamanho real)"
-        ),
-        "log.hardware.insufficient_memory": (
-            "Memória insuficiente para '{model}': são necessários pelo menos {required} MB "
-            "somando VRAM e RAM ({size_source} do modelo, {model_size} MB, com {margin_percent}% "
-            "de folga), e esta máquina tem {combined} MB (VRAM: {vram} MB + RAM: {ram} MB). "
-            "Usando o motor 'regras' — determinístico, sem custo e sem depender de instalar "
-            "modelo nenhum."
-        ),
-        "log.hardware.insufficient_disk_space": (
-            "Memória suficiente para '{model}', mas faltou espaço em disco: são necessários "
-            "{required} MB livres (o dobro do {size_source} do modelo, {model_size} MB), e só "
-            "há {available} MB disponíveis em {folder}. Usando o motor 'regras' até haver "
-            "espaço suficiente."
-        ),
-        "log.hardware.model_chosen": (
-            "Modelo '{model}' escolhido ({size_source}: {model_size} MB): usa o máximo de GPU "
-            "possível (VRAM detectada: {vram} MB) e transborda o resto para a RAM ({ram} MB "
-            "disponíveis); espaço livre: {free_space} MB."
-        ),
-        "log.scan.extension_not_allowed": (
-            "{name}: extensão '{extension}' fora da lista configurada, ignorado"
-        ),
-        "log.scan.content_changed": "{name}: conteúdo alterado, reprocessando",
-        "log.scan.summary": (
-            "varredura concluída: {new} novo(s), {updated} atualizado(s), {ignored} ignorado(s), "
-            "{unchanged} inalterado(s)"
-        ),
-        "log.conversion.ocr_applied": "{name}: OCR aplicado ({ocr_language})",
-        "log.conversion.sliced": "{name}: cortado em {blocks} bloco(s)",
-        "log.conversion.failed": "{name}: {error}",
-        "log.pool_broken": (
-            "o pool de processos quebrou (worker morreu, possível falta de memória); os "
-            "arquivos ainda pendentes foram mantidos para retomar na próxima execução"
-        ),
-        "log.conversion.summary": (
-            "conversão concluída: {converted} convertido(s), {ocr} com OCR, {sliced} fatiado(s) "
-            "em {blocks} bloco(s), {failed} falhou(aram)"
-        ),
-        "log.extraction.failed": "{name}: {error}",
-        "log.extraction.summary_interrupted": (
-            "extração interrompida: {files} arquivo(s), {pages} página(s), {failed} falhou(aram)"
-        ),
-        "log.extraction.summary_completed": (
-            "extração concluída: {files} arquivo(s), {pages} página(s), {failed} falhou(aram)"
-        ),
-        "log.windows.summary": (
-            "preparação de janelas concluída: {created} nova(s), {existing} já existente(s)"
-        ),
-        "log.update.layout_mismatch": (
-            "grupo {group}: o índice guarda {stored} janela(s), mas as páginas atuais dariam "
-            "{derived} — como não dá para saber quais continuam valendo, todas as janelas "
-            "deste grupo serão reclassificadas"
-        ),
-        "log.update.renumbered": "Atenção: como um documento saiu do meio do grupo, a numeração de folhas (f. N) de {count} documento(s) seguinte(s) mudou: {files}. Se você já tinha conversas no Claude citando folhas desses documentos, confira a nova numeração depois de gerar os relatórios.",
-        "log.update.duplicate_released": "Havia {count} cópia(s) do documento removido ainda na pasta ({files}). Elas vão aparecer como documento novo na próxima atualização, para o conteúdo não sumir do índice.",
-        "log.update.applied": (
-            "atualização aplicada: {windows} janela(s) descartada(s), {removed} "
-            "documento(s) removido(s), {reset} para reprocessar, {renumbered} para "
-            "renumerar"
-        ),
-        "log.update.reconversion_needed": (
-            "{count} documento(s) precisarão passar por OCR de novo porque os "
-            "arquivos intermediários da pasta converted/ foram apagados — o "
-            "conteúdo deles continua íntegro, só a releitura ficou mais lenta: "
-            "{files}"
-        ),
-        "log.update.orphan_window_file": (
-            "{count} arquivo(s) de janela não puderam ser apagados e continuam na "
-            "pasta windows/ — apague-os à mão antes de reclassificar: {files}"
-        ),
-        "log.update.raw_items_prune_failed": (
-            "não foi possível limpar raw_items.jsonl ({error}) — até uma "
-            "reindexação completa, o índice pode conter peças de documentos que "
-            "não estão mais no acervo"
-        ),
-        "log.rules.invalid_item": "peça inválida na janela {window}: {errors}",
-        "log.rules.summary": (
-            "motor regras: {windows} janela(s), {items} peça(s) (alta={high}, media={medium}, "
-            "baixa={low}), {invalid} inválida(s)"
-        ),
-        "log.local_engine.ollama_binary_missing": (
-            "motor 'local': executável 'ollama' não encontrado no PATH desta máquina — não há "
-            "como religar sozinho; instale o Ollama para usar o motor local."
-        ),
-        "log.local_engine.restarting": (
-            "motor 'local': Ollama não respondeu em {url}; executável encontrado em {path} — "
-            "tentando religar o servidor (até {attempts} tentativa(s))..."
-        ),
-        "log.local_engine.restart_attempt_failed_to_start": (
-            "motor 'local': tentativa {attempt}/{total} de religar o Ollama falhou ao iniciar "
-            "o processo: {error}"
-        ),
-        "log.local_engine.restart_succeeded": (
-            "motor 'local': Ollama voltou a responder na tentativa {attempt}/{total}."
-        ),
-        "log.local_engine.restart_attempt_timed_out": (
-            "motor 'local': tentativa {attempt}/{total} de religar o Ollama não respondeu a "
-            "tempo."
-        ),
-        "log.local_engine.restart_gave_up": (
-            "motor 'local': Ollama continua sem responder após {attempts} tentativa(s); usando "
-            "'regras' para todas as janelas pendentes."
-        ),
-        "log.local_engine.model_too_big_for_gpu": (
-            "modelo '{model}' ocupa {model_mb} MB e a placa tem {vram_mb} MB de VRAM: ele não cabe "
-            "inteiro, e a maior parte roda na CPU — o que deixa a classificação várias vezes mais "
-            "lenta. Nenhum ajuste resolve isso; escolha um modelo menor que a VRAM da placa no "
-            "campo \"Modelo local\" do projeto."
-        ),
-        "log.local_engine.gpu_plan": (
-            "modelo '{model}': {layers} de {layers_total} camadas na GPU ({free_vram} MB de VRAM "
-            "livres medidos, contexto de {context} tokens)."
-        ),
-        "log.local_engine.gpu_plan_unavailable": (
-            "modelo '{model}': não foi possível medir a VRAM livre ou ler os metadados do modelo; "
-            "a divisão GPU/RAM fica a cargo do Ollama (contexto de {context} tokens)."
-        ),
-        "log.local_engine.pages_missing_from_answer": (
-            "o modelo não respondeu sobre {missing} de {total} página(s) desta janela; elas entram "
-            "no índice pelo agrupamento, com o texto da própria página."
-        ),
-        "log.local_engine.coverage_filled": (
-            "janela {window}: {pages} página(s) ficaram fora das peças devolvidas pelo modelo e "
-            "entraram no índice como peças de cobertura (confiança baixa). Nenhuma página fica de "
-            "fora do índice."
-        ),
-        "log.local_engine.reference_rejected": (
-            "peça recusada: referência não reconhecida nesta janela (ref_inicial={start}, "
-            "ref_final={end}); referências esperadas: {expected}"
-        ),
-        "log.local_engine.all_items_rejected": (
-            "modelo '{model}': todas as {count} peça(s) devolvida(s) nesta janela foram "
-            "recusadas por referência não reconhecida — o modelo pode não estar seguindo o "
-            "formato de referência esperado (ex.: 'f. 12')."
-        ),
-        "log.local_engine.window_rejection": "janela {window}: {reason}",
-        "log.local_engine.connection_lost": (
-            "motor 'local' parou de responder ({error}); tentando religar antes de cair para "
-            "'regras'..."
-        ),
-        "log.local_engine.invalid_item": (
-            "raw_items.jsonl (motor {engine}) janela {window}: {errors}"
-        ),
-        "log.local_engine.summary": (
-            "motor local: {windows} janela(s) ({fallback} via fallback 'regras'), {items} "
-            "peça(s) (alta={high}, media={medium}, baixa={low}), {invalid} inválida(s)"
-        ),
-        "log.review.nothing_to_review": (
-            "modo revisão: nenhuma janela com confiança baixa no motor 'regras', nada para "
-            "revisar"
-        ),
-        "log.review.submitting": (
-            "modo revisão: {reviewed} de {total} janela(s) ({percent}%) tinham peça de "
-            "confiança baixa; submetendo ao motor '{engine}'"
-        ),
-        "log.review.invalid_item": "revisão ({engine}) janela {window}: {errors}",
-        "log.review.summary": (
-            "modo revisão concluído: {items} peça(s) do motor '{engine}' acrescentada(s), "
-            "{invalid} inválida(s)"
-        ),
-        "log.claude_code.sync_status": (
-            "motor claude_code: {done} janela(s) feita(s), {pending} pendente(s)"
-        ),
-        "log.import.invalid_json": "raw_items.jsonl linha {line}: JSON inválido ({error})",
-        "log.import.not_a_json_object": "raw_items.jsonl linha {line}: não é um objeto JSON",
-        "log.import.invalid_item": "raw_items.jsonl linha {line}: {errors}",
-        "log.import.file_not_found": "raw_items.jsonl não encontrado, nada a importar",
-        "log.import.summary": (
-            "importação concluída: {lines} linha(s) lida(s), {invalid} inválida(s), {valid} "
-            "peça(s) válida(s), {consolidated} peça(s) gravada(s) após consolidação"
-        ),
-        "log.project.classification_engine_converted": (
-            "classification_engine '{engine}' não existe mais nesta versão; projeto "
-            "convertido automaticamente para '{replacement}'"
-        ),
+        "log.hardware.estimated_size": "tamanho estimado (o Ollama não informou o tamanho real, então usamos como referência o qwen3.5:4b)",
+        "log.hardware.insufficient_memory": "O modelo '{model}' não cabe na memória deste computador: ele precisa de pelo menos {required} MB, somando a memória da placa de vídeo e a RAM, e aqui há {combined} MB (placa de vídeo: {vram} MB + RAM: {ram} MB). Por isso, a classificação vai usar o motor Regras, que funciona sem modelo e sem custo. (Cálculo: {size_source} do modelo, {model_size} MB, mais {margin_percent}% de folga.)",
+        "log.hardware.insufficient_disk_space": "Há memória suficiente para o modelo '{model}', mas falta espaço em disco: ele precisa de {required} MB livres e só há {available} MB em {folder}. Enquanto não houver espaço suficiente, a classificação vai usar o motor Regras. (Cálculo: o dobro do {size_source} do modelo, {model_size} MB.)",
+        "log.hardware.model_chosen": "A classificação vai usar o modelo '{model}' ({size_source}: {model_size} MB). Ele aproveita ao máximo a placa de vídeo ({vram} MB) e usa a memória RAM para o que não couber nela ({ram} MB disponíveis). Espaço livre em disco: {free_space} MB.",
+        "log.scan.extension_not_allowed": "{name} foi ignorado: arquivos do tipo '{extension}' não estão na lista de tipos aceitos neste projeto, então ele não entra no índice.",
+        "log.scan.content_changed": "{name} mudou desde a última leitura e será processado de novo.",
+        "log.scan.summary": "Documentos encontrados na pasta (varredura concluída): {new} novo(s), {updated} alterado(s), {unchanged} sem mudança e {ignored} ignorado(s).",
+        "log.conversion.ocr_applied": "{name} não tinha texto selecionável (por exemplo, um documento escaneado), então o texto foi reconhecido automaticamente (OCR aplicado, idioma {ocr_language}).",
+        "log.conversion.sliced": "{name} é um documento grande e foi dividido em {blocks} parte(s) para facilitar o processamento.",
+        "log.conversion.failed": "Não foi possível preparar {name}: {error}. Os demais documentos seguem normalmente.",
+        "log.pool_broken": "O processamento parou no meio, provavelmente por falta de memória no computador. Os arquivos que faltavam ficaram guardados para continuar na próxima execução. (Detalhe técnico: o pool de processos parou.)",
+        "log.conversion.summary": "Conversão concluída: {converted} documento(s) preparado(s), {ocr} com reconhecimento de texto (OCR), {sliced} dividido(s) em {blocks} parte(s) e {failed} com falha.",
+        "log.extraction.failed": "Não foi possível ler o texto das páginas de {name}: {error}",
+        "log.extraction.summary_interrupted": "Leitura das páginas pausada: até aqui, {pages} página(s) de {files} arquivo(s) e {failed} arquivo(s) com falha. Clique em \"Rodar etapa seguinte\" para continuar de onde parou.",
+        "log.extraction.summary_completed": "Leitura das páginas concluída: {pages} página(s) de {files} arquivo(s) e {failed} arquivo(s) com falha.",
+        "log.windows.summary": "Páginas organizadas em janelas, isto é, trechos de algumas páginas que são analisados de uma vez na classificação: {created} trecho(s) novo(s) e {existing} que já existiam.",
+        "log.update.layout_mismatch": "No grupo {group}, as páginas mudaram e a divisão em trechos não bate mais com a anterior ({stored} trecho(s) guardado(s), {derived} pelas páginas atuais). Para não arriscar, todos os trechos deste grupo serão classificados de novo.",
+        "log.update.renumbered": "Atenção: como um documento saiu do meio do grupo, a numeração de folhas (f. N) de {count} documento(s) seguinte(s) mudou: {files}. Se você já tinha conversas no Claude citando folhas desses documentos, confira a nova numeração depois de usar \"Importar e gerar relatórios\".",
+        "log.update.duplicate_released": "Ainda havia {count} cópia(s) do documento removido na pasta ({files}). Elas vão entrar como documento novo na próxima atualização, para que o conteúdo não suma do índice.",
+        "log.update.applied": "Atualização aplicada: {removed} documento(s) removido(s) do índice, {reset} documento(s) para processar de novo, {renumbered} com a numeração de folhas a refazer e {windows} trecho(s) descartado(s) para nova classificação.",
+        "log.update.reconversion_needed": "{count} documento(s) vão passar de novo pelo reconhecimento de texto (OCR), porque as cópias de trabalho da pasta converted/ foram apagadas. O conteúdo continua íntegro; só esta leitura vai demorar mais: {files}",
+        "log.update.orphan_window_file": "{count} arquivo(s) de trecho não puderam ser apagados e continuam na pasta windows/. Apague-os à mão antes de classificar de novo: {files}",
+        "log.update.raw_items_prune_failed": "Não foi possível limpar o arquivo de peças classificadas (raw_items.jsonl): {error}. Até uma reindexação completa, o índice pode trazer peças de documentos que já saíram do acervo.",
+        "log.rules.invalid_item": "Uma peça do trecho {window} foi descartada por estar incompleta ou incorreta: {errors}",
+        "log.rules.summary": "Classificação pelo motor Regras concluída: {windows} trecho(s) analisado(s), {items} peça(s) identificada(s) (confiança alta: {high}, média: {medium}, baixa: {low}) e {invalid} descartada(s) por erro.",
+        "log.local_engine.ollama_binary_missing": "O Ollama, programa que roda o modelo local, não foi encontrado neste computador, então não há como religá-lo automaticamente. Instale o Ollama para usar o motor Modelo local.",
+        "log.local_engine.restarting": "O Ollama, programa que roda o modelo local, não respondeu ({url}). O GClaude Indexer vai tentar religá-lo automaticamente, até {attempts} vez(es). (Programa encontrado em {path}.)",
+        "log.local_engine.restart_attempt_failed_to_start": "Tentativa {attempt} de {total} de religar o Ollama: o programa não conseguiu iniciar ({error}).",
+        "log.local_engine.restart_succeeded": "O Ollama voltou a responder na tentativa {attempt} de {total}.",
+        "log.local_engine.restart_attempt_timed_out": "Tentativa {attempt} de {total} de religar o Ollama: ele não respondeu a tempo.",
+        "log.local_engine.restart_gave_up": "O Ollama continua sem responder depois de {attempts} tentativa(s). Os trechos que faltam serão classificados pelo motor Regras.",
+        "log.local_engine.model_too_big_for_gpu": "O modelo '{model}' ({model_mb} MB) é maior que a memória da placa de vídeo ({vram_mb} MB). Por isso, a maior parte dele roda no processador, e a classificação fica várias vezes mais lenta. Nenhum ajuste resolve isso: para ganhar velocidade, escolha no campo \"Modelo local\" do projeto um modelo menor que {vram_mb} MB.",
+        "log.local_engine.gpu_plan": "Modelo '{model}': {layers} de {layers_total} partes do modelo vão rodar na placa de vídeo; quanto mais partes nela, mais rápida a classificação. (Detalhes técnicos: camadas na GPU, {free_vram} MB livres na placa, contexto de {context} tokens.)",
+        "log.local_engine.gpu_plan_unavailable": "Modelo '{model}': não foi possível medir a memória livre da placa de vídeo ou ler os dados do modelo, então o próprio Ollama vai decidir como dividir o trabalho entre a placa e a memória RAM. (Contexto de {context} tokens.)",
+        "log.local_engine.pages_missing_from_answer": "o modelo não respondeu sobre {missing} de {total} página(s) deste trecho; elas entram no índice mesmo assim, com o texto da própria página.",
+        "log.local_engine.coverage_filled": "No trecho {window}, {pages} página(s) ficaram de fora da resposta do modelo. Elas foram incluídas no índice com um resumo tirado do próprio texto (confiança baixa), para que nenhuma página fique de fora.",
+        "log.local_engine.reference_rejected": "uma peça foi recusada porque a referência de páginas indicada pelo modelo (início {start}, fim {end}) não existe neste trecho. Referências válidas: {expected}",
+        "log.local_engine.all_items_rejected": "o modelo '{model}' devolveu {count} peça(s) neste trecho e todas foram recusadas por referência de página não reconhecida; ele pode não estar seguindo o formato esperado (ex.: 'f. 12').",
+        "log.local_engine.window_rejection": "Trecho {window}: {reason}",
+        "log.local_engine.connection_lost": "O modelo local parou de responder ({error}). O GClaude Indexer vai tentar religar o Ollama antes de passar a usar o motor Regras.",
+        "log.local_engine.invalid_item": "Uma peça do trecho {window} (motor {engine}) foi descartada por estar incompleta ou incorreta: {errors}",
+        "log.local_engine.summary": "Classificação pelo modelo local concluída: {windows} trecho(s) analisado(s), sendo {fallback} pelo motor Regras porque o modelo não estava disponível; {items} peça(s) identificada(s) (confiança alta: {high}, média: {medium}, baixa: {low}) e {invalid} descartada(s) por erro.",
+        "log.review.nothing_to_review": "Modo revisão: nenhum trecho ficou com confiança baixa no motor Regras, então não há nada para revisar.",
+        "log.review.submitting": "Modo revisão: {reviewed} de {total} trecho(s) ({percent}%) tiveram alguma peça com confiança baixa e serão analisados de novo pelo motor '{engine}'.",
+        "log.review.invalid_item": "Revisão pelo motor '{engine}': uma peça do trecho {window} foi descartada por estar incompleta ou incorreta: {errors}",
+        "log.review.summary": "Modo revisão concluído: o motor '{engine}' acrescentou {items} peça(s); {invalid} descartada(s) por erro.",
+        "log.claude_code.sync_status": "Claude Code: {done} trecho(s) já classificado(s) e {pending} ainda por fazer.",
+        "log.import.invalid_json": "A linha {line} do arquivo de peças classificadas (raw_items.jsonl) está corrompida e foi ignorada (JSON inválido: {error}).",
+        "log.import.not_a_json_object": "A linha {line} do arquivo de peças classificadas (raw_items.jsonl) não está no formato esperado e foi ignorada.",
+        "log.import.invalid_item": "A peça da linha {line} do arquivo de peças classificadas (raw_items.jsonl) foi ignorada por estar incompleta ou incorreta: {errors}",
+        "log.import.file_not_found": "Ainda não há peças classificadas para importar (o arquivo raw_items.jsonl não existe). Conclua a etapa \"6. Classificação\" antes de usar \"Importar e gerar relatórios\".",
+        "log.import.summary": "Importação concluída: {lines} linha(s) lida(s), {valid} peça(s) válida(s) e {invalid} ignorada(s) por erro. Depois de juntar as peças repetidas ou sobrepostas entre trechos vizinhos, {consolidated} peça(s) foram gravadas no índice.",
+        "log.project.classification_engine_converted": "O motor de classificação '{engine}' não existe mais nesta versão. O projeto passou a usar automaticamente o motor '{replacement}'.",
     },
     "en": {
         "app.name": "GClaude Indexer",
@@ -1268,6 +1139,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.unknown_field": "unknown field: {field}",
         "config_error.type_error": "invalid configuration: {detail}",
         "nav.about": "About",
+        "nav.manual": "Manual",
+        "manual.title": "GClaude Indexer manual",
+        "manual.subtitle": "Everything the system does, step by step: every screen, every option, what is faster, what gives better quality, and usage tips.",
+        "help.open_manual": "Open the full manual",
         "nav.help": "Help",
         "general.close": "Close",
         "general.cancel": "Cancel",
@@ -1282,11 +1157,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Takes the project out of this list, but keeps the output folder intact on disk — you "
             "can reopen it later by creating a new project pointing at the same folder."
         ),
-        "delete.option_delete_all": "Remove from the list and delete the output folder",
-        "delete.option_delete_all_explanation": (
-            "Also deletes the database, converted files and generated reports — the entire output "
-            "folder. The source folder is never affected. Cannot be undone."
-        ),
+        "delete.option_delete_all": "Remove from the list and delete the generated files",
+        "delete.option_delete_all_explanation": "Deletes what GClaude Indexer created in the output folder: the database, converted copies, windows, log and reports. Your own files in that folder are kept, and in the instruction files (CLAUDE.md, project_instructions.md) only the system-generated part is removed. The folder itself is removed only if it ends up empty. The source folder is never affected. This cannot be undone.",
         "delete.confirm": "Delete permanently",
         "help.projects.title": "Help — Projects",
         "help.projects.p1": (
@@ -1490,10 +1362,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "new_project.folder_in_use_open": "Open the existing project",
         "new_project.folder_in_use_or": "or choose a different output folder in the form below.",
-        "log.project.duplicate_config": (
-            "database holds {count} saved project configurations; using the original "
-            "(id {kept}). The others were kept in the database, unused."
-        ),
+        "log.project.duplicate_config": "This project had {count} saved configurations; we are using the original one (no. {kept}). The others were kept, unused, and nothing was deleted.",
         "help.open_project.title": "Help — Open existing project",
         "help.open_project.p1": (
             "The output folder is the project. The project.db file inside it holds the "
@@ -1763,182 +1632,62 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # --- log messages (Task 12, Phase 14) — see the `pt` table above.
         "log.common.yes": "yes",
         "log.common.no": "no",
-        "log.hardware.no_gpu": "no GPU detected",
-        "log.hardware.diagnose": (
-            "hardware: {gpu}, RAM {ram} MB, free space {free_space} MB in {folder}; "
-            "tesseract={tesseract}, ghostscript={ghostscript}, ollama={ollama}"
-        ),
+        "log.hardware.no_gpu": "no graphics card detected",
+        "log.hardware.diagnose": "Your hardware: graphics card {gpu}; {ram} MB of RAM; {free_space} MB free on disk in the folder {folder}. Helper programs found: text recognition (Tesseract): {tesseract}; PDF tool (Ghostscript): {ghostscript}; local model (Ollama): {ollama}.",
         "log.hardware.real_size": "real size",
-        "log.hardware.estimated_size": (
-            "estimated size (calibrated for qwen3.5:4b; Ollama did not report the real size)"
-        ),
-        "log.hardware.insufficient_memory": (
-            "Not enough memory for '{model}': at least {required} MB combining VRAM and RAM "
-            "are needed ({size_source} of the model, {model_size} MB, with a {margin_percent}% "
-            "margin), and this machine has {combined} MB (VRAM: {vram} MB + RAM: {ram} MB). "
-            "Using the 'rules' engine — deterministic, at no cost and with no model to install."
-        ),
-        "log.hardware.insufficient_disk_space": (
-            "Enough memory for '{model}', but disk space is short: {required} MB free are "
-            "needed (double the {size_source} of the model, {model_size} MB), and only "
-            "{available} MB are available in {folder}. Using the 'rules' engine until there is "
-            "enough space."
-        ),
-        "log.hardware.model_chosen": (
-            "Model '{model}' chosen ({size_source}: {model_size} MB): uses as much GPU as "
-            "possible (VRAM detected: {vram} MB) and overflows the rest to RAM ({ram} MB "
-            "available); free space: {free_space} MB."
-        ),
-        "log.scan.extension_not_allowed": (
-            "{name}: extension '{extension}' not in the configured list, ignored"
-        ),
-        "log.scan.content_changed": "{name}: content changed, reprocessing",
-        "log.scan.summary": (
-            "scan complete: {new} new, {updated} updated, {ignored} ignored, {unchanged} unchanged"
-        ),
-        "log.conversion.ocr_applied": "{name}: OCR applied ({ocr_language})",
-        "log.conversion.sliced": "{name}: cut into {blocks} block(s)",
-        "log.conversion.failed": "{name}: {error}",
-        "log.pool_broken": (
-            "the process pool broke (a worker died, possibly out of memory); the files still "
-            "pending were kept to resume on the next run"
-        ),
-        "log.conversion.summary": (
-            "conversion complete: {converted} converted, {ocr} with OCR, {sliced} sliced into "
-            "{blocks} block(s), {failed} failed"
-        ),
-        "log.extraction.failed": "{name}: {error}",
-        "log.extraction.summary_interrupted": (
-            "extraction interrupted: {files} file(s), {pages} page(s), {failed} failed"
-        ),
-        "log.extraction.summary_completed": (
-            "extraction complete: {files} file(s), {pages} page(s), {failed} failed"
-        ),
-        "log.windows.summary": (
-            "window preparation complete: {created} new, {existing} already existing"
-        ),
-        "log.update.layout_mismatch": (
-            "group {group}: the index holds {stored} window(s), but the current pages would "
-            "give {derived} — since there is no telling which ones still hold, every window "
-            "in this group will be reclassified"
-        ),
-        "log.update.renumbered": "Heads up: because a document left the middle of the group, the sheet numbers (f. N) of {count} following document(s) changed: {files}. If you already had Claude conversations citing sheets of these documents, check the new numbering after generating the reports.",
-        "log.update.duplicate_released": "There were {count} copy(ies) of the removed document still in the folder ({files}). They will show up as a new document in the next update, so the content does not vanish from the index.",
-        "log.update.applied": (
-            "update applied: {windows} window(s) discarded, {removed} document(s) "
-            "removed, {reset} to reprocess, {renumbered} to renumber"
-        ),
-        "log.update.reconversion_needed": (
-            "{count} document(s) have to go through OCR again because the "
-            "intermediate files in converted/ were deleted — their content is "
-            "intact, only re-reading them got slower: {files}"
-        ),
-        "log.update.orphan_window_file": (
-            "{count} window file(s) could not be deleted and are still in the "
-            "windows/ folder — delete them by hand before reclassifying: {files}"
-        ),
-        "log.update.raw_items_prune_failed": (
-            "raw_items.jsonl could not be cleaned up ({error}) — until a full "
-            "reindex, the index may contain items from documents that are no "
-            "longer in the collection"
-        ),
-        "log.rules.invalid_item": "invalid item in window {window}: {errors}",
-        "log.rules.summary": (
-            "'rules' engine: {windows} window(s), {items} item(s) (high={high}, medium={medium}, "
-            "low={low}), {invalid} invalid"
-        ),
-        "log.local_engine.ollama_binary_missing": (
-            "'local' engine: 'ollama' executable not found in this machine's PATH — there is no "
-            "way to restart it on our own; install Ollama to use the local engine."
-        ),
-        "log.local_engine.restarting": (
-            "'local' engine: Ollama did not respond at {url}; executable found at {path} — "
-            "trying to restart the server (up to {attempts} attempt(s))..."
-        ),
-        "log.local_engine.restart_attempt_failed_to_start": (
-            "'local' engine: attempt {attempt}/{total} to restart Ollama failed to start the "
-            "process: {error}"
-        ),
-        "log.local_engine.restart_succeeded": (
-            "'local' engine: Ollama responded again on attempt {attempt}/{total}."
-        ),
-        "log.local_engine.restart_attempt_timed_out": (
-            "'local' engine: attempt {attempt}/{total} to restart Ollama did not respond in time."
-        ),
-        "log.local_engine.restart_gave_up": (
-            "'local' engine: Ollama is still not responding after {attempts} attempt(s); using "
-            "'rules' for every pending window."
-        ),
-        "log.local_engine.model_too_big_for_gpu": (
-            "model '{model}' takes {model_mb} MB and the card has {vram_mb} MB of VRAM: it does not "
-            "fit whole, and most of it runs on the CPU — which makes classification several times "
-            "slower. No setting fixes this; pick a model smaller than the card's VRAM in the "
-            "project's \"Local model\" field."
-        ),
-        "log.local_engine.gpu_plan": (
-            "model '{model}': {layers} of {layers_total} layers on the GPU ({free_vram} MB of free "
-            "VRAM measured, {context}-token context)."
-        ),
-        "log.local_engine.gpu_plan_unavailable": (
-            "model '{model}': could not measure free VRAM or read the model's metadata; the "
-            "GPU/RAM split is left to Ollama ({context}-token context)."
-        ),
-        "log.local_engine.pages_missing_from_answer": (
-            "the model did not answer for {missing} of {total} page(s) in this window; they enter "
-            "the index through the grouping, with the page's own text."
-        ),
-        "log.local_engine.coverage_filled": (
-            "window {window}: {pages} page(s) were left out of the items the model returned and "
-            "entered the index as coverage items (low confidence). No page is left out of the index."
-        ),
-        "log.local_engine.reference_rejected": (
-            "item rejected: reference not recognized in this window (ref_start={start}, "
-            "ref_end={end}); expected references: {expected}"
-        ),
-        "log.local_engine.all_items_rejected": (
-            "model '{model}': all {count} item(s) returned in this window were rejected for an "
-            "unrecognized reference — the model may not be following the expected reference "
-            "format (e.g. 'f. 12')."
-        ),
-        "log.local_engine.window_rejection": "window {window}: {reason}",
-        "log.local_engine.connection_lost": (
-            "'local' engine stopped responding ({error}); trying to restart before falling "
-            "back to 'rules'..."
-        ),
-        "log.local_engine.invalid_item": (
-            "raw_items.jsonl ({engine} engine) window {window}: {errors}"
-        ),
-        "log.local_engine.summary": (
-            "local engine: {windows} window(s) ({fallback} via 'rules' fallback), {items} "
-            "item(s) (high={high}, medium={medium}, low={low}), {invalid} invalid"
-        ),
-        "log.review.nothing_to_review": (
-            "review mode: no window with low confidence in the 'rules' engine, nothing to review"
-        ),
-        "log.review.submitting": (
-            "review mode: {reviewed} of {total} window(s) ({percent}%) had a low-confidence "
-            "item; submitting to the '{engine}' engine"
-        ),
-        "log.review.invalid_item": "review ({engine}) window {window}: {errors}",
-        "log.review.summary": (
-            "review mode complete: {items} item(s) from the '{engine}' engine added, {invalid} "
-            "invalid"
-        ),
-        "log.claude_code.sync_status": (
-            "claude_code engine: {done} window(s) done, {pending} pending"
-        ),
-        "log.import.invalid_json": "raw_items.jsonl line {line}: invalid JSON ({error})",
-        "log.import.not_a_json_object": "raw_items.jsonl line {line}: not a JSON object",
-        "log.import.invalid_item": "raw_items.jsonl line {line}: {errors}",
-        "log.import.file_not_found": "raw_items.jsonl not found, nothing to import",
-        "log.import.summary": (
-            "import complete: {lines} line(s) read, {invalid} invalid, {valid} valid item(s), "
-            "{consolidated} item(s) written after consolidation"
-        ),
-        "log.project.classification_engine_converted": (
-            "classification_engine '{engine}' no longer exists in this version; project "
-            "automatically converted to '{replacement}'"
-        ),
+        "log.hardware.estimated_size": "estimated size (Ollama did not report the real size, so qwen3.5:4b was used as a reference)",
+        "log.hardware.insufficient_memory": "The model '{model}' does not fit in this computer's memory: it needs at least {required} MB, counting graphics card memory and RAM together, and this machine has {combined} MB (graphics card: {vram} MB + RAM: {ram} MB). So classification will use the Rules engine, which works without a model and at no cost. (Calculation: {size_source} of the model, {model_size} MB, plus a {margin_percent}% margin.)",
+        "log.hardware.insufficient_disk_space": "There is enough memory for the model '{model}', but not enough disk space: it needs {required} MB free and only {available} MB are available in {folder}. Until there is enough space, classification will use the Rules engine. (Calculation: twice the {size_source} of the model, {model_size} MB.)",
+        "log.hardware.model_chosen": "Classification will use the model '{model}' ({size_source}: {model_size} MB). It makes the most of the graphics card ({vram} MB) and uses RAM for whatever does not fit there ({ram} MB available). Free disk space: {free_space} MB.",
+        "log.scan.extension_not_allowed": "{name} was ignored: '{extension}' files are not on this project's list of accepted file types, so it will not be indexed.",
+        "log.scan.content_changed": "{name} has changed since it was last read and will be processed again.",
+        "log.scan.summary": "Scan complete, documents found in the folder: {new} new, {updated} changed, {unchanged} unchanged and {ignored} ignored.",
+        "log.conversion.ocr_applied": "{name} had no selectable text (a scanned document, for example), so its text was recognized automatically (OCR applied, language {ocr_language}).",
+        "log.conversion.sliced": "{name} is a large document and was split into {blocks} part(s) to make processing easier.",
+        "log.conversion.failed": "Could not prepare {name}: {error}. The other documents carry on as usual.",
+        "log.pool_broken": "Processing stopped partway, probably because the computer ran out of memory. The remaining files were kept so the next run can pick them up. (Technical detail: the process pool stopped.)",
+        "log.conversion.summary": "Conversion complete: {converted} document(s) prepared, {ocr} with text recognition (OCR), {sliced} split into {blocks} part(s) and {failed} failed.",
+        "log.extraction.failed": "Could not read the text of the pages in {name}: {error}",
+        "log.extraction.summary_interrupted": "Page reading paused: so far, {pages} page(s) from {files} file(s), and {failed} file(s) failed. Click \"Run next step\" to continue where it left off.",
+        "log.extraction.summary_completed": "Page reading complete: {pages} page(s) from {files} file(s), and {failed} file(s) failed.",
+        "log.windows.summary": "Pages organized into windows, that is, sections of a few pages that are analyzed together during classification: {created} new section(s) and {existing} that already existed.",
+        "log.update.layout_mismatch": "In group {group}, the pages changed and the split into sections no longer matches the previous one ({stored} section(s) stored, {derived} from the current pages). To be safe, every section in this group will be classified again.",
+        "log.update.renumbered": "Heads up: because a document left the middle of the group, the sheet numbers (f. N) of {count} following document(s) changed: {files}. If you already had Claude conversations citing sheets of these documents, check the new numbering after using \"Import and generate reports\".",
+        "log.update.duplicate_released": "There were still {count} copy(ies) of the removed document in the folder ({files}). They will come in as a new document in the next update, so the content does not vanish from the index.",
+        "log.update.applied": "Update applied: {removed} document(s) removed from the index, {reset} document(s) to process again, {renumbered} whose sheet numbering must be redone and {windows} section(s) discarded to be classified again.",
+        "log.update.reconversion_needed": "{count} document(s) will go through text recognition (OCR) again because the working copies in the converted/ folder were deleted. Their content is intact; this reading will just take longer: {files}",
+        "log.update.orphan_window_file": "{count} section file(s) could not be deleted and are still in the windows/ folder. Delete them by hand before classifying again: {files}",
+        "log.update.raw_items_prune_failed": "Could not clean up the file of classified items (raw_items.jsonl): {error}. Until a full reindex, the index may include items from documents that are no longer in the collection.",
+        "log.rules.invalid_item": "An item from section {window} was discarded because it was incomplete or incorrect: {errors}",
+        "log.rules.summary": "Classification with the Rules engine complete: {windows} section(s) analyzed, {items} item(s) identified (high confidence: {high}, medium: {medium}, low: {low}) and {invalid} discarded due to errors.",
+        "log.local_engine.ollama_binary_missing": "Ollama, the program that runs the local model, was not found on this computer, so it cannot be restarted automatically. Install Ollama to use the Local model engine.",
+        "log.local_engine.restarting": "Ollama, the program that runs the local model, did not respond ({url}). GClaude Indexer will try to restart it automatically, up to {attempts} time(s). (Program found at {path}.)",
+        "log.local_engine.restart_attempt_failed_to_start": "Attempt {attempt} of {total} to restart Ollama: the program could not start ({error}).",
+        "log.local_engine.restart_succeeded": "Ollama is responding again, on attempt {attempt} of {total}.",
+        "log.local_engine.restart_attempt_timed_out": "Attempt {attempt} of {total} to restart Ollama: it did not respond in time.",
+        "log.local_engine.restart_gave_up": "Ollama is still not responding after {attempts} attempt(s). The remaining sections will be classified by the Rules engine.",
+        "log.local_engine.model_too_big_for_gpu": "The model '{model}' ({model_mb} MB) is larger than the graphics card's memory ({vram_mb} MB). So most of it runs on the processor, which makes classification several times slower. No setting fixes this: to speed things up, pick a model smaller than {vram_mb} MB in the project's \"Local model\" field.",
+        "log.local_engine.gpu_plan": "Model '{model}': {layers} of {layers_total} parts of the model will run on the graphics card; the more parts there, the faster classification goes. (Technical details: layers on the GPU, {free_vram} MB free on the card, {context}-token context.)",
+        "log.local_engine.gpu_plan_unavailable": "Model '{model}': could not measure the graphics card's free memory or read the model's details, so Ollama itself will decide how to split the work between the card and RAM. ({context}-token context.)",
+        "log.local_engine.pages_missing_from_answer": "the model gave no answer for {missing} of {total} page(s) in this section; they go into the index anyway, with the page's own text.",
+        "log.local_engine.coverage_filled": "In section {window}, {pages} page(s) were missing from the model's answer. They were added to the index with a summary taken from their own text (low confidence), so that no page is left out.",
+        "log.local_engine.reference_rejected": "an item was rejected because the page reference given by the model (start {start}, end {end}) does not exist in this section. Valid references: {expected}",
+        "log.local_engine.all_items_rejected": "the model '{model}' returned {count} item(s) in this section and all of them were rejected for an unrecognized page reference; it may not be following the expected format (e.g. 'f. 12').",
+        "log.local_engine.window_rejection": "Section {window}: {reason}",
+        "log.local_engine.connection_lost": "The local model stopped responding ({error}). GClaude Indexer will try to restart Ollama before switching to the Rules engine.",
+        "log.local_engine.invalid_item": "An item from section {window} ({engine} engine) was discarded because it was incomplete or incorrect: {errors}",
+        "log.local_engine.summary": "Classification with the local model complete: {windows} section(s) analyzed, {fallback} of them by the Rules engine because the model was unavailable; {items} item(s) identified (high confidence: {high}, medium: {medium}, low: {low}) and {invalid} discarded due to errors.",
+        "log.review.nothing_to_review": "Review mode: no section got low confidence from the Rules engine, so there is nothing to review.",
+        "log.review.submitting": "Review mode: {reviewed} of {total} section(s) ({percent}%) had an item with low confidence and will be analyzed again by the '{engine}' engine.",
+        "log.review.invalid_item": "Review by the '{engine}' engine: an item from section {window} was discarded because it was incomplete or incorrect: {errors}",
+        "log.review.summary": "Review mode complete: the '{engine}' engine added {items} item(s); {invalid} discarded due to errors.",
+        "log.claude_code.sync_status": "Claude Code: {done} section(s) already classified and {pending} still to do.",
+        "log.import.invalid_json": "Line {line} of the classified items file (raw_items.jsonl) is corrupted and was skipped (invalid JSON: {error}).",
+        "log.import.not_a_json_object": "Line {line} of the classified items file (raw_items.jsonl) is not in the expected format and was skipped.",
+        "log.import.invalid_item": "The item on line {line} of the classified items file (raw_items.jsonl) was skipped because it was incomplete or incorrect: {errors}",
+        "log.import.file_not_found": "There are no classified items to import yet (the raw_items.jsonl file does not exist). Finish step \"6. Classification\" before using \"Import and generate reports\".",
+        "log.import.summary": "Import complete: {lines} line(s) read, {valid} valid item(s) and {invalid} skipped due to errors. After merging items that repeated or overlapped between neighboring sections, {consolidated} item(s) were saved to the index.",
+        "log.project.classification_engine_converted": "The classification engine '{engine}' no longer exists in this version. The project was switched automatically to the '{replacement}' engine.",
     },
     "es": {
         "app.name": "GClaude Indexer",
@@ -2183,6 +1932,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.unknown_field": "campo desconocido: {field}",
         "config_error.type_error": "configuración inválida: {detail}",
         "nav.about": "Acerca de",
+        "nav.manual": "Manual",
+        "manual.title": "Manual de GClaude Indexer",
+        "manual.subtitle": "Todo lo que hace el sistema, paso a paso: cada pantalla, cada opción, qué es más rápido, qué da más calidad y consejos de uso.",
+        "help.open_manual": "Abrir el manual completo",
         "nav.help": "Ayuda",
         "general.close": "Cerrar",
         "general.cancel": "Cancelar",
@@ -2198,12 +1951,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "disco — puede reabrirlo después creando un proyecto nuevo que apunte a la misma "
             "carpeta."
         ),
-        "delete.option_delete_all": "Quitar de la lista y borrar la carpeta de salida",
-        "delete.option_delete_all_explanation": (
-            "También borra la base de datos, los archivos convertidos y los informes generados — "
-            "la carpeta de salida entera. La carpeta de origen nunca se ve afectada. No se puede "
-            "deshacer."
-        ),
+        "delete.option_delete_all": "Quitar de la lista y borrar los archivos generados",
+        "delete.option_delete_all_explanation": "Borra lo que GClaude Indexer creó en la carpeta de salida: la base de datos, las copias convertidas, las ventanas, el registro y los informes. Sus propios archivos en esa carpeta se conservan, y en las instrucciones (CLAUDE.md, project_instructions.md) solo se quita la parte generada por el sistema. La carpeta se elimina solo si queda vacía. La carpeta de origen nunca se ve afectada. No se puede deshacer.",
         "delete.confirm": "Eliminar definitivamente",
         "help.projects.title": "Ayuda — Proyectos",
         "help.projects.p1": (
@@ -2411,10 +2160,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "new_project.folder_in_use_open": "Abrir el proyecto existente",
         "new_project.folder_in_use_or": "o elija otra carpeta de salida en el formulario de abajo.",
-        "log.project.duplicate_config": (
-            "la base tiene {count} configuraciones de proyecto guardadas; se usa la original "
-            "(id {kept}). Las demás se conservaron en la base, sin uso."
-        ),
+        "log.project.duplicate_config": "Este proyecto tenía {count} configuraciones guardadas; usamos la original (n.º {kept}). Las demás quedaron guardadas, sin uso, y no se borró nada.",
         "help.open_project.title": "Ayuda — Abrir proyecto existente",
         "help.open_project.p1": (
             "La carpeta de salida es el proyecto. El archivo project.db que hay dentro "
@@ -2686,190 +2432,62 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # --- log messages (Task 12, Phase 14) — see the `pt` table above.
         "log.common.yes": "sí",
         "log.common.no": "no",
-        "log.hardware.no_gpu": "ninguna GPU detectada",
-        "log.hardware.diagnose": (
-            "hardware: {gpu}, RAM {ram} MB, espacio libre {free_space} MB en {folder}; "
-            "tesseract={tesseract}, ghostscript={ghostscript}, ollama={ollama}"
-        ),
+        "log.hardware.no_gpu": "no se detectó ninguna tarjeta de video",
+        "log.hardware.diagnose": "Resumen del hardware: tarjeta de video {gpu}; memoria RAM de {ram} MB; {free_space} MB libres en disco en la carpeta {folder}. Programas auxiliares encontrados: reconocimiento de texto (Tesseract): {tesseract}; herramienta de PDF (Ghostscript): {ghostscript}; modelo local (Ollama): {ollama}.",
         "log.hardware.real_size": "tamaño real",
-        "log.hardware.estimated_size": (
-            "tamaño estimado (calibrado para qwen3.5:4b; Ollama no informó el tamaño real)"
-        ),
-        "log.hardware.insufficient_memory": (
-            "Memoria insuficiente para '{model}': se necesitan al menos {required} MB sumando "
-            "VRAM y RAM ({size_source} del modelo, {model_size} MB, con un margen del "
-            "{margin_percent}%), y esta máquina tiene {combined} MB (VRAM: {vram} MB + RAM: "
-            "{ram} MB). Usando el motor 'rules' — determinista, sin costo y sin depender de "
-            "instalar ningún modelo."
-        ),
-        "log.hardware.insufficient_disk_space": (
-            "Memoria suficiente para '{model}', pero faltó espacio en disco: se necesitan "
-            "{required} MB libres (el doble del {size_source} del modelo, {model_size} MB), y "
-            "solo hay {available} MB disponibles en {folder}. Usando el motor 'rules' hasta que "
-            "haya espacio suficiente."
-        ),
-        "log.hardware.model_chosen": (
-            "Modelo '{model}' elegido ({size_source}: {model_size} MB): usa el máximo de GPU "
-            "posible (VRAM detectada: {vram} MB) y desborda el resto a la RAM ({ram} MB "
-            "disponibles); espacio libre: {free_space} MB."
-        ),
-        "log.scan.extension_not_allowed": (
-            "{name}: extensión '{extension}' fuera de la lista configurada, ignorada"
-        ),
-        "log.scan.content_changed": "{name}: contenido modificado, reprocesando",
-        "log.scan.summary": (
-            "exploración completa: {new} nuevo(s), {updated} actualizado(s), {ignored} "
-            "ignorado(s), {unchanged} sin cambios"
-        ),
-        "log.conversion.ocr_applied": "{name}: OCR aplicado ({ocr_language})",
-        "log.conversion.sliced": "{name}: cortado en {blocks} bloque(s)",
-        "log.conversion.failed": "{name}: {error}",
-        "log.pool_broken": (
-            "el pool de procesos se rompió (un worker murió, posiblemente por falta de "
-            "memoria); los archivos aún pendientes se mantuvieron para reanudar en la próxima "
-            "ejecución"
-        ),
-        "log.conversion.summary": (
-            "conversión completa: {converted} convertido(s), {ocr} con OCR, {sliced} "
-            "fraccionado(s) en {blocks} bloque(s), {failed} falló(aron)"
-        ),
-        "log.extraction.failed": "{name}: {error}",
-        "log.extraction.summary_interrupted": (
-            "extracción interrumpida: {files} archivo(s), {pages} página(s), {failed} falló(aron)"
-        ),
-        "log.extraction.summary_completed": (
-            "extracción completa: {files} archivo(s), {pages} página(s), {failed} falló(aron)"
-        ),
-        "log.windows.summary": (
-            "preparación de ventanas completa: {created} nueva(s), {existing} ya existente(s)"
-        ),
-        "log.update.layout_mismatch": (
-            "grupo {group}: el índice guarda {stored} ventana(s), pero las páginas actuales "
-            "darían {derived} — como no hay forma de saber cuáles siguen valiendo, todas las "
-            "ventanas de este grupo se reclasificarán"
-        ),
-        "log.update.renumbered": "Atención: como un documento salió del medio del grupo, la numeración de folios (f. N) de {count} documento(s) siguiente(s) cambió: {files}. Si ya tenía conversaciones en Claude citando folios de estos documentos, revise la nueva numeración después de generar los informes.",
-        "log.update.duplicate_released": "Había {count} copia(s) del documento eliminado todavía en la carpeta ({files}). Aparecerán como documento nuevo en la próxima actualización, para que el contenido no desaparezca del índice.",
-        "log.update.applied": (
-            "actualización aplicada: {windows} ventana(s) descartada(s), {removed} "
-            "documento(s) eliminado(s), {reset} para reprocesar, {renumbered} para "
-            "renumerar"
-        ),
-        "log.update.reconversion_needed": (
-            "{count} documento(s) tendrán que pasar por OCR de nuevo porque los "
-            "archivos intermedios de la carpeta converted/ fueron borrados — su "
-            "contenido sigue íntegro, solo la relectura se volvió más lenta: "
-            "{files}"
-        ),
-        "log.update.orphan_window_file": (
-            "{count} archivo(s) de ventana no pudieron borrarse y siguen en la "
-            "carpeta windows/ — bórrelos a mano antes de reclasificar: {files}"
-        ),
-        "log.update.raw_items_prune_failed": (
-            "no se pudo limpiar raw_items.jsonl ({error}) — hasta una "
-            "reindexación completa, el índice puede contener piezas de documentos "
-            "que ya no están en la colección"
-        ),
-        "log.rules.invalid_item": "pieza inválida en la ventana {window}: {errors}",
-        "log.rules.summary": (
-            "motor rules: {windows} ventana(s), {items} pieza(s) (alta={high}, media={medium}, "
-            "baja={low}), {invalid} inválida(s)"
-        ),
-        "log.local_engine.ollama_binary_missing": (
-            "motor 'local': ejecutable 'ollama' no encontrado en el PATH de esta máquina — no "
-            "hay forma de reiniciarlo solo; instale Ollama para usar el motor local."
-        ),
-        "log.local_engine.restarting": (
-            "motor 'local': Ollama no respondió en {url}; ejecutable encontrado en {path} — "
-            "intentando reiniciar el servidor (hasta {attempts} intento(s))..."
-        ),
-        "log.local_engine.restart_attempt_failed_to_start": (
-            "motor 'local': el intento {attempt}/{total} de reiniciar Ollama falló al iniciar "
-            "el proceso: {error}"
-        ),
-        "log.local_engine.restart_succeeded": (
-            "motor 'local': Ollama volvió a responder en el intento {attempt}/{total}."
-        ),
-        "log.local_engine.restart_attempt_timed_out": (
-            "motor 'local': el intento {attempt}/{total} de reiniciar Ollama no respondió a "
-            "tiempo."
-        ),
-        "log.local_engine.restart_gave_up": (
-            "motor 'local': Ollama sigue sin responder tras {attempts} intento(s); usando "
-            "'rules' para todas las ventanas pendientes."
-        ),
-        "log.local_engine.model_too_big_for_gpu": (
-            "el modelo '{model}' ocupa {model_mb} MB y la placa tiene {vram_mb} MB de VRAM: no cabe "
-            "entero, y la mayor parte se ejecuta en la CPU — lo que hace la clasificación varias "
-            "veces más lenta. Ningún ajuste lo resuelve; elija un modelo menor que la VRAM de la "
-            "placa en el campo \"Modelo local\" del proyecto."
-        ),
-        "log.local_engine.gpu_plan": (
-            "modelo '{model}': {layers} de {layers_total} capas en la GPU ({free_vram} MB de VRAM "
-            "libre medidos, contexto de {context} tokens)."
-        ),
-        "log.local_engine.gpu_plan_unavailable": (
-            "modelo '{model}': no se pudo medir la VRAM libre ni leer los metadatos del modelo; "
-            "el reparto GPU/RAM queda a cargo de Ollama (contexto de {context} tokens)."
-        ),
-        "log.local_engine.pages_missing_from_answer": (
-            "el modelo no respondió sobre {missing} de {total} página(s) de esta ventana; entran en "
-            "el índice por el agrupamiento, con el texto de la propia página."
-        ),
-        "log.local_engine.coverage_filled": (
-            "ventana {window}: {pages} página(s) quedaron fuera de las piezas devueltas por el "
-            "modelo y entraron en el índice como piezas de cobertura (confianza baja). Ninguna "
-            "página queda fuera del índice."
-        ),
-        "log.local_engine.reference_rejected": (
-            "pieza rechazada: referencia no reconocida en esta ventana (ref_inicio={start}, "
-            "ref_fin={end}); referencias esperadas: {expected}"
-        ),
-        "log.local_engine.all_items_rejected": (
-            "modelo '{model}': todas las {count} pieza(s) devueltas en esta ventana fueron "
-            "rechazadas por referencia no reconocida — el modelo puede no estar siguiendo el "
-            "formato de referencia esperado (ej.: 'f. 12')."
-        ),
-        "log.local_engine.window_rejection": "ventana {window}: {reason}",
-        "log.local_engine.connection_lost": (
-            "el motor 'local' dejó de responder ({error}); intentando reiniciar antes de caer "
-            "a 'rules'..."
-        ),
-        "log.local_engine.invalid_item": (
-            "raw_items.jsonl (motor {engine}) ventana {window}: {errors}"
-        ),
-        "log.local_engine.summary": (
-            "motor local: {windows} ventana(s) ({fallback} vía respaldo 'rules'), {items} "
-            "pieza(s) (alta={high}, media={medium}, baja={low}), {invalid} inválida(s)"
-        ),
-        "log.review.nothing_to_review": (
-            "modo revisión: ninguna ventana con confianza baja en el motor 'rules', nada que "
-            "revisar"
-        ),
-        "log.review.submitting": (
-            "modo revisión: {reviewed} de {total} ventana(s) ({percent}%) tenían pieza de "
-            "confianza baja; enviando al motor '{engine}'"
-        ),
-        "log.review.invalid_item": "revisión ({engine}) ventana {window}: {errors}",
-        "log.review.summary": (
-            "modo revisión completo: {items} pieza(s) del motor '{engine}' añadida(s), "
-            "{invalid} inválida(s)"
-        ),
-        "log.claude_code.sync_status": (
-            "motor claude_code: {done} ventana(s) hecha(s), {pending} pendiente(s)"
-        ),
-        "log.import.invalid_json": "raw_items.jsonl línea {line}: JSON inválido ({error})",
-        "log.import.not_a_json_object": "raw_items.jsonl línea {line}: no es un objeto JSON",
-        "log.import.invalid_item": "raw_items.jsonl línea {line}: {errors}",
-        "log.import.file_not_found": "raw_items.jsonl no encontrado, nada que importar",
-        "log.import.summary": (
-            "importación completa: {lines} línea(s) leída(s), {invalid} inválida(s), {valid} "
-            "pieza(s) válida(s), {consolidated} pieza(s) grabada(s) tras consolidación"
-        ),
-        "log.project.classification_engine_converted": (
-            "classification_engine '{engine}' ya no existe en esta versión; proyecto "
-            "convertido automáticamente a '{replacement}'"
-        ),
+        "log.hardware.estimated_size": "tamaño estimado (Ollama no informó el tamaño real, así que se usó qwen3.5:4b como referencia)",
+        "log.hardware.insufficient_memory": "El modelo '{model}' no cabe en la memoria de este equipo: necesita al menos {required} MB, sumando la memoria de la tarjeta de video y la RAM, y aquí hay {combined} MB (tarjeta de video: {vram} MB + RAM: {ram} MB). Por eso, la clasificación usará el motor Reglas, que funciona sin modelo y sin costo. (Cálculo: {size_source} del modelo, {model_size} MB, más un {margin_percent}% de margen.)",
+        "log.hardware.insufficient_disk_space": "Hay memoria suficiente para el modelo '{model}', pero falta espacio en disco: necesita {required} MB libres y solo hay {available} MB en {folder}. Mientras no haya espacio suficiente, la clasificación usará el motor Reglas. (Cálculo: el doble del {size_source} del modelo, {model_size} MB.)",
+        "log.hardware.model_chosen": "La clasificación usará el modelo '{model}' ({size_source}: {model_size} MB). Aprovecha al máximo la tarjeta de video ({vram} MB) y usa la memoria RAM para lo que no quepa en ella ({ram} MB disponibles). Espacio libre en disco: {free_space} MB.",
+        "log.scan.extension_not_allowed": "{name}: extensión '{extension}' ignorada, porque no está en la lista de tipos de archivo aceptados en este proyecto. El archivo no entra en el índice.",
+        "log.scan.content_changed": "{name} cambió desde la última lectura y se procesará de nuevo.",
+        "log.scan.summary": "Barrido completo, documentos encontrados en la carpeta: {new} nuevo(s), {updated} modificado(s), {unchanged} sin cambios y {ignored} ignorado(s).",
+        "log.conversion.ocr_applied": "{name} no tenía texto seleccionable (por ejemplo, un documento escaneado), así que su texto se reconoció automáticamente (OCR aplicado, idioma {ocr_language}).",
+        "log.conversion.sliced": "{name} es un documento grande y se dividió en {blocks} parte(s) para facilitar el procesamiento.",
+        "log.conversion.failed": "No se pudo preparar {name}: {error}. Los demás documentos siguen con normalidad.",
+        "log.pool_broken": "El procesamiento se detuvo a mitad de camino, probablemente por falta de memoria en el equipo. Los archivos que faltaban quedaron guardados para continuar en la próxima ejecución. (Detalle técnico: el pool de procesos se detuvo.)",
+        "log.conversion.summary": "Conversión completa: {converted} documento(s) preparado(s), {ocr} con reconocimiento de texto (OCR), {sliced} dividido(s) en {blocks} parte(s) y {failed} con error.",
+        "log.extraction.failed": "No se pudo leer el texto de las páginas de {name}: {error}",
+        "log.extraction.summary_interrupted": "Lectura de páginas en pausa: hasta ahora, {pages} página(s) de {files} archivo(s) y {failed} archivo(s) con error. Haga clic en \"Ejecutar siguiente etapa\" para continuar donde quedó.",
+        "log.extraction.summary_completed": "Lectura de páginas completa: {pages} página(s) de {files} archivo(s) y {failed} archivo(s) con error.",
+        "log.windows.summary": "Páginas organizadas en ventanas, es decir, tramos de algunas páginas que se analizan juntos en la clasificación: {created} tramo(s) nuevo(s) y {existing} que ya existían.",
+        "log.update.layout_mismatch": "En el grupo {group}, las páginas cambiaron y la división en tramos ya no coincide con la anterior ({stored} tramo(s) guardado(s), {derived} según las páginas actuales). Para no correr riesgos, todos los tramos de este grupo se clasificarán de nuevo.",
+        "log.update.renumbered": "Atención: como un documento salió del medio del grupo, la numeración de folios (f. N) de {count} documento(s) siguiente(s) cambió: {files}. Si ya tenía conversaciones en Claude que citan folios de estos documentos, revise la nueva numeración después de usar \"Importar y generar informes\".",
+        "log.update.duplicate_released": "Todavía había {count} copia(s) del documento eliminado en la carpeta ({files}). Entrarán como documento nuevo en la próxima actualización, para que el contenido no desaparezca del índice.",
+        "log.update.applied": "Actualización aplicada: {removed} documento(s) quitado(s) del índice, {reset} documento(s) para procesar de nuevo, {renumbered} con la numeración de folios por rehacer y {windows} tramo(s) descartado(s) para una nueva clasificación.",
+        "log.update.reconversion_needed": "{count} documento(s) pasarán de nuevo por el reconocimiento de texto (OCR), porque se borraron las copias de trabajo de la carpeta converted/. El contenido sigue íntegro; solo esta lectura tardará más: {files}",
+        "log.update.orphan_window_file": "{count} archivo(s) de tramo no se pudieron borrar y siguen en la carpeta windows/. Bórrelos a mano antes de clasificar de nuevo: {files}",
+        "log.update.raw_items_prune_failed": "No se pudo limpiar el archivo de piezas clasificadas (raw_items.jsonl): {error}. Hasta una reindexación completa, el índice puede incluir piezas de documentos que ya salieron de la colección.",
+        "log.rules.invalid_item": "Una pieza del tramo {window} se descartó por estar incompleta o incorrecta: {errors}",
+        "log.rules.summary": "Clasificación con el motor Reglas completa: {windows} tramo(s) analizado(s), {items} pieza(s) identificada(s) (confianza alta: {high}, media: {medium}, baja: {low}) y {invalid} descartada(s) por error.",
+        "log.local_engine.ollama_binary_missing": "No se encontró Ollama, el programa que ejecuta el modelo local, en este equipo, así que no hay forma de reiniciarlo automáticamente. Instale Ollama para usar el motor Modelo local.",
+        "log.local_engine.restarting": "Ollama, el programa que ejecuta el modelo local, no respondió ({url}). GClaude Indexer intentará reiniciarlo automáticamente, hasta {attempts} vez(ces). (Programa encontrado en {path}.)",
+        "log.local_engine.restart_attempt_failed_to_start": "Intento {attempt} de {total} de reiniciar Ollama: el programa no pudo iniciarse ({error}).",
+        "log.local_engine.restart_succeeded": "Ollama volvió a responder en el intento {attempt} de {total}.",
+        "log.local_engine.restart_attempt_timed_out": "Intento {attempt} de {total} de reiniciar Ollama: no respondió a tiempo.",
+        "log.local_engine.restart_gave_up": "Ollama sigue sin responder después de {attempts} intento(s). Los tramos que faltan se clasificarán con el motor Reglas.",
+        "log.local_engine.model_too_big_for_gpu": "El modelo '{model}' ({model_mb} MB) es más grande que la memoria de la tarjeta de video ({vram_mb} MB). Por eso, la mayor parte se ejecuta en el procesador, y la clasificación se vuelve varias veces más lenta. Ningún ajuste lo resuelve: para ganar velocidad, elija en el campo \"Modelo local\" del proyecto un modelo menor que {vram_mb} MB.",
+        "log.local_engine.gpu_plan": "Modelo '{model}': {layers} de {layers_total} partes del modelo se ejecutarán en la tarjeta de video; cuantas más partes allí, más rápida la clasificación. (Detalles técnicos: capas en la GPU, {free_vram} MB libres en la tarjeta, contexto de {context} tokens.)",
+        "log.local_engine.gpu_plan_unavailable": "Modelo '{model}': no se pudo medir la memoria libre de la tarjeta de video ni leer los datos del modelo, así que el propio Ollama decidirá cómo repartir el trabajo entre la tarjeta y la memoria RAM. (Contexto de {context} tokens.)",
+        "log.local_engine.pages_missing_from_answer": "el modelo no respondió sobre {missing} de {total} página(s) de este tramo; entran en el índice de todos modos, con el texto de la propia página.",
+        "log.local_engine.coverage_filled": "En el tramo {window}, {pages} página(s) quedaron fuera de la respuesta del modelo. Se incluyeron en el índice con un resumen tomado de su propio texto (confianza baja), para que ninguna página quede fuera.",
+        "log.local_engine.reference_rejected": "una pieza fue rechazada porque la referencia de páginas indicada por el modelo (inicio {start}, fin {end}) no existe en este tramo. Referencias válidas: {expected}",
+        "log.local_engine.all_items_rejected": "el modelo '{model}' devolvió {count} pieza(s) en este tramo y todas fueron rechazadas por una referencia de página no reconocida; puede que no esté siguiendo el formato esperado (ej.: 'f. 12').",
+        "log.local_engine.window_rejection": "Tramo {window}: {reason}",
+        "log.local_engine.connection_lost": "El modelo local dejó de responder ({error}). GClaude Indexer intentará reiniciar Ollama antes de pasar a usar el motor Reglas.",
+        "log.local_engine.invalid_item": "Una pieza del tramo {window} (motor {engine}) se descartó por estar incompleta o incorrecta: {errors}",
+        "log.local_engine.summary": "Clasificación con el modelo local completa: {windows} tramo(s) analizado(s), {fallback} de ellos con el motor Reglas porque el modelo no estaba disponible; {items} pieza(s) identificada(s) (confianza alta: {high}, media: {medium}, baja: {low}) y {invalid} descartada(s) por error.",
+        "log.review.nothing_to_review": "Modo revisión: ningún tramo quedó con confianza baja en el motor Reglas, así que no hay nada que revisar.",
+        "log.review.submitting": "Modo revisión: {reviewed} de {total} tramo(s) ({percent}%) tuvieron alguna pieza con confianza baja y el motor '{engine}' los analizará de nuevo.",
+        "log.review.invalid_item": "Revisión con el motor '{engine}': una pieza del tramo {window} se descartó por estar incompleta o incorrecta: {errors}",
+        "log.review.summary": "Modo revisión completo: el motor '{engine}' añadió {items} pieza(s); {invalid} descartada(s) por error.",
+        "log.claude_code.sync_status": "Claude Code: {done} tramo(s) ya clasificado(s) y {pending} todavía por hacer.",
+        "log.import.invalid_json": "La línea {line} del archivo de piezas clasificadas (raw_items.jsonl) está dañada y se omitió (JSON inválido: {error}).",
+        "log.import.not_a_json_object": "La línea {line} del archivo de piezas clasificadas (raw_items.jsonl) no tiene el formato esperado y se omitió.",
+        "log.import.invalid_item": "La pieza de la línea {line} del archivo de piezas clasificadas (raw_items.jsonl) se omitió por estar incompleta o incorrecta: {errors}",
+        "log.import.file_not_found": "Todavía no hay piezas clasificadas para importar (el archivo raw_items.jsonl no existe). Complete la etapa \"6. Clasificación\" antes de usar \"Importar y generar informes\".",
+        "log.import.summary": "Importación completa: {lines} línea(s) leída(s), {valid} pieza(s) válida(s) y {invalid} omitida(s) por error. Después de unir las piezas repetidas o superpuestas entre tramos vecinos, se guardaron {consolidated} pieza(s) en el índice.",
+        "log.project.classification_engine_converted": "El motor de clasificación '{engine}' ya no existe en esta versión. El proyecto pasó a usar automáticamente el motor '{replacement}'.",
     },
 }
 

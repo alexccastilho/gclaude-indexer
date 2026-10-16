@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('manual.title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ m.icon('book') }} {{ t('manual.title') }}</h1>
+  <p class="help">{{ t('manual.subtitle') }}</p>
+</div>
+<div class="manual">
+  {% include manual_template %}
+</div>
+{% endblock %}

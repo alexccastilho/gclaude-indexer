@@ -24,6 +24,12 @@
     {% endfor %}
   </div>
   <div class="modal-footer">
+    {%- set manual_sections = {
+      'help.projects.title': 'projetos', 'help.new_project.title': 'novo-projeto',
+      'help.run.title': 'execucao', 'help.result.title': 'resultado',
+      'help.open_project.title': 'projetos',
+    } %}
+    <a class="button button-secondary" href="/help#{{ manual_sections.get(title_key, 'comeco-rapido') }}">{{ icon('book') }} {{ t('help.open_manual') }}</a>
     <button type="button" class="button-primary" onclick="document.getElementById('modal-help').close()">{{ t('general.close') }}</button>
   </div>
 </dialog>

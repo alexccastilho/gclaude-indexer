@@ -1,0 +1,274 @@
+<nav class="manual-toc" aria-label="Sumário">
+  <p class="manual-toc-title">Sumário</p>
+  <ol>
+    <li><a href="#o-que-e">O que é e para que serve</a></li>
+    <li><a href="#comeco-rapido">Começo rápido em 6 passos</a></li>
+    <li><a href="#projetos">Tela Projetos</a></li>
+    <li><a href="#novo-projeto">Novo projeto: cada campo</a></li>
+    <li><a href="#motores">Motores de classificação: qual escolher</a></li>
+    <li><a href="#execucao">Tela Execução: as etapas</a></li>
+    <li><a href="#resultado">Tela Resultado: o que é gerado</a></li>
+    <li><a href="#usar-com-claude">Usando com o Claude</a></li>
+    <li><a href="#instrucoes">Suas instruções são preservadas</a></li>
+    <li><a href="#atualizar">Atualizar o acervo</a></li>
+    <li><a href="#outro-computador">Outro computador e uso em equipe</a></li>
+    <li><a href="#aparencia">Temas e layouts</a></li>
+    <li><a href="#dicas">Dicas: mais rápido ou melhor qualidade</a></li>
+    <li><a href="#problemas">Problemas comuns</a></li>
+    <li><a href="#privacidade">Privacidade e segurança</a></li>
+  </ol>
+</nav>
+
+<article class="manual-body">
+
+<section id="o-que-e">
+<h2>1. O que é e para que serve</h2>
+<p>O GClaude Indexer lê uma pasta cheia de documentos (PDFs, Word, planilhas, e-mails, imagens escaneadas…) e monta, <strong>no seu computador</strong>, um índice organizado de tudo o que existe nela: qual é cada peça, de que data, de quem, em que página está. Esse índice é feito para ser usado com o Claude.</p>
+<p>Ele resolve cinco problemas:</p>
+<ol>
+  <li><strong>Economia da sua assinatura do Claude.</strong> Em vez de enviar o acervo inteiro para o Claude ler (o que consome muito do seu limite de uso), você entrega só o índice. O Claude consulta o índice, descobre exatamente qual documento e qual página interessam, e abre só aquilo.</li>
+  <li><strong>Acervos muito maiores do que o Claude aguenta.</strong> O Claude tem um limite de quanto texto consegue considerar de uma vez. Um índice compacto, dividido por grupo, cabe nesse limite mesmo quando o acervo tem milhares de páginas.</li>
+  <li><strong>Sigilo.</strong> Todo o trabalho pesado (leitura, reconhecimento de texto, classificação) acontece nesta máquina. Nenhum documento é enviado para a internet durante o processamento. A base fica numa pasta sua — e, se essa pasta estiver no Google Drive, você a usa de qualquer computador.</li>
+  <li><strong>Atualização incremental.</strong> Quando você acrescenta, altera ou remove documentos, o sistema refaz só o que mudou, não o acervo inteiro.</li>
+  <li><strong>Uso pessoal ou corporativo.</strong> Funciona para uma pessoa só ou para uma equipe que compartilha a mesma pasta no Drive ou num servidor de arquivos.</li>
+</ol>
+</section>
+
+<section id="comeco-rapido">
+<h2>2. Começo rápido em 6 passos</h2>
+<ol class="manual-steps">
+  <li><strong>Novo projeto.</strong> Clique em <em>+ Novo projeto</em>, dê um nome, escolha a <em>Pasta de origem</em> (onde estão seus documentos) e confira a <em>Pasta de saída</em> sugerida. O resto pode ficar como está. Clique em <em>Criar projeto</em>.</li>
+  <li><strong>Rodar tudo.</strong> Na tela Execução, clique em <em>Rodar tudo até a classificação</em>. Pode deixar a janela aberta e fazer outra coisa: o progresso aparece sozinho.</li>
+  <li><strong>Gerar os relatórios.</strong> Quando a classificação terminar, clique em <em>Importar e gerar relatórios</em>.</li>
+  <li><strong>Conferir.</strong> A tela Resultado mostra a qualidade, as pendências e uma prévia de cada arquivo gerado.</li>
+  <li><strong>Baixar o pacote.</strong> Em <em>Pacote para um Claude Project novo</em>, clique em <em>Baixar pacote (.zip)</em>.</li>
+  <li><strong>Levar para o Claude.</strong> Em claude.ai, crie um Project, cole o conteúdo de <code>project_instructions.md</code> nas instruções e envie os outros arquivos como conhecimento do projeto. Veja os detalhes em <a href="#usar-com-claude">Usando com o Claude</a>.</li>
+</ol>
+<p class="manual-tip">Dica: em cada tela, o botão <strong>Ajuda</strong> no topo abre um resumo daquela tela, e o ícone <strong>?</strong> ao lado de cada campo explica o campo.</p>
+</section>
+
+<section id="projetos">
+<h2>3. Tela Projetos</h2>
+<p>Lista todos os projetos que este computador conhece. Cada projeto vive inteiro na sua <strong>pasta de saída</strong> (o arquivo <code>project.db</code> dentro dela guarda tudo).</p>
+<ul>
+  <li><strong>Situação</strong>: <em>não iniciado</em> (nada lido ainda), <em>em processamento</em> (alguma etapa rodando), <em>classificação pendente</em> (ainda há trechos por classificar) ou o número de peças já prontas.</li>
+  <li><strong>Abrir</strong>: vai para a tela Execução do projeto.</li>
+  <li><strong>Excluir</strong>: tira o projeto da lista. Você escolhe entre <em>só remover da lista</em> (os arquivos ficam no disco) ou <em>apagar também os arquivos gerados</em>. Nesse caso o sistema apaga só o que ele mesmo criou (banco, cópias convertidas, relatórios). Arquivos seus que estiverem na pasta de saída são mantidos, e a pasta só some se ficar vazia. A pasta de origem nunca é tocada.</li>
+  <li><strong>Abrir projeto existente</strong>: para um projeto que não está na lista (reinstalação, computador novo, pasta recebida de outra pessoa). Basta apontar a pasta de saída.</li>
+  <li><strong>Catálogo compartilhado</strong>: veja <a href="#outro-computador">Outro computador e uso em equipe</a>.</li>
+</ul>
+</section>
+
+<section id="novo-projeto">
+<h2>4. Novo projeto: cada campo</h2>
+<p>Na maioria dos casos você só precisa preencher <em>Nome</em> e <em>Pasta de origem</em>. Os outros campos já vêm com valores que funcionam bem.</p>
+
+<h3>Identificação</h3>
+<dl>
+  <dt>Nome do projeto</dt><dd>Só para você reconhecer o projeto na lista. Não muda nenhum arquivo.</dd>
+  <dt>Tema do acervo</dt><dd>Uma ou duas frases sobre o conteúdo (ex.: "processo de licitação da obra X"). Entra nas instruções geradas para o Claude e ajuda a classificação a entender o contexto.</dd>
+</dl>
+
+<h3>Pastas</h3>
+<dl>
+  <dt>Pasta de origem</dt><dd>Onde estão os documentos originais. <strong>Nunca é alterada</strong>: o sistema só lê.</dd>
+  <dt>Pasta de saída</dt><dd>Onde tudo é gravado. O padrão é a pasta de origem com <code>_indexado</code> no final. Pode ficar no Google Drive ou num servidor de arquivos para ser usada em outros computadores.</dd>
+</dl>
+
+<h3>Acervo</h3>
+<dl>
+  <dt>Tipo de acervo</dt><dd><em>processo</em> numera por folha (f. 1, f. 2…), como um processo administrativo ou judicial; a numeração continua de um volume para o outro. <em>biblioteca</em> numera por página (p. 1, p. 2…), como livros e relatórios.</dd>
+  <dt>Como agrupar</dt><dd>Um "agrupador" é um conjunto de arquivos que formam uma unidade (um processo com vários volumes, por exemplo). <em>por subpasta</em> usa o nome da primeira subpasta — o mais comum; <em>por padrão no nome</em> agrupa pelo começo do nome do arquivo, usando o campo seguinte; <em>tudo junto</em> trata a pasta inteira como um único grupo.</dd>
+  <dt>Padrão do agrupador</dt><dd>Só para <em>por padrão no nome</em>. É uma expressão regular. Exemplo: <code>^(\d{4}-\d+)</code> junta "2024-001 - petição.pdf" e "2024-001 - despacho.pdf" no grupo "2024-001".</dd>
+  <dt>Extensões incluídas</dt><dd>Quais tipos de arquivo entram. Marque <em>TODOS</em> para aceitar qualquer formato de texto ou documento (executáveis e compactados nunca entram).</dd>
+</dl>
+
+<h3>Fatiamento, janelas e OCR</h3>
+<p>Uma <strong>janela</strong> é um trecho de páginas seguidas que o classificador lê de uma vez para descobrir onde começa e termina cada peça.</p>
+<dl>
+  <dt>Páginas por bloco (80)</dt><dd>PDFs maiores que isso são cortados em partes antes de processar, para não travar em arquivos enormes.</dd>
+  <dt>Páginas por janela (16)</dt><dd>Janelas menores erram menos quando há muitos documentos curtos misturados, mas levam mais tempo. Janelas maiores são mais rápidas, mas podem juntar duas peças numa só.</dd>
+  <dt>Sobreposição (2)</dt><dd>Quantas páginas do fim de uma janela se repetem no começo da próxima, para não cortar uma peça ao meio. Tem que ser menor que <em>Páginas por janela</em>.</dd>
+  <dt>Caracteres por página (2000)</dt><dd>Limite de texto de cada página enviado ao classificador. Evita que uma página com uma tabela gigante ocupe a janela toda.</dd>
+  <dt>Idioma do OCR</dt><dd>Idioma usado para reconhecer o texto de páginas escaneadas: <code>por</code> (português), <code>eng</code> (inglês) ou <code>por+eng</code> para os dois no mesmo acervo.</dd>
+</dl>
+
+<h3>Classificação</h3>
+<dl>
+  <dt>Motor de classificação</dt><dd>Quem identifica as peças. Veja a comparação completa em <a href="#motores">Motores de classificação</a>.</dd>
+  <dt>Modelo local</dt><dd>Qual modelo do Ollama o motor local usa. <em>automático</em> usa o padrão (qwen3.5:4b). Escolher outro serve para comparar qualidade.</dd>
+  <dt>Processamento</dt><dd>Se o motor local usa a placa de vídeo (GPU). <em>automático</em> e <em>forçar GPU</em> usam o máximo dela — bem mais rápido. <em>somente CPU/RAM</em> deixa a placa livre para outros programas, mas é mais lento.</dd>
+  <dt>Paralelismo</dt><dd>Quantos arquivos a conversão e a leitura processam ao mesmo tempo. <em>econômico</em>: um por vez; <em>automático</em>: usa os núcleos do processador e deixa um livre para você continuar usando o computador (recomendado); <em>máximo</em>: termina antes, mas o computador fica lento enquanto isso.</dd>
+  <dt>Revisar confiança baixa</dt><dd>Roda primeiro o motor de regras (instantâneo) em tudo e manda para o motor escolhido só os trechos em que as regras ficaram em dúvida. Economiza tempo quando o acervo tem muitos documentos padronizados.</dd>
+</dl>
+
+<h3>Instruções do projeto</h3>
+<dl>
+  <dt>Instruções que você já usa</dt><dd>Se o seu Project no Claude já tem instruções, cole-as aqui. Elas ficam no topo do arquivo de instruções gerado e nunca são apagadas. Veja <a href="#instrucoes">Suas instruções são preservadas</a>.</dd>
+  <dt>Papel nas instruções</dt><dd>Substitui o parágrafo padrão que diz ao Claude qual é o papel dele neste acervo (ex.: "você é um assistente jurídico…"). Em branco, usa o texto padrão.</dd>
+  <dt>Regras extras</dt><dd>Regras específicas do acervo, acrescentadas no fim das instruções (ex.: "cite sempre o número do processo", um glossário de siglas).</dd>
+</dl>
+</section>
+
+<section id="motores">
+<h2>5. Motores de classificação: qual escolher</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>Motor</th><th>Velocidade</th><th>Qualidade</th><th>Precisa de</th><th>Quando usar</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Automático</strong> (recomendado)</td><td>a do motor que ele escolher</td><td>a do motor que ele escolher</td><td>nada</td><td>Na dúvida. Usa o modelo local se o computador aguentar; senão, as regras.</td></tr>
+    <tr><td><strong>Regras</strong></td><td>⚡ instantâneo</td><td>★★☆☆ boa em documentos padronizados</td><td>nada</td><td>Acervos muito grandes e padronizados (ofícios, despachos), ou para ter um primeiro resultado em minutos.</td></tr>
+    <tr><td><strong>Modelo local (Ollama)</strong></td><td>🐢 de segundos a ~30 s por janela, conforme a placa de vídeo</td><td>★★★☆ muito boa</td><td>Ollama instalado; placa de vídeo ajuda muito</td><td>O melhor equilíbrio: qualidade alta, sem internet e sem gastar a assinatura do Claude.</td></tr>
+    <tr><td><strong>Claude Code (manual)</strong></td><td>depende de você e do Claude</td><td>★★★★ a melhor</td><td>Claude Code instalado e assinatura do Claude</td><td>Acervos menores ou críticos, em que a precisão vale o consumo da assinatura. Não termina sozinho: você roda um comando.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Para ter uma ideia de tempo: um acervo real de cerca de 2.900 páginas levou pouco mais de 5 horas com o modelo local numa placa de vídeo comum. Com as regras, minutos.</p>
+<p class="manual-tip">Dica: a tela Resultado tem a tabela <em>Comparar motores e modelos</em>. Rode o mesmo acervo com motores diferentes e compare tempo e pontuação antes de decidir.</p>
+</section>
+
+<section id="execucao">
+<h2>6. Tela Execução: as etapas</h2>
+<p>O processamento segue sempre esta ordem. Cada etapa pode ser interrompida e retomada: pausar, fechar o programa ou até desligar o computador no meio não estraga nada — ao rodar de novo, ele continua de onde parou.</p>
+<ul class="manual-stages">
+  <li><strong>1. Varredura</strong> — encontra os arquivos da pasta de origem e identifica cópias repetidas (um documento idêntico a outro entra só uma vez).</li>
+  <li><strong>2–3. Conversão, OCR e fatiamento</strong> — transforma cada arquivo em texto. Páginas escaneadas passam pelo reconhecimento de texto (OCR); PDFs enormes são cortados em blocos. É a etapa mais demorada em acervos escaneados.</li>
+  <li><strong>4. Extração por página</strong> — guarda o texto de cada página com sua numeração (f. N ou p. N).</li>
+  <li><strong>5. Preparação de janelas</strong> — divide as páginas em trechos para a classificação.</li>
+  <li><strong>6. Classificação</strong> — o motor escolhido identifica cada peça: tipo, data, autor, resumo e intervalo de páginas.</li>
+</ul>
+<ul>
+  <li><strong>Rodar etapa seguinte</strong>: executa só a próxima etapa. Útil para acompanhar passo a passo.</li>
+  <li><strong>Rodar tudo até a classificação</strong>: encadeia todas. É o que você vai usar quase sempre.</li>
+  <li><strong>Pausar</strong>: para o que está rodando. Para continuar, rode de novo.</li>
+  <li><strong>Importar e gerar relatórios</strong>: depois da classificação, junta as peças e grava os arquivos para o Claude.</li>
+  <li><strong>Log ao vivo</strong>: conta o que está acontecendo, em linguagem simples. O filtro mostra só avisos ou só erros; <em>copiar</em> copia o log para mandar a alguém.</li>
+  <li><strong>Recursos da máquina</strong>: uso de processador, memória e placa de vídeo em tempo real.</li>
+  <li><strong>Motor Claude Code</strong>: aparece uma caixa com a frase para dizer ao Claude Code (<code>processe as janelas</code>). Abra o Claude Code na pasta de saída, diga a frase e, quando ele terminar, clique em <em>Reverificar</em>.</li>
+</ul>
+</section>
+
+<section id="resultado">
+<h2>7. Tela Resultado: o que é gerado</h2>
+<p>Todos os arquivos ficam na pasta de saída:</p>
+<dl>
+  <dt><code>index.md</code></dt><dd>O sumário: lista os grupos e diz qual arquivo de índice abrir para cada um.</dd>
+  <dt><code>index-&lt;grupo&gt;.md</code></dt><dd>Um índice por grupo: cada peça com folhas, tipo, data, autor, arquivo e página dentro do PDF, e um resumo.</dd>
+  <dt><code>timeline.md</code></dt><dd>A cronologia: as peças com data, em ordem.</dd>
+  <dt><code>review.md</code></dt><dd>A conferência: o que foi lido, o que falhou, lacunas de numeração e documentos removidos.</dd>
+  <dt><code>project_instructions.md</code></dt><dd>As instruções para o Claude: como usar o índice e a regra de sempre confirmar valores no documento original.</dd>
+</dl>
+<ul>
+  <li><strong>Qualidade da classificação</strong>: uma pontuação baseada na confiança que o próprio motor declarou e em quantos campos ele preencheu. Não é uma medida de acerto real — confira por amostragem.</li>
+  <li><strong>Pendências</strong>: trechos ainda não classificados, folhas sem peça e arquivos que falharam. Resolva antes de considerar o acervo pronto.</li>
+  <li><strong>Pacote para um Claude Project novo</strong>: um .zip com todos os arquivos e um guia passo a passo.</li>
+  <li><strong>Liberar espaço</strong>: apaga as cópias convertidas e os blocos (pastas <code>converted/</code> e <code>blocks/</code>). Faça só com os relatórios prontos: numa atualização futura, documentos que precisarem ser relidos passarão de novo pelo OCR.</li>
+</ul>
+</section>
+
+<section id="usar-com-claude">
+<h2>8. Usando com o Claude</h2>
+<h3>No claude.ai (Projects)</h3>
+<ol>
+  <li>Crie um Project novo (ou abra o deste acervo).</li>
+  <li>Cole o conteúdo <strong>inteiro</strong> de <code>project_instructions.md</code> no campo de instruções do Project.</li>
+  <li>Envie como conhecimento do projeto: <code>index.md</code>, os <code>index-&lt;grupo&gt;.md</code>, <code>timeline.md</code> e <code>review.md</code>.</li>
+  <li>Quando precisar do conteúdo exato de uma peça, envie à conversa só o documento original indicado pelo índice — é aí que está a economia.</li>
+</ol>
+<h3>No Claude Code</h3>
+<p>Abra o Claude Code na pasta de saída (ou numa pasta que tenha acesso a ela e à pasta de origem). O Claude lê o <code>index.md</code>, escolhe o índice do grupo e abre só os arquivos originais necessários, na página indicada.</p>
+<p class="manual-tip">Por que isso economiza: o índice de um acervo de milhares de páginas costuma ter uma fração mínima do tamanho do texto completo. O Claude gasta sua cota lendo o índice e uma ou duas peças, não o acervo todo.</p>
+</section>
+
+<section id="instrucoes">
+<h2>9. Suas instruções são preservadas</h2>
+<p>O texto que o GClaude Indexer escreve em <code>project_instructions.md</code> e no <code>CLAUDE.md</code> da pasta de saída fica entre duas marcas invisíveis (<code>GCLAUDE-INDEXER:BEGIN</code> e <code>GCLAUDE-INDEXER:END</code>).</p>
+<ul>
+  <li>Tudo o que estiver <strong>fora</strong> das marcas é seu e <strong>nunca</strong> é apagado, nem nas atualizações.</li>
+  <li>A cada nova geração, só o trecho entre as marcas é refeito.</li>
+  <li>Se a pasta de saída já tinha um <code>CLAUDE.md</code> seu, ele é mantido e o bloco do sistema é acrescentado. Uma cópia do original é guardada como <code>CLAUDE.md.bak</code> na primeira vez.</li>
+  <li>Instruções que você já usa no Project podem ser coladas no campo <em>Instruções que você já usa</em> ao criar o projeto: elas vão para o topo do arquivo.</li>
+</ul>
+</section>
+
+<section id="atualizar">
+<h2>10. Atualizar o acervo</h2>
+<p>Quando a pasta de origem muda, a tela Execução mostra um aviso com quantos documentos são novos, alterados ou removidos. Clique em <em>Atualizar</em> para ver o plano antes de confirmar.</p>
+<ul>
+  <li><strong>Novos</strong>: são lidos e classificados.</li>
+  <li><strong>Alterados</strong>: são lidos de novo (com OCR, se necessário) e reclassificados.</li>
+  <li><strong>Removidos</strong>: as páginas e peças saem do índice, a cópia convertida é apagada e o nome fica registrado em <code>review.md</code>. Se havia uma cópia idêntica do documento na pasta, ela passa a ser indexada no lugar dele.</li>
+  <li><strong>Mudança de numeração</strong>: num acervo do tipo processo, a numeração de folhas é contínua dentro do grupo. Se um documento entra ou sai do meio, as folhas dos documentos seguintes mudam de número. O plano mostra quais são, e o log avisa. Conversas antigas que citavam essas folhas podem ficar desatualizadas.</li>
+  <li>Só os trechos afetados são reclassificados; o resto é aproveitado.</li>
+</ul>
+<p>Depois de atualizar, rode <em>Rodar tudo até a classificação</em> e <em>Importar e gerar relatórios</em>, e reenvie os arquivos ao Project do Claude.</p>
+</section>
+
+<section id="outro-computador">
+<h2>11. Outro computador e uso em equipe</h2>
+<ul>
+  <li><strong>Pasta de saída no Google Drive</strong> (ou num servidor de arquivos): o projeto pode ser aberto de qualquer computador que tenha acesso a ela.</li>
+  <li><strong>Catálogo compartilhado</strong>: na tela Projetos, aponte uma pasta dentro do Drive para guardar a lista de projetos. Todos os computadores com o mesmo Drive passam a ver os mesmos projetos.</li>
+  <li><strong>Trava de uso</strong>: só um computador por vez trabalha num projeto. Se outro estiver usando, o sistema avisa quem é. A trava expira sozinha depois de um tempo sem uso.</li>
+  <li><strong>Regra de ouro ao trocar de computador</strong>: feche o programa no primeiro, espere o Google Drive terminar de sincronizar e só então abra no segundo.</li>
+</ul>
+</section>
+
+<section id="aparencia">
+<h2>12. Temas e layouts</h2>
+<p>No topo de qualquer tela há duas escolhas independentes:</p>
+<ul>
+  <li><strong>Tema</strong> (as cores): Claro, Escuro, Sépia, Alto contraste e os temas novos com mais movimento.</li>
+  <li><strong>Layout</strong> (a forma: fontes, espaçamentos, cantos): Padrão, Técnico, Editorial e Compacto.</li>
+</ul>
+<p>Qualquer combinação funciona. A escolha fica salva neste navegador. Se o sistema operacional pedir menos movimento (configuração de acessibilidade do Windows), as animações são reduzidas automaticamente.</p>
+</section>
+
+<section id="dicas">
+<h2>13. Dicas: mais rápido ou melhor qualidade</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>Se você quer…</th><th>Faça isto</th></tr></thead>
+  <tbody>
+    <tr><td>O resultado mais rápido possível</td><td>Motor <em>Regras</em>, Paralelismo <em>máximo</em>.</td></tr>
+    <tr><td>Rápido, mas sem abrir mão da qualidade</td><td>Motor <em>Modelo local</em> com <em>Revisar confiança baixa</em> marcado.</td></tr>
+    <tr><td>A melhor qualidade</td><td>Motor <em>Claude Code</em>, janelas de 12 a 16 páginas.</td></tr>
+    <tr><td>Usar o computador enquanto processa</td><td>Paralelismo <em>automático</em> ou <em>econômico</em>; Processamento <em>somente CPU/RAM</em> se precisar da placa de vídeo.</td></tr>
+    <tr><td>Acervo com muitos documentos curtos</td><td>Diminua <em>Páginas por janela</em> (ex.: 10).</td></tr>
+    <tr><td>Acervo com documentos longos e padronizados</td><td>Aumente <em>Páginas por janela</em> (ex.: 24).</td></tr>
+    <tr><td>Economizar a assinatura do Claude</td><td>Use o índice no Project e envie só os originais necessários a cada pergunta.</td></tr>
+  </tbody>
+</table>
+</div>
+<ul>
+  <li>Comece com um pedaço pequeno do acervo para testar as configurações; depois aponte a pasta inteira.</li>
+  <li>Preencha bem o <em>Tema do acervo</em>: ele melhora a classificação e as respostas do Claude.</li>
+  <li>Instale o Ollama e use uma placa de vídeo se puder: o modelo local fica muitas vezes mais rápido.</li>
+  <li>Peça sempre ao Claude a referência (f. N ou p. N) e confira o valor no documento original antes de usá-lo.</li>
+</ul>
+</section>
+
+<section id="problemas">
+<h2>14. Problemas comuns</h2>
+<dl>
+  <dt>"Projeto em uso em outra máquina"</dt><dd>Feche o programa no outro computador. Se ele travou ou desligou, espere a trava expirar ou escolha <em>Assumir mesmo assim</em> — só se tiver certeza de que o outro não está usando.</dd>
+  <dt>"Sinal de sincronização incompleta"</dt><dd>O Google Drive ainda não terminou de baixar o projeto. Espere o ícone do Drive indicar que terminou.</dd>
+  <dt>O motor local caiu para "regras"</dt><dd>O Ollama não está rodando ou falta memória. Abra o Ollama e rode a classificação de novo; a tela Sobre mostra o diagnóstico da instalação.</dd>
+  <dt>Arquivos com falha em Pendências</dt><dd>Em geral são arquivos protegidos por senha ou corrompidos. Abra-os, salve uma cópia sem proteção na pasta de origem e atualize o acervo.</dd>
+  <dt>Lacunas de folhas</dt><dd>Folhas sem peça classificada. Rode a classificação de novo nesses trechos ou confira se o PDF tem páginas em branco.</dd>
+  <dt>Aparece "Pedido recusado"</dt><dd>Algum site tentou enviar um comando ao programa e foi bloqueado. Use sempre o atalho do GClaude Indexer ou o endereço <code>http://127.0.0.1:8000</code>.</dd>
+</dl>
+</section>
+
+<section id="privacidade">
+<h2>15. Privacidade e segurança</h2>
+<ul>
+  <li>Os documentos são lidos e classificados <strong>só neste computador</strong>. O motor local conversa apenas com o Ollama desta máquina, nunca por proxy ou internet.</li>
+  <li>O programa só aceita comandos das próprias telas: um site aberto no navegador não consegue mandar ordens a ele.</li>
+  <li>A pasta de origem nunca é modificada.</li>
+  <li>O banco do projeto guarda o texto das páginas. Se o acervo tiver dados pessoais (LGPD), proteja a pasta de saída como protegeria os próprios documentos — inclusive no Google Drive.</li>
+  <li>Ao usar o motor Claude Code ou enviar arquivos ao Claude, aí sim o conteúdo enviado passa pela sua conta do Claude, nas condições do seu plano.</li>
+</ul>
+</section>
+
+</article>

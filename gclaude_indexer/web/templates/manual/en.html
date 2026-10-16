@@ -1,0 +1,274 @@
+<nav class="manual-toc" aria-label="Contents">
+  <p class="manual-toc-title">Contents</p>
+  <ol>
+    <li><a href="#o-que-e">What it is and what it is for</a></li>
+    <li><a href="#comeco-rapido">Quick start in 6 steps</a></li>
+    <li><a href="#projetos">Projects screen</a></li>
+    <li><a href="#novo-projeto">New project: every field</a></li>
+    <li><a href="#motores">Classification engines: which one to choose</a></li>
+    <li><a href="#execucao">Execution screen: the steps</a></li>
+    <li><a href="#resultado">Result screen: what gets generated</a></li>
+    <li><a href="#usar-com-claude">Using it with Claude</a></li>
+    <li><a href="#instrucoes">Your instructions are preserved</a></li>
+    <li><a href="#atualizar">Updating the collection</a></li>
+    <li><a href="#outro-computador">Another computer and team use</a></li>
+    <li><a href="#aparencia">Themes and layouts</a></li>
+    <li><a href="#dicas">Tips: faster or better quality</a></li>
+    <li><a href="#problemas">Common problems</a></li>
+    <li><a href="#privacidade">Privacy and security</a></li>
+  </ol>
+</nav>
+
+<article class="manual-body">
+
+<section id="o-que-e">
+<h2>1. What it is and what it is for</h2>
+<p>GClaude Indexer reads a folder full of documents (PDFs, Word files, spreadsheets, e-mails, scanned images…) and builds, <strong>on your computer</strong>, an organized index of everything in it: what each item is, its date, who it is from, and which page it is on. This index is made to be used with Claude.</p>
+<p>It solves five problems:</p>
+<ol>
+  <li><strong>Saves your Claude subscription.</strong> Instead of sending the whole collection for Claude to read (which uses up a lot of your usage limit), you hand over just the index. Claude looks at the index, finds exactly which document and which page matter, and opens only that.</li>
+  <li><strong>Collections far larger than Claude can handle.</strong> Claude has a limit on how much text it can consider at once. A compact index, split by group, fits within that limit even when the collection has thousands of pages.</li>
+  <li><strong>Confidentiality.</strong> All the heavy work (reading, text recognition, classification) happens on this machine. No document is sent to the internet during processing. The database lives in a folder of yours — and if that folder is on Google Drive, you can use it from any computer.</li>
+  <li><strong>Incremental updates.</strong> When you add, change or remove documents, the system redoes only what changed, not the whole collection.</li>
+  <li><strong>Personal or business use.</strong> It works for a single person or for a team sharing the same folder on Drive or on a file server.</li>
+</ol>
+</section>
+
+<section id="comeco-rapido">
+<h2>2. Quick start in 6 steps</h2>
+<ol class="manual-steps">
+  <li><strong>New project.</strong> Click <em>+ New project</em>, give it a name, choose the <em>Source folder</em> (where your documents are) and check the suggested <em>Output folder</em>. Everything else can stay as it is. Click <em>Create project</em>.</li>
+  <li><strong>Run everything.</strong> On the Execution screen, click <em>Run everything up to classification</em>. You can leave the window open and do something else: the progress updates on its own.</li>
+  <li><strong>Generate the reports.</strong> When classification finishes, click <em>Import and generate reports</em>.</li>
+  <li><strong>Check.</strong> The Result screen shows the quality, the pending items and a preview of each generated file.</li>
+  <li><strong>Download the package.</strong> Under <em>Package for a new Claude Project</em>, click <em>Download package (.zip)</em>.</li>
+  <li><strong>Take it to Claude.</strong> On claude.ai, create a Project, paste the contents of <code>project_instructions.md</code> into its instructions and upload the other files as project knowledge. See the details in <a href="#usar-com-claude">Using it with Claude</a>.</li>
+</ol>
+<p class="manual-tip">Tip: on every screen, the <strong>Help</strong> button at the top opens a summary of that screen, and the <strong>?</strong> icon next to each field explains the field.</p>
+</section>
+
+<section id="projetos">
+<h2>3. Projects screen</h2>
+<p>Lists every project this computer knows about. Each project lives entirely in its <strong>output folder</strong> (the <code>project.db</code> file inside it holds everything).</p>
+<ul>
+  <li><strong>Status</strong>: <em>not started</em> (nothing read yet), <em>in progress</em> (some step is running), <em>classification pending</em> (there are still passages to classify) or the number of items already done.</li>
+  <li><strong>Open</strong>: takes you to the project's Execution screen.</li>
+  <li><strong>Delete</strong>: takes the project off the list. You choose between <em>Only remove from the list</em> (the files stay on disk) or <em>also delete the generated files</em>. In that case the system deletes only what it created itself (database, converted copies, reports). Your own files that are in the output folder are kept, and the folder only disappears if it ends up empty. The source folder is never touched.</li>
+  <li><strong>Open existing project</strong>: for a project that is not on the list (reinstallation, new computer, folder received from someone else). Just point to the output folder.</li>
+  <li><strong>Shared catalog</strong>: see <a href="#outro-computador">Another computer and team use</a>.</li>
+</ul>
+</section>
+
+<section id="novo-projeto">
+<h2>4. New project: every field</h2>
+<p>In most cases you only need to fill in <em>Name</em> and <em>Source folder</em>. The other fields already come with values that work well.</p>
+
+<h3>Identification</h3>
+<dl>
+  <dt>Project name</dt><dd>Just so you can recognize the project on the list. It does not change any file.</dd>
+  <dt>Collection theme</dt><dd>One or two sentences about the content (e.g. "bidding process for construction project X"). It goes into the instructions generated for Claude and helps the classification understand the context.</dd>
+</dl>
+
+<h3>Folders</h3>
+<dl>
+  <dt>Source folder</dt><dd>Where the original documents are. <strong>It is never changed</strong>: the system only reads it.</dd>
+  <dt>Output folder</dt><dd>Where everything is saved. The default is the source folder with <code>_indexado</code> added at the end. It can be on Google Drive or on a file server so it can be used from other computers.</dd>
+</dl>
+
+<h3>Collection</h3>
+<dl>
+  <dt>Collection type</dt><dd><em>case file</em> numbers by sheet (f. 1, f. 2… — "f." stands for folio, a numbered sheet), like an administrative or court case file; the numbering carries on from one volume to the next. <em>library</em> numbers by page (p. 1, p. 2…), like books and reports.</dd>
+  <dt>How to group</dt><dd>A "group" is a set of files that form a unit (a case file with several volumes, for example). <em>by subfolder</em> uses the name of the first subfolder — the most common choice; <em>by name pattern</em> groups by the beginning of the file name, using the next field; <em>all together</em> treats the whole folder as a single group.</dd>
+  <dt>Grouping pattern</dt><dd>Only for <em>by name pattern</em>. It is a regular expression. Example: <code>^(\d{4}-\d+)</code> puts "2024-001 - petição.pdf" and "2024-001 - despacho.pdf" into the group "2024-001".</dd>
+  <dt>Included extensions</dt><dd>Which file types are included. Check <em>ALL</em> to accept any text or document format (executables and compressed archives are never included).</dd>
+</dl>
+
+<h3>Slicing, windows and OCR</h3>
+<p>A <strong>window</strong> is a run of consecutive pages that the classifier reads at once to figure out where each item starts and ends.</p>
+<dl>
+  <dt>Pages per block (80)</dt><dd>PDFs larger than this are cut into parts before processing, so huge files do not get stuck.</dd>
+  <dt>Pages per window (16)</dt><dd>Smaller windows make fewer mistakes when many short documents are mixed together, but take longer. Larger windows are faster, but may merge two items into one.</dd>
+  <dt>Overlap (2)</dt><dd>How many pages from the end of one window are repeated at the start of the next, so an item is not cut in half. It must be smaller than <em>Pages per window</em>.</dd>
+  <dt>Characters per page (2000)</dt><dd>The limit of text from each page sent to the classifier. It keeps a page with a gigantic table from taking up the whole window.</dd>
+  <dt>OCR language</dt><dd>The language used to recognize the text of scanned pages: <code>por</code> (Portuguese), <code>eng</code> (English) or <code>por+eng</code> for both in the same collection.</dd>
+</dl>
+
+<h3>Classification</h3>
+<dl>
+  <dt>Classification engine</dt><dd>What identifies the items. See the full comparison in <a href="#motores">Classification engines</a>.</dd>
+  <dt>Local model</dt><dd>Which Ollama model the local engine uses. <em>automatic</em> uses the default (qwen3.5:4b). Choosing another one is useful for comparing quality.</dd>
+  <dt>Processing</dt><dd>Whether the local engine uses the graphics card (GPU). <em>automatic</em> and <em>force GPU</em> use as much of it as possible — much faster. <em>CPU/RAM only</em> leaves the card free for other programs, but is slower.</dd>
+  <dt>Parallelism</dt><dd>How many files conversion and reading process at the same time. <em>economical</em>: one at a time; <em>automatic</em>: uses the processor cores and leaves one free so you can keep using the computer (recommended); <em>maximum</em>: finishes sooner, but the computer gets slow in the meantime.</dd>
+  <dt>Review low confidence</dt><dd>First runs the rules engine (instant) on everything and sends to the chosen engine only the passages where the rules were unsure. Saves time when the collection has many standardized documents.</dd>
+</dl>
+
+<h3>Project instructions</h3>
+<dl>
+  <dt>Instructions you already use</dt><dd>If your Claude Project already has instructions, paste them here. They stay at the top of the generated instructions file and are never deleted. See <a href="#instrucoes">Your instructions are preserved</a>.</dd>
+  <dt>Role in the instructions</dt><dd>Replaces the default paragraph that tells Claude what its role is in this collection (e.g. "you are a legal assistant…"). If left blank, the default text is used.</dd>
+  <dt>Extra rules</dt><dd>Rules specific to the collection, added at the end of the instructions (e.g. "always cite the case number", a glossary of acronyms).</dd>
+</dl>
+</section>
+
+<section id="motores">
+<h2>5. Classification engines: which one to choose</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>Engine</th><th>Speed</th><th>Quality</th><th>Needs</th><th>When to use</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Automatic</strong> (recommended)</td><td>that of the engine it picks</td><td>that of the engine it picks</td><td>nothing</td><td>When in doubt. It uses the local model if the computer can handle it; otherwise, the rules.</td></tr>
+    <tr><td><strong>Rules</strong></td><td>⚡ instant</td><td>★★☆☆ good on standardized documents</td><td>nothing</td><td>Very large, standardized collections (official letters, orders), or to get a first result in minutes.</td></tr>
+    <tr><td><strong>Local model (Ollama)</strong></td><td>🐢 from seconds to ~30 s per window, depending on the graphics card</td><td>★★★☆ very good</td><td>Ollama installed; a graphics card helps a lot</td><td>The best balance: high quality, no internet, and no use of your Claude subscription.</td></tr>
+    <tr><td><strong>Claude Code (manual)</strong></td><td>depends on you and on Claude</td><td>★★★★ the best</td><td>Claude Code installed and a Claude subscription</td><td>Smaller or critical collections, where accuracy is worth the subscription usage. It does not finish on its own: you run a command.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>To give you an idea of time: a real collection of about 2,900 pages took a little over 5 hours with the local model on an ordinary graphics card. With the rules, minutes.</p>
+<p class="manual-tip">Tip: the Result screen has the <em>Compare engines and models</em> table. Run the same collection with different engines and compare time and score before deciding.</p>
+</section>
+
+<section id="execucao">
+<h2>6. Execution screen: the steps</h2>
+<p>Processing always follows this order. Each step can be interrupted and resumed: pausing, closing the program or even turning off the computer midway does not break anything — when you run it again, it picks up where it left off.</p>
+<ul class="manual-stages">
+  <li><strong>1. Scan</strong> — finds the files in the source folder and identifies duplicate copies (a document identical to another is included only once).</li>
+  <li><strong>2–3. Conversion, OCR and slicing</strong> — turns each file into text. Scanned pages go through text recognition (OCR); huge PDFs are cut into blocks. This is the slowest step for scanned collections.</li>
+  <li><strong>4. Per-page extraction</strong> — stores the text of each page with its numbering (f. N or p. N).</li>
+  <li><strong>5. Window preparation</strong> — splits the pages into passages for classification.</li>
+  <li><strong>6. Classification</strong> — the chosen engine identifies each item: type, date, author, summary and page range.</li>
+</ul>
+<ul>
+  <li><strong>Run next step</strong>: runs only the next step. Useful for following along step by step.</li>
+  <li><strong>Run everything up to classification</strong>: chains all of them. This is what you will use almost every time.</li>
+  <li><strong>Pause</strong>: stops what is running. To continue, run it again.</li>
+  <li><strong>Import and generate reports</strong>: after classification, puts the items together and writes the files for Claude.</li>
+  <li><strong>Live log</strong>: tells you what is happening, in plain language. The filter shows only warnings or only errors; <em>copy</em> copies the log so you can send it to someone.</li>
+  <li><strong>Machine resources</strong>: processor, memory and graphics card usage in real time.</li>
+  <li><strong>Claude Code engine</strong>: a box appears with the phrase to say to Claude Code (<code>process the windows</code>). Open Claude Code in the output folder, say the phrase and, when it finishes, click <em>Recheck if the windows are done</em>.</li>
+</ul>
+</section>
+
+<section id="resultado">
+<h2>7. Result screen: what gets generated</h2>
+<p>All the files are saved in the output folder:</p>
+<dl>
+  <dt><code>index.md</code></dt><dd>The table of contents: lists the groups and says which index file to open for each one.</dd>
+  <dt><code>index-&lt;grupo&gt;.md</code></dt><dd>One index per group: each item with its sheets, type, date, author, file and page within the PDF, plus a summary.</dd>
+  <dt><code>timeline.md</code></dt><dd>The chronology: the dated items, in order.</dd>
+  <dt><code>review.md</code></dt><dd>The check report: what was read, what failed, numbering gaps and removed documents.</dd>
+  <dt><code>project_instructions.md</code></dt><dd>The instructions for Claude: how to use the index and the rule of always confirming values in the original document.</dd>
+</dl>
+<ul>
+  <li><strong>Classification quality</strong>: a score based on the confidence the engine itself declared and on how many fields it filled in. It is not a measure of real accuracy — spot-check it.</li>
+  <li><strong>Pending items</strong>: passages not yet classified, sheets with no item and files that failed. Resolve them before considering the collection ready.</li>
+  <li><strong>Package for a new Claude Project</strong>: a .zip with all the files and a step-by-step guide.</li>
+  <li><strong>Free up space</strong>: deletes the converted copies and the blocks (the <code>converted/</code> and <code>blocks/</code> folders). Only do this once the reports are ready: in a future update, documents that need to be read again will go through OCR again.</li>
+</ul>
+</section>
+
+<section id="usar-com-claude">
+<h2>8. Using it with Claude</h2>
+<h3>On claude.ai (Projects)</h3>
+<ol>
+  <li>Create a new Project (or open the one for this collection).</li>
+  <li>Paste the <strong>entire</strong> contents of <code>project_instructions.md</code> into the Project's instructions field.</li>
+  <li>Upload as project knowledge: <code>index.md</code>, the <code>index-&lt;grupo&gt;.md</code> files, <code>timeline.md</code> and <code>review.md</code>.</li>
+  <li>When you need the exact content of an item, send to the conversation only the original document the index points to — that is where the savings come from.</li>
+</ol>
+<h3>In Claude Code</h3>
+<p>Open Claude Code in the output folder (or in a folder that has access to it and to the source folder). Claude reads <code>index.md</code>, picks the group's index and opens only the original files it needs, at the indicated page.</p>
+<p class="manual-tip">Why this saves: the index of a collection with thousands of pages is usually a tiny fraction of the size of the full text. Claude spends your quota reading the index and one or two items, not the whole collection.</p>
+</section>
+
+<section id="instrucoes">
+<h2>9. Your instructions are preserved</h2>
+<p>The text that GClaude Indexer writes in <code>project_instructions.md</code> and in the output folder's <code>CLAUDE.md</code> sits between two invisible markers (<code>GCLAUDE-INDEXER:BEGIN</code> and <code>GCLAUDE-INDEXER:END</code>).</p>
+<ul>
+  <li>Everything <strong>outside</strong> the markers is yours and is <strong>never</strong> deleted, not even during updates.</li>
+  <li>Each time the files are generated again, only the part between the markers is rewritten.</li>
+  <li>If the output folder already had a <code>CLAUDE.md</code> of yours, it is kept and the system's block is added to it. A copy of the original is saved as <code>CLAUDE.md.bak</code> the first time.</li>
+  <li>Instructions you already use in the Project can be pasted into the <em>Instructions you already use</em> field when creating the project: they go to the top of the file.</li>
+</ul>
+</section>
+
+<section id="atualizar">
+<h2>10. Updating the collection</h2>
+<p>When the source folder changes, the Execution screen shows a notice with how many documents are new, changed or removed. Click <em>Update</em> to see the plan before confirming.</p>
+<ul>
+  <li><strong>New</strong>: they are read and classified.</li>
+  <li><strong>Changed</strong>: they are read again (with OCR, if needed) and reclassified.</li>
+  <li><strong>Removed</strong>: their pages and items leave the index, the converted copy is deleted and the name is recorded in <code>review.md</code>. If there was an identical copy of the document in the folder, that copy is indexed in its place.</li>
+  <li><strong>Numbering change</strong>: in a case-file collection, sheet numbering is continuous within the group. If a document is added to or removed from the middle, the sheets of the documents after it change number. The plan shows which ones, and the log warns you. Old conversations that cited those sheets may become out of date.</li>
+  <li>Only the affected passages are reclassified; the rest is reused.</li>
+</ul>
+<p>After updating, use <em>Run everything up to classification</em> and <em>Import and generate reports</em>, and upload the files to the Claude Project again.</p>
+</section>
+
+<section id="outro-computador">
+<h2>11. Another computer and team use</h2>
+<ul>
+  <li><strong>Output folder on Google Drive</strong> (or on a file server): the project can be opened from any computer that has access to it.</li>
+  <li><strong>Shared catalog</strong>: on the Projects screen, point to a folder inside Drive to keep the list of projects. All computers with the same Drive will then see the same projects.</li>
+  <li><strong>Usage lock</strong>: only one computer at a time works on a project. If another one is using it, the system tells you which. The lock expires on its own after a period without use.</li>
+  <li><strong>Golden rule when switching computers</strong>: close the program on the first one, wait for Google Drive to finish syncing, and only then open it on the second.</li>
+</ul>
+</section>
+
+<section id="aparencia">
+<h2>12. Themes and layouts</h2>
+<p>At the top of every screen there are two independent choices:</p>
+<ul>
+  <li><strong>Theme</strong> (the colors): Light, Dark, Sepia, High contrast and the newer themes with more motion.</li>
+  <li><strong>Layout</strong> (the shape: fonts, spacing, corners): Default, Technical, Editorial and Compact.</li>
+</ul>
+<p>Any combination works. Your choice is saved in this browser. If the operating system asks for less motion (a Windows accessibility setting), animations are reduced automatically.</p>
+</section>
+
+<section id="dicas">
+<h2>13. Tips: faster or better quality</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>If you want…</th><th>Do this</th></tr></thead>
+  <tbody>
+    <tr><td>The fastest possible result</td><td><em>Rules</em> engine, Parallelism <em>maximum</em>.</td></tr>
+    <tr><td>Fast, without giving up quality</td><td><em>Local model</em> engine with <em>Review low confidence</em> checked.</td></tr>
+    <tr><td>The best quality</td><td><em>Claude Code</em> engine, windows of 12 to 16 pages.</td></tr>
+    <tr><td>To use the computer while it processes</td><td>Parallelism <em>automatic</em> or <em>economical</em>; Processing <em>CPU/RAM only</em> if you need the graphics card.</td></tr>
+    <tr><td>A collection with many short documents</td><td>Lower <em>Pages per window</em> (e.g. 10).</td></tr>
+    <tr><td>A collection with long, standardized documents</td><td>Raise <em>Pages per window</em> (e.g. 24).</td></tr>
+    <tr><td>To save your Claude subscription</td><td>Use the index in the Project and send only the originals needed for each question.</td></tr>
+  </tbody>
+</table>
+</div>
+<ul>
+  <li>Start with a small piece of the collection to test the settings; then point to the whole folder.</li>
+  <li>Fill in the <em>Collection theme</em> carefully: it improves the classification and Claude's answers.</li>
+  <li>Install Ollama and use a graphics card if you can: the local model becomes many times faster.</li>
+  <li>Always ask Claude for the reference (f. N or p. N) and check the value in the original document before using it.</li>
+</ul>
+</section>
+
+<section id="problemas">
+<h2>14. Common problems</h2>
+<dl>
+  <dt>"Project in use on another machine"</dt><dd>Close the program on the other computer. If it froze or was shut down, wait for the lock to expire or choose <em>Take over anyway</em> — only if you are sure the other one is not using it.</dd>
+  <dt>"Possible incomplete sync"</dt><dd>Google Drive has not finished downloading the project yet. Wait for the Drive icon to show that it is done.</dd>
+  <dt>The local engine fell back to "rules"</dt><dd>Ollama is not running or there is not enough memory. Open Ollama and run the classification again; the About screen shows the installation diagnostics.</dd>
+  <dt>Failed files in Pending items</dt><dd>These are usually password-protected or corrupted files. Open them, save an unprotected copy in the source folder and update the collection.</dd>
+  <dt>Sheet gaps</dt><dd>Sheets with no classified item. Run the classification again on those passages or check whether the PDF has blank pages.</dd>
+  <dt>"Request refused" appears</dt><dd>Some website tried to send a command to the program and was blocked. Always use the GClaude Indexer shortcut or the address <code>http://127.0.0.1:8000</code>.</dd>
+</dl>
+</section>
+
+<section id="privacidade">
+<h2>15. Privacy and security</h2>
+<ul>
+  <li>Documents are read and classified <strong>only on this computer</strong>. The local engine talks only to the Ollama on this machine, never through a proxy or the internet.</li>
+  <li>The program only accepts commands from its own screens: a website open in the browser cannot give it orders.</li>
+  <li>The source folder is never modified.</li>
+  <li>The project database stores the text of the pages. If the collection contains personal data covered by data-protection law (e.g. Brazil's LGPD, GDPR), protect the output folder as you would protect the documents themselves — including on Google Drive.</li>
+  <li>When you use the Claude Code engine or send files to Claude, then yes, the content you send goes through your Claude account, under the terms of your plan.</li>
+</ul>
+</section>
+
+</article>
