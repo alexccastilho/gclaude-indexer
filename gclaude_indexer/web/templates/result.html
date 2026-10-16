@@ -168,6 +168,7 @@
   <summary>{{ artifact.title }} (<code>{{ artifact.file_name }}</code>)</summary>
   {% if artifact.content %}
   <pre class="preview">{{ artifact.content }}</pre>
+  {% if artifact.truncated %}<p class="help">{{ t('result.preview_truncated') }}</p>{% endif %}
   {% else %}
   <p class="help">{{ t('result.not_generated') }}</p>
   {% endif %}

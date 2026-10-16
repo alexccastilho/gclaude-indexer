@@ -1101,6 +1101,21 @@ ARTIFACT_TITLE_KEYS = {
 }
 
 
+# A preview, not the file: a large collection's timeline runs to megabytes,
+# and the Result screen used to embed every byte of every report in the page.
+PREVIEW_CHARS = 60_000
+
+
+def _preview(path: Path) -> tuple[str | None, bool]:
+    if not path.exists():
+        return None, False
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        content = handle.read(PREVIEW_CHARS + 1)
+    if len(content) > PREVIEW_CHARS:
+        return content[:PREVIEW_CHARS], True
+    return content, False
+
+
 @app.get("/projects/{project_id}/result", response_class=HTMLResponse)
 def result_screen(request: Request, project_id: int):
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
@@ -1109,8 +1124,11 @@ def result_screen(request: Request, project_id: int):
         artifacts = []
         for file_name, title_key in ARTIFACT_TITLE_KEYS.items():
             path = resolve_within(output_folder, file_name)
-            content = path.read_text(encoding="utf-8") if path.exists() else None
-            artifacts.append({"title": translate(language, title_key), "file_name": file_name, "content": content})
+            content, truncated = _preview(path)
+            artifacts.append({
+                "title": translate(language, title_key), "file_name": file_name,
+                "content": content, "truncated": truncated,
+            })
         pending = pending_items(conn)
         # Read inside the block: `conn` is closed when it exits. On the
         # Result screen the notice shows whenever the numbers differ, with

@@ -141,6 +141,10 @@ CREATE TABLE IF NOT EXISTS artifact_state (
 CREATE INDEX IF NOT EXISTS idx_file_status ON file(status);
 CREATE INDEX IF NOT EXISTS idx_page_file_id ON page(file_id);
 CREATE INDEX IF NOT EXISTS idx_item_group_key_order ON item(group_key, start_order);
+-- The Execution screen counts windows by status every two seconds, and
+-- review.md lists the error events: both scanned the whole table.
+CREATE INDEX IF NOT EXISTS idx_window_status ON window(status);
+CREATE INDEX IF NOT EXISTS idx_event_level ON event(level);
 """
 
 
