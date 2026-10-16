@@ -776,6 +776,11 @@ def update_banner(request: Request, project_id: int):
     with _open_project(project_id) as (entry, config, conn):
         if _pipeline_has_pending_work(conn):
             return HTMLResponse("")
+        # A project that never ran sees every document as "new": the first
+        # "Run everything" reads them all, so offering an update to someone
+        # who has just created the project only confuses them.
+        if conn.execute("SELECT 1 FROM file LIMIT 1").fetchone() is None:
+            return HTMLResponse("")
         try:
             plan = build_update_plan(conn, config, record_warnings=False)
         except SourceFolderUnavailable:

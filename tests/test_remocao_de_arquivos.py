@@ -126,3 +126,36 @@ def test_renumeracao_e_avisada_com_os_nomes(tmp_path):
 
     avisos = [e for e in list_events(conn, language="pt") if e["level"] == "warning"]
     assert any("c.pdf" in e["message"] and "f." in e["message"] for e in avisos)
+
+
+def test_projeto_que_nunca_rodou_nao_avisa_que_a_pasta_mudou(tmp_path, monkeypatch):
+    """Antes da primeira execução, todo documento é "novo" para o plano de
+    atualização — e a tela Execução recebia quem acabou de criar o projeto
+    com "A pasta de origem mudou: 3 novos" e um botão de atualizar. A
+    primeira execução já lê tudo; o aviso só faz sentido depois dela."""
+    from fastapi.testclient import TestClient
+
+    from gclaude_indexer.catalog import register_project
+    from gclaude_indexer.project import create_project
+    from gclaude_indexer.web.app import app, lock_manager
+
+    local = tmp_path / "local"
+    for alvo in ("gclaude_indexer.catalog.machine_local_folder",
+                 "gclaude_indexer.hardware.machine_local_folder",
+                 "gclaude_indexer.sync.machine_local_folder"):
+        monkeypatch.setattr(alvo, lambda: local)
+    lock_manager.close_all()
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    saida = tmp_path / "saida"
+    config = _config(origem, saida)
+    conn, _ = create_project(config)
+    conn.close()
+    entrada = register_project(config.name, str(saida))
+
+    resposta = TestClient(app).get(f"/projects/{entrada.id}/update/banner")
+    assert resposta.status_code == 200
+    lock_manager.close_all()
+    assert resposta.text.strip() == ""

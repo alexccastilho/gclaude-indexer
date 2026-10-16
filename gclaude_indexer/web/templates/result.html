@@ -55,7 +55,11 @@
 <h2>{{ t('result.quality_title') }}</h2>
 <div class="quality-box">
   <div class="quality-header">
-    <span class="quality-run">{{ t('result.quality_run', engine=qualidade.engine, model=qualidade.model) }}</span>
+    {%- set engine_key = 'engine.' ~ qualidade.engine ~ '.name' %}
+    {%- set engine_name = t(engine_key) if t(engine_key) != engine_key else qualidade.engine %}
+    {#- The model only means something for the local engine: "Rules" with
+        "qwen3.5:4b" next to it read as if a model had classified. #}
+    <span class="quality-run">{{ t('result.quality_run', engine=engine_name, model=(qualidade.model if qualidade.engine == 'local' else '—')) }}</span>
     <span class="quality-score" title="{{ t('result.quality_score_label') }}">{{ qualidade.score }}<small>/100</small></span>
   </div>
   {% if qualidade.total_items == 0 %}
