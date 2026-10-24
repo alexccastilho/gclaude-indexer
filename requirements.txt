@@ -26,7 +26,7 @@ python-pptx==1.0.2
 extract-msg==0.54.1
 
 # Imagens
-pillow==12.3.0
+pillow==13.0.0
 
 # Monitoramento de recursos (CPU/RAM na tela de Execução)
 psutil==6.0.0
