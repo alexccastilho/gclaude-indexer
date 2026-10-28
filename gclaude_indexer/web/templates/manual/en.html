@@ -80,7 +80,7 @@
   <dt>Collection type</dt><dd><em>case file</em> numbers by sheet (f. 1, f. 2… — "f." stands for folio, a numbered sheet), like an administrative or court case file; the numbering carries on from one volume to the next. <em>library</em> numbers by page (p. 1, p. 2…), like books and reports.</dd>
   <dt>How to group</dt><dd>A "group" is a set of files that form a unit (a case file with several volumes, for example). <em>by subfolder</em> uses the name of the first subfolder — the most common choice; <em>by name pattern</em> groups by the beginning of the file name, using the next field; <em>all together</em> treats the whole folder as a single group.</dd>
   <dt>Grouping pattern</dt><dd>Only for <em>by name pattern</em>. It is a regular expression. Example: <code>^(\d{4}-\d+)</code> puts "2024-001 - petição.pdf" and "2024-001 - despacho.pdf" into the group "2024-001".</dd>
-  <dt>Included extensions</dt><dd>Which file types are included. Check <em>ALL</em> to accept any text or document format (executables and compressed archives are never included).</dd>
+  <dt>Included extensions</dt><dd>Which file types are included. Check <em>ALL</em> to accept any text or document format (executables and compressed archives are never included). Web pages (<code>.htm</code>, <code>.html</code>, <code>.mht</code>…) are read as clean text, without the markup, and the encoding of every text file is worked out automatically (UTF-8, Windows-1252, ISO-8859-1…). Text struck through in the original — in HTML, DOCX, PPTX or XLSX — appears as <code>~~text~~</code>: in legislation, that is a revoked or suppressed provision.</dd>
 </dl>
 
 <h3>Slicing, windows and OCR</h3>

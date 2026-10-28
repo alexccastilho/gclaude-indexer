@@ -177,7 +177,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.pptx": "PowerPoint (.pptx)",
         "new_project.category.imagens": "Imagens (foto/scan)",
         "new_project.category.text": "Texto simples (.txt, .md, .csv…)",
-        "new_project.category.web_dados": "Web/dados (.html, .xml, .json)",
+        "new_project.category.web_dados": "Web/dados (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "E-mail (.eml, .msg)",
         "new_project.category.all": "TODOS (qualquer arquivo não binário/executável)",
         "new_project.extensions_help_all": (
@@ -836,6 +836,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "artifact.project_instructions.locate_step4": (
             "Cite o conteúdo a partir do que está de fato escrito no documento original."
         ),
+        "artifact.project_instructions.struck_text_rule": (
+            "Texto tachado: nas páginas deste acervo, o que aparece entre ~~ e ~~ estava "
+            "riscado no original — na legislação, é artigo, parágrafo, inciso ou item "
+            "revogado, suprimido ou substituído. Nunca o apresente como norma em vigor; "
+            "ao citá-lo, diga que está tachado no original."
+        ),
         "artifact.project_instructions.extra_rules_section": "Regras extras do projeto",
         "artifact.project_instructions.extra_rules_missing": (
             "Nenhuma regra extra definida para este projeto."
@@ -1003,7 +1009,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.pptx": "PowerPoint (.pptx)",
         "new_project.category.imagens": "Images (photo/scan)",
         "new_project.category.text": "Plain text (.txt, .md, .csv…)",
-        "new_project.category.web_dados": "Web/data (.html, .xml, .json)",
+        "new_project.category.web_dados": "Web/data (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "Email (.eml, .msg)",
         "new_project.category.all": "ALL (any non-binary/executable file)",
         "new_project.extensions_help_all": (
@@ -1633,6 +1639,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "artifact.project_instructions.locate_step4": (
             "Cite the content based on what is actually written in the original document."
         ),
+        "artifact.project_instructions.struck_text_rule": (
+            "Struck text: in this collection's pages, whatever appears between ~~ and ~~ was "
+            "struck through in the original — in legislation, an article, paragraph, clause "
+            "or item that was revoked, suppressed or replaced. Never present it as a rule in "
+            "force; when quoting it, say that it is struck through in the original."
+        ),
         "artifact.project_instructions.extra_rules_section": "Extra project rules",
         "artifact.project_instructions.extra_rules_missing": (
             "No extra rule defined for this project."
@@ -1796,7 +1808,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.pptx": "PowerPoint (.pptx)",
         "new_project.category.imagens": "Imágenes (foto/escaneo)",
         "new_project.category.text": "Texto simple (.txt, .md, .csv…)",
-        "new_project.category.web_dados": "Web/datos (.html, .xml, .json)",
+        "new_project.category.web_dados": "Web/datos (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "Correo (.eml, .msg)",
         "new_project.category.all": "TODOS (cualquier archivo no binario/ejecutable)",
         "new_project.extensions_help_all": (
@@ -2436,6 +2448,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "artifact.project_instructions.locate_step4": (
             "Cite el contenido a partir de lo que está efectivamente escrito en el documento original."
+        ),
+        "artifact.project_instructions.struck_text_rule": (
+            "Texto tachado: en las páginas de este acervo, lo que aparece entre ~~ y ~~ estaba "
+            "tachado en el original — en la legislación, es un artículo, párrafo, inciso o ítem "
+            "derogado, suprimido o sustituido. Nunca lo presente como norma vigente; al citarlo, "
+            "diga que está tachado en el original."
         ),
         "artifact.project_instructions.extra_rules_section": "Reglas adicionales del proyecto",
         "artifact.project_instructions.extra_rules_missing": (

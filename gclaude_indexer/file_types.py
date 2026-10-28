@@ -20,11 +20,14 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     "xlsx": {".xlsx"},
     "pptx": {".pptx"},
     "imagens": {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp"},
-    # "imagens" and "web_dados" are read as plain text (no dedicated extractor) —
-    # that's why they only group formats that are already text by nature;
-    # markup (html/xml/json) goes into the index literally, with no parsing.
+    # Every text-like format goes through `text_decoding`, which works out
+    # the encoding. "web_dados" also goes through `html_text`: HTML and its
+    # derivatives (XHTML, server-side includes, MHTML saved by a browser, an
+    # `.xml` whose root is `<html>`) become readable text with strikethrough
+    # kept as `~~`; other XML and JSON stay literal — their tags are field
+    # names that carry meaning.
     "text": {".txt", ".md", ".log", ".csv"},
-    "web_dados": {".html", ".htm", ".xml", ".json"},
+    "web_dados": {".html", ".htm", ".xhtml", ".xht", ".shtml", ".mht", ".mhtml", ".xml", ".json"},
     "email": {".eml", ".msg"},
 }
 

@@ -29,6 +29,7 @@ from pathlib import Path
 
 from .classification import reference_number
 from .config import ProjectConfig
+from .html_text import STRUCK_MARK
 from .i18n import translate
 from .managed_block import write_managed
 
@@ -438,6 +439,17 @@ def generate_project_instructions_md(conn, config: ProjectConfig, language: str)
         "3. " + t("artifact.project_instructions.locate_step3"),
         "4. " + t("artifact.project_instructions.locate_step4"),
         "",
+    ]
+
+    # Only for collections that have struck text (HTML/DOCX with `~~`): a
+    # collection of PDFs keeps the instructions it always had.
+    has_struck_text = conn.execute(
+        "SELECT 1 FROM page WHERE instr(text, ?) > 0 LIMIT 1", (STRUCK_MARK,)
+    ).fetchone()
+    if has_struck_text:
+        lines += [t("artifact.project_instructions.struck_text_rule"), ""]
+
+    lines += [
         f"## {t('artifact.project_instructions.extra_rules_section')}",
         "",
         extra_rules,

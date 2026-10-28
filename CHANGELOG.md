@@ -10,6 +10,64 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.0] — 2026-10-28
+
+### Web pages read as text, with what was struck through kept; every encoding read right
+
+#### Added
+
+- **HTML is read, not dumped.** `.htm`/`.html` went into the index as raw
+  markup: `<head>`, CSS and JavaScript filled the characters allowed per
+  page before the first article. They now become clean text
+  (`html_text.py`): no tags, one block per line, headings as `#`, list
+  items as `- `, table cells joined by ` | `, `N<sup>o</sup>` as `Nº`.
+  Unclosed and misnested 1990s markup is tolerated; if the parser still
+  fails, the text is recovered by stripping tags — never by failing the
+  file. Measured on the Planalto collection: 0.4 s for the 1.7 MB Code of
+  Civil Procedure, ~22 ms per law on average.
+- **Strikethrough kept as `~~text~~`.** On the Planalto site a struck
+  article, paragraph or item is a revoked, suppressed or replaced one,
+  left on the page next to the text in force. Recognised forms:
+  `<strike>`, `<s>`, `<del>`, inline `text-decoration: line-through` and
+  CSS classes declared with it — and struck runs in DOCX, PPTX and XLSX.
+  The rules engine ignores struck text when looking for type, date, author
+  and summary; the local engine's prompt (only when a window has the
+  mark), the `claude_code` engine's `CLAUDE.md` and
+  `project_instructions.md` (only when the collection has the mark)
+  explain it, in the three languages.
+- **More web formats:** `.xhtml`, `.xht`, `.shtml` and `.mht`/`.mhtml`
+  (a page saved by the browser as a single file). An `.xml` whose root is
+  `<html>` goes through the HTML reader; other XML and JSON stay literal.
+
+#### Fixed
+
+- **Encoding is worked out, never assumed.** Every text-like file was read
+  as UTF-8 with `errors="replace"`, so a Windows-1252 file — the whole of
+  the Planalto legislation, most older Brazilian documents — came out as
+  "Presid�ncia da Rep�blica". `text_decoding.py` now tries, in order: the
+  byte-order mark, the declared encoding (HTML `<meta>`, XML declaration,
+  MIME `charset`) if the bytes agree, UTF-8, statistical detection
+  (`charset-normalizer`, now pinned), then Windows-1252/Latin-1. Labels
+  `iso-8859-1` and `ascii` are read as Windows-1252, as browsers do. It
+  never raises. Applies to `.txt`, `.md`, `.log`, `.csv`, `.xml`, `.json`,
+  web pages, e-mail bodies and the `all` category.
+- **E-mail with an unknown charset label no longer fails the file**, and
+  an HTML-only e-mail body is converted to text instead of kept as markup.
+  `.msg` without a plain-text body falls back to its HTML body.
+- **DOCX no longer drops the text of hyperlinks** (cross-references to
+  other laws, for one).
+
+#### Notes
+
+- Each HTML file is still one page, truncated at "Characters per page" for
+  classification; the full clean text is in `converted/`. A law's first
+  3000 characters carry its epigraph, summary and first articles.
+- Files converted by an earlier version keep their old text: to re-read a
+  collection, create the project again (or delete it with "everything" and
+  recreate it).
+- Strikethrough in PDFs is not detected — it is a drawn line, not a text
+  attribute.
+
 ## [1.4.0] — 2026-10-16
 
 ### Your instructions kept, removals without loss, a real manual, safer by default

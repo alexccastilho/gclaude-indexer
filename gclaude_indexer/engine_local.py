@@ -32,6 +32,7 @@ from .i18n import nested
 from .import_items import RAW_ITEMS_FILE_NAME
 from .engine_rules import RulesEngine, load_rules
 from .gpu_budget import server_environment
+from .html_text import STRUCK_MARK
 from .subprocess_utils import start_in_background
 from .tools import find as find_tool
 
@@ -719,9 +720,25 @@ def build_context(config: ProjectConfig | None) -> str:
     )
 
 
+# Só entra no prompt quando alguma página tem o marcador: um acervo de PDFs
+# não paga os tokens de uma regra que nunca se aplica a ele.
+_STRUCK_TEXT_NOTE = (
+    "\nTexto entre ~~ e ~~ estava tachado no original: é dispositivo "
+    "revogado, suprimido ou substituído. Ele continua fazendo parte da "
+    "peça, mas não o use como data, tipo ou resumo do que está em vigor.\n"
+)
+
+
+def _prompt_context(pages: list[WindowPage], config: ProjectConfig | None) -> str:
+    context = build_context(config)
+    if any(STRUCK_MARK in page.text for page in pages):
+        context += _STRUCK_TEXT_NOTE
+    return context
+
+
 def _build_prompt(pages: list[WindowPage], config: ProjectConfig | None = None) -> str:
     blocks = [f"--- {page.reference} ({page.file_name}) ---\n{page.text}" for page in pages]
-    return _PROMPT.format(context=build_context(config), text="\n\n".join(blocks))
+    return _PROMPT.format(context=_prompt_context(pages, config), text="\n\n".join(blocks))
 
 
 def _extract_items_json(response_text: str) -> list[dict]:
@@ -854,7 +871,7 @@ def _build_page_prompt(pages: list[WindowPage], config: ProjectConfig | None = N
         for numero, page in enumerate(pages, start=1)
     ]
     return _PAGE_PROMPT.format(
-        context=build_context(config), count=len(pages), text="\n\n".join(blocks)
+        context=_prompt_context(pages, config), count=len(pages), text="\n\n".join(blocks)
     )
 
 

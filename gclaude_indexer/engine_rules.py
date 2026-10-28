@@ -34,6 +34,7 @@ from .classification import (
 )
 from .config import ProjectConfig
 from .events import record_event
+from .html_text import without_struck_text
 from .paths import app_root
 
 RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
@@ -93,7 +94,9 @@ class RulesEngine:
         previous_page_blank = False
 
         for page in pages:
-            text = page.text
+            # Struck text (`~~...~~`, from HTML/DOCX) is what was revoked: a
+            # revoked date or heading must not become the item's.
+            text = without_struck_text(page.text)
             stripped_text = text.strip()
             first_line = stripped_text.splitlines()[0].strip() if stripped_text else ""
 
@@ -182,7 +185,7 @@ class RulesEngine:
 
     def _find_summary(self, pages: list[WindowPage]) -> str | None:
         for page in pages:
-            for line in page.text.splitlines():
+            for line in without_struck_text(page.text).splitlines():
                 stripped_line = line.strip()
                 for marker in self._rules.summary_markers:
                     if stripped_line.lower().startswith(marker.lower()):
@@ -191,7 +194,7 @@ class RulesEngine:
                             return rest
 
         limit = self._rules.summary_sentence_char_threshold
-        full_text = " ".join(p.text for p in pages)
+        full_text = " ".join(without_struck_text(p.text) for p in pages)
         for sentence in re.split(r"(?<=[.!?])\s+|\n+", full_text):
             sentence = sentence.strip()
             if len(sentence) > limit:
@@ -200,7 +203,7 @@ class RulesEngine:
 
     def _find_author(self, pages: list[WindowPage]) -> str | None:
         for page in reversed(pages):
-            lines = [line.strip() for line in page.text.splitlines()]
+            lines = [line.strip() for line in without_struck_text(page.text).splitlines()]
             for index, line in enumerate(lines):
                 for marker in self._rules.author_markers:
                     if line.lower().startswith(marker.lower()):

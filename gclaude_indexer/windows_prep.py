@@ -300,6 +300,10 @@ delas como o mesmo comando.
 - Autor: normalmente no bloco de assinatura ou rodapé.
 - Resumo: se houver linha "Assunto:" ou "Ementa:", use o texto dela. Na
   falta, escreva uma frase curta (não copie o documento inteiro).
+- Texto tachado: o que aparece entre `~~` e `~~` estava riscado no original
+  (HTML, DOCX) e é dispositivo revogado, suprimido ou substituído. Continua
+  fazendo parte da peça, mas não o use como data, tipo ou resumo do que
+  está em vigor.
 
 ## Formato de cada linha (uma peça = um objeto JSON)
 
@@ -399,6 +403,10 @@ of them as the same command.
 - Author: usually in the signature block or footer.
 - Summary: if there is an "Assunto:" or "Ementa:" line, use its text.
   Otherwise, write a short sentence (do not copy the whole document).
+- Struck text: whatever appears between `~~` and `~~` was struck through
+  in the original (HTML, DOCX) and is a revoked, suppressed or replaced
+  provision. It is still part of the item, but do not use it as the date,
+  type or summary of what is in force.
 
 ## Format of each line (one item = one JSON object)
 
@@ -501,6 +509,10 @@ Trate cualquiera de ellas como el mismo comando.
 - Autor: normalmente en el bloque de firma o pie de página.
 - Resumen: si hay una línea "Assunto:" o "Ementa:", use ese texto. En su
   ausencia, escriba una frase corta (no copie el documento entero).
+- Texto tachado: lo que aparece entre `~~` y `~~` estaba tachado en el
+  original (HTML, DOCX) y es una disposición derogada, suprimida o
+  sustituida. Sigue formando parte de la pieza, pero no lo use como fecha,
+  tipo o resumen de lo que está vigente.
 
 ## Formato de cada línea (una pieza = un objeto JSON)
 

@@ -80,7 +80,7 @@
   <dt>Tipo de colección</dt><dd><em>expediente</em> numera por folio (f. 1, f. 2…), como un expediente administrativo o judicial; la numeración continúa de un tomo al siguiente. <em>biblioteca</em> numera por página (p. 1, p. 2…), como libros e informes.</dd>
   <dt>Cómo agrupar</dt><dd>Un "agrupador" es un conjunto de archivos que forman una unidad (un expediente con varios tomos, por ejemplo). <em>por subcarpeta</em> usa el nombre de la primera subcarpeta — lo más común; <em>por patrón en el nombre</em> agrupa por el comienzo del nombre del archivo, usando el campo siguiente; <em>todo junto</em> trata toda la carpeta como un único grupo.</dd>
   <dt>Patrón de agrupación</dt><dd>Solo para <em>por patrón en el nombre</em>. Es una expresión regular. Ejemplo: <code>^(\d{4}-\d+)</code> junta "2024-001 - petição.pdf" y "2024-001 - despacho.pdf" en el grupo "2024-001".</dd>
-  <dt>Extensiones incluidas</dt><dd>Qué tipos de archivo entran. Marque <em>TODOS</em> para aceptar cualquier formato de texto o documento (los ejecutables y los archivos comprimidos nunca entran).</dd>
+  <dt>Extensiones incluidas</dt><dd>Qué tipos de archivo entran. Marque <em>TODOS</em> para aceptar cualquier formato de texto o documento (los ejecutables y los archivos comprimidos nunca entran). Las páginas web (<code>.htm</code>, <code>.html</code>, <code>.mht</code>…) se leen como texto limpio, sin el marcado, y la codificación de todo archivo de texto se descubre sola (UTF-8, Windows-1252, ISO-8859-1…). El texto tachado en el original — en HTML, DOCX, PPTX o XLSX — aparece como <code>~~texto~~</code>: en la legislación, es la disposición derogada o suprimida.</dd>
 </dl>
 
 <h3>Fraccionamiento, ventanas y OCR</h3>

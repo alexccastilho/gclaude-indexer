@@ -80,7 +80,7 @@
   <dt>Tipo de acervo</dt><dd><em>processo</em> numera por folha (f. 1, f. 2…), como um processo administrativo ou judicial; a numeração continua de um volume para o outro. <em>biblioteca</em> numera por página (p. 1, p. 2…), como livros e relatórios.</dd>
   <dt>Como agrupar</dt><dd>Um "agrupador" é um conjunto de arquivos que formam uma unidade (um processo com vários volumes, por exemplo). <em>por subpasta</em> usa o nome da primeira subpasta — o mais comum; <em>por padrão no nome</em> agrupa pelo começo do nome do arquivo, usando o campo seguinte; <em>tudo junto</em> trata a pasta inteira como um único grupo.</dd>
   <dt>Padrão do agrupador</dt><dd>Só para <em>por padrão no nome</em>. É uma expressão regular. Exemplo: <code>^(\d{4}-\d+)</code> junta "2024-001 - petição.pdf" e "2024-001 - despacho.pdf" no grupo "2024-001".</dd>
-  <dt>Extensões incluídas</dt><dd>Quais tipos de arquivo entram. Marque <em>TODOS</em> para aceitar qualquer formato de texto ou documento (executáveis e compactados nunca entram).</dd>
+  <dt>Extensões incluídas</dt><dd>Quais tipos de arquivo entram. Marque <em>TODOS</em> para aceitar qualquer formato de texto ou documento (executáveis e compactados nunca entram). Páginas web (<code>.htm</code>, <code>.html</code>, <code>.mht</code>…) são lidas como texto limpo, sem a marcação, e a codificação de todo arquivo de texto é descoberta sozinha (UTF-8, Windows-1252, ISO-8859-1…). Texto riscado no original — em HTML, DOCX, PPTX ou XLSX — aparece como <code>~~texto~~</code>: na legislação, é o dispositivo revogado ou suprimido.</dd>
 </dl>
 
 <h3>Fatiamento, janelas e OCR</h3>

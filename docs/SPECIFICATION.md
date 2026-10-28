@@ -276,9 +276,28 @@ one group.
 - Image: direct OCR, text stored as a single page.
 - DOCX, XLSX, PPTX, TXT, MD, CSV, HTML, XML, JSON, EML/MSG: text extraction,
   no OCR.
+- Every text-like file is decoded by `text_decoding.py`: byte-order mark,
+  then the declared encoding (HTML `<meta>`, XML declaration, MIME
+  `charset`) if the bytes agree, then UTF-8, then statistical detection
+  (`charset_normalizer`), then Windows-1252/Latin-1. `iso-8859-1` and
+  `ascii` labels are read as Windows-1252 (WHATWG). It never raises.
+- HTML and derivatives (`.htm`, `.html`, `.xhtml`, `.xht`, `.shtml`,
+  `.mht`/`.mhtml`, an `.xml` whose root is `<html>`, HTML e-mail bodies)
+  become text through `html_text.py`: `head`/`script`/`style` dropped,
+  block elements on their own lines, headings `#`, list items `- `, table
+  cells joined by ` | `, `<sup>o</sup>` as `º`. Other XML and JSON stay
+  literal.
+- Strikethrough is kept as `~~text~~`, one pair per line: `<s>`,
+  `<strike>`, `<del>`, inline `text-decoration: line-through` and CSS
+  classes declared with it; struck runs in DOCX, PPTX and XLSX too. The
+  rules engine ignores struck text when looking for type, date, author and
+  summary; the local engine prompt, the `claude_code` `CLAUDE.md` and
+  `project_instructions.md` (when the collection has any) explain the
+  mark. Strikethrough in PDFs is not detected — it is a drawn line, not a
+  text attribute.
 - Under the special `all` extension category, any extension with no
   dedicated extractor falls back to reading the file as plain text
-  (`errors="replace"`), never failing the step.
+  (decoded as above), never failing the step.
 - Extensions on the fixed executable/binary blocklist are always excluded,
   even under `all`.
 

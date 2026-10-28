@@ -17,6 +17,71 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.0] — 2026-10-28
+
+### Páginas web leídas como texto, con el tachado preservado; toda codificación leída bien
+
+#### Añadido
+
+- **El HTML se lee, no se vuelca.** `.htm`/`.html` entraban en el índice
+  como marcado crudo: `<head>`, CSS y JavaScript ocupaban los caracteres
+  por página antes del primer artículo. Ahora se convierten en texto
+  limpio (`html_text.py`): sin etiquetas, un bloque por línea, títulos
+  como `#`, ítems de lista como `- `, celdas de tabla unidas por ` | `,
+  `N<sup>o</sup>` como `Nº`. Se tolera el marcado de los años 1990, sin
+  cerrar o mal anidado; si el lector aun así falla, el texto se recupera
+  quitando las etiquetas — nunca fallando el archivo. Medido en el acervo
+  del Planalto: 0,4 s para el Código de Proceso Civil de 1,7 MB, ~22 ms
+  por ley en promedio.
+- **Tachado preservado como `~~texto~~`.** En el sitio del Planalto, un
+  artículo, párrafo o inciso tachado es una disposición derogada,
+  suprimida o sustituida, que se mantiene en la página junto al texto
+  vigente. Formas reconocidas: `<strike>`, `<s>`, `<del>`,
+  `text-decoration: line-through` en el `style` y clases CSS declaradas
+  con él — y fragmentos tachados en DOCX, PPTX y XLSX. El motor de reglas
+  ignora el texto tachado al buscar tipo, fecha, autor y resumen; el
+  prompt del motor local (solo cuando la ventana tiene la marca), el
+  `CLAUDE.md` del motor `claude_code` y el `project_instructions.md` (solo
+  cuando el acervo tiene la marca) explican lo que significa, en los tres
+  idiomas.
+- **Más formatos web:** `.xhtml`, `.xht`, `.shtml` y `.mht`/`.mhtml`
+  (página guardada por el navegador en un solo archivo). Un `.xml` cuya
+  raíz es `<html>` pasa por el lector de HTML; los demás XML y JSON quedan
+  literales.
+
+#### Corregido
+
+- **La codificación se descubre, nunca se supone.** Todo archivo de texto
+  se leía como UTF-8 con `errors="replace"`, y un archivo en Windows-1252 —
+  toda la legislación del Planalto, la mayoría de los documentos
+  brasileños más antiguos — salía como "Presid�ncia da Rep�blica".
+  `text_decoding.py` ahora intenta, en este orden: la marca de orden de
+  bytes (BOM), la codificación declarada (`<meta>` del HTML, declaración
+  XML, `charset` del MIME) si los bytes concuerdan, UTF-8, detección
+  estadística (`charset-normalizer`, ahora fijado) y, por último,
+  Windows-1252/Latin-1. Las etiquetas `iso-8859-1` y `ascii` se leen como
+  Windows-1252, como hacen los navegadores. Nunca lanza excepción. Vale
+  para `.txt`, `.md`, `.log`, `.csv`, `.xml`, `.json`, páginas web, cuerpo
+  de correo y la categoría TODOS.
+- **Un correo con una etiqueta de charset desconocida ya no hace fallar el
+  archivo**, y el cuerpo de correo solo en HTML se convierte en texto en
+  lugar de quedar como marcado. Un `.msg` sin cuerpo en texto plano usa el
+  cuerpo HTML.
+- **DOCX ya no pierde el texto de los hipervínculos** (remisiones a otras
+  leyes, por ejemplo).
+
+#### Notas
+
+- Cada archivo HTML sigue siendo una página, cortada en "Caracteres por
+  página" para la clasificación; el texto limpio completo queda en
+  `converted/`. Los primeros 3000 caracteres de una ley traen epígrafe,
+  sumario y primeros artículos.
+- Los archivos convertidos por una versión anterior mantienen el texto
+  antiguo: para releer un acervo, cree el proyecto de nuevo (o elimínelo
+  con "todo" y vuelva a crearlo).
+- El tachado en PDF no se detecta — es una línea dibujada, no un atributo
+  del texto.
+
 ## [1.4.0] — 2026-10-16
 
 ### Sus instrucciones conservadas, eliminaciones sin pérdida, un manual de verdad, más seguro por defecto

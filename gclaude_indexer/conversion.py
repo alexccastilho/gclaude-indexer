@@ -35,6 +35,8 @@ from .config import ProjectConfig
 from .events import record_event
 from .parallelism import _physical_cores, workers_for
 from .file_types import category_of_extension
+from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
+from .text_decoding import decode_bytes, decode_markup
 
 MIN_AVG_CHARS_PER_PAGE = 100
 ERROR_MESSAGE_CHAR_LIMIT = 500
@@ -223,14 +225,28 @@ def slice_pdf(source_path: Path, destination_dir: Path, base_name: str, pages_pe
         document.close()
 
 
+def _docx_paragraph_text(paragraph) -> str:
+    """The paragraph's text with struck runs marked `~~`. Goes through
+    `iter_inner_content()` because `paragraph.runs` skips the runs inside
+    hyperlinks — a cross-reference to another law would lose its text."""
+    segments = []
+    for item in paragraph.iter_inner_content():
+        for run in getattr(item, "runs", [item]):
+            struck = bool(run.font.strike or run.font.double_strike)
+            segments.append((run.text, struck))
+    return mark_struck(segments)
+
+
 def _extract_text_docx(path: Path) -> str:
     from docx import Document
 
     document = Document(path)
-    parts = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
+    parts = [text for text in map(_docx_paragraph_text, document.paragraphs) if text.strip()]
     for table in document.tables:
         for row in table.rows:
-            parts.append("\t".join(cell.text for cell in row.cells))
+            parts.append("\t".join(
+                "\n".join(_docx_paragraph_text(p) for p in cell.paragraphs) for cell in row.cells
+            ))
     return "\n".join(parts)
 
 
@@ -240,11 +256,24 @@ def _extract_text_xlsx(path: Path) -> str:
     workbook = load_workbook(path, read_only=True, data_only=True)
     text_rows = []
     for sheet in workbook.worksheets:
-        for row in sheet.iter_rows(values_only=True):
-            cells = ["" if value is None else str(value) for value in row]
+        for row in sheet.iter_rows():
+            cells = []
+            for cell in row:
+                value = getattr(cell, "value", None)
+                text = "" if value is None else str(value)
+                font = getattr(cell, "font", None) if text.strip() else None
+                if font is not None and font.strike:
+                    text = f"{STRUCK_MARK}{text.strip()}{STRUCK_MARK}"
+                cells.append(text)
             text_rows.append("\t".join(cells))
     workbook.close()
     return "\n".join(text_rows)
+
+
+def _pptx_run_struck(run) -> bool:
+    # python-pptx has no `font.strike`; the attribute lives on `<a:rPr>`.
+    properties = run._r.rPr
+    return properties is not None and properties.get("strike") in ("sngStrike", "dblStrike")
 
 
 def _extract_text_pptx(path: Path) -> str:
@@ -256,12 +285,24 @@ def _extract_text_pptx(path: Path) -> str:
         for shape in slide.shapes:
             if shape.has_text_frame:
                 for paragraph in shape.text_frame.paragraphs:
-                    text = "".join(run.text for run in paragraph.runs)
+                    text = mark_struck([(run.text, _pptx_run_struck(run)) for run in paragraph.runs])
                     if text:
                         parts.append(text)
         if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
             parts.append(slide.notes_slide.notes_text_frame.text)
     return "\n".join(parts)
+
+
+def _message_part_text(part) -> str:
+    """Text of one MIME part. Decodes the bytes itself instead of calling
+    `get_content()`, which raises `LookupError` on a charset label Python
+    does not know — a common sight in old mail — and would fail the file."""
+    payload = part.get_payload(decode=True) or b""
+    charset = part.get_content_charset()
+    if part.get_content_type() == "text/html":
+        text, _ = decode_markup(payload, charset)
+        return html_to_text(text)
+    return decode_bytes(payload, charset)[0]
 
 
 def _extract_text_eml(path: Path) -> str:
@@ -271,7 +312,7 @@ def _extract_text_eml(path: Path) -> str:
     parts = [f"From: {message.get('From', '')}", f"Subject: {message.get('Subject', '')}"]
     body = message.get_body(preferencelist=("plain", "html"))
     if body is not None:
-        parts.append(body.get_content())
+        parts.append(_message_part_text(body))
     return "\n\n".join(parts)
 
 
@@ -283,9 +324,46 @@ def _extract_text_msg(path: Path) -> str:
         parts = [f"From: {message.sender or ''}", f"Subject: {message.subject or ''}"]
         if message.body:
             parts.append(message.body)
+        elif message.htmlBody:
+            text, _ = decode_markup(message.htmlBody)
+            parts.append(html_to_text(text))
         return "\n\n".join(parts)
     finally:
         message.close()
+
+
+_HTML_EXTENSIONS = {"html", "htm", "xhtml", "xht", "shtml"}
+_MHTML_EXTENSIONS = {"mht", "mhtml"}
+
+
+def _extract_text_mhtml(data: bytes) -> str:
+    """A page saved by a browser as a single file: MIME, like an e-mail.
+    The first HTML part is the page; images and styles are ignored."""
+    message = email.message_from_bytes(data, policy=policy.default)
+    plain = None
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        if part.get_content_type() == "text/html":
+            return _message_part_text(part)
+        if plain is None and part.get_content_type() == "text/plain":
+            plain = part
+    if plain is not None:
+        return _message_part_text(plain)
+    text, _ = decode_markup(data)
+    return html_to_text(text)
+
+
+def _extract_text_web(path: Path, extension: str) -> str:
+    data = path.read_bytes()
+    if extension in _MHTML_EXTENSIONS:
+        return _extract_text_mhtml(data)
+    if extension == "json":
+        return decode_bytes(data)[0]
+    text, _ = decode_markup(data)
+    if extension in _HTML_EXTENSIONS or looks_like_html(text):
+        return html_to_text(text)
+    return text
 
 
 def _extract_text_image(path: Path, ocr_language: str) -> str:
@@ -369,8 +447,10 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             text = _extract_text_xlsx(source_path)
         elif category == "pptx":
             text = _extract_text_pptx(source_path)
-        elif category in ("text", "web_dados"):
-            text = source_path.read_text(encoding="utf-8", errors="replace")
+        elif category == "web_dados":
+            text = _extract_text_web(source_path, extension)
+        elif category == "text":
+            text = decode_bytes(source_path.read_bytes())[0]
         elif extension == "msg":
             text = _extract_text_msg(source_path)
         else:
@@ -387,7 +467,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         # without a dedicated extractor). Reads as text, best-effort — never
         # fails on a binary file with no extractor; worst case it produces a
         # low-quality result, not an error.
-        text = source_path.read_text(encoding="utf-8", errors="replace")
+        text = decode_bytes(source_path.read_bytes())[0]
         destination = _destination_path(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
         sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
