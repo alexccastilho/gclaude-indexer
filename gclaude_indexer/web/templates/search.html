@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('search.title') }} — {{ config.name }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<h1>{{ t('search.title') }} — {{ config.name }}</h1>
+<p class="breadcrumb">
+  <a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a>
+  <span>&middot;</span>
+  <a href="/projects/{{ project.id }}/run">{{ t('result.back_to_run') }}</a>
+  <span>&middot;</span>
+  <a href="/projects/{{ project.id }}/result">{{ t('run.view_result') }} {{ m.icon('open') }}</a>
+</p>
+
+{% if indexed < extracted %}
+<div class="notice">
+  <strong>{{ t('search.incomplete_title') }}</strong>
+  <p>{{ t('search.incomplete_body', indexed=indexed, extracted=extracted) }}</p>
+  <form method="post" action="/projects/{{ project.id }}/search/index" style="display:inline">
+    <input type="hidden" name="q" value="{{ query }}">
+    <button type="submit" class="button-primary">{{ m.icon('refresh') }} {{ t('search.index_missing') }}</button>
+  </form>
+</div>
+{% endif %}
+
+<form method="get" action="/projects/{{ project.id }}/search" class="form search-form" role="search">
+  <label for="q">{{ t('search.label') }}</label>
+  <div class="folder-field">
+    <input type="search" id="q" name="q" value="{{ query }}" autofocus
+           placeholder="{{ t('search.placeholder') }}">
+    <button type="submit" class="button-primary">{{ m.icon('search') }} {{ t('search.submit') }}</button>
+  </div>
+  <p class="help">{{ t('search.help') }}</p>
+</form>
+
+{% if query %}
+<p><strong>{{ t('search.count', total=total) }}</strong>
+  {% if pages > 1 %}<span class="help">{{ t('search.page_of', page=page, pages=pages) }}</span>{% endif %}</p>
+
+<ol class="search-results" start="{{ (page - 1) * 50 + 1 }}">
+  {% for result in results %}
+  {% set hit = result.hit %}
+  <li class="search-result">
+    <div class="search-result-head">
+      <strong>{{ hit.name }}</strong>
+      {% if hit.locator %}<span class="badge">{{ hit.locator }}</span>{% endif %}
+      {% if hit.line %}<span class="help">{{ t('search.line', line=hit.line) }}</span>{% endif %}
+      {% if hit.struck %}<span class="badge badge-warning">{{ t('search.struck') }}</span>{% endif %}
+    </div>
+    <div class="help">{{ hit.relative_path }}</div>
+    <p class="search-snippet">{{ result.snippet }}</p>
+    <form method="post" action="/projects/{{ project.id }}/open-file" style="display:inline">
+      <input type="hidden" name="file_id" value="{{ hit.file_id }}">
+      <input type="hidden" name="back" value="/projects/{{ project.id }}/search?q={{ query | urlencode }}&p={{ page }}">
+      <button type="submit">{{ m.icon('open') }} {{ t('search.open_file') }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ol>
+
+{% if pages > 1 %}
+<p class="actions">
+  {% if page > 1 %}<a class="button" href="?q={{ query | urlencode }}&p={{ page - 1 }}">{{ m.icon('back') }} {{ t('search.previous') }}</a>{% endif %}
+  {% if page < pages %}<a class="button" href="?q={{ query | urlencode }}&p={{ page + 1 }}">{{ t('search.next') }} {{ m.icon('open') }}</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

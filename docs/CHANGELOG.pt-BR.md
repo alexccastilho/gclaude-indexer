@@ -17,6 +17,70 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.1] — 2026-10-28
+
+### Acervos mistos: uma peça por documento, configuração proposta pela pasta, toda palavra localizável
+
+#### Corrigido
+
+- **O motor de regras juntava leis inteiras numa peça só.** Num acervo de
+  uma lei por arquivo HTML, toda página começa por "Presidência da
+  República", nenhum marcador de tipo casava com "LEI Nº" e trocar de
+  arquivo não era sinal — leis seguidas viravam uma peça. Agora um arquivo
+  de documento inteiro (HTML, DOCX, XLSX, PPTX, TXT, MD, e-mail… tudo
+  menos PDF e imagem) sempre começa a própria peça, nos motores de
+  regras, local e `claude_code`. Páginas de PDF e sequências de imagens
+  escaneadas continuam podendo formar uma peça, como antes.
+- **Epígrafes legislativas viram tipo** (`heading_types` em
+  `classification_rules.json`): EMENDA CONSTITUCIONAL, LEI, LEI
+  COMPLEMENTAR, DECRETO-LEI, DECRETO, MEDIDA PROVISÓRIA, PORTARIA,
+  RESOLUÇÃO, INSTRUÇÃO NORMATIVA, SÚMULA, ACÓRDÃO e outras — só no começo
+  de linha, nos primeiros 600 caracteres, para que uma lei citada no meio
+  do texto não vire o tipo do documento. Datas como "1º DE JANEIRO DE
+  2023" são lidas. Medido em 354 leis do Planalto: 354 peças, 97% com
+  tipo, todas com data.
+- **Acervos "biblioteca" com vários arquivos num grupo fundiam as peças.**
+  Ali a referência recomeça em "p. 1" a cada arquivo, e a posição da
+  página no grupo saía desse número — toda peça de todo arquivo tinha
+  posição 1 e a consolidação as fundia. A posição agora é o lugar da
+  página no grupo (`group_page_positions`), usado na importação, no mapa
+  de página física do índice, no relatório de lacunas e na cobertura da
+  qualidade. As janelas do `claude_code` mostram essa posição como `[#N]`
+  no cabeçalho de cada página, e o `CLAUDE.md` manda usá-la em
+  `order_start` / `order_end`. Acervos "processo" não eram afetados.
+- **Um decreto de 1962 era lido como báltico (cp1257).** Quando a
+  detecção estatística acha Windows-1252 tão plausível quanto o melhor
+  palpite, fica Windows-1252 — a codificação de quase todo texto
+  brasileiro mais antigo.
+
+#### Adicionado
+
+- **Configuração proposta a partir da pasta de origem.** Ao escolher a
+  pasta de origem de um projeto novo, o programa a examina — até 6
+  segundos, numa amostra de PDFs e arquivos de texto — e propõe páginas
+  por bloco, páginas por janela, sobreposição, caracteres por página e
+  idioma do OCR, cada um com o motivo, além da composição da pasta.
+  "Aplicar" preenche o formulário; nada muda sem isso. Idiomas de OCR só
+  são propostos se o Tesseract os tiver instalados.
+- **Busca de texto completo** ("Buscar no acervo", nas telas de execução e
+  de resultado). A classificação lê só os primeiros "caracteres por
+  página" de cada página; a busca guarda o texto inteiro de todo arquivo,
+  sem corte, numa tabela SQLite FTS5 dentro do projeto. Os resultados
+  dizem onde está o texto — a página do PDF (`f. 12` / `p. 5`) ou, num
+  documento inteiro, o artigo ou título e a linha ("p. 1 · Art. 40") —,
+  destacam as palavras achadas, marcam o que estava tachado no original e
+  abrem o arquivo original. Acentos e maiúsculas não importam; "aspas"
+  para uma frase, `*` para o começo de palavra. A indexação roda no fim
+  da extração e retoma de onde parou; arquivos extraídos por uma versão
+  anterior entram com "Incluir os que faltam".
+
+#### Observações
+
+- Um projeto "biblioteca" com vários arquivos por grupo já classificado
+  pela 1.5.0 ou anterior tem peças fundidas: crie-o de novo.
+- A busca cobre os arquivos extraídos daqui em diante; num projeto que já
+  existe, abra "Buscar no acervo" e use "Incluir os que faltam".
+
 ## [1.5.0] — 2026-10-28
 
 ### Páginas web lidas como texto, com o tachado preservado; toda codificação lida certo

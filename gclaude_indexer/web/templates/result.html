@@ -8,6 +8,8 @@
   <a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a>
   <span>&middot;</span>
   <a href="/projects/{{ project.id }}/run">{{ m.icon('back') }} {{ t('result.back_to_run') }}</a>
+  <span>&middot;</span>
+  <a href="/projects/{{ project.id }}/search">{{ m.icon('search') }} {{ t('search.nav') }}</a>
 </p>
 
 {% if stale %}

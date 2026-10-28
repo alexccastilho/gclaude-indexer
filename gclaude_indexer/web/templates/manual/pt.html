@@ -85,6 +85,7 @@
 
 <h3>Fatiamento, janelas e OCR</h3>
 <p>Uma <strong>janela</strong> é um trecho de páginas seguidas que o classificador lê de uma vez para descobrir onde começa e termina cada peça.</p>
+<p><strong>Proposta automática.</strong> Ao escolher a pasta de origem, o programa examina uma amostra dela (até 6 segundos) — quantos PDFs, escaneados ou não, quantos documentos inteiros (HTML, DOCX, TXT…), o tamanho das páginas e o idioma — e propõe os cinco valores abaixo, cada um com o motivo. Clique em <em>Aplicar estas configurações</em> para usá-los; sem isso nada muda. O botão <em>Analisar a pasta e propor</em> refaz a análise depois de mudar as extensões.</p>
 <dl>
   <dt>Páginas por bloco (80)</dt><dd>PDFs maiores que isso são cortados em partes antes de processar, para não travar em arquivos enormes.</dd>
   <dt>Páginas por janela (16)</dt><dd>Janelas menores erram menos quando há muitos documentos curtos misturados, mas levam mais tempo. Janelas maiores são mais rápidas, mas podem juntar duas peças numa só.</dd>
@@ -167,6 +168,8 @@
 </section>
 
 <section id="usar-com-claude">
+<h3>Buscar no acervo</h3>
+<p>O índice descreve as peças; a busca acha qualquer palavra de qualquer arquivo, inclusive o que fica além de "Caracteres por página". Abra <em>Buscar no acervo</em> nas telas Execução ou Resultado. Todas as palavras digitadas precisam aparecer; use "aspas" para uma frase exata e <code>*</code> no fim para o começo de uma palavra. Acentos e maiúsculas não importam. Cada resultado diz o arquivo, a página (PDF) ou o artigo e a linha (documento inteiro), destaca o que foi achado, avisa quando o trecho estava <del>tachado</del> no original (em legislação, revogado) e tem o botão <em>Abrir arquivo</em>. Projetos extraídos por uma versão anterior mostram o botão <em>Incluir os que faltam</em>.</p>
 <h2>8. Usando com o Claude</h2>
 <h3>No claude.ai (Projects)</h3>
 <ol>

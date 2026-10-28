@@ -25,7 +25,10 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from .classification import WindowPage, ClassifiedItem, load_window_pages, reference_number, item_to_dict, validate_item
+from .classification import (
+    WindowPage, ClassifiedItem, load_window_pages, item_to_dict, validate_item,
+    page_order, starts_new_document,
+)
 from .config import ProjectConfig
 from .events import record_event
 from .i18n import nested
@@ -983,8 +986,8 @@ def _group_pages_into_items(
         itens.append(ClassifiedItem(
             start_ref=primeira.reference,
             end_ref=ultima.reference,
-            start_order=reference_number(primeira.reference),
-            end_order=reference_number(ultima.reference),
+            start_order=page_order(primeira),
+            end_order=page_order(ultima),
             type=str(dados["type"]).strip() if dados.get("type") else None,
             date=str(dados["date"]).strip() if dados.get("date") else None,
             author=str(dados["author"]).strip() if dados.get("author") else None,
@@ -1014,7 +1017,10 @@ def _group_pages_into_items(
         # redação sem mudar de documento ("Hemograma — série vermelha" /
         # "Hemograma — série branca"): aí ele desempata, desde que o começo
         # do assunto coincida.
-        if not atual:
+        if not atual or starts_new_document(atual[-1][0], page):
+            # Um arquivo de documento inteiro (HTML, DOCX, TXT…) é sempre
+            # uma peça: duas leis seguidas têm o mesmo "assunto" para o
+            # modelo e seriam juntadas.
             continua = False
         elif assunto and anterior_assunto:
             continua = assunto == anterior_assunto or (
@@ -1040,7 +1046,7 @@ def _reference_map(pages: list[WindowPage]) -> dict[str, tuple[str, int]]:
     reference_map: dict[str, tuple[str, int]] = {}
     for page in pages:
         reference_map.setdefault(
-            _normalize_reference(page.reference), (page.reference, reference_number(page.reference))
+            _normalize_reference(page.reference), (page.reference, page_order(page))
         )
     return reference_map
 
@@ -1093,7 +1099,7 @@ def _dict_to_item(
     if start_order > end_order:
         return None
 
-    item_pages = [p for p in pages if start_order <= reference_number(p.reference) <= end_order]
+    item_pages = [p for p in pages if start_order <= page_order(p) <= end_order]
     files = list(dict.fromkeys(p.file_name for p in item_pages))
 
     type_ = raw.get("type")
@@ -1184,7 +1190,7 @@ def _uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> li
             coberto.add(numero)
     faltando = []
     for page in pages:
-        numero = reference_number(page.reference)
+        numero = page_order(page)
         if numero not in coberto:
             faltando.append(page)
     return faltando
@@ -1218,7 +1224,7 @@ def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
 
     blocos: list[list[WindowPage]] = [[pages[0]]]
     for anterior, page in zip(pages, pages[1:]):
-        if reference_number(page.reference) == reference_number(anterior.reference) + 1:
+        if page_order(page) == page_order(anterior) + 1 and not starts_new_document(anterior, page):
             blocos[-1].append(page)
         else:
             blocos.append([page])
@@ -1232,8 +1238,8 @@ def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
         itens.append(ClassifiedItem(
             start_ref=bloco[0].reference,
             end_ref=bloco[-1].reference,
-            start_order=reference_number(bloco[0].reference),
-            end_order=reference_number(bloco[-1].reference),
+            start_order=page_order(bloco[0]),
+            end_order=page_order(bloco[-1]),
             type=None,
             date=None,
             author=None,

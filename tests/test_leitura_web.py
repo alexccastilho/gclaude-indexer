@@ -197,6 +197,22 @@ def test_texto_sem_tachado_remove_so_os_trechos_marcados():
     assert without_struck_text(texto) == "Art. 1º Vigente.\n\nArt. 3º  novo."
 
 
+def test_windows_1252_vence_tabela_baltica_igualmente_limpa():
+    # Decreto real de 1962, sem declaração: a detecção estatística dava
+    # cp1257 ("Eleva ą categoria … honorįrio") com a mesma nota do cp1252.
+    bruto = (FIXTURES / "planalto_dcm939_sem_declaracao.htm").read_bytes()
+    texto, codificacao = decode_markup(bruto)
+    assert codificacao == "cp1252"
+    assert "Eleva à categoria" in html_to_text(texto)
+
+
+def test_cirilico_sem_declaracao_nao_vira_windows_1252():
+    frase = "Статья 1. Настоящий Федеральный закон регулирует отношения, связанные с защитой прав. "
+    texto, codificacao = decode_bytes((frase * 6).encode("cp1251"))
+    assert codificacao == "cp1251"
+    assert texto.startswith("Статья 1.")
+
+
 def test_trecho_real_do_planalto_sai_limpo_e_com_tachado():
     bruto = (FIXTURES / "planalto_l10147_trecho.htm").read_bytes()
     texto, _ = decode_markup(bruto)

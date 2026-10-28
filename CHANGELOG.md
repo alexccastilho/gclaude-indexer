@@ -10,6 +10,69 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.1] — 2026-10-28
+
+### Mixed collections: one item per document, settings proposed from the folder, every word searchable
+
+#### Fixed
+
+- **The rules engine merged whole laws into one item.** In a collection of
+  one law per HTML file, every page starts with "Presidência da
+  República", no type marker matched "LEI Nº", and changing file was not a
+  signal — so consecutive laws became a single item. Now a whole-document
+  file (HTML, DOCX, XLSX, PPTX, TXT, MD, e-mail… everything except PDF and
+  images) always starts its own item, in the rules, local and
+  `claude_code` engines alike. PDF pages and runs of scanned images can
+  still form one item, as before.
+- **Legislative epigraphs are recognised as types** (`heading_types` in
+  `classification_rules.json`): EMENDA CONSTITUCIONAL, LEI, LEI
+  COMPLEMENTAR, DECRETO-LEI, DECRETO, MEDIDA PROVISÓRIA, PORTARIA,
+  RESOLUÇÃO, INSTRUÇÃO NORMATIVA, SÚMULA, ACÓRDÃO and others — only at the
+  start of a line within the first 600 characters, so a law cited in the
+  middle of a text is not taken as the document's type. Dates written as
+  "1º DE JANEIRO DE 2023" are read. Measured on 354 Planalto laws: 354
+  items, 97% typed, all dated.
+- **"biblioteca" collections with several files in a group merged their
+  items.** There each file's references restart at "p. 1", and the
+  position of a page in the group was taken from that number — so every
+  item of every file had position 1 and consolidation fused them. The
+  position is now the page's place in the group (`group_page_positions`),
+  used by import, the index's physical-page map, the gap report and the
+  quality coverage. Windows for `claude_code` show it as `[#N]` in each
+  page header, and `CLAUDE.md` says to use it for `order_start` /
+  `order_end`. "processo" collections were not affected.
+- **A 1962 decree was read as Baltic (cp1257).** When statistical
+  detection finds Windows-1252 as plausible as its best guess, Windows-1252
+  wins — the encoding of almost all older Brazilian text.
+
+#### Added
+
+- **Settings proposed from the source folder.** On choosing the source
+  folder of a new project, the program surveys it — up to 6 seconds, a
+  sample of PDFs and text files — and proposes pages per block, pages per
+  window, overlap, characters per page and OCR language, each with the
+  reason, plus the folder's composition. "Apply" fills the form; nothing
+  changes without it. OCR languages are only proposed if Tesseract has
+  them installed.
+- **Full-text search** ("Search the collection", on the run and result
+  screens). Classification reads only the first "characters per page" of
+  each page; the search keeps the whole text of every file, untruncated,
+  in an SQLite FTS5 table inside the project. Results say where the text
+  is — the PDF page (`f. 12` / `p. 5`), or in a whole document the article
+  or heading and the line ("p. 1 · Art. 40") — highlight the words found,
+  mark what was struck through in the original, and open the original
+  file. Accents and capitals do not matter; "quotes" for a phrase, `*`
+  for a prefix. Indexing runs at the end of extraction and resumes where
+  it stopped; files extracted by an earlier version are added with
+  "Add the missing files".
+
+#### Notes
+
+- A "biblioteca" project with several files per group that was already
+  classified by 1.5.0 or earlier has merged items: create it again.
+- The search covers files extracted from now on; for an existing project,
+  open "Search the collection" and use "Add the missing files".
+
 ## [1.5.0] — 2026-10-28
 
 ### Web pages read as text, with what was struck through kept; every encoding read right

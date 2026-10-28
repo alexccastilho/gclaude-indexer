@@ -17,6 +17,31 @@
     "RESOLUÇÃO": ["RESOLUÇÃO", "RESOLUCAO"]
   },
 
+  "_comment_heading_types": "Epígrafes que dão o tipo só quando abrem uma linha, em maiúsculas (ex. 'LEI Nº 13.146, DE 6 DE JULHO DE 2015'). Diferencia maiúsculas: 'nos termos da Lei nº 8.112' é citação, não epígrafe. Testadas na ordem — a mais específica primeiro.",
+  "heading_types": [
+    ["EMENDA CONSTITUCIONAL", "^[#\\s]*EMENDA CONSTITUCIONAL\\b"],
+    ["CONSTITUIÇÃO", "^[#\\s]*CONSTITUIÇÃO\\b"],
+    ["LEI COMPLEMENTAR", "^[#\\s]*LEI COMPLEMENTAR\\b"],
+    ["LEI DELEGADA", "^[#\\s]*LEI DELEGADA\\b"],
+    ["DECRETO-LEI", "^[#\\s]*DECRETO-LEI\\b"],
+    ["DECRETO LEGISLATIVO", "^[#\\s]*DECRETO LEGISLATIVO\\b"],
+    ["MEDIDA PROVISÓRIA", "^[#\\s]*MEDIDA PROVIS[ÓO]RIA\\b"],
+    ["PROJETO DE LEI", "^[#\\s]*PROJETO DE LEI\\b"],
+    ["PROPOSTA DE EMENDA À CONSTITUIÇÃO", "^[#\\s]*PROPOSTA DE EMENDA\\b"],
+    ["LEI", "^[#\\s]*LEI\\s+(N\\b|N[º°.]|DE\\s+\\d)"],
+    ["DECRETO", "^[#\\s]*DECRETO\\s+(N\\b|N[º°.]|DE\\s+\\d|S/N)"],
+    ["MENSAGEM DE VETO", "^[#\\s]*MENSAGEM\\s+N"],
+    ["INSTRUÇÃO NORMATIVA", "^[#\\s]*INSTRUÇÃO NORMATIVA\\b"],
+    ["PORTARIA", "^[#\\s]*PORTARIA\\s+(N\\b|N[º°.])"],
+    ["RESOLUÇÃO", "^[#\\s]*RESOLUÇÃO\\s+(N\\b|N[º°.])"],
+    ["ALVARÁ", "^[#\\s]*ALVARÁ\\b"],
+    ["CARTA RÉGIA", "^[#\\s]*CARTA R[ÉE]GIA\\b"],
+    ["CARTA DE LEI", "^[#\\s]*CARTA DE LEI\\b"],
+    ["SÚMULA", "^[#\\s]*SÚMULA\\b"],
+    ["ACÓRDÃO", "^[#\\s]*ACÓRDÃO\\b"]
+  ],
+  "heading_search_chars": 600,
+
   "protocol_markers": [
     "protocolo n",
     "protocolo:",
@@ -39,7 +64,7 @@
   "date_patterns": [
     {"regex": "\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})\\b", "groups": ["day", "month", "year"]},
     {"regex": "\\b(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})\\b", "groups": ["day", "month", "year"]},
-    {"regex": "\\b(\\d{1,2})\\s+de\\s+([A-Za-zçÇãÃéÉíÍóÓôÔ]+)\\s+de\\s+(\\d{4})\\b", "groups": ["day", "month_name", "year"]}
+    {"regex": "\\b(\\d{1,2})[º°]?\\s+de\\s+([A-Za-zçÇãÃéÉíÍóÓôÔ]+)\\s+de\\s+(\\d{4})\\b", "groups": ["day", "month_name", "year"]}
   ],
 
   "months": {

@@ -88,9 +88,13 @@ def _banco_com_duas_familias() -> sqlite3.Connection:
     """Dois grupos cujas folhas se sobrepõem em numeração, que é o caso
     real: cada PDF numera as páginas de 1 a N, e a folha é do processo."""
     conn = sqlite3.connect(":memory:")
+    # Linhas por nome e caminho relativo: a posição da página no grupo segue
+    # a ordem natural dos arquivos (`group_page_positions`), como no banco real.
+    conn.row_factory = sqlite3.Row
     conn.executescript(
         """
-        CREATE TABLE file (id INTEGER PRIMARY KEY, group_key TEXT, name TEXT);
+        CREATE TABLE file (id INTEGER PRIMARY KEY, group_key TEXT, name TEXT,
+                           relative_path TEXT);
         CREATE TABLE page (id INTEGER PRIMARY KEY, file_id INTEGER,
                            number INTEGER, reference TEXT);
         CREATE TABLE item (id INTEGER PRIMARY KEY, group_key TEXT,
@@ -98,8 +102,8 @@ def _banco_com_duas_familias() -> sqlite3.Connection:
                            confidence TEXT);
         """
     )
-    conn.execute("INSERT INTO file VALUES (1, 'Processo', 'vol1.pdf')")
-    conn.execute("INSERT INTO file VALUES (2, 'Avulsos', 'anexo.pdf')")
+    conn.execute("INSERT INTO file VALUES (1, 'Processo', 'vol1.pdf', 'vol1.pdf')")
+    conn.execute("INSERT INTO file VALUES (2, 'Avulsos', 'anexo.pdf', 'anexo.pdf')")
     # Processo: folhas 1 a 4, numeradas 1..4 dentro do proprio PDF.
     for n in range(1, 5):
         conn.execute("INSERT INTO page VALUES (?, 1, ?, ?)", (n, n, f"f. {n}"))

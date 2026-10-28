@@ -85,6 +85,7 @@
 
 <h3>Fraccionamiento, ventanas y OCR</h3>
 <p>Una <strong>ventana</strong> es un tramo de páginas seguidas que el clasificador lee de una vez para descubrir dónde empieza y termina cada pieza.</p>
+<p><strong>Propuesta automática.</strong> Al elegir la carpeta de origen, el programa examina una muestra (hasta 6 segundos) — cuántos PDF, escaneados o no, cuántos documentos enteros (HTML, DOCX, TXT…), el tamaño de las páginas y el idioma — y propone los cinco valores de abajo, cada uno con su motivo. Haga clic en <em>Aplicar esta configuración</em> para usarlos; sin eso nada cambia. El botón <em>Analizar la carpeta y proponer</em> repite el análisis después de cambiar las extensiones.</p>
 <dl>
   <dt>Páginas por bloque (80)</dt><dd>Los PDF más grandes que esto se cortan en partes antes de procesarlos, para no trabarse con archivos enormes.</dd>
   <dt>Páginas por ventana (16)</dt><dd>Las ventanas más pequeñas se equivocan menos cuando hay muchos documentos cortos mezclados, pero tardan más. Las ventanas más grandes son más rápidas, pero pueden juntar dos piezas en una sola.</dd>
@@ -167,6 +168,8 @@
 </section>
 
 <section id="usar-com-claude">
+<h3>Buscar en el acervo</h3>
+<p>El índice describe las piezas; la búsqueda encuentra cualquier palabra de cualquier archivo, incluso lo que queda más allá de "Caracteres por página". Abra <em>Buscar en el acervo</em> desde las pantallas Ejecución o Resultado. Todas las palabras escritas deben aparecer; use "comillas" para una frase exacta y <code>*</code> al final para el comienzo de una palabra. Los acentos y las mayúsculas no importan. Cada resultado indica el archivo, la página (PDF) o el artículo y la línea (documento entero), resalta lo encontrado, avisa cuando el fragmento estaba <del>tachado</del> en el original (en legislación, derogado) y tiene el botón <em>Abrir archivo</em>. Los proyectos extraídos por una versión anterior muestran el botón <em>Incluir los que faltan</em>.</p>
 <h2>8. Uso con Claude</h2>
 <h3>En claude.ai (Projects)</h3>
 <ol>

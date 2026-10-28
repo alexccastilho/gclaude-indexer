@@ -17,6 +17,76 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.1] — 2026-10-28
+
+### Acervos mixtos: una pieza por documento, configuración propuesta por la carpeta, toda palabra localizable
+
+#### Corregido
+
+- **El motor de reglas juntaba leyes enteras en una sola pieza.** En un
+  acervo de una ley por archivo HTML, toda página comienza con
+  "Presidência da República", ningún marcador de tipo coincidía con "LEI
+  Nº" y cambiar de archivo no era señal — leyes consecutivas se volvían
+  una pieza. Ahora un archivo de documento entero (HTML, DOCX, XLSX, PPTX,
+  TXT, MD, correo… todo salvo PDF e imagen) siempre comienza su propia
+  pieza, en los motores de reglas, local y `claude_code`. Las páginas de
+  PDF y las secuencias de imágenes escaneadas siguen pudiendo formar una
+  pieza, como antes.
+- **Los encabezados legislativos se reconocen como tipo**
+  (`heading_types` en `classification_rules.json`): EMENDA
+  CONSTITUCIONAL, LEI, LEI COMPLEMENTAR, DECRETO-LEI, DECRETO, MEDIDA
+  PROVISÓRIA, PORTARIA, RESOLUÇÃO, INSTRUÇÃO NORMATIVA, SÚMULA, ACÓRDÃO y
+  otros — solo al comienzo de línea, en los primeros 600 caracteres, para
+  que una ley citada en medio del texto no se vuelva el tipo del
+  documento. Se leen fechas como "1º DE JANEIRO DE 2023". Medido en 354
+  leyes del Planalto: 354 piezas, 97% con tipo, todas con fecha.
+- **Los acervos "biblioteca" con varios archivos en un grupo fusionaban
+  las piezas.** Allí la referencia vuelve a "p. 1" en cada archivo, y la
+  posición de la página en el grupo salía de ese número — toda pieza de
+  todo archivo tenía posición 1 y la consolidación las fusionaba. La
+  posición ahora es el lugar de la página en el grupo
+  (`group_page_positions`), usado en la importación, el mapa de página
+  física del índice, el informe de lagunas y la cobertura de la calidad.
+  Las ventanas de `claude_code` muestran esa posición como `[#N]` en el
+  encabezado de cada página, y el `CLAUDE.md` indica usarla en
+  `order_start` / `order_end`. Los acervos "processo" no estaban
+  afectados.
+- **Un decreto de 1962 se leía como báltico (cp1257).** Cuando la
+  detección estadística encuentra Windows-1252 tan plausible como su mejor
+  opción, queda Windows-1252 — la codificación de casi todo texto
+  brasileño antiguo.
+
+#### Agregado
+
+- **Configuración propuesta a partir de la carpeta de origen.** Al elegir
+  la carpeta de origen de un proyecto nuevo, el programa la examina —
+  hasta 6 segundos, en una muestra de PDF y archivos de texto — y propone
+  páginas por bloque, páginas por ventana, superposición, caracteres por
+  página e idioma del OCR, cada uno con el motivo, además de la
+  composición de la carpeta. "Aplicar" completa el formulario; nada cambia
+  sin eso. Los idiomas de OCR solo se proponen si Tesseract los tiene
+  instalados.
+- **Búsqueda de texto completo** ("Buscar en el acervo", en las pantallas
+  de ejecución y de resultado). La clasificación lee solo los primeros
+  "caracteres por página" de cada página; la búsqueda guarda el texto
+  entero de todo archivo, sin corte, en una tabla SQLite FTS5 dentro del
+  proyecto. Los resultados dicen dónde está el texto — la página del PDF
+  (`f. 12` / `p. 5`) o, en un documento entero, el artículo o título y la
+  línea ("p. 1 · Art. 40") —, resaltan las palabras encontradas, marcan lo
+  que estaba tachado en el original y abren el archivo original. Los
+  acentos y las mayúsculas no importan; "comillas" para una frase, `*`
+  para el comienzo de una palabra. La indexación corre al final de la
+  extracción y retoma donde se detuvo; los archivos extraídos por una
+  versión anterior entran con "Incluir los que faltan".
+
+#### Notas
+
+- Un proyecto "biblioteca" con varios archivos por grupo ya clasificado
+  por la 1.5.0 o anterior tiene piezas fusionadas: créelo de nuevo.
+- La búsqueda cubre los archivos extraídos de aquí en adelante; en un
+  proyecto existente, abra "Buscar en el acervo" y use "Incluir los que
+  faltan".
+
 ## [1.5.0] — 2026-10-28
 
 ### Páginas web leídas como texto, con el tachado preservado; toda codificación leída bien

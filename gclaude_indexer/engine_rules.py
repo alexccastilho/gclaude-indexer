@@ -29,7 +29,8 @@ from .classification import (
     WindowPage,
     load_window_pages,
     item_to_dict,
-    reference_number,
+    page_order,
+    starts_new_document,
     validate_item,
 )
 from .config import ProjectConfig
@@ -52,6 +53,13 @@ class ClassificationRules:
     blank_page_threshold: int
     summary_sentence_char_threshold: int
     type_search_chars: int
+    # Headings that name a document's type only when they open a line, in
+    # capitals — "LEI Nº 13.146, DE 6 DE JULHO DE 2015". `[type, regex]`
+    # pairs, tried in order (the more specific first: "LEI COMPLEMENTAR"
+    # before "LEI"). Case-sensitive on purpose: "nos termos da Lei nº 8.112"
+    # in running text is a citation, not a heading.
+    heading_types: list[tuple[str, re.Pattern]] = field(default_factory=list)
+    heading_search_chars: int = 600
 
 
 def load_rules(path: Path | None = None) -> ClassificationRules:
@@ -67,6 +75,11 @@ def load_rules(path: Path | None = None) -> ClassificationRules:
         blank_page_threshold=data["blank_page_threshold"],
         summary_sentence_char_threshold=data["summary_sentence_char_threshold"],
         type_search_chars=data["type_search_chars"],
+        heading_types=[
+            (type_, re.compile(pattern, re.MULTILINE))
+            for type_, pattern in data.get("heading_types", [])
+        ],
+        heading_search_chars=data.get("heading_search_chars", 600),
     )
 
 
@@ -92,6 +105,7 @@ class RulesEngine:
         previous_header: str | None = None
         header_repeats = 0
         previous_page_blank = False
+        previous_page: WindowPage | None = None
 
         for page in pages:
             # Struck text (`~~...~~`, from HTML/DOCX) is what was revoked: a
@@ -100,7 +114,7 @@ class RulesEngine:
             stripped_text = text.strip()
             first_line = stripped_text.splitlines()[0].strip() if stripped_text else ""
 
-            found_type = self._find_type(text)
+            found_type = self._find_heading_type(text) or self._find_type(text)
             has_protocol = self._find_protocol(text)
             blank_page = len(stripped_text) < self._rules.blank_page_threshold
             header_changed = (
@@ -110,9 +124,14 @@ class RulesEngine:
                 and first_line != previous_header
             )
 
-            any_signal = bool(found_type or has_protocol or previous_page_blank or header_changed)
+            # A whole-document file (HTML, DOCX, TXT…) is one item by
+            # construction: every law of the Planalto collection starts with
+            # the same "Presidência da República", so without this the
+            # header never changes and consecutive laws merge.
+            new_file = starts_new_document(previous_page, page)
+            any_signal = bool(found_type or has_protocol or previous_page_blank or header_changed or new_file)
 
-            if current_item is None or (any_signal and not blank_page):
+            if current_item is None or new_file or (any_signal and not blank_page):
                 if current_item is not None:
                     ready_items.append(current_item)
                 current_item = _ItemInProgress()
@@ -134,11 +153,19 @@ class RulesEngine:
                     header_repeats = 1
 
             previous_page_blank = blank_page
+            previous_page = page
 
         if current_item is not None:
             ready_items.append(current_item)
 
         return [self._finalize(item) for item in ready_items]
+
+    def _find_heading_type(self, text: str) -> str | None:
+        head = text[: self._rules.heading_search_chars]
+        for type_, pattern in self._rules.heading_types:
+            if pattern.search(head):
+                return type_
+        return None
 
     def _find_type(self, text: str) -> str | None:
         """The marker closest to the real start of the page wins — not the
@@ -233,8 +260,8 @@ class RulesEngine:
         return ClassifiedItem(
             start_ref=pages[0].reference,
             end_ref=pages[-1].reference,
-            start_order=reference_number(pages[0].reference),
-            end_order=reference_number(pages[-1].reference),
+            start_order=page_order(pages[0]),
+            end_order=page_order(pages[-1]),
             type=type_,
             date=date_value,
             author=self._find_author(pages),

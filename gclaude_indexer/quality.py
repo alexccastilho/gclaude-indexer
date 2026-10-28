@@ -92,10 +92,11 @@ def _coverage(conn) -> tuple[int, int, int]:
     `item.start_order`, que é a folha do grupo (1..2830), sem join. Os dois
     números não têm relação: removendo 967 peças do índice — um buraco de
     500 folhas — ela seguiu marcando 100,0% contra 82,7% reais. A folha
-    sai de `page.reference` por `reference_number`, que é a mesma função
-    que gerou `item.start_order`.
+    é a posição da página no grupo (`group_page_positions`), a mesma que
+    gerou `item.start_order` — e não o número dentro de `page.reference`,
+    que num acervo "biblioteca" recomeça em 1 a cada arquivo.
     """
-    from .classification import reference_number
+    from .windows_prep import group_page_positions
 
     faixas: dict[str, list[tuple[int, int, str]]] = {}
     for group_key, start, end, confidence in conn.execute(
@@ -104,12 +105,13 @@ def _coverage(conn) -> tuple[int, int, int]:
         faixas.setdefault(group_key, []).append((start, end, confidence))
 
     total = cobertas = classificadas = 0
-    for group_key, reference in conn.execute(
-        "SELECT file.group_key, page.reference "
-        "FROM page JOIN file ON file.id = page.file_id"
-    ):
+    posicoes = [
+        (group_key, folha)
+        for group_key, pages in group_page_positions(conn).items()
+        for folha in range(1, len(pages) + 1)
+    ]
+    for group_key, folha in posicoes:
         total += 1
-        folha = reference_number(reference or "")
         dentro = [c for inicio, fim, c in faixas.get(group_key, []) if inicio <= folha <= fim]
         if dentro:
             cobertas += 1

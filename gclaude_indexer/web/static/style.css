@@ -1184,3 +1184,23 @@ html[data-theme="toga"] h1::after {
   content: ""; display: block; width: 2.5rem; height: 2px; margin-top: 0.45rem;
   background: linear-gradient(90deg, #b8913f, transparent);
 }
+
+/* Settings proposal (New project) and Search screen ------------------------ */
+.settings-proposal .proposal {
+  background: var(--color-accent-weak);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.75rem;
+}
+html[data-theme="dark"] .settings-proposal .proposal { background: var(--color-surface-alt); }
+.proposal-values dt { margin-top: 0.5rem; }
+.proposal-values dd { margin: 0.15rem 0 0 0; color: var(--color-text-weak); font-size: 0.88rem; }
+
+.search-results { padding-left: 1.4rem; }
+.search-result { margin: 0 0 1.1rem; }
+.search-result-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.search-snippet { margin: 0.35rem 0; line-height: 1.5; overflow-wrap: anywhere; }
+.search-snippet mark { background: var(--color-warning-bg); color: var(--color-warning-text); padding: 0 0.1em; border-radius: 2px; }
+.search-snippet del { color: var(--color-text-weak); }
+.badge-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }

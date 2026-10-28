@@ -37,6 +37,29 @@ class WindowPage:
     text: str
     has_table: bool
     image_count: int
+    # Position of the page in its group, 1-based — what `item.start_order`
+    # and `end_order` mean. Not the number in `reference`: in a "biblioteca"
+    # collection the reference restarts at "p. 1" in every file, so in a
+    # group of many files that number repeats. 0 = unknown (a page built by
+    # hand), and `page_order` falls back to the reference.
+    order: int = 0
+
+
+def page_order(page: WindowPage) -> int:
+    return page.order or reference_number(page.reference)
+
+
+def starts_new_document(previous: WindowPage | None, page: WindowPage) -> bool:
+    """Whether `page` must open a new item because the file changed and one
+    of the two files is a whole document (HTML, DOCX, TXT, e-mail…).
+
+    PDFs and images are left to the engine: a scanned document often spans
+    several image files, and a case file several PDF volumes."""
+    from .file_types import is_whole_document_file
+
+    if previous is None or page.file_name == previous.file_name:
+        return False
+    return is_whole_document_file(previous.file_name) or is_whole_document_file(page.file_name)
 
 
 @dataclass
@@ -87,8 +110,9 @@ def load_window_pages(conn: sqlite3.Connection, window_row: sqlite3.Row) -> list
             text=row["text"],
             has_table=bool(row["has_table"]),
             image_count=row["image_count"],
+            order=start + offset,
         )
-        for row in block
+        for offset, row in enumerate(block)
     ]
 
 

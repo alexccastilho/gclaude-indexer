@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS artifact_state (
 CREATE INDEX IF NOT EXISTS idx_file_status ON file(status);
 CREATE INDEX IF NOT EXISTS idx_page_file_id ON page(file_id);
 CREATE INDEX IF NOT EXISTS idx_item_group_key_order ON item(group_key, start_order);
+
+-- Full-text search (`fulltext.py`): the whole text of every file, untruncated,
+-- in passages that know where they are. Accents are folded, so "vigencia"
+-- finds "vigência".
+CREATE VIRTUAL TABLE IF NOT EXISTS fulltext USING fts5(
+    text,
+    file_id UNINDEXED,
+    locator UNINDEXED,
+    line UNINDEXED,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TABLE IF NOT EXISTS fulltext_file (
+    file_id INTEGER PRIMARY KEY
+);
 -- The Execution screen counts windows by status every two seconds, and
 -- review.md lists the error events: both scanned the whole table.
 CREATE INDEX IF NOT EXISTS idx_window_status ON window(status);

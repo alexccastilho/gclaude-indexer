@@ -107,7 +107,25 @@ def pages_for_group(conn, group_key: str):
     )
 
 
-def _write_window_file(path: Path, key: str, group_key: str, start_ref: str, end_ref: str, pages) -> None:
+def group_page_positions(conn) -> dict[str, list]:
+    """Every group's pages in group order — index 0 is position 1.
+
+    The one definition of "position in the group" that `item.start_order`
+    uses, shared by the import range check, the index's physical-page map,
+    the gap report and the quality coverage. Each used to rebuild it from
+    the number inside `page.reference`, which in a "biblioteca" collection
+    restarts at 1 in every file.
+    """
+    groups = [
+        row["group_key"]
+        for row in conn.execute("SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL")
+    ]
+    return {group: pages_for_group(conn, group) for group in groups}
+
+
+def _write_window_file(
+    path: Path, key: str, group_key: str, start_ref: str, end_ref: str, pages, first_order: int = 1
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     files_involved = sorted({page["file_name"] for page in pages})
 
@@ -119,8 +137,11 @@ def _write_window_file(path: Path, key: str, group_key: str, start_ref: str, end
         f"# pages: {len(pages)}",
         "",
     ]
-    for page in pages:
-        lines.append(f"--- {page['reference']} ({page['file_name']}) ---")
+    # `[#N]` is the page's position in the group — what `order_start` /
+    # `order_end` must carry. The reference alone is not enough: in a
+    # "biblioteca" collection every file starts again at "p. 1".
+    for order, page in enumerate(pages, start=first_order):
+        lines.append(f"--- {page['reference']} ({page['file_name']}) [#{order}] ---")
         lines.append(page["text"])
         lines.append("")
 
@@ -178,7 +199,7 @@ def prepare_windows(
             # during invalidation, the old text must not survive. For existing windows,
             # keep the shortcut: skip writing if the file exists and was not corrupted.
             if not row_exists or not file_path.exists():
-                _write_window_file(file_path, key, group_key, start_ref, end_ref, page_block)
+                _write_window_file(file_path, key, group_key, start_ref, end_ref, page_block, start + 1)
 
     record_event(
         conn,
@@ -304,6 +325,11 @@ delas como o mesmo comando.
   (HTML, DOCX) e é dispositivo revogado, suprimido ou substituído. Continua
   fazendo parte da peça, mas não o use como data, tipo ou resumo do que
   está em vigor.
+- Arquivos de documento inteiro (`.htm`, `.html`, `.docx`, `.txt`, `.md`,
+  `.xlsx`, `.pptx`, `.eml`…) ocupam uma página só e são sempre uma peça
+  própria: nunca junte dois desses arquivos numa peça, mesmo que o assunto
+  pareça o mesmo. Páginas de PDF e imagens podem continuar no arquivo
+  seguinte.
 
 ## Formato de cada linha (uma peça = um objeto JSON)
 
@@ -312,8 +338,8 @@ delas como o mesmo comando.
   "group": "<agrupador, copiado do cabeçalho da janela>",
   "ref_start": "<referência da primeira página da peça, ex. 'f. 12'>",
   "ref_end": "<referência da última página da peça>",
-  "order_start": <número inteiro extraído de ref_start, ex. 12>,
-  "order_end": <número inteiro extraído de ref_end>,
+  "order_start": <o número após "#" no cabeçalho da primeira página da peça, ex. 12>,
+  "order_end": <o número após "#" no cabeçalho da última página da peça>,
   "type": "<tipo da peça ou null>",
   "date": "<AAAA-MM-DD ou null>",
   "author": "<autor ou null>",
@@ -331,8 +357,9 @@ importada, então siga isto à risca:
 - Uma linha por peça, sem vírgula entre linhas (é JSON Lines, não um array).
 - `ref_start`/`ref_end` devem estar dentro do intervalo da própria
   janela (não referencie página de outra janela).
-- `order_start` e `order_end` são inteiros (a parte numérica da
-  referência), usados para ordenar e detectar lacunas — nunca strings.
+- `order_start` e `order_end` são inteiros — a posição `[#N]` que vem no
+  cabeçalho de cada página (`--- p. 1 (lei.htm) [#37] ---`), não o número
+  da referência, que se repete entre arquivos. Nunca strings.
 - `date` é uma data ISO plausível (`AAAA-MM-DD`) ou `null`; nunca um texto
   livre como "maio de 2024".
 - `confidence` é sempre uma destas três strings: `"high"`, `"medium"` ou
@@ -407,6 +434,10 @@ of them as the same command.
   in the original (HTML, DOCX) and is a revoked, suppressed or replaced
   provision. It is still part of the item, but do not use it as the date,
   type or summary of what is in force.
+- Whole-document files (`.htm`, `.html`, `.docx`, `.txt`, `.md`, `.xlsx`,
+  `.pptx`, `.eml`…) take a single page and are always an item of their
+  own: never join two such files into one item, even if the subject looks
+  the same. PDF pages and images may continue into the next file.
 
 ## Format of each line (one item = one JSON object)
 
@@ -415,8 +446,8 @@ of them as the same command.
   "group": "<group, copied from the window's header>",
   "ref_start": "<reference of the item's first page, e.g. 'f. 12'>",
   "ref_end": "<reference of the item's last page>",
-  "order_start": <integer extracted from ref_start, e.g. 12>,
-  "order_end": <integer extracted from ref_end>,
+  "order_start": <the number after "#" in the header of the item's first page, e.g. 12>,
+  "order_end": <the number after "#" in the header of the item's last page>,
   "type": "<item type or null>",
   "date": "<YYYY-MM-DD or null>",
   "author": "<author or null>",
@@ -435,8 +466,9 @@ imported, so follow this precisely:
   array).
 - `ref_start`/`ref_end` must fall within the window's own range (never
   reference a page from another window).
-- `order_start` and `order_end` are integers (the numeric part of the
-  reference), used for ordering and gap detection — never strings.
+- `order_start` and `order_end` are integers — the `[#N]` position in
+  each page's header (`--- p. 1 (law.htm) [#37] ---`), not the number in
+  the reference, which repeats across files. Never strings.
 - `date` is a plausible ISO date (`YYYY-MM-DD`) or `null`; never free text
   like "May 2024".
 - `confidence` is always one of these three strings: `"high"`, `"medium"`
@@ -513,6 +545,11 @@ Trate cualquiera de ellas como el mismo comando.
   original (HTML, DOCX) y es una disposición derogada, suprimida o
   sustituida. Sigue formando parte de la pieza, pero no lo use como fecha,
   tipo o resumen de lo que está vigente.
+- Los archivos de documento entero (`.htm`, `.html`, `.docx`, `.txt`,
+  `.md`, `.xlsx`, `.pptx`, `.eml`…) ocupan una sola página y son siempre
+  una pieza propia: nunca junte dos de esos archivos en una pieza, aunque
+  el asunto parezca el mismo. Las páginas de PDF y las imágenes pueden
+  continuar en el archivo siguiente.
 
 ## Formato de cada línea (una pieza = un objeto JSON)
 
@@ -521,8 +558,8 @@ Trate cualquiera de ellas como el mismo comando.
   "group": "<agrupador, copiado del encabezado de la ventana>",
   "ref_start": "<referencia de la primera página de la pieza, ej. 'f. 12'>",
   "ref_end": "<referencia de la última página de la pieza>",
-  "order_start": <número entero extraído de ref_start, ej. 12>,
-  "order_end": <número entero extraído de ref_end>,
+  "order_start": <el número tras "#" en el encabezado de la primera página de la pieza, ej. 12>,
+  "order_end": <el número tras "#" en el encabezado de la última página de la pieza>,
   "type": "<tipo de la pieza o null>",
   "date": "<AAAA-MM-DD o null>",
   "author": "<autor o null>",
@@ -540,8 +577,9 @@ importada, así que sígalas al pie de la letra:
 - Una línea por pieza, sin coma entre líneas (es JSON Lines, no un array).
 - `ref_start`/`ref_end` deben estar dentro del propio rango de la ventana
   (no haga referencia a una página de otra ventana).
-- `order_start` y `order_end` son enteros (la parte numérica de la
-  referencia), usados para ordenar y detectar vacíos — nunca strings.
+- `order_start` y `order_end` son enteros — la posición `[#N]` del
+  encabezado de cada página (`--- p. 1 (ley.htm) [#37] ---`), no el número
+  de la referencia, que se repite entre archivos. Nunca strings.
 - `date` es una fecha ISO plausible (`AAAA-MM-DD`) o `null`; nunca un texto
   libre como "mayo de 2024".
 - `confidence` es siempre una de estas tres strings: `"high"`, `"medium"` o

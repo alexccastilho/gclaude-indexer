@@ -53,6 +53,11 @@ _LATIN_FAMILY = {
     "mac-roman", "cp850", "cp437", "iso8859-9", "cp1254", "cp858",
 }
 
+# How much more "chaos" (charset_normalizer's measure of implausible
+# characters) windows-1252 may show and still count as a tie with the best
+# match.
+_CHAOS_TIE = 0.01
+
 # Enough to cover any real `<head>`; declarations further down are ignored,
 # as browsers ignore them.
 _SNIFF_BYTES = 8192
@@ -87,11 +92,20 @@ def _detect(data: bytes) -> str | None:
     except ImportError:
         return None
     try:
-        best = from_bytes(data).best()
+        matches = list(from_bytes(data))
     except Exception:
         return None
-    if best is None:
+    if not matches:
         return None
+    best = matches[0]
+    # Short Portuguese text decodes equally cleanly as several 8-bit
+    # tables, and the tie is broken by a language-coherence score that
+    # often picks the wrong one — a 1962 decree from the Planalto came out
+    # as cp1257, "Eleva ą categoria … honorįrio". When windows-1252 is as
+    # clean as the winner, it is what such a file really is.
+    for match in matches:
+        if canonical_encoding(match.encoding) == "cp1252" and match.chaos <= best.chaos + _CHAOS_TIE:
+            return "cp1252"
     encoding = canonical_encoding(best.encoding)
     if encoding in _LATIN_FAMILY and _decode_strict(data, "cp1252") is not None:
         return "cp1252"

@@ -43,7 +43,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from .classification import reference_number, validate_item
+from .classification import validate_item
 from .config import ProjectConfig
 from .events import record_event
 
@@ -69,16 +69,13 @@ def _group_page_range(conn, group: str, cache: dict[str, tuple[int, int] | None]
     3 groups, with the database on a network drive, that alone took ~41
     minutes (488 ms per query there, against 9.3 ms on a local disk)."""
     if group not in cache:
-        rows = conn.execute(
-            """
-            SELECT page.reference
-            FROM page JOIN file ON file.id = page.file_id
-            WHERE file.group_key = ?
-            """,
+        # Positions run 1..N over the group's pages (see
+        # `windows_prep.group_page_positions`), so the count is the range.
+        count = conn.execute(
+            "SELECT COUNT(*) FROM page JOIN file ON file.id = page.file_id WHERE file.group_key = ?",
             (group,),
-        ).fetchall()
-        orders = [reference_number(row["reference"]) for row in rows]
-        cache[group] = (min(orders), max(orders)) if orders else None
+        ).fetchone()[0]
+        cache[group] = (1, count) if count else None
     return cache[group]
 
 

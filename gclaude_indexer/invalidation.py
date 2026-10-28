@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import ProjectConfig
+from .fulltext import remove_file as remove_from_search
 from .conversion import converted_artifact_path
 from .events import record_event
 from .import_items import RAW_ITEMS_FILE_NAME
@@ -462,6 +463,7 @@ def apply_update_plan(
             if row is None:
                 continue
             file_id = row["id"]
+            remove_from_search(conn, file_id)
             result.pages_deleted += conn.execute(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
@@ -491,6 +493,7 @@ def apply_update_plan(
             if row is None:
                 continue
             file_id = row["id"]
+            remove_from_search(conn, file_id)
             result.pages_deleted += conn.execute(
                 "DELETE FROM page WHERE file_id = ?", (file_id,)
             ).rowcount
@@ -514,6 +517,7 @@ def apply_update_plan(
                 if row is None:
                     continue
                 file_id = row["id"]
+                remove_from_search(conn, file_id)
                 deleted = conn.execute(
                     "DELETE FROM page WHERE file_id = ?", (file_id,)
                 ).rowcount

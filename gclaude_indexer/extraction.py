@@ -39,6 +39,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .parallelism import workers_for
 from .file_types import category_of_extension
+from .fulltext import index_pending
 from .paths import natural_sort_key
 
 ERROR_MESSAGE_CHAR_LIMIT = 500
@@ -351,5 +352,11 @@ def extract_pages(
         {"files": result.files_processed, "pages": result.pages_written, "failed": result.failed},
         language=language,
     )
+
+    # The full text, untruncated, goes into the search (`fulltext.py`). Also
+    # picks up files extracted by a version that had no search, or by a run
+    # interrupted here — whatever is extracted and not yet indexed.
+    if not interrupted:
+        index_pending(conn, config, should_stop=should_stop, language=language)
 
     return result

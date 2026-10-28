@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .classification import reference_number
 from .config import ProjectConfig
 from .html_text import STRUCK_MARK
 from .i18n import translate
@@ -103,14 +102,12 @@ def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
     só o nome do arquivo, e num grupo de 21 volumes isso não diz onde
     abrir — `f. 417` é a página 145 do Vol 2.
     """
-    from .classification import reference_number
+    from .windows_prep import group_page_positions
 
     mapa: dict[tuple[str, int], tuple[str, int]] = {}
-    for group_key, name, number, reference in conn.execute(
-        "SELECT file.group_key, file.name, page.number, page.reference "
-        "FROM page JOIN file ON file.id = page.file_id"
-    ):
-        mapa[(group_key, reference_number(reference or ""))] = (name, number)
+    for group_key, pages in group_page_positions(conn).items():
+        for position, page in enumerate(pages, start=1):
+            mapa[(group_key, position)] = (page["file_name"], page["number"])
     return mapa
 
 
@@ -273,6 +270,8 @@ def _group_ranges(numbers: list[int]) -> list[tuple[int, int]]:
 
 
 def _gaps_by_group(conn) -> dict[str, list[tuple[int, int]]]:
+    from .windows_prep import pages_for_group
+
     groups = [
         row["group_key"]
         for row in conn.execute(
@@ -282,15 +281,8 @@ def _gaps_by_group(conn) -> dict[str, list[tuple[int, int]]]:
 
     gaps = {}
     for group in groups:
-        pages = conn.execute(
-            """
-            SELECT page.reference FROM page
-            JOIN file ON file.id = page.file_id
-            WHERE file.group_key = ?
-            """,
-            (group,),
-        ).fetchall()
-        page_orders = sorted({reference_number(p["reference"]) for p in pages})
+        page_count = len(pages_for_group(conn, group))
+        page_orders = list(range(1, page_count + 1))
         if not page_orders:
             continue
 

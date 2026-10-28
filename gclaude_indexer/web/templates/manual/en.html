@@ -85,6 +85,7 @@
 
 <h3>Slicing, windows and OCR</h3>
 <p>A <strong>window</strong> is a run of consecutive pages that the classifier reads at once to figure out where each item starts and ends.</p>
+<p><strong>Automatic proposal.</strong> When you choose the source folder, the program surveys a sample of it (up to 6 seconds) — how many PDFs, scanned or not, how many whole documents (HTML, DOCX, TXT…), page sizes and language — and proposes the five values below, each with its reason. Click <em>Apply these settings</em> to use them; nothing changes otherwise. The <em>Analyse the folder and propose</em> button runs it again after you change the extensions.</p>
 <dl>
   <dt>Pages per block (80)</dt><dd>PDFs larger than this are cut into parts before processing, so huge files do not get stuck.</dd>
   <dt>Pages per window (16)</dt><dd>Smaller windows make fewer mistakes when many short documents are mixed together, but take longer. Larger windows are faster, but may merge two items into one.</dd>
@@ -167,6 +168,8 @@
 </section>
 
 <section id="usar-com-claude">
+<h3>Search the collection</h3>
+<p>The index describes the items; the search finds any word of any file, including what lies beyond "Characters per page". Open <em>Search the collection</em> from the Run or Result screens. Every word typed must appear; use "quotes" for an exact phrase and <code>*</code> at the end for the start of a word. Accents and capitals do not matter. Each result gives the file, the page (PDF) or the article and line (whole document), highlights what was found, says when the passage was <del>struck through</del> in the original (in legislation, revoked) and has an <em>Open file</em> button. Projects extracted by an earlier version show an <em>Add the missing files</em> button.</p>
 <h2>8. Using it with Claude</h2>
 <h3>On claude.ai (Projects)</h3>
 <ol>

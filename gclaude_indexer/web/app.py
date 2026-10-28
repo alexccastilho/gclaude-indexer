@@ -20,6 +20,8 @@ arguments.
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import sys
 import threading
@@ -30,6 +32,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
+from markupsafe import Markup, escape
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -62,6 +65,14 @@ from ..project import load_project, create_project
 from ..quality import compare_runs, quality_summary
 from ..resources import latest_sample
 from ..sensors import unavailable_reason
+from ..fulltext import (
+    MATCH_END as FULLTEXT_MATCH_END,
+    MATCH_START as FULLTEXT_MATCH_START,
+    coverage as fulltext_coverage,
+    index_pending as index_fulltext,
+    search as fulltext_search,
+)
+from ..settings_proposal import propose_for_folder
 from ..staleness import is_stale as source_is_stale, record_loaded_source
 from ..sync import check_sync, mark_synced
 from ..file_types import CATEGORY_ALL, categories_by_family
@@ -78,7 +89,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.5.0"
+SYSTEM_VERSION = "1.5.1"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -614,8 +625,55 @@ def _select_folder_body(request: Request, form):
     folder = choose_folder(title=translate(language, "new_project.folder_picker_title"), initial=current_value)
     value = folder or current_value
 
-    return render(
+    response = render(
         request, "_folder_field.html", {"field": field, "form_field_name": field, "value": value},
+    )
+    if field == "source_folder" and folder:
+        # The settings proposal panel listens for this and analyses the
+        # folder just chosen (see `_settings_proposal.html`).
+        response.headers["HX-Trigger"] = "sourceFolderChosen"
+    return response
+
+
+@app.post("/projects/propose-settings", response_class=HTMLResponse)
+async def propose_settings(request: Request):
+    form = await request.form()
+    return await run_in_threadpool(_propose_settings_body, request, form)
+
+
+def _propose_settings_body(request: Request, form):
+    """Looks at the source folder and proposes the five fields of
+    "Slicing, windows and OCR" — see `settings_proposal.py`."""
+    folder_text = str(form.get("source_folder", "")).strip()
+    categories = [str(value) for value in form.getlist("extensions")]
+    folder = Path(folder_text) if folder_text else None
+    if folder is None or not folder.is_dir():
+        return render(request, "_settings_proposal.html", {"proposal": None, "folder": folder_text})
+
+    proposal = propose_for_folder(folder, categories)
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
+
+    def reason_text(reason) -> str:
+        params = dict(reason.params)
+        if "languages" in params:
+            params["languages"] = ", ".join(t(f"proposal.language.{code}") for code in params["languages"])
+        return t(reason.key, **params)
+
+    survey = proposal.survey
+    composition = [
+        t("proposal.composition_item", count=count, kind=t(f"new_project.category.{category}"))
+        for category, count in survey.by_category.most_common()
+    ]
+    return render(
+        request, "_settings_proposal.html",
+        {
+            "proposal": proposal,
+            "folder": folder_text,
+            "reasons": {name: [reason_text(r) for r in items] for name, items in proposal.reasons.items()},
+            "composition": composition,
+            "estimated_pages": survey.estimated_pages(),
+        },
     )
 
 
@@ -1182,6 +1240,88 @@ def clear_intermediates_route(project_id: int):
     clear_intermediates(output_folder)
 
     return RedirectResponse(f"/projects/{project_id}/result", status_code=303)
+
+
+# --- screen: Search ------------------------------------------------------------
+
+SEARCH_PAGE_SIZE = 50
+# Per click of "Add the missing files": long enough to make real progress,
+# short enough that the request never looks frozen.
+SEARCH_INDEX_SECONDS = 45
+
+
+def _snippet_html(snippet: str) -> Markup:
+    """Escaped snippet with the matches as `<mark>` and struck text as
+    `<del>` — the `~~` marks are what the HTML/DOCX readers left there."""
+    text = str(escape(snippet))
+    text = text.replace(FULLTEXT_MATCH_START, "<mark>").replace(FULLTEXT_MATCH_END, "</mark>")
+    lines = [re.sub(r"~~(.+?)~~", r"<del>\1</del>", line) for line in text.split("\n")]
+    return Markup("<br>".join(line for line in lines if line.strip()))
+
+
+@app.get("/projects/{project_id}/search", response_class=HTMLResponse)
+def search_screen(request: Request, project_id: int, q: str = "", p: int = 1):
+    page = max(1, p)
+    with _open_project(project_id) as (entry, config, conn):
+        indexed, extracted = fulltext_coverage(conn)
+        hits, total = fulltext_search(conn, q, SEARCH_PAGE_SIZE, (page - 1) * SEARCH_PAGE_SIZE) if q.strip() else ([], 0)
+    results = [{"hit": hit, "snippet": _snippet_html(hit.snippet)} for hit in hits]
+    return render(
+        request, "search.html",
+        {
+            "project": entry, "config": config, "query": q, "results": results, "total": total,
+            "page": page, "pages": max(1, -(-total // SEARCH_PAGE_SIZE)),
+            "indexed": indexed, "extracted": extracted,
+        },
+    )
+
+
+@app.post("/projects/{project_id}/search/index")
+async def search_index(request: Request, project_id: int):
+    form = await request.form()
+    return await run_in_threadpool(_search_index_body, request, project_id, form)
+
+
+def _search_index_body(request: Request, project_id: int, form):
+    """Adds files extracted before the search existed (or left out by an
+    interrupted run), a time-boxed batch per click."""
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    with _open_project(project_id) as (_entry, config, conn):
+        index_fulltext(conn, config, language=language, time_budget=SEARCH_INDEX_SECONDS)
+    query = str(form.get("q", ""))
+    return RedirectResponse(f"/projects/{project_id}/search?q={quote(query)}", status_code=303)
+
+
+@app.post("/projects/{project_id}/open-file")
+async def open_source_file(request: Request, project_id: int):
+    form = await request.form()
+    return await run_in_threadpool(_open_source_file_body, project_id, form)
+
+
+def _open_source_file_body(project_id: int, form):
+    """Opens a search result's original file with its usual program. The
+    path comes from the project database, never from the request, and must
+    resolve inside the source folder."""
+    try:
+        file_id = int(str(form.get("file_id", "")))
+    except ValueError:
+        raise HTTPException(status_code=400)
+    with _open_project(project_id) as (_entry, config, conn):
+        row = conn.execute("SELECT relative_path FROM file WHERE id = ?", (file_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404)
+    try:
+        path = resolve_within(Path(config.source_folder), row["relative_path"])
+    except ValueError:
+        raise HTTPException(status_code=400)
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    if sys.platform == "win32":
+        os.startfile(str(path))  # noqa: S606 — a document from the project's own source folder
+    back = str(form.get("back", ""))
+    if not back.startswith(f"/projects/{project_id}/search"):
+        back = f"/projects/{project_id}/search"
+    return RedirectResponse(back, status_code=303)
 
 
 @app.post("/projects/{project_id}/open-folder")

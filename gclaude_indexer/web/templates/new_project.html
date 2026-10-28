@@ -141,6 +141,35 @@
   <fieldset>
     <legend>{{ t('new_project.section_slicing') }}</legend>
 
+    {# Proposal from what the source folder holds. Refreshed when a folder
+       is chosen in the picker (`sourceFolderChosen`, sent by
+       /select-folder) or typed, and on demand by the button. #}
+    <div id="settings_proposal" class="settings-proposal"
+         hx-post="/projects/propose-settings"
+         hx-trigger="sourceFolderChosen from:body, change[target.id=='source_folder'] from:body"
+         hx-include="#source_folder, input[name='extensions']"
+         hx-swap="innerHTML">
+      <p class="help">{{ t('proposal.no_folder') }}</p>
+    </div>
+    <p>
+      <button type="button" class="button"
+              hx-post="/projects/propose-settings" hx-target="#settings_proposal" hx-swap="innerHTML"
+              hx-include="#source_folder, input[name='extensions']">
+        {{ m.icon('search') }} {{ t('proposal.analyze') }}
+      </button>
+    </p>
+    <script>
+    function applySettingsProposal(button) {
+      var box = button.closest('[data-proposal]');
+      ['pages_per_block', 'pages_per_window', 'overlap', 'chars_per_page', 'ocr_language'].forEach(function (name) {
+        var input = document.getElementById(name);
+        if (input) input.value = box.getAttribute('data-' + name);
+      });
+      var done = box.querySelector('[data-proposal-applied]');
+      if (done) done.hidden = false;
+    }
+    </script>
+
     <label for="pages_per_block">{{ t('new_project.pages_per_block') }} {{ m.tooltip(t, 'hint.pages_per_block') }}</label>
     <input type="number" id="pages_per_block" name="pages_per_block" min="1" value="{{ values.pages_per_block }}">
 

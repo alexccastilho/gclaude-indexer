@@ -84,6 +84,16 @@ def is_extension_allowed(extension_with_dot: str, categories: list[str]) -> bool
     return extension_with_dot in extensions_for_categories(categories)
 
 
+def is_whole_document_file(file_name: str) -> bool:
+    """Whether a file always becomes exactly one page holding the whole
+    document — everything except PDF and images, which have real pages and
+    whose documents may continue into the next file. An extension with no
+    category (the "all" rule) is read as one block of text, so it counts."""
+    dot = file_name.rfind(".")
+    category = category_of_extension(file_name[dot:]) if dot > 0 else None
+    return category not in ("pdf", "imagens")
+
+
 def category_of_extension(extension_with_dot: str) -> str | None:
     """Name of the category (e.g. `"imagens"`) an extension belongs to, or
     `None` if it doesn't match any known category."""
