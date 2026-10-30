@@ -17,6 +17,40 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.3] — 2026-10-30
+
+### Os botões de execução respondem na hora em pastas grandes, com contador ao vivo
+
+#### Corrigido
+
+- **"Rodar etapa seguinte" e "Rodar tudo até a classificação" pareciam
+  mortos numa pasta de origem grande.** Antes de registrar a varredura, a
+  requisição percorria a pasta inteira duas vezes para dimensionar a barra
+  de progresso — minutos numa pasta de 145 mil arquivos no Google Drive.
+  Enquanto isso o primeiro botão ficava pendurado e a tela dizia "Nenhuma
+  etapa rodando". Agora a tarefa é registrada na hora e mede o trabalho em
+  segundo plano.
+- **Cada clique a mais abria outra varredura no mesmo banco.** A checagem
+  de "já está rodando" não enxergava uma tarefa que ainda estava sendo
+  medida. Checagem e registro agora acontecem sob a mesma trava: um
+  segundo clique devolve a tarefa que já roda.
+- **A barra da varredura podia parar antes dos 100%.** O total contava
+  `desktop.ini` e outros arquivos de sistema que a varredura nunca
+  registra; a contagem agora usa o mesmo critério da varredura.
+
+#### Alterado
+
+- **Enquanto a pasta de origem é percorrida, a tela Execução mostra um
+  contador ao vivo** ("Contando os arquivos da pasta de origem: N
+  arquivo(s) encontrado(s)"), o tempo decorrido, uma barra em movimento e o
+  botão de pausa, para que uma caminhada longa nunca pareça travada.
+- **A pasta de origem é percorrida uma vez por varredura, não três.** A
+  contagem entrega a lista à varredura, e a caminhada usa `os.scandir`, que
+  no Windows lê o tamanho de cada arquivo da própria listagem da pasta em
+  vez de perguntar arquivo por arquivo.
+- **Arquivos `.ini` nunca são indexados**, nem com "todas as extensões": o
+  Windows e o Google Drive gravam um em cada pasta, e nenhum é documento.
+
 ## [1.5.2] — 2026-10-30
 
 ### OCR página a página: folhas escaneadas dentro de PDFs nativos não se perdem mais

@@ -17,6 +17,42 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.3] — 2026-10-30
+
+### Los botones de ejecución responden al instante en carpetas grandes, con contador en vivo
+
+#### Corregido
+
+- **"Ejecutar siguiente etapa" y "Ejecutar todo hasta la clasificación"
+  parecían muertos en una carpeta de origen grande.** Antes de registrar el
+  escaneo, la solicitud recorría toda la carpeta dos veces para dimensionar
+  la barra de progreso — minutos en una carpeta de 145 mil archivos en
+  Google Drive. Mientras tanto el primer botón quedaba colgado y la
+  pantalla decía que no había ninguna etapa en ejecución. Ahora la tarea se
+  registra al instante y mide su trabajo en segundo plano.
+- **Cada clic de más abría otro escaneo sobre la misma base.** La
+  comprobación de "ya está en ejecución" no veía una tarea que todavía se
+  estaba midiendo. Comprobación y registro ocurren ahora bajo el mismo
+  candado: un segundo clic devuelve la tarea que ya corre.
+- **La barra del escaneo podía detenerse antes del 100%.** El total
+  contaba `desktop.ini` y otros archivos de sistema que el escaneo nunca
+  registra; el conteo usa ahora el mismo criterio del escaneo.
+
+#### Cambiado
+
+- **Mientras se recorre la carpeta de origen, la pantalla Ejecución
+  muestra un contador en vivo** ("Contando los archivos de la carpeta de
+  origen: N archivo(s) encontrado(s)"), el tiempo transcurrido, una barra
+  en movimiento y el botón de pausa, para que un recorrido largo nunca
+  parezca colgado.
+- **La carpeta de origen se recorre una vez por escaneo, no tres.** El
+  conteo entrega su lista al escaneo, y el recorrido usa `os.scandir`, que
+  en Windows lee el tamaño de cada archivo del propio listado de la carpeta
+  en lugar de preguntarlo archivo por archivo.
+- **Los archivos `.ini` nunca se indexan**, ni con "todas las
+  extensiones": Windows y Google Drive escriben uno en cada carpeta, y
+  ninguno es un documento.
+
 ## [1.5.2] — 2026-10-30
 
 ### OCR página por página: las hojas escaneadas dentro de PDF nativos ya no se pierden

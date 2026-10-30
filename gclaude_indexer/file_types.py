@@ -48,11 +48,13 @@ CATEGORY_ALL = "all"
 
 # Always excluded, even with "all" selected — executable or binary formats
 # that never make sense to index as a document (never text/image in a
-# collection).
+# collection), and `.ini` configuration files (Windows and Google Drive
+# write one into every folder; none is ever a document).
 ALWAYS_BLOCKED_EXTENSIONS: set[str] = {
     ".exe", ".dll", ".msi", ".bat", ".cmd", ".com", ".scr", ".sys", ".bin",
     ".so", ".dylib", ".iso", ".vhd", ".vhdx", ".drv", ".ocx", ".cpl", ".vbs",
     ".js", ".jar", ".apk", ".deb", ".rpm", ".ps1", ".sh", ".app", ".lnk",
+    ".ini",
 }
 
 

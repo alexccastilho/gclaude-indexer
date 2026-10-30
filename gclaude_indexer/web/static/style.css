@@ -510,6 +510,16 @@ dialog.modal::backdrop { background: rgba(10, 11, 20, 0.55); }
 .progress-bar-fill.progress-bar-done { background: var(--color-ok); }
 .progress-bar-fill.progress-bar-stopped { background: var(--color-warning); }
 .progress-bar-fill.progress-bar-error { background: var(--color-error); }
+/* Counting the source folder: no total yet, so a segment keeps sliding
+   across the bar instead of a percentage. */
+.progress-bar-fill.progress-bar-counting {
+  width: 30%;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
 
 .pause-button {
   background: var(--color-error-bg);

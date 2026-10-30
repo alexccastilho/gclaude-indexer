@@ -21,6 +21,7 @@ is marked `skipped`, with an event.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sqlite3
 from collections.abc import Callable
@@ -159,6 +160,56 @@ def is_system_file(path: Path) -> bool:
     return any(name.startswith(prefix) for prefix in _SYSTEM_FILE_PREFIXES)
 
 
+def walk_source_files(
+    source_dir: Path,
+    output_dir: Path,
+    on_found: Callable[[int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> list[tuple[Path, int]]:
+    """`(path, size)` of every file of the collection, in the order the scan
+    walks them.
+
+    `os.scandir` rather than `rglob` + `stat`: on Windows the directory
+    listing already carries each file's size, and on a Google Drive folder
+    of 145,000 files the extra `stat` per file is what turns the walk into
+    minutes. `on_found(n)` is called with the running count after each file
+    — the Execution screen shows it, so a long walk never looks frozen.
+    `should_stop` interrupts the walk (pause); what was found so far is
+    returned.
+    """
+    output_dir = output_dir.resolve()
+    found: list[tuple[Path, int]] = []
+    pending = [source_dir]
+    while pending:
+        if should_stop is not None and should_stop():
+            break
+        current = pending.pop()
+        if current.resolve() == output_dir:
+            continue
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            continue  # unreadable folder: same as `rglob`, which skips it
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                    continue
+                if not entry.is_file():
+                    continue
+                size = entry.stat().st_size
+            except OSError:
+                continue
+            path = Path(entry.path)
+            if is_system_file(path):
+                continue
+            found.append((path, size))
+            if on_found is not None:
+                on_found(len(found))
+    found.sort(key=lambda item: str(item[0].relative_to(source_dir)).lower())
+    return found
+
+
 def source_files(source_dir: Path, output_dir: Path) -> list[Path]:
     """Files of the collection, in the order the scan walks them.
 
@@ -166,16 +217,7 @@ def source_files(source_dir: Path, output_dir: Path) -> list[Path]:
     (`update_plan.py`) walks by exactly the same criteria. Two walks that
     disagree would make the plan describe a folder the scan does not see.
     """
-    return sorted(
-        (
-            path
-            for path in source_dir.rglob("*")
-            if path.is_file()
-            and not path.is_relative_to(output_dir)
-            and not is_system_file(path)
-        ),
-        key=lambda path: str(path.relative_to(source_dir)).lower(),
-    )
+    return [path for path, _size in walk_source_files(source_dir, output_dir)]
 
 
 def scan(
@@ -183,6 +225,7 @@ def scan(
     config: ProjectConfig,
     should_stop: Callable[[], bool] | None = None,
     language: str | None = None,
+    files: list[Path] | None = None,
 ) -> ScanResult:
     """`should_stop`: a no-argument function returning True to cooperatively
     interrupt between one file and the next (see `run_control.py`) —
@@ -190,7 +233,11 @@ def scan(
 
     `language`: interface language for the events recorded here (Task 12,
     Phase 14) — falls back to `DEFAULT_LANGUAGE` in `record_event` itself
-    when not given."""
+    when not given.
+
+    `files`: the walk already made by the caller (`walk_source_files`, in
+    order), so a large folder is not walked a second time before the
+    first file is hashed. `None` walks it here."""
     source_dir = Path(config.source_folder).resolve()
     output_dir = Path(config.output_folder).resolve()
 
@@ -198,7 +245,10 @@ def scan(
 
     result = ScanResult()
 
-    for path in source_files(source_dir, output_dir):
+    if files is None:
+        files = source_files(source_dir, output_dir)
+
+    for path in files:
         if should_stop is not None and should_stop():
             break
 

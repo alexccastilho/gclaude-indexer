@@ -57,7 +57,7 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     # `total_files` counts every row of the table, `status = 'duplicate'`
     # included — a deliberate decision (Phase 13, Task 10): this count feeds
     # "N file(s)" of the "scan" step and has to match the denominator of the
-    # progress bar (`_files_to_scan_count` in `background_runs.py`, which
+    # progress bar (`_scan_totals` in `background_runs.py`, which
     # counts every file found in the source folder, copy or not). Later
     # steps don't inherit this "problem": `conversion` and `extraction`
     # filter by their own status ('discovered' and 'converted'/'extracted'),

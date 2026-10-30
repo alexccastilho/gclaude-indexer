@@ -10,6 +10,39 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.3] — 2026-10-30
+
+### The run buttons answer at once on large folders, with a live counter
+
+#### Fixed
+
+- **"Run next step" and "Run everything up to classification" looked
+  dead on a large source folder.** Before registering the scan, the
+  request walked the whole source folder twice to size the progress bar —
+  minutes on a 145,000-file Google Drive folder. Meanwhile the first
+  button hung and the screen said "No step running". The task is now
+  registered at once and measures its work in the background.
+- **Each extra click started another scan of the same database.** The
+  "already running" check could not see a task that was still being
+  measured. The check and the registration now happen under one lock: a
+  second click returns the task already running.
+- **The progress bar of the scan could stop short of 100%.** Its total
+  counted `desktop.ini` and other system files that the scan never
+  records; the count now uses the scan's own criteria.
+
+#### Changed
+
+- **While the source folder is walked, the Execution screen shows a live
+  counter** ("Counting the files in the source folder: N file(s) found"),
+  the elapsed time, a moving bar and the pause button, so a long walk never
+  looks frozen.
+- **The source folder is walked once per scan, not three times.** The
+  count hands its list to the scan, and the walk uses `os.scandir`, which
+  on Windows reads each file's size from the folder listing instead of
+  asking for it file by file.
+- **`.ini` files are never indexed**, even with "all extensions": Windows
+  and Google Drive write one into every folder, and none is a document.
+
 ## [1.5.2] — 2026-10-30
 
 ### OCR page by page: scanned sheets inside native PDFs are no longer lost

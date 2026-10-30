@@ -22,6 +22,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -34,14 +35,17 @@ from ..windows_prep import prepare_windows
 from ..engine_local import model_to_use
 from ..orchestrator import resolve_effective_engine, run_classification
 from ..project import load_project
+from .. import scanning
 from ..scanning import scan
 from .eta import ProgressEstimator
 
 STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
 
+# `files`: only the scan takes it — the walk the task already made while
+# counting (see `TaskManager.start_step`).
 _STEP_FUNCTIONS = {
-    "scan": lambda conn, config, should_stop, language: scan(
-        conn, config, should_stop=should_stop, language=language
+    "scan": lambda conn, config, should_stop, language, files=None: scan(
+        conn, config, should_stop=should_stop, language=language, files=files
     ),
     "conversion": lambda conn, config, should_stop, language: convert(
         conn, config, should_stop=should_stop, language=language
@@ -87,32 +91,35 @@ class StepTask:
     weight_baseline: float = 0.0
     weight_total: float = 0.0
     estimator: ProgressEstimator = field(default_factory=ProgressEstimator)
+    # True while the task is still measuring its work (for the scan: walking
+    # the source folder, minutes on a large Google Drive folder), before the
+    # step itself starts. `counted` is the running count of files found,
+    # shown on screen so a long walk never looks frozen.
+    counting: bool = False
+    counted: int = 0
 
 
-def _scan_totals(config: ProjectConfig) -> tuple[int, int]:
-    """`(files, bytes)` still to be scanned.
+def _scan_totals(
+    config: ProjectConfig,
+    on_found: Callable[[int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> tuple[list[Path], int]:
+    """The files the scan will walk, in order, and their total bytes.
 
-    Both come from one walk of the source folder: the count drives the
-    progress bar the user reads, the byte total drives the time estimate
-    (`eta.py`) — scanning hashes every file, so its cost tracks size, not
-    file count.
+    One walk (`scanning.walk_source_files`, the scan's own criteria — system
+    files such as `desktop.ini` left out, so the bar's denominator matches
+    what the scan records): the list is handed to the scan so the folder is
+    not walked again, the count drives the progress bar, and the byte total
+    drives the time estimate (`eta.py`) — scanning hashes every file, so its
+    cost tracks size, not file count.
     """
-    source_folder = Path(config.source_folder).resolve()
-    output_folder = Path(config.output_folder).resolve()
-    files = 0
-    total_bytes = 0
-    for path in source_folder.rglob("*"):
-        if path.is_file() and not path.is_relative_to(output_folder):
-            files += 1
-            try:
-                total_bytes += path.stat().st_size
-            except OSError:
-                pass  # unreadable file: it will fail in the step itself
-    return files, total_bytes
-
-
-def _files_to_scan_count(config: ProjectConfig) -> int:
-    return _scan_totals(config)[0]
+    found = scanning.walk_source_files(
+        Path(config.source_folder).resolve(),
+        Path(config.output_folder).resolve(),
+        on_found=on_found,
+        should_stop=should_stop,
+    )
+    return [path for path, _size in found], sum(size for _path, size in found)
 
 
 def _current_count(conn, step: str) -> int:
@@ -180,28 +187,22 @@ def _weight_pending(conn, step: str) -> float | None:
     return float(row[0] or 0)
 
 
-def _weight_total_and_baseline(conn, config: ProjectConfig, step: str) -> tuple[float, float]:
+def _weight_total_and_baseline(conn, step: str) -> tuple[float, float]:
     """`(baseline, total)` in bytes for the time estimate, or `(0, 0)` when
     this step is not measured in bytes.
 
     `(0, 0)` is the deliberate signal for "fall back to counting items":
     the windows and classification steps work on windows built to a fixed
-    page count, which are already comparable units.
+    page count, which are already comparable units. The scan is measured in
+    `_measure`, from its walk.
     """
-    if step == "scan":
-        _files, pending_bytes = _scan_totals(config)
-        baseline = _weight_done(conn, step) or 0.0
-        return baseline, float(pending_bytes)
-
     pending = _weight_pending(conn, step)
     if pending is None:
         return 0.0, 0.0
     return (_weight_done(conn, step) or 0.0), pending
 
 
-def _total_and_baseline(conn, config: ProjectConfig, step: str) -> tuple[int, int]:
-    if step == "scan":
-        return _files_to_scan_count(config), conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
+def _total_and_baseline(conn, step: str) -> tuple[int, int]:
     if step == "conversion":
         baseline = conn.execute(
             "SELECT COUNT(*) FROM file WHERE status IN ('converted','extracted','failed')"
@@ -228,6 +229,14 @@ def _total_and_baseline(conn, config: ProjectConfig, step: str) -> tuple[int, in
 def compute_progress(output_folder: str, task: StepTask | None) -> dict:
     if task is None:
         return {"status": "none", "percentual": 0, "concluidos": 0, "total": 0, "eta_segundos": None, "error": None}
+
+    if task.counting and task.running and not task.error:
+        # Still walking the source folder: no total yet, so no bar — the
+        # running count of files found is what shows the work moving.
+        return {
+            "status": "counting", "step": task.step, "percentual": 0, "concluidos": 0,
+            "total": 0, "contados": task.counted, "eta_segundos": None, "error": None,
+        }
 
     weight_done: float | None = None
     try:
@@ -314,27 +323,29 @@ class TaskManager:
         self, project_id: int, entry_output_folder: str, config: ProjectConfig, step: str,
         stop_signal: StopSignal | None = None, language: str | None = None,
     ) -> StepTask:
-        existing = self.get(project_id, step)
-        if existing is not None and existing.running:
-            return existing
-
-        read_config, read_conn = load_project(entry_output_folder)
-        try:
-            total, baseline = _total_and_baseline(read_conn, read_config, step)
-            weight_baseline, weight_total = _weight_total_and_baseline(read_conn, read_config, step)
-        finally:
-            read_conn.close()
-
-        task = StepTask(
-            step=step, total=total, baseline=baseline, stop_signal=stop_signal or StopSignal(),
-            weight_baseline=weight_baseline, weight_total=weight_total,
-        )
+        # Registered first, measured afterwards, inside the task. Measuring
+        # used to happen here, on the request: for the scan that is a walk
+        # of the whole source folder — minutes on a 145,000-file Google
+        # Drive folder — during which the button hung, the screen said
+        # "nothing running", and every further click started another walk
+        # (the "already running" check below could not see a task that was
+        # not registered yet), each ending in its own scan of the same
+        # database. Check and registration now happen under one lock.
         with self._lock:
+            existing = self._tasks.get((project_id, step))
+            if existing is not None and existing.running:
+                return existing
+            task = StepTask(
+                step=step, total=0, baseline=0, stop_signal=stop_signal or StopSignal(), counting=True,
+            )
             self._tasks[(project_id, step)] = task
 
         def body():
             run_id: int | None = None
             try:
+                files = self._measure(task, entry_output_folder, step)
+                if task.stop_signal.should_stop():
+                    return  # paused while counting: nothing started, nothing to record
                 _, work_conn = load_project(entry_output_folder)
                 try:
                     # Task 15 (Phase 13): time per step, for the engine/model
@@ -362,7 +373,8 @@ class TaskManager:
                     work_conn.commit()
                     run_id = cursor.lastrowid
 
-                    _STEP_FUNCTIONS[step](work_conn, config, task.stop_signal.should_stop, language)
+                    extra = {"files": files} if step == "scan" else {}
+                    _STEP_FUNCTIONS[step](work_conn, config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
                     work_conn.close()
@@ -397,6 +409,35 @@ class TaskManager:
 
         threading.Thread(target=body, daemon=True).start()
         return task
+
+    @staticmethod
+    def _measure(task: StepTask, entry_output_folder: str, step: str) -> list[Path] | None:
+        """Fills in the task's totals and baselines. For the scan, also
+        returns the walk, which the scan then uses instead of walking the
+        folder again."""
+        read_config, read_conn = load_project(entry_output_folder)
+        try:
+            files = None
+            if step == "scan":
+                def found(count: int) -> None:
+                    task.counted = count
+
+                files, pending_bytes = _scan_totals(
+                    read_config, on_found=found, should_stop=task.stop_signal.should_stop
+                )
+                task.total = len(files)
+                task.baseline = read_conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
+                task.weight_baseline = _weight_done(read_conn, step) or 0.0
+                task.weight_total = float(pending_bytes)
+            else:
+                task.total, task.baseline = _total_and_baseline(read_conn, step)
+                task.weight_baseline, task.weight_total = _weight_total_and_baseline(read_conn, step)
+        finally:
+            read_conn.close()
+        # The time estimate starts with the step itself, not with the count.
+        task.estimator = ProgressEstimator()
+        task.counting = False
+        return files
 
     def start_all(
         self, project_id: int, entry_output_folder: str, config: ProjectConfig, language: str | None = None
