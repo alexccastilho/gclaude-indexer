@@ -145,7 +145,7 @@ motor de regras, leva minutos.
 
 ### O jeito fácil: o instalador do Windows
 
-1. Baixe o `GClaude-Indexer-Setup-1.5.1.exe` na
+1. Baixe o `GClaude-Indexer-Setup-1.5.2.exe` na
    [versão mais recente](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
 2. Dê dois cliques. Ele pergunta se a instalação é só para você ou para
    todos os usuários da máquina, mostra a licença e deixa você marcar quais
@@ -661,9 +661,11 @@ arquivos auxiliares dentro de `blocks/`, na pasta de saída, que nada mais
 lê e que o Liberar espaço apaga. Deixe em 80; reduza só se um PDF muito
 grande (500+ páginas) fizer a conversão ficar sem memória.
 
-**OCR** só se aplica a PDFs sem camada de texto; o programa detecta isso
-arquivo a arquivo e pula quando o texto já existe. Aí o que importa é o
-**Idioma do OCR** corresponder aos seus documentos.
+**OCR** só se aplica a páginas sem camada de texto; o programa confere
+página a página e deixa em paz as que já têm texto. Um PDF com texto nativo
+e algumas folhas escaneadas no meio recebe OCR só nessas folhas (desde a
+1.5.2). Aí o que importa é o **Idioma do OCR** corresponder aos seus
+documentos.
 
 </details>
 

@@ -147,7 +147,7 @@ Con el motor de reglas, tarda minutos.
 
 ### La forma fácil: el instalador de Windows
 
-1. Descargue `GClaude-Indexer-Setup-1.5.1.exe` desde la
+1. Descargue `GClaude-Indexer-Setup-1.5.2.exe` desde la
    [versión más reciente](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
 2. Haga doble clic. Pregunta si la instalación es solo para usted o para
    todos los usuarios de la máquina, muestra la licencia y le permite
@@ -676,9 +676,11 @@ salida, que nada más lee y que Liberar espacio borra. Déjelo en 80; bájelo
 solo si un PDF muy grande (más de 500 páginas) hace que la conversión se
 quede sin memoria.
 
-**OCR** solo se aplica a los PDF sin capa de texto; el programa lo detecta
-archivo por archivo y lo omite cuando el texto ya existe. Entonces lo que
-importa es que el **Idioma del OCR** coincida con sus documentos.
+**OCR** solo se aplica a las páginas sin capa de texto; el programa revisa
+página por página y deja como están las que ya tienen texto. Un PDF con
+texto nativo y algunas hojas escaneadas en medio recibe OCR solo en esas
+hojas (desde la 1.5.2). Entonces lo que importa es que el **Idioma del
+OCR** coincida con sus documentos.
 
 </details>
 

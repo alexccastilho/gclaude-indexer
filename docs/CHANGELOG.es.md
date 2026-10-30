@@ -17,6 +17,39 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.2] — 2026-10-30
+
+### OCR página por página: las hojas escaneadas dentro de PDF nativos ya no se pierden
+
+#### Corregido
+
+- **Las páginas escaneadas dentro de un PDF con texto nativo llegaban en
+  blanco al índice.** El OCR se decidía por el promedio del archivo —
+  menos de 100 caracteres por página—, así que un PDF nativo con algunas
+  hojas escaneadas en medio (un acta firmada, un anexo) pasaba el promedio
+  y esas hojas quedaban sin texto. Ahora la decisión es por página: las
+  páginas con menos de 100 caracteres que tienen imagen o dibujo vectorial
+  van a `ocrmypdf --force-ocr --pages …`, y las demás pasan intactas.
+  `--force-ocr` en lugar de `--skip-text` porque una hoja escaneada con un
+  sello o un "fl. 2" como texto se omitía. Medido en un acervo real de 294
+  PDF: 57 archivos mixtos y 296 páginas enviadas al OCR; una resolución pasó de 2–65 a 1.000–2.700
+  caracteres en cada una de sus cinco páginas escaneadas, y las páginas
+  nativas salieron idénticas.
+- **Los PDF firmados digitalmente reciben OCR**
+  (`--invalidate-digital-signatures`). Solo la copia interna, en la
+  carpeta de salida, pierde la firma; el original nunca se toca.
+
+#### Cambiado
+
+- Una página con poco texto y nada dibujado (un reverso en blanco, una
+  separata de capítulo) no manda un libro nativo al OCR.
+- Si el OCR falla en un PDF que también tiene texto nativo, el archivo
+  sigue con ese texto y un aviso indica cuántas páginas quedaron en
+  blanco; un PDF totalmente escaneado sigue fallando, como antes. El
+  registro dice cuántas páginas, de cuántas, recibieron OCR.
+- Los proyectos ya indexados conservan su conversión: un PDF mixto solo se
+  vuelve a leer cuando cambia o se reprocesa.
+
 ## [1.5.1] — 2026-10-28
 
 ### Acervos mixtos: una pieza por documento, configuración propuesta por la carpeta, toda palabra localizable

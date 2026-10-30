@@ -134,6 +134,157 @@ def test_pdf_escaneado_recebe_ocr(tmp_path):
     conn.close()
 
 
+def _criar_pdf_misto(caminho, carimbo="fl. 2"):
+    """Página 1 com texto nativo; página 2 escaneada (imagem) com um carimbo
+    de poucos caracteres em texto — o caso que a média do arquivo escondia e
+    que `--skip-text` pularia por ter "algum" texto."""
+    _criar_pdf_escaneado(caminho.with_name("_imagem.pdf"))
+    imagem = fitz.open(caminho.with_name("_imagem.pdf"))
+
+    documento = fitz.open()
+    pagina = documento.new_page()
+    pagina.insert_textbox(fitz.Rect(50, 50, 550, 750), TEXTO_NATIVO_PADRAO * 3, fontsize=12)
+    documento.insert_pdf(imagem)
+    documento[1].insert_text((800, 20), carimbo, fontsize=8)
+    documento.save(caminho)
+    documento.close()
+    imagem.close()
+    caminho.with_name("_imagem.pdf").unlink()
+
+
+def test_pdf_misto_recebe_ocr_so_na_pagina_escaneada(tmp_path):
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    _criar_pdf_misto(origem / "ata_mista.pdf")
+    hash_antes = _hash_arquivo(origem / "ata_mista.pdf")
+
+    scan(conn, config)
+    resultado = convert(conn, config)
+
+    assert resultado.failed == 0
+    assert resultado.ocr_applied == 1
+
+    linha = conn.execute("SELECT * FROM file WHERE name = 'ata_mista.pdf'").fetchone()
+    assert linha["needs_ocr"] == 1
+    assert linha["page_count"] == 2
+
+    documento_ocr = fitz.open(saida / "converted" / "ata_mista.pdf")
+    texto_nativo = documento_ocr[0].get_text()
+    texto_escaneado = documento_ocr[1].get_text()
+    documento_ocr.close()
+
+    # a página nativa segue com o texto original, sem passar pelo OCR
+    assert "Texto nativo de teste" in texto_nativo
+    # a página escaneada ganhou o texto da imagem, apesar do carimbo
+    assert "RECONHECIMENTO" in texto_escaneado.upper()
+
+    assert _hash_arquivo(origem / "ata_mista.pdf") == hash_antes
+    conn.close()
+
+
+def test_ocr_do_pdf_misto_e_limitado_as_paginas_sem_texto(tmp_path, monkeypatch):
+    from gclaude_indexer import conversion
+
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    _criar_pdf_misto(origem / "ata_mista.pdf")
+    comandos = []
+
+    class _Resultado:
+        returncode = 0
+        stderr = ""
+
+    def _falso_run(comando, **kwargs):
+        comandos.append(comando)
+        return _Resultado()
+
+    monkeypatch.setattr(conversion.subprocess, "run", _falso_run)
+    scan(conn, config)
+    convert(conn, config)
+
+    assert len(comandos) == 1
+    comando = comandos[0]
+    assert comando[comando.index("--pages") + 1] == "2"
+    assert "--force-ocr" in comando
+    assert "--skip-text" not in comando
+    # a cópia com OCR é interna: uma assinatura digital não pode barrar o OCR
+    assert "--invalidate-digital-signatures" in comando
+    conn.close()
+
+
+def test_pdf_misto_registra_quantas_paginas_receberam_ocr(tmp_path):
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    _criar_pdf_misto(origem / "ata_mista.pdf")
+
+    scan(conn, config)
+    convert(conn, config, language="pt-BR")
+
+    eventos = [e["message"] for e in list_events(conn, step="conversion")]
+    assert any("ata_mista.pdf" in m and "1 de 2 páginas" in m for m in eventos)
+    conn.close()
+
+
+def test_pdf_nativo_com_verso_em_branco_nao_passa_por_ocr(tmp_path):
+    """Uma página vazia (nem imagem, nem desenho) não tem o que reconhecer:
+    o verso em branco de um livro não pode mandar o arquivo todo ao OCR."""
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    documento = fitz.open()
+    documento.new_page().insert_textbox(fitz.Rect(50, 50, 550, 750), TEXTO_NATIVO_PADRAO, fontsize=12)
+    documento.new_page()
+    documento.new_page().insert_text((50, 50), "Capítulo 2", fontsize=12)
+    documento.save(origem / "livro.pdf")
+    documento.close()
+
+    scan(conn, config)
+    resultado = convert(conn, config)
+
+    assert resultado.ocr_applied == 0
+    linha = conn.execute("SELECT * FROM file WHERE name = 'livro.pdf'").fetchone()
+    assert linha["needs_ocr"] == 0
+    conn.close()
+
+
+def test_falha_no_ocr_de_pdf_misto_mantem_o_texto_nativo(tmp_path, monkeypatch):
+    """Um PDF com texto nativo nunca passava pelo OCR; agora passa por causa
+    de uma página. Se o OCR falhar, o arquivo não pode ser perdido inteiro."""
+    from gclaude_indexer import conversion
+
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    _criar_pdf_misto(origem / "ata_mista.pdf")
+
+    def _ocr_falha(*args, **kwargs):
+        raise conversion.ConversionError("ocrmypdf falhou (código 2): teste")
+
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", _ocr_falha)
+    scan(conn, config)
+    resultado = convert(conn, config, language="pt-BR")
+
+    assert resultado.failed == 0
+    assert resultado.ocr_applied == 0
+    linha = conn.execute("SELECT * FROM file WHERE name = 'ata_mista.pdf'").fetchone()
+    assert linha["status"] == "converted"
+    assert linha["needs_ocr"] == 0
+
+    avisos = [e for e in list_events(conn, step="conversion") if e["level"] == "warning"]
+    assert any("ata_mista.pdf" in e["message"] for e in avisos)
+    conn.close()
+
+
+def test_falha_no_ocr_de_pdf_todo_escaneado_continua_sendo_falha(tmp_path, monkeypatch):
+    from gclaude_indexer import conversion
+
+    origem, saida, config, conn = _preparar_projeto(tmp_path)
+    _criar_pdf_escaneado(origem / "peca_escaneada.pdf")
+
+    def _ocr_falha(*args, **kwargs):
+        raise conversion.ConversionError("ocrmypdf falhou (código 2): teste")
+
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", _ocr_falha)
+    scan(conn, config)
+    resultado = convert(conn, config)
+
+    assert resultado.failed == 1
+    conn.close()
+
+
 # --- fatiamento --------------------------------------------------------
 
 

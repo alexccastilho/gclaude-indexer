@@ -10,6 +10,39 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.2] — 2026-10-30
+
+### OCR page by page: scanned sheets inside native PDFs are no longer lost
+
+#### Fixed
+
+- **Scanned pages inside a native-text PDF reached the index blank.** OCR
+  was decided by the file's average — under 100 characters per page — so a
+  native PDF with a few scanned sheets in the middle (a signed minute, an
+  annex) passed the average and those sheets stayed without text. The
+  decision is now made per page: pages under 100 characters that carry an
+  image or a vector drawing go to `ocrmypdf --force-ocr --pages …`, and the
+  others pass through untouched. `--force-ocr` instead of `--skip-text`
+  because a scanned sheet with a stamp or a "fl. 2" as text was skipped.
+  Measured on a real collection of 294 PDFs: 57 mixed files, 296 pages sent
+  to OCR; an ordinance went from
+  2–65 to 1,000–2,700 characters on each of its five scanned pages, and
+  native pages came out identical.
+- **Digitally signed PDFs are OCR'd** (`--invalidate-digital-signatures`).
+  Only the internal copy in the output folder loses the signature; the
+  original is never touched.
+
+#### Changed
+
+- A low-text page with nothing drawn on it (a blank verso, a chapter
+  divider) does not send a native book to OCR.
+- If OCR fails on a PDF that also has native text, the file goes on with
+  that text and a warning names how many pages stayed blank; a fully
+  scanned PDF still fails, as before. The log says how many pages of how
+  many received OCR.
+- Already indexed projects keep their conversion: a mixed PDF is read again
+  only when it changes or is reprocessed.
+
 ## [1.5.1] — 2026-10-28
 
 ### Mixed collections: one item per document, settings proposed from the folder, every word searchable

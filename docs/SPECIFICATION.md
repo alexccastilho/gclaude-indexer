@@ -267,9 +267,16 @@ one group.
 
 **2. Conversion and OCR.** By type:
 - PDF with a text layer already: nothing to do.
-- PDF with no text layer, or averaging under 100 characters per page:
-  `ocrmypdf --skip-text --language <ocr_language> --deskew`, writing a copy
-  into the output folder. The original stays untouched. Note: the
+- PDF with pages under 100 characters of text that carry an image or a
+  vector drawing (decided page by page since 1.5.2 — a native PDF with a
+  few scanned sheets used to pass on its average):
+  `ocrmypdf --force-ocr --pages <those pages> --language <ocr_language>
+  --deskew --invalidate-digital-signatures`, writing a copy into the output
+  folder. The other pages pass through untouched; the original stays
+  untouched, signature included. A low-text page with nothing drawn on it
+  (a blank verso) does not count. If OCR fails on a PDF that also has
+  native text, the file goes on with that text and a warning names the
+  pages left blank; a fully scanned PDF still fails. Note: the
   specification originally also called for `--clean`, but that flag depends
   on the `unpaper` binary, which has no official Windows distribution — the
   code omits it on this platform (see the comment in `conversion.py`).

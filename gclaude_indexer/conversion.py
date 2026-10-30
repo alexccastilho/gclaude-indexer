@@ -94,10 +94,19 @@ def converted_artifact_path(
     return output_dir / "converted" / Path(relative_path).with_suffix(".txt")
 
 
-def _pdf_needs_ocr(path: Path) -> tuple[bool, int]:
-    """Returns `(needs_ocr, page_count)`. A PDF with no text layer, or with
-    fewer than 100 characters per page on average, needs OCR (section 5,
-    step 2)."""
+def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
+    """Returns `(pages, page_count)`: the 1-based pages with fewer than 100
+    characters of text, which need OCR (section 5, step 2).
+
+    Decided page by page, not by the file's average: a native-text PDF
+    with a few scanned pages in the middle (a signed minute, an annex) has
+    an average well above the threshold, and those pages used to reach the
+    index blank.
+
+    A page with little text and nothing drawn on it — no image, no vector
+    drawing (text converted to outlines is a drawing) — has nothing for OCR
+    to find: the blank verso or the "Chapter 2" divider of a book. It does
+    not count, or a whole native book would go through OCR for it."""
     try:
         document = fitz.open(path)
     except Exception as exc:
@@ -108,9 +117,12 @@ def _pdf_needs_ocr(path: Path) -> tuple[bool, int]:
         if page_count == 0:
             raise ConversionError("PDF sem páginas")
 
-        total_chars = sum(len(page.get_text()) for page in document)
-        avg = total_chars / page_count
-        return avg < MIN_AVG_CHARS_PER_PAGE, page_count
+        pages = [
+            number for number, page in enumerate(document, start=1)
+            if len(page.get_text().strip()) < MIN_AVG_CHARS_PER_PAGE
+            and (page.get_images() or page.get_drawings())
+        ]
+        return pages, page_count
     finally:
         document.close()
 
@@ -146,9 +158,19 @@ def _ocr_environment() -> dict:
     }
 
 
-def _run_ocrmypdf(source: Path, destination: Path, ocr_language: str, jobs: int = 1) -> None:
+def _run_ocrmypdf(
+    source: Path, destination: Path, ocr_language: str, jobs: int = 1, pages: list[int] | None = None
+) -> None:
     if destination.exists():
         destination.unlink()
+
+    # With `pages`, only those are OCR'd — and forced: `--skip-text` would
+    # skip a scanned page carrying a stamp or a "fl. 2" as text. The other
+    # pages pass through untouched, native text included.
+    if pages:
+        page_options = ["--force-ocr", "--pages", ",".join(str(number) for number in pages)]
+    else:
+        page_options = ["--skip-text"]
 
     command = [
         sys.executable,
@@ -165,10 +187,14 @@ def _run_ocrmypdf(source: Path, destination: Path, ocr_language: str, jobs: int 
         # process, and a windowless parent is exactly what makes each of
         # them pop a black window on the desktop.
         "gclaude_indexer._ocr_runner",
-        "--skip-text",
+        *page_options,
         "--language",
         ocr_language,
         "--deskew",
+        # The OCR'd copy lives in the output folder and is only read for its
+        # text; the signed original is never touched. Without this a signed
+        # minute or ordinance is refused outright.
+        "--invalidate-digital-signatures",
         "--jobs",
         str(max(1, jobs)),
         # Section 5 also asks for "--clean", but that option depends on the
@@ -402,18 +428,43 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     blocks_generated = 0
 
     if category == "pdf":
-        needs_ocr, page_count = _pdf_needs_ocr(source_path)
+        ocr_pages, page_count = _pdf_pages_needing_ocr(source_path)
+        needs_ocr = bool(ocr_pages)
         path_to_slice = source_path
 
         if needs_ocr:
             ocr_destination = _destination_path(output_dir, "converted", relative_path, ".pdf")
-            _run_ocrmypdf(source_path, ocr_destination, config.ocr_language, jobs=ocrmypdf_jobs)
-            path_to_slice = ocr_destination
-            ocr_applied = True
-            events.append((
-                "conversion", "info", "log.conversion.ocr_applied",
-                {"name": name, "ocr_language": config.ocr_language},
-            ))
+            partial = len(ocr_pages) < page_count
+            try:
+                _run_ocrmypdf(
+                    source_path, ocr_destination, config.ocr_language, jobs=ocrmypdf_jobs, pages=ocr_pages
+                )
+            except ConversionError as exc:
+                # A file with native text used to skip OCR altogether; one
+                # failed scanned page must not cost the rest of it. Read the
+                # original, as before, and say which pages stayed blank.
+                if not partial:
+                    raise
+                needs_ocr = False
+                events.append((
+                    "conversion", "warning", "log.conversion.ocr_pages_failed",
+                    {"name": name, "pages": len(ocr_pages), "total": page_count,
+                     "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
+                ))
+            else:
+                path_to_slice = ocr_destination
+                ocr_applied = True
+                if partial:
+                    events.append((
+                        "conversion", "info", "log.conversion.ocr_applied_pages",
+                        {"name": name, "pages": len(ocr_pages), "total": page_count,
+                         "ocr_language": config.ocr_language},
+                    ))
+                else:
+                    events.append((
+                        "conversion", "info", "log.conversion.ocr_applied",
+                        {"name": name, "ocr_language": config.ocr_language},
+                    ))
 
         if page_count > config.pages_per_block:
             blocks_dir = output_dir / "blocks" / Path(relative_path).parent

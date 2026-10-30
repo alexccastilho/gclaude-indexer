@@ -17,6 +17,39 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.2] — 2026-10-30
+
+### OCR página a página: folhas escaneadas dentro de PDFs nativos não se perdem mais
+
+#### Corrigido
+
+- **Páginas escaneadas dentro de um PDF com texto nativo chegavam em branco
+  ao índice.** O OCR era decidido pela média do arquivo — menos de 100
+  caracteres por página —, então um PDF nativo com algumas folhas
+  escaneadas no meio (uma ata assinada, um anexo) passava na média e essas
+  folhas ficavam sem texto. Agora a decisão é por página: as páginas com
+  menos de 100 caracteres que têm imagem ou desenho vetorial vão para
+  `ocrmypdf --force-ocr --pages …`, e as outras passam intocadas.
+  `--force-ocr` em vez de `--skip-text` porque uma folha escaneada com um
+  carimbo ou um "fl. 2" em texto era pulada. Medido num acervo real de 294
+  PDFs: 57 arquivos mistos e 296 páginas enviadas ao OCR; uma portaria passou de 2–65 para 1.000–2.700
+  caracteres em cada uma das cinco páginas escaneadas, e as páginas
+  nativas saíram idênticas.
+- **PDFs assinados digitalmente recebem OCR**
+  (`--invalidate-digital-signatures`). Só a cópia interna, na pasta de
+  saída, perde a assinatura; o original nunca é tocado.
+
+#### Alterado
+
+- Página com pouco texto e nada desenhado (verso em branco, divisória de
+  capítulo) não manda um livro nativo para o OCR.
+- Se o OCR falhar num PDF que também tem texto nativo, o arquivo segue com
+  esse texto e um aviso diz quantas páginas ficaram em branco; um PDF todo
+  escaneado continua falhando, como antes. O log diz quantas páginas, de
+  quantas, receberam OCR.
+- Projetos já indexados mantêm a conversão: um PDF misto só é relido quando
+  muda ou é reprocessado.
+
 ## [1.5.1] — 2026-10-28
 
 ### Acervos mistos: uma peça por documento, configuração proposta pela pasta, toda palavra localizável

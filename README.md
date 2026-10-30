@@ -142,7 +142,7 @@ With the rules engine, it takes minutes.
 
 ### The easy way: the Windows installer
 
-1. Download `GClaude-Indexer-Setup-1.5.1.exe` from the
+1. Download `GClaude-Indexer-Setup-1.5.2.exe` from the
    [latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
 2. Double-click it. It asks whether to install just for you or for everyone
    on the machine, shows the licence and lets you tick which dependencies to
@@ -637,9 +637,11 @@ which nothing else reads and which Free up space deletes. Leave it at 80;
 lower it only if a very large PDF (500+ pages) makes conversion run out of
 memory.
 
-**OCR** applies only to PDFs with no text layer; the app detects this per
-file and skips it when the text is already there. What matters then is the
-**OCR language** matching your documents.
+**OCR** applies only to pages with no text layer; the app checks each page
+and leaves alone the ones whose text is already there. A PDF with native
+text and a few scanned sheets in the middle has OCR on those sheets only
+(since 1.5.2). What matters then is the **OCR language** matching your
+documents.
 
 </details>
 
