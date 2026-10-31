@@ -36,7 +36,8 @@ from .db import BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
-    ERROR, OK, TIMED_OUT, PoolStalledError, ResilientPool, StepStalledError, deadline_for_size,
+    ERROR, OK, TIMED_OUT, DaemonThreadExecutor, PoolStalledError, ResilientPool, StepStalledError,
+    deadline_for_size,
 )
 from .parallelism import _physical_cores, workers_for
 from .file_types import category_of_extension
@@ -580,29 +581,34 @@ def _record_event_op(step: str, level: str, key: str, params: dict | None = None
 def _convert_sequential(
     conn, config: ProjectConfig, rows, ocrmypdf_jobs: int, should_stop, result, language: str | None = None
 ) -> None:
-    writer = BatchWriter(conn)
-    try:
-        for row in rows:
-            if should_stop is not None and should_stop():
-                break
+    """Economy mode and single files: one file at a time, in this process.
 
-            try:
-                info = _process_file(config, dict(row), ocrmypdf_jobs)
-            except Exception as exc:
-                _record_failure(writer, result, row, str(exc), language=language)
-                continue
-            _apply_result(writer, result, info, language=language)
-        writer.flush()
-    except BaseException:
-        writer.discard()
-        raise
+    1.5.6: under the same `ResilientPool` as the parallel path, with a
+    `DaemonThreadExecutor` instead of worker processes. A file frozen on
+    Google Drive is abandoned at its deadline instead of freezing the step,
+    and the rest of the behaviour (deadlines, retries, stall detection)
+    is the parallel path's."""
+    _convert_guarded(
+        conn, config, rows, 1, ocrmypdf_jobs, should_stop, result, language, DaemonThreadExecutor,
+    )
 
 
 def _convert_in_parallel(
     conn, config: ProjectConfig, rows, workers: int, ocrmypdf_jobs: int, should_stop, result,
     language: str | None = None,
 ) -> None:
-    """One file per worker process. `sqlite3.Connection` never crosses a
+    _convert_guarded(
+        conn, config, rows, workers, ocrmypdf_jobs, should_stop, result, language,
+        lambda: ProcessPoolExecutor(max_workers=workers, initializer=no_window.install),
+    )
+
+
+def _convert_guarded(
+    conn, config: ProjectConfig, rows, workers: int, ocrmypdf_jobs: int, should_stop, result,
+    language: str | None, executor_factory: Callable[[], object],
+) -> None:
+    """One file per worker (a process, or a daemon thread in economy mode,
+    see `_convert_sequential`). `sqlite3.Connection` never crosses a
     process boundary — each worker only returns the result (a serializable
     dict); the one that always writes to the database is this main process.
 
@@ -642,7 +648,7 @@ def _convert_in_parallel(
 
     try:
         with ResilientPool(
-            lambda: ProcessPoolExecutor(max_workers=workers, initializer=no_window.install),
+            executor_factory,
             workers,
             deadline_for=lambda row: deadline_for_size(row["size"]),
             should_stop=should_stop,

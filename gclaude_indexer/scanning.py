@@ -30,8 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ProjectConfig
+from .db import BatchWriter
 from .events import record_event
 from .file_types import is_extension_allowed
+from .i18n import DEFAULT_LANGUAGE, translate
+from .worker_pool import CallTimedOut, StepStalledError, call_with_deadline, deadline_for_size
 
 HASH_BLOCK_SIZE = 1024 * 1024
 
@@ -161,6 +164,39 @@ def is_system_file(path: Path) -> bool:
     return any(name.startswith(prefix) for prefix in _SYSTEM_FILE_PREFIXES)
 
 
+FOLDER_LISTING_DEADLINE_SECONDS = 600.0
+STAT_DEADLINE_SECONDS = 600.0
+MAX_CONSECUTIVE_TIMEOUTS = 3
+
+
+class SourceFolderStalled(RuntimeError):
+    """A folder of the collection never answered its listing, twice.
+
+    Raised, never skipped: a walk that left a folder out would describe a
+    collection without those files, and the update plan reads a missing
+    file as a removed one."""
+
+    def __init__(self, folder: Path):
+        super().__init__(str(folder))
+        self.folder = folder
+
+
+def _list_folder(folder: Path) -> list[os.DirEntry]:
+    """`os.scandir(folder)` with a deadline (1.5.6). A Google Drive folder
+    that never answers its listing froze the walk, and with it the scan's
+    count, for good. One retry, on a fresh thread, then
+    `SourceFolderStalled`."""
+    for attempt in (1, 2):
+        try:
+            return call_with_deadline(
+                lambda: list(os.scandir(folder)), deadline=FOLDER_LISTING_DEADLINE_SECONDS,
+            )
+        except CallTimedOut:
+            if attempt == 2:
+                raise SourceFolderStalled(folder) from None
+    raise AssertionError("unreachable")
+
+
 def walk_source_files(
     source_dir: Path,
     output_dir: Path,
@@ -188,7 +224,7 @@ def walk_source_files(
         if current.resolve() == output_dir:
             continue
         try:
-            entries = list(os.scandir(current))
+            entries = _list_folder(current)
         except OSError:
             continue  # unreadable folder: same as `rglob`, which skips it
         for entry in entries:
@@ -255,140 +291,22 @@ def scan(
     if files is None:
         files = source_files(source_dir, output_dir)
 
-    bytes_done = 0
-
-    for path in files:
-        if should_stop is not None and should_stop():
-            break
-
-        if on_progress is not None:
-            on_progress(result.total_found, bytes_done)
-
-        result.total_found += 1
-
-        relative_path = path.relative_to(source_dir).as_posix()
-        name = path.name
-        extension = path.suffix.lower()
-        file_stat = path.stat()
-        size = file_stat.st_size
-        mtime = file_stat.st_mtime
-        bytes_done += size
-
-        existing_row = known_paths.get(relative_path)
-
-        # Same size and time under the same path: unchanged, without
-        # reading the bytes — the rule `update_plan.detect_changes` already
-        # follows. Hashing every file on every scan made a second scan of a
-        # 145,000-file Google Drive folder reopen each file one by one, for
-        # hours, only to learn nothing had changed. Anything that moved
-        # falls through to the hash below, which has the last word.
-        if (
-            existing_row is not None
-            and existing_row["size"] == size
-            and existing_row["mtime"] == mtime
-        ):
-            result.skipped += 1
-            continue
-
-        file_hash = compute_hash(path)
-
-        if existing_row is not None and existing_row["sha256"] == file_hash:
-            result.skipped += 1
-            # The one write on the unchanged path, and it is not about
-            # correctness: `file.mtime` is what lets `update_plan` decide
-            # a file is unchanged without reading its bytes. Only the
-            # insert and update branches below ever wrote it, so a
-            # project created by 1.0.1 kept `mtime` NULL forever — the
-            # scan skips unchanged files and the plan is read-only —
-            # and every open of the Execution screen re-hashed the whole
-            # collection, pulling a Drive-synced acervo down byte by
-            # byte. The same applies to any single file whose mtime Drive
-            # rewrote without changing the content: the mismatch would be
-            # permanent. §8.1 promises "da segunda em diante a detecção é
-            # rápida"; this is what delivers it.
-            # `size` too: Google Drive can answer `st_size = 16384` right
-            # after a file is written. A wrong size stored once would send
-            # the file down this hashing path on every scan.
-            if existing_row["mtime"] != mtime or existing_row["size"] != size:
-                conn.execute(
-                    "UPDATE file SET mtime = ?, size = ? WHERE relative_path = ?",
-                    (mtime, size, relative_path),
-                )
-                conn.commit()
-            continue
-
-        if existing_row is None and file_hash in known_hashes:
-            # Same content already indexed under another path (copy/duplicate).
-            # It enters the table with status = 'duplicate' instead of vanishing:
-            # without this row, the progress bar's numerator (COUNT(*) FROM
-            # file) never reached the denominator (count of files in the
-            # folder), and the bar stalled below 100%. `conversion.py` only
-            # selects 'discovered' and `extraction.py` only selects
-            # 'converted'/'extracted' — neither picks up 'duplicate', which
-            # stays out of processing as before, only visible in the
-            # inventory.
-            extension_no_dot = extension.lstrip(".")
-            _insert_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, None, "duplicate"
-            )
-            result.skipped += 1
-            conn.commit()
-            known_hashes.add(file_hash)
-            known_paths[relative_path] = {
-                "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
-            }
-            continue
-
-        allowed = is_extension_allowed(extension, config.extensions)
-        status = "discovered" if allowed else "skipped"
-        group_key = (
-            derive_group_key(relative_path, source_dir, config) if allowed else None
+    writer = BatchWriter(conn)
+    try:
+        _scan_files(
+            writer, conn, config, source_dir, files, known_hashes, known_paths, result,
+            should_stop, language, on_progress,
         )
-        extension_no_dot = extension.lstrip(".")
-
-        if existing_row is None:
-            _insert_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, group_key, status
-            )
-            if allowed:
-                result.discovered += 1
-            else:
-                result.ignored += 1
-                record_event(
-                    conn,
-                    "scan",
-                    "warning",
-                    "log.scan.extension_not_allowed",
-                    {"name": name, "extension": extension_no_dot},
-                    language=language,
-                )
+        writer.flush()
+    except BaseException as exc:
+        if isinstance(exc, sqlite3.Error):
+            writer.discard()
         else:
-            _update_file(
-                conn, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, group_key, status
-            )
-            result.updated += 1
-            record_event(
-                conn, "scan", "warning", "log.scan.content_changed", {"name": name}, language=language
-            )
-
-        # Commit per file (not just at the end): without this, the Execution
-        # screen's progress bar — which reads from a separate connection —
-        # saw no new row until the whole scan finished, staying stuck at 0%
-        # on large source folders.
-        conn.commit()
-
-        known_hashes.add(file_hash)
-        known_paths[relative_path] = {
-            "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
-        }
-
-    conn.commit()
-
-    if on_progress is not None:
-        on_progress(result.total_found, bytes_done)
+            try:
+                writer.flush()  # what was already checked stays checked
+            except Exception:
+                writer.discard()
+        raise
 
     record_event(
         conn,
@@ -403,3 +321,183 @@ def scan(
     )
 
     return result
+
+
+def _scan_files(
+    writer: BatchWriter, conn, config: ProjectConfig, source_dir: Path, files, known_hashes, known_paths,
+    result: ScanResult, should_stop, language, on_progress,
+) -> None:
+    """The scan's loop. 1.5.6: every call that touches a file (`stat`, the
+    hash) has a deadline, so a file Google Drive never answers costs that
+    file, not the scan; writes go through `BatchWriter` (see `db.py`)."""
+    bytes_done = 0
+    consecutive_timeouts = 0
+
+    for path in files:
+        if should_stop is not None and should_stop():
+            break
+
+        if on_progress is not None:
+            on_progress(result.total_found, bytes_done)
+
+        result.total_found += 1
+
+        relative_path = path.relative_to(source_dir).as_posix()
+        name = path.name
+        extension = path.suffix.lower()
+        try:
+            file_stat = call_with_deadline(path.stat, deadline=STAT_DEADLINE_SECONDS)
+            size = file_stat.st_size
+            mtime = file_stat.st_mtime
+            existing_row = known_paths.get(relative_path)
+            unchanged = (
+                existing_row is not None
+                and existing_row["size"] == size
+                and existing_row["mtime"] == mtime
+            )
+            file_hash = None if unchanged else call_with_deadline(
+                compute_hash, path, deadline=deadline_for_size(size),
+            )
+        except CallTimedOut as timeout:
+            # Left out of this scan, untouched in the inventory: the next
+            # scan looks at it again. Several in a row with nothing in
+            # between is the drive, not the file — stop instead of walking
+            # the whole collection one deadline at a time.
+            consecutive_timeouts += 1
+            minutes = max(1, round(timeout.args[0] / 60))
+            writer.add(lambda c, name=name, minutes=minutes: record_event(
+                c, "scan", "warning", "log.scan.file_timed_out", {"name": name, "minutes": minutes},
+                language=language, commit=False,
+            ))
+            if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+                raise StepStalledError(
+                    translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=name)
+                ) from None
+            continue
+        consecutive_timeouts = 0
+        bytes_done += size
+
+        if unchanged:
+            result.skipped += 1
+            writer.flush_if_due()
+            continue
+
+        _record_scanned_file(
+            writer, config, source_dir, relative_path, name, extension, size, mtime, file_hash,
+            existing_row, known_hashes, known_paths, result, language,
+        )
+
+    if on_progress is not None:
+        on_progress(result.total_found, bytes_done)
+
+
+def _record_scanned_file(
+    writer: BatchWriter, config: ProjectConfig, source_dir: Path, relative_path: str, name: str,
+    extension: str, size: int, mtime: float, file_hash: str, existing_row, known_hashes, known_paths,
+    result: ScanResult, language,
+) -> None:
+    """Records one hashed file. (Same size and time under the same path
+    never gets here: unchanged without reading the bytes — the rule
+    `update_plan.detect_changes` already follows. Hashing every file on
+    every scan made a second scan of a 145,000-file Google Drive folder
+    reopen each file one by one, for hours, only to learn nothing had
+    changed.)
+
+    Every write is a `writer.add` op; `known_hashes`/`known_paths` are
+    updated here, in memory, once, so a replayed batch cannot double them."""
+    if existing_row is not None and existing_row["sha256"] == file_hash:
+        result.skipped += 1
+        # The one write on the unchanged path, and it is not about
+        # correctness: `file.mtime` is what lets `update_plan` decide
+        # a file is unchanged without reading its bytes. Only the
+        # insert and update branches below ever wrote it, so a
+        # project created by 1.0.1 kept `mtime` NULL forever — the
+        # scan skips unchanged files and the plan is read-only —
+        # and every open of the Execution screen re-hashed the whole
+        # collection, pulling a Drive-synced acervo down byte by
+        # byte. The same applies to any single file whose mtime Drive
+        # rewrote without changing the content: the mismatch would be
+        # permanent. §8.1 promises "da segunda em diante a detecção é
+        # rápida"; this is what delivers it.
+        # `size` too: Google Drive can answer `st_size = 16384` right
+        # after a file is written. A wrong size stored once would send
+        # the file down this hashing path on every scan.
+        if existing_row["mtime"] != mtime or existing_row["size"] != size:
+            writer.add(lambda c: c.execute(
+                "UPDATE file SET mtime = ?, size = ? WHERE relative_path = ?",
+                (mtime, size, relative_path),
+            ))
+        return
+
+    if existing_row is None and file_hash in known_hashes:
+        # Same content already indexed under another path (copy/duplicate).
+        # It enters the table with status = 'duplicate' instead of vanishing:
+        # without this row, the progress bar's numerator (COUNT(*) FROM
+        # file) never reached the denominator (count of files in the
+        # folder), and the bar stalled below 100%. `conversion.py` only
+        # selects 'discovered' and `extraction.py` only selects
+        # 'converted'/'extracted' — neither picks up 'duplicate', which
+        # stays out of processing as before, only visible in the
+        # inventory.
+        extension_no_dot = extension.lstrip(".")
+        writer.add(lambda c: _insert_file(
+            c, relative_path, name, extension_no_dot, size, file_hash,
+            mtime, None, "duplicate"
+        ))
+        result.skipped += 1
+        known_hashes.add(file_hash)
+        known_paths[relative_path] = {
+            "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
+        }
+        return
+
+    allowed = is_extension_allowed(extension, config.extensions)
+    status = "discovered" if allowed else "skipped"
+    group_key = (
+        derive_group_key(relative_path, source_dir, config) if allowed else None
+    )
+    extension_no_dot = extension.lstrip(".")
+
+    if existing_row is None:
+        def op(c) -> None:
+            _insert_file(
+                c, relative_path, name, extension_no_dot, size, file_hash,
+                mtime, group_key, status
+            )
+            if not allowed:
+                record_event(
+                    c,
+                    "scan",
+                    "warning",
+                    "log.scan.extension_not_allowed",
+                    {"name": name, "extension": extension_no_dot},
+                    language=language,
+                    commit=False,
+                )
+
+        if allowed:
+            result.discovered += 1
+        else:
+            result.ignored += 1
+    else:
+        def op(c) -> None:
+            _update_file(
+                c, relative_path, name, extension_no_dot, size, file_hash,
+                mtime, group_key, status
+            )
+            record_event(
+                c, "scan", "warning", "log.scan.content_changed", {"name": name},
+                language=language, commit=False,
+            )
+
+        result.updated += 1
+
+    # Committed within a second (`BatchWriter`), not only at the end:
+    # the Execution screen's progress bar reads from a separate
+    # connection and must see the new rows while the scan runs.
+    writer.add(op)
+
+    known_hashes.add(file_hash)
+    known_paths[relative_path] = {
+        "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
+    }

@@ -17,6 +17,43 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.6] — 2026-10-31
+
+### El modo económico y el escaneo tampoco se bloquean; actualizaciones de seguridad
+
+#### Corregido
+
+- **El modo económico (paralelismo 1) todavía podía bloquearse en un
+  archivo de Google Drive.** Un archivo a la vez se ejecutaba en el propio
+  hilo de la etapa, que nada podía desbloquear. Ahora se ejecuta bajo la
+  misma protección que el camino paralelo, en un hilo que la etapa
+  abandona cuando el archivo supera su plazo. El OCR sigue ejecutándose en
+  el propio proceso del programa, como antes.
+- **El escaneo podía bloquearse en un archivo o una carpeta que Drive
+  nunca responde.** Leer el tamaño de cada archivo y calcular su hash
+  ahora tienen plazo. Un archivo que lo supera queda fuera de este
+  escaneo, con un aviso en el registro, y se revisa de nuevo en el
+  próximo. Tres seguidos detienen el escaneo con un mensaje claro. Una
+  carpeta cuyo listado nunca responde detiene el escaneo en lugar de
+  omitirse, porque una carpeta omitida parecería haber perdido sus
+  archivos.
+- **La verificación de actualización nunca lee una carpeta bloqueada como
+  "archivos eliminados".** Informa la carpeta de origen como no
+  disponible, igual que una unidad desconectada, y no ofrece borrar nada.
+
+#### Seguridad
+
+- **Pillow 13.0.0** (era 12.3.0), que corrige las 41 alertas de
+  Dependabot contra la 12.x, entre ellas desbordamientos de memoria al
+  decodificar imágenes JPEG, TIFF y FlashPix e inyección de argumentos en
+  la llamada a Ghostscript. El programa abre imágenes de terceros para el
+  OCR, así que esas alertas eran alcanzables.
+- **Starlette 1.3.1** (era 0.52.1), que corrige el robo de credenciales
+  NTLM mediante rutas UNC en `StaticFiles` en Windows, límites de
+  formulario que se ignoraban y la validación de la cabecera Host. Exigió
+  **FastAPI 0.162.0** (era 0.128.8), la primera serie que acepta
+  Starlette 1.x.
+
 ## [1.5.5] — 2026-10-31
 
 ### El procesamiento ya no se bloquea, sea cual sea el tamaño del acervo

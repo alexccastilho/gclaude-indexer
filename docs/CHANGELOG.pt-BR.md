@@ -17,6 +17,41 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.6] — 2026-10-31
+
+### O modo econômico e a varredura também não travam mais; atualizações de segurança
+
+#### Corrigido
+
+- **O modo econômico (paralelismo 1) ainda podia travar num arquivo do
+  Google Drive.** Um arquivo por vez rodava na própria thread da etapa,
+  que nada conseguia destravar. Agora ele roda sob a mesma proteção do
+  caminho paralelo, numa thread que a etapa abandona quando o arquivo
+  passa do prazo. O OCR continua rodando no próprio processo do programa,
+  como antes.
+- **A varredura podia travar num arquivo ou numa pasta que o Drive nunca
+  responde.** Ler o tamanho de cada arquivo e calcular o hash agora têm
+  prazo. Um arquivo que passa do prazo fica de fora desta varredura, com
+  um aviso no log, e é conferido de novo na próxima. Três seguidos
+  interrompem a varredura com uma mensagem clara. Uma pasta cuja
+  listagem nunca responde interrompe a varredura em vez de ser pulada,
+  porque uma pasta pulada pareceria ter tido os arquivos removidos.
+- **A verificação de atualização nunca lê uma pasta travada como
+  "arquivos removidos".** Ela informa a pasta de origem como
+  indisponível, igual a um drive desconectado, e não oferece apagar nada.
+
+#### Segurança
+
+- **Pillow 13.0.0** (era 12.3.0), que corrige os 41 alertas do Dependabot
+  contra a 12.x, entre eles estouros de memória ao decodificar imagens
+  JPEG, TIFF e FlashPix e injeção de argumento na chamada ao Ghostscript.
+  O programa abre imagens de terceiros para o OCR, então esses alertas
+  eram alcançáveis.
+- **Starlette 1.3.1** (era 0.52.1), que corrige o roubo de credencial NTLM
+  por caminho UNC no `StaticFiles` do Windows, limites de formulário que
+  eram ignorados e a validação do cabeçalho Host. Exigiu a **FastAPI
+  0.162.0** (era 0.128.8), a primeira série que aceita o Starlette 1.x.
+
 ## [1.5.5] — 2026-10-31
 
 ### O processamento não trava mais, seja qual for o tamanho do acervo

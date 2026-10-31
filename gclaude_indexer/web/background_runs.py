@@ -29,6 +29,7 @@ from pathlib import Path
 
 from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
+from ..i18n import DEFAULT_LANGUAGE, translate
 from ..run_control import StopSignal
 from ..conversion import convert
 from ..extraction import extract_pages
@@ -397,6 +398,8 @@ class TaskManager:
                     task.finished_ok = True
                 finally:
                     work_conn.close()
+            except scanning.SourceFolderStalled as exc:
+                task.error = translate(language or DEFAULT_LANGUAGE, "error.folder_stalled", folder=str(exc.folder))
             except Exception as exc:  # never brings down the server
                 task.error = str(exc)[:500]
             finally:

@@ -40,7 +40,8 @@ from .db import BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
-    ERROR, OK, TIMED_OUT, PoolStalledError, ResilientPool, StepStalledError, deadline_for_size,
+    ERROR, OK, TIMED_OUT, DaemonThreadExecutor, PoolStalledError, ResilientPool, StepStalledError,
+    deadline_for_size,
 )
 from .parallelism import workers_for
 from .file_types import category_of_extension
@@ -171,45 +172,13 @@ def _build_groups(conn) -> dict[str, list]:
 def _extract_sequential(
     conn, config: ProjectConfig, groups: dict[str, list], should_stop, result, language: str | None = None
 ) -> bool:
-    writer = BatchWriter(conn)
-    try:
-        interrupted = _extract_sequential_into(writer, conn, config, groups, should_stop, result, language)
-        writer.flush()
-    except BaseException:
-        writer.discard()
-        raise
-    return interrupted
+    """Economy mode and single files: one file at a time, in this process.
 
-
-def _extract_sequential_into(
-    writer: BatchWriter, conn, config: ProjectConfig, groups: dict[str, list], should_stop, result, language
-) -> bool:
-    interrupted = False
-
-    for group_files in groups.values():
-        if interrupted:
-            break
-
-        running_sheet = 0
-
-        for row in group_files:
-            if should_stop is not None and should_stop():
-                interrupted = True
-                break
-
-            if row["status"] == "extracted":
-                running_sheet += _page_row_count(conn, row["id"])
-                continue
-
-            try:
-                pages = _extract_file_pages(config, row)
-            except Exception as exc:
-                _queue_failure(writer, row, str(exc), result, language)
-                continue
-
-            running_sheet = _queue_pages(writer, config, row, pages, running_sheet, result)
-
-    return interrupted
+    1.5.6: the parallel path's machinery with one `DaemonThreadExecutor`
+    thread (see `conversion._convert_sequential`). One worker returns
+    results in submission order, so the per-group sheet numbering is the
+    same as walking the groups by hand."""
+    return _extract_guarded(conn, config, groups, 1, should_stop, result, language, DaemonThreadExecutor)
 
 
 def _queue_failure(writer: BatchWriter, row, error_message: str, result: ExtractionResult, language) -> None:
@@ -247,6 +216,16 @@ def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_s
 def _extract_in_parallel(
     conn, config: ProjectConfig, groups: dict[str, list], workers: int, should_stop, result,
     language: str | None = None,
+) -> bool:
+    return _extract_guarded(
+        conn, config, groups, workers, should_stop, result, language,
+        lambda: ProcessPoolExecutor(max_workers=workers),
+    )
+
+
+def _extract_guarded(
+    conn, config: ProjectConfig, groups: dict[str, list], workers: int, should_stop, result,
+    language: str | None, executor_factory: Callable[[], object],
 ) -> bool:
     """Page reading (PDF/tables — the CPU/IO-heavy part) runs in separate
     processes, one file per worker. Sheet numbering ("f. N") depends on file
@@ -334,7 +313,7 @@ def _extract_in_parallel(
 
     try:
         with ResilientPool(
-            lambda: ProcessPoolExecutor(max_workers=workers),
+            executor_factory,
             workers,
             deadline_for=lambda item: deadline_for_size(item[2]["size"]),
             should_stop=should_stop,

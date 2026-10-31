@@ -10,6 +10,39 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.6] — 2026-10-31
+
+### Economy mode and the scan cannot freeze either; security updates
+
+#### Fixed
+
+- **Economy mode (parallelism 1) could still freeze on a Google Drive
+  file.** One file at a time ran on the step's own thread, which nothing
+  could unfreeze. It now runs under the same guard as the parallel path,
+  on a thread the step abandons when the file goes past its time limit.
+  OCR still runs in the program's own process, as before.
+- **The scan could freeze on a file or a folder that Drive never
+  answers.** Reading each file's size and computing its hash now have a
+  time limit. A file past it is left out of this scan, with a warning in
+  the log, and checked again on the next one. Three in a row stop the
+  scan with a clear message. A folder whose listing never answers stops
+  the scan instead of being skipped, because a skipped folder would look
+  like its files had been removed.
+- **The update check never reads a frozen folder as "files removed".**
+  It reports the source folder as unavailable, the same as a disconnected
+  drive, and offers nothing to delete.
+
+#### Security
+
+- **Pillow 13.0.0** (was 12.3.0), fixing the 41 Dependabot alerts against
+  12.x, among them heap overflows when decoding JPEG, TIFF and FlashPix
+  images and argument injection into the Ghostscript call. The program
+  opens third-party images for OCR, so these were reachable.
+- **Starlette 1.3.1** (was 0.52.1), fixing NTLM credential theft through
+  UNC paths in `StaticFiles` on Windows, form limits that were silently
+  ignored, and Host header validation. It needed **FastAPI 0.162.0** (was
+  0.128.8), the first series that accepts Starlette 1.x.
+
 ## [1.5.5] — 2026-10-31
 
 ### Processing no longer freezes, whatever the size of the collection

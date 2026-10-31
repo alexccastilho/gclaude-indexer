@@ -781,7 +781,11 @@ So the first run on a new machine resolves itself with no manual step.
   one second or 200 files), replayed whole after `database is locked`.
   Worker processes run under `worker_pool.ResilientPool`: a per-file
   deadline (10 min + 2 min/MB), worker kill and pool rebuild on a stall,
-  never a blocking wait on exit.
+  never a blocking wait on exit. Economy mode (parallelism 1) runs under
+  the same pool with `DaemonThreadExecutor` (in-process, abandoned on a
+  stall) since 1.5.6. The scan guards each folder listing, `stat` and
+  hash with `call_with_deadline`; a folder that never answers stops the
+  scan (`SourceFolderStalled`) and is never read as removed files.
 - On opening a project, creates `project.lock` with the machine name, the
   user, and a timestamp, refreshed every minute while the app is open.
 - Finding another machine's lock less than 10 minutes old refuses to open

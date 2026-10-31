@@ -48,7 +48,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .file_types import is_extension_allowed
 from .paths import natural_sort_key
-from .scanning import compute_hash, derive_group_key, source_files
+from .scanning import SourceFolderStalled, compute_hash, derive_group_key, source_files
 from .windows_prep import sanitize_group_name, window_key, window_spans
 
 
@@ -97,7 +97,12 @@ def detect_changes(
         raise SourceFolderUnavailable(str(source_dir))
 
     output_dir = Path(config.output_folder).resolve()
-    paths = source_files(source_dir.resolve(), output_dir)
+    try:
+        paths = source_files(source_dir.resolve(), output_dir)
+    except SourceFolderStalled:
+        # A folder that never answered (1.5.6) is a folder we cannot see,
+        # and an unseen folder must never read as "its files were removed".
+        raise SourceFolderUnavailable(str(source_dir)) from None
 
     known = {
         row["relative_path"]: row

@@ -37,10 +37,12 @@ main process, not pickled into the executor's queue.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, wait
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from typing import Any
@@ -79,6 +81,62 @@ class PoolStalledError(RuntimeError):
     def __init__(self, item: Any):
         super().__init__("worker pool stalled")
         self.item = item
+
+
+class DaemonThreadExecutor:
+    """Runs each task on a daemon thread of this same process (1.5.6).
+
+    For the paths that never used worker processes: economy mode
+    (parallelism 1) and a single file. There a Drive hang froze the step's
+    own thread, which nothing can unfreeze. A thread cannot be killed
+    either, but it can be *abandoned*: the step stops waiting for it and
+    moves on, and being a daemon it never holds up the server's exit. Same
+    process, so OCR keeps running in-process exactly as before.
+
+    Concurrency is bounded by whoever submits (`ResilientPool` keeps at
+    most `workers` tasks in flight), so one thread per task is enough."""
+
+    def __init__(self, max_workers: int = 1, initializer: Callable[[], None] | None = None):
+        self._initializer = initializer
+
+    def submit(self, fn, *args, **kwargs) -> Future:
+        future: Future = Future()
+
+        def runner() -> None:
+            if not future.set_running_or_notify_cancel():
+                return
+            try:
+                if self._initializer is not None:
+                    self._initializer()
+                result = fn(*args, **kwargs)
+            except BaseException as exc:
+                future.set_exception(exc)
+            else:
+                future.set_result(result)
+
+        threading.Thread(target=runner, daemon=True, name="gclaude-guarded-call").start()
+        return future
+
+    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+        pass  # nothing to release: each thread ends with its task, or is abandoned
+
+
+class CallTimedOut(Exception):
+    """`call_with_deadline` gave up waiting; the call may still be running,
+    abandoned, on its daemon thread."""
+
+
+def call_with_deadline(fn: Callable[..., Any], *args, deadline: float) -> Any:
+    """`fn(*args)`, but never waits more than `deadline` seconds for it.
+
+    For the scan, whose single-file calls (`stat`, hash, a folder listing)
+    are exactly the ones a frozen Google Drive never answers. Exceptions
+    from `fn` propagate unchanged."""
+    future = DaemonThreadExecutor().submit(fn, *args)
+    try:
+        return future.result(timeout=deadline)
+    except FutureTimeoutError:
+        raise CallTimedOut(deadline) from None
 
 
 class StepStalledError(RuntimeError):
@@ -225,7 +283,14 @@ class ResilientPool:
                         stalls[index] = stalls.get(index, 0) + 1
                         if healthy and stalls[index] >= self._max_attempts:
                             yield Outcome(item, TIMED_OUT, self._deadline_for(item))
-                            continue
+                        else:
+                            # To the back of the queue: the others run first,
+                            # and their completing is what tells a stuck file
+                            # from a stuck drive — with one worker (economy
+                            # mode) the stuck file would otherwise always be
+                            # alone in flight, and look like the drive.
+                            queue.append((index, item))
+                        continue
                     retry.append((index, item))
                 queue.extendleft(reversed(retry))
                 self._restart_executor()
