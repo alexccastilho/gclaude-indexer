@@ -11,7 +11,8 @@
 Walks the source folder recursively, computes each file's hash, derives the
 group key according to the configuration, and writes the inventory to the
 `file` table. A file with no content change under the same path is only
-recounted (idempotency — acceptance criteria 1 and 2). A file whose content
+recounted (idempotency — acceptance criteria 1 and 2); when its size and
+modification time match the inventory, its bytes are not even read. A file whose content
 already exists under another path is written with `status = 'duplicate'`
 (not reprocessed, but present in the inventory — without this row, the
 progress bar never reached 100%). An extension outside the configured list
@@ -77,7 +78,7 @@ def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig
 
 
 def _list_known_files(conn: sqlite3.Connection) -> tuple[set[str], dict[str, sqlite3.Row]]:
-    rows = conn.execute("SELECT relative_path, sha256, mtime FROM file").fetchall()
+    rows = conn.execute("SELECT relative_path, size, sha256, mtime FROM file").fetchall()
     known_hashes = {row["sha256"] for row in rows}
     by_path = {row["relative_path"]: row for row in rows}
     return known_hashes, by_path
@@ -226,6 +227,7 @@ def scan(
     should_stop: Callable[[], bool] | None = None,
     language: str | None = None,
     files: list[Path] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> ScanResult:
     """`should_stop`: a no-argument function returning True to cooperatively
     interrupt between one file and the next (see `run_control.py`) —
@@ -237,7 +239,12 @@ def scan(
 
     `files`: the walk already made by the caller (`walk_source_files`, in
     order), so a large folder is not walked a second time before the
-    first file is hashed. `None` walks it here."""
+    first file is hashed. `None` walks it here.
+
+    `on_progress(files_done, bytes_done)`: called before each file and once
+    at the end, so the progress bar can follow a scan that adds no rows —
+    a second scan of an unchanged folder, which the row count saw as
+    "0 / N" from start to finish."""
     source_dir = Path(config.source_folder).resolve()
     output_dir = Path(config.output_folder).resolve()
 
@@ -248,9 +255,14 @@ def scan(
     if files is None:
         files = source_files(source_dir, output_dir)
 
+    bytes_done = 0
+
     for path in files:
         if should_stop is not None and should_stop():
             break
+
+        if on_progress is not None:
+            on_progress(result.total_found, bytes_done)
 
         result.total_found += 1
 
@@ -260,9 +272,25 @@ def scan(
         file_stat = path.stat()
         size = file_stat.st_size
         mtime = file_stat.st_mtime
-        file_hash = compute_hash(path)
+        bytes_done += size
 
         existing_row = known_paths.get(relative_path)
+
+        # Same size and time under the same path: unchanged, without
+        # reading the bytes — the rule `update_plan.detect_changes` already
+        # follows. Hashing every file on every scan made a second scan of a
+        # 145,000-file Google Drive folder reopen each file one by one, for
+        # hours, only to learn nothing had changed. Anything that moved
+        # falls through to the hash below, which has the last word.
+        if (
+            existing_row is not None
+            and existing_row["size"] == size
+            and existing_row["mtime"] == mtime
+        ):
+            result.skipped += 1
+            continue
+
+        file_hash = compute_hash(path)
 
         if existing_row is not None and existing_row["sha256"] == file_hash:
             result.skipped += 1
@@ -278,10 +306,13 @@ def scan(
             # rewrote without changing the content: the mismatch would be
             # permanent. §8.1 promises "da segunda em diante a detecção é
             # rápida"; this is what delivers it.
-            if existing_row["mtime"] != mtime:
+            # `size` too: Google Drive can answer `st_size = 16384` right
+            # after a file is written. A wrong size stored once would send
+            # the file down this hashing path on every scan.
+            if existing_row["mtime"] != mtime or existing_row["size"] != size:
                 conn.execute(
-                    "UPDATE file SET mtime = ? WHERE relative_path = ?",
-                    (mtime, relative_path),
+                    "UPDATE file SET mtime = ?, size = ? WHERE relative_path = ?",
+                    (mtime, size, relative_path),
                 )
                 conn.commit()
             continue
@@ -305,7 +336,7 @@ def scan(
             conn.commit()
             known_hashes.add(file_hash)
             known_paths[relative_path] = {
-                "relative_path": relative_path, "sha256": file_hash, "mtime": mtime,
+                "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
             }
             continue
 
@@ -351,10 +382,13 @@ def scan(
 
         known_hashes.add(file_hash)
         known_paths[relative_path] = {
-            "relative_path": relative_path, "sha256": file_hash, "mtime": mtime,
+            "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
         }
 
     conn.commit()
+
+    if on_progress is not None:
+        on_progress(result.total_found, bytes_done)
 
     record_event(
         conn,

@@ -17,6 +17,30 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.4] — 2026-10-31
+
+### A segunda varredura não relê todos os arquivos, e a barra anda
+
+#### Corrigido
+
+- **"Rodar tudo até a classificação" passava horas varrendo de novo uma
+  pasta já varrida.** O botão sempre começa pela varredura, e a varredura
+  recalculava o hash de cada arquivo só para descobrir que nada tinha
+  mudado — numa pasta de 145 mil arquivos no Google Drive, isso
+  significava reabrir os arquivos um por um. Agora, um arquivo com o mesmo
+  tamanho e a mesma data de modificação registrados no inventário é
+  considerado sem mudança, sem ler o conteúdo — a mesma regra que a
+  verificação de atualização já seguia. O que mudou continua sendo
+  confirmado pelo hash.
+- **A barra de progresso de uma segunda varredura ficava em "0 / N" até o
+  fim.** Ela contava linhas novas no inventário, e a varredura de uma
+  pasta sem mudanças não acrescenta nenhuma. Agora a barra acompanha os
+  arquivos que a varredura já conferiu.
+- **Um tamanho errado gravado para um arquivo fazia ele ser relido em toda
+  varredura.** O Google Drive pode informar 16.384 bytes logo depois de
+  gravar um arquivo; quando o conteúdo se mostra igual, o tamanho real
+  passa a ser gravado.
+
 ## [1.5.3] — 2026-10-30
 
 ### Os botões de execução respondem na hora em pastas grandes, com contador ao vivo

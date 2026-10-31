@@ -17,6 +17,30 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.4] — 2026-10-31
+
+### El segundo escaneo ya no vuelve a leer todos los archivos, y su barra avanza
+
+#### Corregido
+
+- **"Ejecutar todo hasta la clasificación" pasaba horas escaneando de
+  nuevo una carpeta ya escaneada.** El botón siempre empieza por el
+  escaneo, y el escaneo recalculaba el hash de cada archivo solo para
+  descubrir que nada había cambiado — en una carpeta de 145 000 archivos
+  en Google Drive, eso significaba reabrir los archivos uno por uno. Ahora,
+  un archivo con el mismo tamaño y la misma fecha de modificación
+  registrados en el inventario se considera sin cambios, sin leer su
+  contenido — la misma regla que ya seguía la verificación de
+  actualización. Lo que cambió se sigue confirmando por el hash.
+- **La barra de progreso de un segundo escaneo se quedaba en "0 / N" hasta
+  el final.** Contaba filas nuevas en el inventario, y el escaneo de una
+  carpeta sin cambios no agrega ninguna. Ahora la barra sigue los archivos
+  que el escaneo ya revisó.
+- **Un tamaño erróneo guardado para un archivo hacía que se volviera a leer
+  en cada escaneo.** Google Drive puede informar 16 384 bytes justo después
+  de grabar un archivo; cuando el contenido resulta igual, ahora se guarda
+  el tamaño real.
+
 ## [1.5.3] — 2026-10-30
 
 ### Los botones de ejecución responden al instante en carpetas grandes, con contador en vivo

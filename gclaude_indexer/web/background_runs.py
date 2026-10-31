@@ -44,8 +44,8 @@ STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
 # `files`: only the scan takes it — the walk the task already made while
 # counting (see `TaskManager.start_step`).
 _STEP_FUNCTIONS = {
-    "scan": lambda conn, config, should_stop, language, files=None: scan(
-        conn, config, should_stop=should_stop, language=language, files=files
+    "scan": lambda conn, config, should_stop, language, files=None, on_progress=None: scan(
+        conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress
     ),
     "conversion": lambda conn, config, should_stop, language: convert(
         conn, config, should_stop=should_stop, language=language
@@ -97,6 +97,12 @@ class StepTask:
     # shown on screen so a long walk never looks frozen.
     counting: bool = False
     counted: int = 0
+    # Scan only: files and bytes the scan itself has gone through, reported
+    # by `scanning.scan`. The bar used to count new rows in `file`, and a
+    # second scan of an unchanged folder adds none — it sat at "0 / N"
+    # for its whole run, looking frozen.
+    scanned: int = 0
+    scanned_bytes: int = 0
 
 
 def _scan_totals(
@@ -238,6 +244,9 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
             "total": 0, "contados": task.counted, "eta_segundos": None, "error": None,
         }
 
+    if task.step == "scan":
+        return _progress_dict(task, task.scanned, float(task.scanned_bytes))
+
     weight_done: float | None = None
     try:
         config, conn = load_project(output_folder)
@@ -255,7 +264,11 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
         # the next poll (2s later), instead of bringing down the screen.
         current = task.last_count if task.last_count is not None else task.baseline
 
-    done = max(0, min(current - task.baseline, task.total))
+    return _progress_dict(task, current - task.baseline, weight_done)
+
+
+def _progress_dict(task: StepTask, done: int, weight_done: float | None) -> dict:
+    done = max(0, min(done, task.total))
     total = max(task.total, 0)
     percent = 100 if total == 0 else int(done * 100 / total)
     if not task.running and task.finished_ok:
@@ -373,7 +386,12 @@ class TaskManager:
                     work_conn.commit()
                     run_id = cursor.lastrowid
 
-                    extra = {"files": files} if step == "scan" else {}
+                    extra = {}
+                    if step == "scan":
+                        def scanned(files_done: int, bytes_done: int) -> None:
+                            task.scanned, task.scanned_bytes = files_done, bytes_done
+
+                        extra = {"files": files, "on_progress": scanned}
                     _STEP_FUNCTIONS[step](work_conn, config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
@@ -426,8 +444,11 @@ class TaskManager:
                     read_config, on_found=found, should_stop=task.stop_signal.should_stop
                 )
                 task.total = len(files)
+                # `baseline` stays the row count: the run record stores how
+                # many files the scan *added*. The bar no longer uses it —
+                # it follows `scanned`, counted from zero.
                 task.baseline = read_conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
-                task.weight_baseline = _weight_done(read_conn, step) or 0.0
+                task.weight_baseline = 0.0
                 task.weight_total = float(pending_bytes)
             else:
                 task.total, task.baseline = _total_and_baseline(read_conn, step)

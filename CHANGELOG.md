@@ -10,6 +10,27 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.4] — 2026-10-31
+
+### A second scan no longer rereads every file, and its bar moves
+
+#### Fixed
+
+- **"Run everything up to classification" spent hours rescanning a folder
+  that had already been scanned.** The button always starts with the
+  scan, and the scan computed the hash of every file again just to learn
+  that nothing had changed — on a 145,000-file Google Drive folder, that
+  meant reopening each file one by one. A file whose size and
+  modification time match the inventory is now taken as unchanged
+  without reading its bytes, the same rule the update check already
+  followed. Anything that moved is still confirmed by its hash.
+- **The progress bar of a second scan stayed at "0 / N" until the end.**
+  It counted new rows in the inventory, and a scan of an unchanged folder
+  adds none. The bar now follows the files the scan has gone through.
+- **A wrong size stored for a file made it be reread on every scan.**
+  Google Drive can report 16,384 bytes right after a file is written;
+  when the content turns out to be the same, the real size is now saved.
+
 ## [1.5.3] — 2026-10-30
 
 ### The run buttons answer at once on large folders, with a live counter

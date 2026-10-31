@@ -258,8 +258,10 @@ trusted: every window of that group is discarded and an event records why.
 Discarding is the conservative direction, and the event makes the cost
 visible instead of silent.
 
-**1. Scan.** Walks the source folder recursively. Hashes every file (SHA-256).
-A file whose hash is already recorded is skipped as a duplicate (recorded
+**1. Scan.** Walks the source folder recursively. Hashes every file (SHA-256)
+— except one already in the inventory under the same path with the same
+size and modification time, which is counted as unchanged without reading
+its bytes (the same rule as the update check above). A file whose hash is already recorded is skipped as a duplicate (recorded
 with `status = 'duplicate'`, not silently dropped, so scan-progress counts
 stay consistent). Derives `group_key` per the project's `group_mode`:
 subfolder name, a regular expression over the file name, or everything in
