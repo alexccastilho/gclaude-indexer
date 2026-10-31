@@ -481,8 +481,45 @@ begin
       DepsChoicePage.Values[DEP_OLLAMA];
 end;
 
+// 1.5.8: stops the running copy of the program before the new files go in.
+// The server runs as pythonw.exe from the per-user venv, outside the app
+// folder, so Inno's own Restart Manager never sees it: it kept serving the
+// old code after an update, and opening the program again found the port
+// taken and showed the old version. Every process started from that venv
+// is the program (the server, its OCR and conversion workers), so all of
+// them go. A step in progress loses at most its last second of work; every
+// step is resumable and picks those files up again. Line comments on
+// purpose: a brace comment cannot hold the constants below.
+procedure StopRunningProgram();
+var
+  ResultCode: Integer;
+  VenvPattern: String;
+begin
+  VenvPattern := ExpandConstant('{localappdata}\GClaudeIndexer\venv\*');
+  // The venv's pythonw.exe is only a launcher: the server itself is the
+  // base Python it starts as a child (seen on a real machine: launcher
+  // from the venv, server from Python312, the server holding the port).
+  // So the whole tree under each launcher goes (taskkill /T), not just
+  // the processes whose executable is in the venv.
+  Exec(PowerShellPath(),
+       '-NoProfile -ExecutionPolicy Bypass -Command "' +
+       'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like ' +
+       QuoteForPowerShell(VenvPattern) + ' } | ForEach-Object { ' +
+       'taskkill.exe /F /T /PID $_.ProcessId 2>&1 | Out-Null }"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Windows releases the listening port and the files a moment after the
+  // process is gone.
+  Sleep(1500);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+    StopRunningProgram();
+    exit;
+  end;
+
   if CurStep <> ssPostInstall then
     exit;
 
@@ -630,6 +667,8 @@ var
 begin
   if CurUninstallStep <> usUninstall then
     exit;
+
+  StopRunningProgram();
 
   Script := ExpandConstant('{app}\uninstall.ps1');
   if not FileExists(Script) then

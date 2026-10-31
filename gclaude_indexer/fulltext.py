@@ -158,7 +158,8 @@ def _pdf_passages(pdf_path: Path, references: dict[int, str]) -> list[Passage]:
 def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> list[Passage]:
     """Every passage of one extracted file, from the same sources extraction
     reads — the OCR'd copy or the original PDF, or the converted text."""
-    output = Path(config.output_folder)
+    from .conversion import converted_artifact_path
+
     relative = row["relative_path"]
     references = {
         number: reference
@@ -168,15 +169,16 @@ def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> l
     }
     category = category_of_extension("." + row["extension"])
 
+    # 1.5.8: the intermediate may be in the local work folder or, for a
+    # project converted earlier, in the output folder (`workdir.py`).
+    intermediate = converted_artifact_path(
+        config.output_folder, relative, row["extension"], bool(row["needs_ocr"])
+    )
     if category == "pdf":
-        if row["needs_ocr"]:
-            pdf_path = output / "converted" / Path(relative).with_suffix(".pdf")
-        else:
-            pdf_path = Path(config.source_folder) / relative
+        pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative
         return _pdf_passages(pdf_path, references)
 
-    text_path = output / "converted" / Path(relative).with_suffix(".txt")
-    text = text_path.read_text(encoding="utf-8")
+    text = intermediate.read_text(encoding="utf-8")
     if not is_whole_document_file(row["name"]):
         # A single image: one page, its OCR text.
         body = text.strip()
@@ -198,6 +200,11 @@ def remove_file(conn: sqlite3.Connection, file_id: int) -> None:
 
 def index_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> int:
     passages = passages_for_file(conn, config, row)
+    _store_passages(conn, row, passages)
+    return len(passages)
+
+
+def _store_passages(conn: sqlite3.Connection, row, passages: list[Passage]) -> None:
     remove_file(conn, row["id"])
     conn.executemany(
         "INSERT INTO fulltext (text, file_id, locator, line) VALUES (?, ?, ?, ?)",
@@ -230,26 +237,43 @@ def index_pending(
     leaving the rest for the next call. A file whose text can no longer be
     read (converted copies cleared, original moved) is logged and skipped,
     never failing the step."""
+    from .db import BatchWriter
+
     started = time.monotonic()
     result = IndexingResult()
     rows = pending_files(conn)
-    for position, row in enumerate(rows):
-        if (should_stop is not None and should_stop()) or (
-            time_budget is not None and time.monotonic() - started > time_budget
-        ):
-            result.interrupted = True
-            result.pending = len(rows) - position
-            break
-        try:
-            result.passages += index_file(conn, config, row)
+    # 1.5.8: one commit per batch (`BatchWriter`, at least once a second),
+    # not per file — on a Drive-synced database each commit costs a round
+    # of journal I/O, which for 100 thousand small files was most of the
+    # step. Reading the text stays outside the batch, so a file that cannot
+    # be read is reported without touching the others.
+    writer = BatchWriter(conn)
+    try:
+        for position, row in enumerate(rows):
+            if (should_stop is not None and should_stop()) or (
+                time_budget is not None and time.monotonic() - started > time_budget
+            ):
+                result.interrupted = True
+                result.pending = len(rows) - position
+                break
+            try:
+                passages = passages_for_file(conn, config, row)
+            except Exception as exc:
+                error = str(exc)[:300]
+                writer.add(lambda c, name=row["name"], error=error: record_event(
+                    c, "extraction", "warning", "log.fulltext.file_failed",
+                    {"name": name, "error": error}, language=language, commit=False,
+                ))
+                writer.flush_if_due()
+                continue
+            writer.add(lambda c, row=row, passages=passages: _store_passages(c, row, passages))
+            result.passages += len(passages)
             result.files += 1
-            conn.commit()
-        except Exception as exc:
-            conn.rollback()
-            record_event(
-                conn, "extraction", "warning", "log.fulltext.file_failed",
-                {"name": row["name"], "error": str(exc)[:300]}, language=language,
-            )
+            writer.flush_if_due()
+        writer.flush()
+    except BaseException:
+        writer.discard()
+        raise
     if result.files or result.interrupted:
         record_event(
             conn, "extraction", "info",

@@ -30,7 +30,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import no_window, tools
+from . import no_window, tools, workdir
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -39,12 +39,14 @@ from .worker_pool import (
     ERROR, OK, TIMED_OUT, DaemonThreadExecutor, PoolStalledError, ResilientPool, StepStalledError,
     deadline_for_size,
 )
-from .parallelism import _physical_cores, workers_for
+from .parallelism import _physical_cores, io_workers_for, workers_for
 from .file_types import category_of_extension
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
 MIN_AVG_CHARS_PER_PAGE = 100
+# Categories whose conversion may run OCR — the CPU-bound queue (1.5.8).
+OCR_CATEGORIES = frozenset({"pdf", "imagens"})
 ERROR_MESSAGE_CHAR_LIMIT = 500
 
 
@@ -70,9 +72,9 @@ class OcrError(ConversionError):
 
 
 def _destination_path(output_dir: Path, subfolder: str, relative_path: str, new_extension: str) -> Path:
-    destination = output_dir / subfolder / Path(relative_path).with_suffix(new_extension)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    return destination
+    # 1.5.8: in the per-machine work folder, never in the (Drive-synced)
+    # output folder — see `workdir.py`.
+    return workdir.destination(output_dir, subfolder, relative_path, new_extension)
 
 
 def converted_artifact_path(
@@ -100,12 +102,11 @@ def converted_artifact_path(
     have taken away.
     """
     category = category_of_extension("." + extension.lstrip("."))
-    output_dir = Path(output_folder)
     if category == "pdf":
         if not needs_ocr:
             return None
-        return output_dir / "converted" / Path(relative_path).with_suffix(".pdf")
-    return output_dir / "converted" / Path(relative_path).with_suffix(".txt")
+        return workdir.intermediate_path(output_folder, "converted", relative_path, ".pdf")
+    return workdir.intermediate_path(output_folder, "converted", relative_path, ".txt")
 
 
 def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
@@ -490,7 +491,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
                     ))
 
         if page_count > config.pages_per_block:
-            blocks_dir = output_dir / "blocks" / Path(relative_path).parent
+            blocks_dir = workdir.work_folder(output_dir) / "blocks" / Path(relative_path).parent
             blocks = slice_pdf(path_to_slice, blocks_dir, Path(relative_path).stem, config.pages_per_block)
             sliced = True
             blocks_generated = len(blocks)
@@ -782,31 +783,17 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
     return requeued
 
 
-def convert(
-    conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
-) -> ConversionResult:
-    # Covers the sequential path, which runs `pytesseract` (and therefore
-    # `tesseract.exe`) inside this very process. The parallel path installs
-    # it per worker instead, through the pool's initializer.
-    no_window.install()
-
-    result = ConversionResult()
-
-    requeue_ocr_failures(conn, language=language)
-
-    rows = conn.execute(
-        "SELECT * FROM file WHERE status = 'discovered' ORDER BY relative_path"
-    ).fetchall()
-
+def _convert_heavy(conn, config: ProjectConfig, heavy, should_stop, result, language) -> None:
+    """The files that may need OCR, one per physical core."""
     workers = workers_for(config.parallelism)
     # With 0 or 1 file there's nothing to parallelize — spawning processes
     # would cost more than processing directly (Windows' `spawn` has a real
     # startup cost), so the sequential path is used even with an
     # "automatic"/"maximum" mode configured.
-    if workers <= 1 or len(rows) <= 1:
+    if workers <= 1 or len(heavy) <= 1:
         # With no pool of processes competing for the same cores, `--jobs 1`
         # avoids the whole problem below at no cost (it's a single file).
-        _convert_sequential(conn, config, rows, 1, should_stop, result, language=language)
+        _convert_sequential(conn, config, heavy, 1, should_stop, result, language=language)
     else:
         # Each pool worker runs its own `ocrmypdf --jobs N`. The two axes of
         # parallelism (pool processes x ocrmypdf threads) multiply: using the
@@ -829,7 +816,42 @@ def convert(
         # 2x oversubscription, the usual pattern for a mixed CPU/IO workload,
         # far from the 64 tesseracts of the original behavior.
         ocrmypdf_jobs = max(2, _physical_cores() // workers)
-        _convert_in_parallel(conn, config, rows, workers, ocrmypdf_jobs, should_stop, result, language=language)
+        _convert_in_parallel(conn, config, heavy, workers, ocrmypdf_jobs, should_stop, result, language=language)
+
+
+def convert(
+    conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
+) -> ConversionResult:
+    # Covers the sequential path, which runs `pytesseract` (and therefore
+    # `tesseract.exe`) inside this very process. The parallel path installs
+    # it per worker instead, through the pool's initializer.
+    no_window.install()
+
+    result = ConversionResult()
+    workdir.ensure_work_folder(config.output_folder)
+
+    requeue_ocr_failures(conn, language=language)
+
+    rows = conn.execute(
+        "SELECT * FROM file WHERE status = 'discovered' ORDER BY relative_path"
+    ).fetchall()
+
+    # 1.5.8: two queues. OCR (PDFs, images) is CPU-bound and keeps the
+    # per-core pool below; everything else waits on the disk and gets a far
+    # larger pool (`parallelism.io_workers_for`). Light files first: they
+    # are the bulk of a large collection and show progress at once.
+    heavy = [row for row in rows if category_of_extension("." + row["extension"]) in OCR_CATEGORIES]
+    light = [row for row in rows if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES]
+
+    if light:
+        light_workers = io_workers_for(config.parallelism)
+        if light_workers <= 1 or len(light) <= 1:
+            _convert_sequential(conn, config, light, 1, should_stop, result, language=language)
+        else:
+            _convert_in_parallel(conn, config, light, light_workers, 1, should_stop, result, language=language)
+
+    if heavy and not (should_stop is not None and should_stop()):
+        _convert_heavy(conn, config, heavy, should_stop, result, language)
 
     record_event(
         conn,

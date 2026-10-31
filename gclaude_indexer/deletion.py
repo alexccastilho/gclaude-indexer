@@ -21,6 +21,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import workdir
 from .catalog import CatalogEntry, remove_project
 from .managed_block import BACKUP_SUFFIX, without_managed_block
 
@@ -64,6 +65,10 @@ def delete_project(entry: CatalogEntry, delete_files: bool) -> DeletionResult:
         path = folder / name
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path, ignore_errors=True)
+    # 1.5.8: the intermediates this machine kept for the project.
+    local = workdir.work_folder(folder)
+    if local.is_dir() and not local.is_symlink():
+        shutil.rmtree(local, ignore_errors=True)
     for pattern in GENERATED_FILES:
         for path in folder.glob(pattern):
             if path.is_file():

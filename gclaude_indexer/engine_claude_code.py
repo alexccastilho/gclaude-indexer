@@ -56,7 +56,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .i18n import _REFERENCE_LANGUAGE
 from .import_items import RAW_ITEMS_FILE_NAME, ImportResult, import_and_consolidate
-from .windows_prep import CLAUDE_MD_FILENAME, generate_claude_md
+from .windows_prep import CLAUDE_MD_FILENAME, generate_claude_md, write_missing_window_files
 
 # Every phrase here is documented as an accepted trigger in `CLAUDE.md`
 # regardless of the language it was generated in (see module docstring) —
@@ -96,6 +96,9 @@ def prepare(conn: sqlite3.Connection, config: ProjectConfig, language: str) -> C
     `windows_prep.py`) and returns the command to copy plus the current
     state of the windows."""
     claude_md_path = generate_claude_md(config, language)
+    # 1.5.8: the windows step writes `windows/*.txt` only when this engine
+    # is the configured one; an engine switched afterwards finds them here.
+    write_missing_window_files(conn, config)
     return ClaudeCodeStatus(
         command=command_for_language(language),
         claude_md_path=claude_md_path,

@@ -10,6 +10,49 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.8] — 2026-10-31
+
+### Much faster processing on Google Drive; updating stops the old version
+
+#### Changed
+
+- **Intermediate files are kept on the local disk.** The OCR'd PDFs, each
+  file's extracted text and the PDF slices (`converted/`, `blocks/`) now go
+  to `%LOCALAPPDATA%\GClaudeIndexer\work\`, not to the output folder. In
+  Google Drive each new small file took ~800 ms to create, against 0.3 ms
+  locally, and the conversion of a large collection was waiting on Drive
+  with the CPU idle. Nothing a project is used for needs these files
+  afterwards: the pages and the full-text search are in `project.db`, the
+  indexes and the windows stay in the output folder. Projects converted
+  before keep reading the copies they already have there. On another
+  computer, a file whose copy is missing goes back to conversion instead of
+  failing.
+- **Conversion runs two queues.** Files that need no OCR (HTML, text, DOCX,
+  e-mail) spend their time waiting on the disk, so they get a much larger
+  pool of processes (up to 4 per physical core in "maximum" mode). OCR keeps
+  its per-core pool. Measured on 1,352 HTML files from Drive: ~5.7 files/s
+  before, ~234 files/s now.
+- **Windows step:** the window `.txt` files are written only for the Claude
+  Code engine, the only one that reads them, in parallel, and any missing
+  ones are written when that engine is chosen later. One commit per group
+  instead of one per window.
+- **Full-text search indexing** commits in batches instead of once per file.
+
+#### Fixed
+
+- **Classification reread the whole group for every window.** On a group
+  of 144 thousand pages that was about half a gigabyte read per window,
+  for some ten thousand windows. Each window now loads only its own pages,
+  and the group column is indexed. This affects the rules, local and review
+  engines alike.
+- **Installing an update left the old version running.** Opening the
+  program again found the old server still on the port and showed the old
+  version. The installer (and the uninstaller) now stops the program's
+  processes first, including the server that the virtual environment's
+  launcher starts as a child. Opening the program also replaces a server
+  of another version still running, and the shortcut waits for the server
+  to answer before opening the browser.
+
 ## [1.5.7] — 2026-10-31
 
 ### OCR no longer fails on PDFs with unusual colors, and failed OCR is retried

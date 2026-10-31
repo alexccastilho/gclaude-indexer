@@ -17,6 +17,7 @@ position) is not rewritten — resumable without duplicating work.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -148,6 +149,34 @@ def _write_window_file(
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+# 1.5.8: window files are written to the output folder, normally inside
+# Google Drive, which creates files slowly one at a time but several at
+# once (measured: ~1.4 files/s alone, ~6.7 with 32 at once).
+WINDOW_FILE_WRITERS = 16
+
+
+def window_files_needed(config: ProjectConfig) -> bool:
+    """Only the Claude Code engine reads `windows/*.txt`; the rules and
+    local engines read the pages from the database (`load_window_pages`).
+    Writing ten thousand files into Drive for an engine that never opens
+    them was the slowest part of the step (1.5.8). `engine_claude_code.
+    prepare` writes whatever is missing when that engine is chosen later."""
+    return config.classification_engine == "claude_code"
+
+
+def _write_files_in_parallel(jobs: list[tuple]) -> None:
+    if not jobs:
+        return
+    if len(jobs) == 1:
+        _write_window_file(*jobs[0])
+        return
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=min(WINDOW_FILE_WRITERS, len(jobs))) as pool:
+        for future in [pool.submit(_write_window_file, *job) for job in jobs]:
+            future.result()
+
+
 def prepare_windows(
     conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> WindowsResult:
@@ -160,6 +189,7 @@ def prepare_windows(
 
     windows_dir = Path(config.output_folder) / "windows"
     window_size = config.pages_per_window
+    write_files = window_files_needed(config)
 
     result = WindowsResult()
 
@@ -173,6 +203,9 @@ def prepare_windows(
             continue
 
         base_name = sanitize_group_name(group_key)
+        new_rows: list[tuple] = []
+        file_jobs: list[tuple] = []
+        stale_files: list[Path] = []
 
         for start, end in window_spans(page_count, window_size, config.overlap):
             page_block = pages[start:end]
@@ -184,22 +217,40 @@ def prepare_windows(
             if row_exists:
                 result.existing += 1
             else:
-                conn.execute(
-                    """
-                    INSERT INTO window (key, group_key, start_ref, end_ref, status)
-                    VALUES (?, ?, ?, ?, 'pending')
-                    """,
-                    (key, group_key, start_ref, end_ref),
-                )
-                conn.commit()
+                new_rows.append((key, group_key, start_ref, end_ref))
                 result.created += 1
 
             file_path = windows_dir / f"{base_name}_j{start + 1:04d}-{end:04d}.txt"
-            # Write unconditionally when this call creates the row: if unlink ever failed
-            # during invalidation, the old text must not survive. For existing windows,
-            # keep the shortcut: skip writing if the file exists and was not corrupted.
-            if not row_exists or not file_path.exists():
-                _write_window_file(file_path, key, group_key, start_ref, end_ref, page_block, start + 1)
+            if write_files:
+                # Write unconditionally when this call creates the row: if unlink ever failed
+                # during invalidation, the old text must not survive. For existing windows,
+                # keep the shortcut: skip writing if the file exists and was not corrupted.
+                if not row_exists or not file_path.exists():
+                    file_jobs.append((file_path, key, group_key, start_ref, end_ref, page_block, start + 1))
+            elif not row_exists:
+                # Not written, but a leftover from an unlink that failed during
+                # an update must not survive to be read as this window later.
+                stale_files.append(file_path)
+
+        # One commit per group, not per window (1.5.8).
+        if new_rows:
+            conn.executemany(
+                """
+                INSERT INTO window (key, group_key, start_ref, end_ref, status)
+                VALUES (?, ?, ?, ?, 'pending')
+                """,
+                new_rows,
+            )
+            conn.commit()
+
+        _write_files_in_parallel(file_jobs)
+        for path in stale_files:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass  # same tolerance as invalidation's unlink
 
     record_event(
         conn,
@@ -211,6 +262,42 @@ def prepare_windows(
     )
 
     return result
+
+
+def write_missing_window_files(conn, config: ProjectConfig) -> int:
+    """Writes the `.txt` of every pending window that has none (1.5.8):
+    the windows step only writes them for the Claude Code engine, and the
+    engine may be chosen after that step ran. Returns how many were written."""
+    windows_dir = Path(config.output_folder) / "windows"
+    # One listing of the folder instead of one `exists()` per window: this
+    # runs whenever the Execution screen opens with the Claude Code engine,
+    # and the folder is in Drive.
+    try:
+        present = {entry.name for entry in os.scandir(windows_dir)}
+    except OSError:
+        present = set()
+    jobs: list[tuple] = []
+    pages_by_group: dict[str, list] = {}
+    for window in conn.execute(
+        "SELECT key, group_key, start_ref, end_ref FROM window WHERE status = 'pending' ORDER BY id"
+    ).fetchall():
+        match = re.search(r"::(\d+)-(\d+)$", window["key"])
+        if not match:
+            continue
+        start, end = int(match.group(1)) - 1, int(match.group(2))
+        base_name = sanitize_group_name(window["group_key"])
+        file_path = windows_dir / f"{base_name}_j{start + 1:04d}-{end:04d}.txt"
+        if file_path.name in present:
+            continue
+        if window["group_key"] not in pages_by_group:
+            pages_by_group[window["group_key"]] = pages_for_group(conn, window["group_key"])
+        page_block = pages_by_group[window["group_key"]][start:end]
+        if not page_block:
+            continue
+        jobs.append((file_path, window["key"], window["group_key"], window["start_ref"],
+                     window["end_ref"], page_block, start + 1))
+    _write_files_in_parallel(jobs)
+    return len(jobs)
 
 
 def generate_claude_md(config: ProjectConfig, language: str) -> Path:

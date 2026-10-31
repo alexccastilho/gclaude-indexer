@@ -54,3 +54,24 @@ def workers_for(mode: str) -> int:
     # automatic (and any unknown value): leaves one core free so the UI
     # keeps responding while the collection is processed.
     return max(1, physical - 1)
+
+
+# 1.5.8: files that need no OCR (HTML, text, DOCX, e-mail...) spend almost
+# all their time waiting on the disk, not on the CPU — measured on a Google
+# Drive folder: ~200 ms to read a small HTML file, ~30 ms to convert it.
+# One worker per core leaves the cores idle; reads from Drive scale with
+# concurrency (8 at once: ~9 files/s, 32 at once: ~38 files/s). Processes,
+# not threads: the conversion itself is pure Python, and at those rates it
+# fills a core, which threads would serialize on the GIL. ~70 MB each, so
+# 32 of them stay well inside any machine that can run OCR.
+IO_WORKERS_CAP = 32
+
+
+def io_workers_for(mode: str) -> int:
+    """Workers for the I/O-bound conversions (no OCR)."""
+    if mode == "economy":
+        return 1
+    physical = max(1, _physical_cores())
+    if mode == "maximum":
+        return min(IO_WORKERS_CAP, physical * 4)
+    return min(IO_WORKERS_CAP // 2, max(2, physical * 2))

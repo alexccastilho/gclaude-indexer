@@ -8,6 +8,7 @@ import fitz
 import pytest
 from PIL import Image, ImageDraw
 
+from gclaude_indexer import workdir
 from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, slice_pdf
 from gclaude_indexer.db import connect, init_schema
@@ -93,7 +94,7 @@ def test_pdf_nativo_nao_passa_por_ocr(tmp_path):
 
     # original intocado, nenhuma cópia OCR criada para ele
     assert _hash_arquivo(origem / "peca_nativa.pdf") == hash_antes
-    assert not (saida / "converted" / "peca_nativa.pdf").exists()
+    assert not (workdir.work_folder(saida) / "converted" / "peca_nativa.pdf").exists()
 
     conn.close()
 
@@ -116,7 +117,7 @@ def test_pdf_escaneado_recebe_ocr(tmp_path):
     assert linha["needs_ocr"] == 1
     assert linha["page_count"] == 1
 
-    caminho_ocr = saida / "converted" / "peca_escaneada.pdf"
+    caminho_ocr = workdir.work_folder(saida) / "converted" / "peca_escaneada.pdf"
     assert caminho_ocr.exists()
 
     # a cópia com OCR agora tem camada de texto
@@ -167,7 +168,7 @@ def test_pdf_misto_recebe_ocr_so_na_pagina_escaneada(tmp_path):
     assert linha["needs_ocr"] == 1
     assert linha["page_count"] == 2
 
-    documento_ocr = fitz.open(saida / "converted" / "ata_mista.pdf")
+    documento_ocr = fitz.open(workdir.work_folder(saida) / "converted" / "ata_mista.pdf")
     texto_nativo = documento_ocr[0].get_text()
     texto_escaneado = documento_ocr[1].get_text()
     documento_ocr.close()
@@ -314,7 +315,7 @@ def test_pdf_grande_e_fatiado_durante_a_conversao(tmp_path):
     assert resultado.sliced == 1
     assert resultado.blocks_generated == 3
 
-    pasta_blocos = saida / "blocks"
+    pasta_blocos = workdir.work_folder(saida) / "blocks"
     nomes = sorted(p.name for p in pasta_blocos.glob("*.pdf"))
     assert nomes == ["processo_longo_p1-2.pdf", "processo_longo_p3-4.pdf", "processo_longo_p5-5.pdf"]
 
@@ -342,7 +343,7 @@ def test_imagem_e_convertida_via_ocr(tmp_path):
     assert linha["needs_ocr"] == 1
     assert linha["page_count"] == 1
 
-    destino_txt = saida / "converted" / "foto.txt"
+    destino_txt = workdir.work_folder(saida) / "converted" / "foto.txt"
     assert destino_txt.exists()
 
     conn.close()
@@ -369,7 +370,7 @@ def test_docx_e_extraido_sem_ocr(tmp_path):
     assert linha["status"] == "converted"
     assert linha["needs_ocr"] == 0
 
-    destino_txt = saida / "converted" / "memorando.txt"
+    destino_txt = workdir.work_folder(saida) / "converted" / "memorando.txt"
     assert destino_txt.exists()
     assert "Texto de teste do documento DOCX." in destino_txt.read_text(encoding="utf-8")
 

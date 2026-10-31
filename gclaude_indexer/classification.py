@@ -94,9 +94,78 @@ def reference_number(reference: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def load_window_pages(conn: sqlite3.Connection, window_row: sqlite3.Row) -> list[WindowPage]:
+class WindowPageLoader:
+    """Loads the pages of window after window without rereading the group.
+
+    `load_window_pages` alone rebuilds the whole group — every page, text
+    included, naturally sorted — to slice out the 16 pages of one window.
+    Classifying all of a group's windows that way reads the group once per
+    window: for a group of 144 thousand pages (a real collection, 1.5.8)
+    that is ~10 thousand reads of half a gigabyte each. This keeps only the
+    group's page ids in order (a few MB) and fetches each window's pages by
+    id. Same order as `windows_prep.pages_for_group`, so the same slice.
+
+    Valid while the pages do not change — the length of one classification
+    run, which only ever writes windows and items."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+        # Every group seen so far: windows come in id order, and an update
+        # appends a group's new windows after other groups' ones.
+        self._ids: dict[str, list[int]] = {}
+
+    def _ordered_ids(self, group_key: str) -> list[int]:
+        if group_key not in self._ids:
+            from .paths import natural_sort_key
+
+            rows = self._conn.execute(
+                """
+                SELECT page.id, page.number, file.relative_path
+                FROM page JOIN file ON file.id = page.file_id
+                WHERE file.group_key = ?
+                """,
+                (group_key,),
+            ).fetchall()
+            rows.sort(key=lambda row: (natural_sort_key(row[2]), row[1]))
+            self._ids[group_key] = [row[0] for row in rows]
+        return self._ids[group_key]
+
+    def load(self, window_row: sqlite3.Row) -> list[WindowPage]:
+        start, end = _key_positions(window_row["key"])
+        ids = self._ordered_ids(window_row["group_key"])[start - 1 : end]
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        by_id = {
+            row["id"]: row
+            for row in self._conn.execute(
+                f"SELECT page.*, file.name AS file_name FROM page"
+                f" JOIN file ON file.id = page.file_id WHERE page.id IN ({placeholders})",
+                ids,
+            )
+        }
+        return [
+            WindowPage(
+                reference=by_id[page_id]["reference"],
+                file_name=by_id[page_id]["file_name"],
+                text=by_id[page_id]["text"],
+                has_table=bool(by_id[page_id]["has_table"]),
+                image_count=by_id[page_id]["image_count"],
+                order=start + offset,
+            )
+            for offset, page_id in enumerate(ids)
+        ]
+
+
+def load_window_pages(
+    conn: sqlite3.Connection, window_row: sqlite3.Row, loader: WindowPageLoader | None = None
+) -> list[WindowPage]:
     """Rebuilds, from the database, exactly the pages that make up a
-    window — the same slice used to write the `.txt` in phase 4."""
+    window — the same slice used to write the `.txt` in phase 4.
+
+    Pass a `WindowPageLoader` when loading many windows in a row (1.5.8)."""
+    if loader is not None:
+        return loader.load(window_row)
     from .windows_prep import pages_for_group  # late import avoids a cycle
 
     start, end = _key_positions(window_row["key"])

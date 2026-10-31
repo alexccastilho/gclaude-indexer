@@ -50,3 +50,13 @@ def _test_client_host():
     yield
     if added:
         app_module.ALLOWED_HOSTS.discard("testserver")
+
+
+@pytest.fixture(autouse=True)
+def _local_work_folder(tmp_path_factory, monkeypatch):
+    r"""Since 1.5.8 conversion writes its intermediates under the per-machine
+    folder (`workdir.py`). Each test gets its own, so the suite never fills
+    the real `%LOCALAPPDATA%\GClaudeIndexer\work` nor sees another test's
+    files. Its own variable, not the per-machine folder's, which other tests
+    set to check where that folder resolves."""
+    monkeypatch.setenv("GCLAUDE_INDEXER_WORK_FOLDER", str(tmp_path_factory.mktemp("work")))

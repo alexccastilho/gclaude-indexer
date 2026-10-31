@@ -36,6 +36,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 from .config import ProjectConfig
+from .conversion import converted_artifact_path
 from .db import BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
@@ -56,6 +57,11 @@ class ExtractionResult:
     files_processed: int = 0
     pages_written: int = 0
     failed: int = 0
+    reconversion: int = 0  # 1.5.8: intermediate missing, sent back to conversion
+
+
+class IntermediateMissing(Exception):
+    """The converted copy a file is read from is not on this computer."""
 
 
 def _read_pdf_pages(pdf_path: Path, limit: int) -> list[tuple[str, int, bool]]:
@@ -92,17 +98,21 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
     limit = config.chars_per_page
     category = category_of_extension("." + row["extension"])
     relative_path = row["relative_path"]
-    output_dir = Path(config.output_folder)
+
+    # 1.5.8: the intermediate lives on the machine that converted the file
+    # (`workdir.py`). Missing here — another computer, or the folder was
+    # cleaned — is not a broken file: it goes back to conversion.
+    intermediate = converted_artifact_path(
+        config.output_folder, relative_path, row["extension"], bool(row["needs_ocr"])
+    )
+    if intermediate is not None and not intermediate.exists():
+        raise IntermediateMissing(relative_path)
 
     if category == "pdf":
-        if row["needs_ocr"]:
-            pdf_path = output_dir / "converted" / Path(relative_path).with_suffix(".pdf")
-        else:
-            pdf_path = Path(config.source_folder) / relative_path
+        pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative_path
         return _read_pdf_pages(pdf_path, limit)
 
-    txt_path = output_dir / "converted" / Path(relative_path).with_suffix(".txt")
-    text = txt_path.read_text(encoding="utf-8")[:limit]
+    text = intermediate.read_text(encoding="utf-8")[:limit]
 
     if category == "imagens":
         return [(text, 1, False)]
@@ -198,6 +208,24 @@ def _queue_failure(writer: BatchWriter, row, error_message: str, result: Extract
     result.failed += 1
 
 
+def _queue_reconversion(writer: BatchWriter, row, result: ExtractionResult, language) -> None:
+    """The file's intermediate is not on this computer: back to
+    'discovered', so the next conversion makes it again (1.5.8)."""
+
+    def op(conn) -> None:
+        conn.execute(
+            "UPDATE file SET status = 'discovered', page_count = NULL, error = NULL WHERE id = ?",
+            (row["id"],),
+        )
+        record_event(
+            conn, "extraction", "warning", "log.extraction.intermediate_missing",
+            {"name": row["name"]}, language=language, commit=False,
+        )
+
+    writer.add(op)
+    result.reconversion += 1
+
+
 def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_sheet: int, result) -> int:
     """Writes a file's pages through the batch and returns the group's next
     sheet. The sheet is computed here, not read back from the database, so
@@ -270,7 +298,9 @@ def _extract_guarded(
                 return  # not here yet — retry when the next result arrives
 
             kind, value = item
-            if kind == "error":
+            if kind == "error" and isinstance(value, IntermediateMissing):
+                _queue_reconversion(writer, row, result, language)
+            elif kind == "error":
                 _queue_failure(writer, row, str(value), result, language)
             else:
                 current_sheet[group_key] = _queue_pages(

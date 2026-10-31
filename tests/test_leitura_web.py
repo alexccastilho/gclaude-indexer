@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from gclaude_indexer import workdir
 from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
@@ -257,7 +258,7 @@ def _converter(conn, config, saida, nome_txt):
     scan(conn, config)
     resultado = convert(conn, config)
     assert resultado.failed == 0
-    return (saida / "converted" / nome_txt).read_text(encoding="utf-8")
+    return (workdir.work_folder(saida) / "converted" / nome_txt).read_text(encoding="utf-8")
 
 
 def test_htm_do_planalto_e_convertido_em_texto_limpo(tmp_path):

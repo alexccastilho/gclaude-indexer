@@ -17,6 +17,51 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.8] — 2026-10-31
+
+### Procesamiento mucho más rápido en Google Drive; la actualización detiene la versión anterior
+
+#### Cambiado
+
+- **Los archivos intermedios quedan en el disco local.** Los PDF con OCR,
+  el texto extraído de cada archivo y los fragmentos de PDF (`converted/`,
+  `blocks/`) ahora van a `%LOCALAPPDATA%\GClaudeIndexer\work\`, no a la
+  carpeta de salida. En Google Drive cada archivo pequeño nuevo tardaba
+  ~800 ms en crearse, frente a 0,3 ms en el disco local, y la conversión de
+  un acervo grande esperaba a Drive con el procesador inactivo. Nada de lo
+  que se usa del proyecto después necesita estos archivos: las páginas y la
+  búsqueda de texto completo están en `project.db`, y los índices y las
+  ventanas siguen en la carpeta de salida. Los proyectos convertidos antes
+  siguen leyendo las copias que ya están allí. En otro equipo, un archivo
+  cuya copia no existe vuelve a la conversión en lugar de fallar.
+- **La conversión usa dos colas.** Los archivos que no necesitan OCR (HTML,
+  texto, DOCX, correo) pasan el tiempo esperando el disco, así que reciben
+  un grupo mucho mayor de procesos (hasta 4 por núcleo físico en el modo
+  "máximo"). El OCR mantiene un proceso por núcleo. Medido en 1.352
+  archivos HTML de Drive: ~5,7 archivos/s antes, ~234 archivos/s ahora.
+- **Etapa de ventanas:** los `.txt` de las ventanas solo se escriben para
+  el motor Claude Code, el único que los lee, en paralelo; los que falten se
+  escriben cuando ese motor se elija después. Un commit por grupo en lugar
+  de uno por ventana.
+- **La indexación de la búsqueda de texto completo** graba por lotes en
+  lugar de un commit por archivo.
+
+#### Corregido
+
+- **La clasificación releía el grupo entero en cada ventana.** En un grupo
+  de 144 mil páginas eso era cerca de medio gigabyte leído por ventana,
+  para unas diez mil ventanas. Ahora cada ventana carga solo sus propias
+  páginas, y la columna del grupo tiene índice. Vale para los motores de
+  reglas, local y de revisión.
+- **Instalar una actualización dejaba la versión anterior en ejecución.**
+  Al abrir el programa de nuevo, el servidor anterior aún ocupaba el puerto
+  y aparecía la versión anterior. El instalador (y el desinstalador) ahora
+  detiene primero los procesos del programa, incluido el servidor que el
+  lanzador del entorno virtual inicia como proceso hijo. Abrir el programa
+  también reemplaza un servidor de otra versión que siga en ejecución, y el
+  acceso directo espera a que el servidor responda antes de abrir el
+  navegador.
+
 ## [1.5.7] — 2026-10-31
 
 ### El OCR ya no falla en PDF con colores inusuales, y el OCR que falló se rehace

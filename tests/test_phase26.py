@@ -93,6 +93,8 @@ def test_conversao_no_modo_economico_com_arquivo_preso_termina(tmp_path, monkeyp
 
     monkeypatch.setattr(conversao_mod, "_process_file", _falso_processar)
     monkeypatch.setattr(conversao_mod, "workers_for", lambda modo: 1)
+    # 1.5.8: `.txt` vai para a fila dos arquivos leves.
+    monkeypatch.setattr(conversao_mod, "io_workers_for", lambda modo: 1)
     monkeypatch.setattr(conversao_mod, "deadline_for_size", lambda tamanho: 0.4)
 
     conn = _banco(tmp_path, ["a_preso.txt"] + [f"b{i}.txt" for i in range(20)], "discovered")

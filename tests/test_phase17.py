@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1821,7 +1822,8 @@ def test_txt_orfao_e_reescrito_quando_a_linha_nao_existia(tmp_path):
     _registrar_com_paginas(conn, origem, "a.pdf", paginas=20, group_key=grupo)
 
     # Pré-cria o arquivo da janela com texto velho (simula arquivo preso no disco)
-    config = _config(origem, saida)
+    # 1.5.8: os `.txt` das janelas só são escritos para o motor Claude Code.
+    config = replace(_config(origem, saida), classification_engine="claude_code")
     windows_dir = Path(config.output_folder) / "windows"
     base = sanitize_group_name(grupo)
     txt_path = windows_dir / f"{base}_j0001-0016.txt"

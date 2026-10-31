@@ -25,20 +25,26 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from . import workdir
 from .paths import resolve_within
 
 INTERMEDIATE_FOLDERS: tuple[str, ...] = ("converted", "blocks")
 
 
 def _target_folders(output_folder: str) -> list[Path]:
-    """Resolves the intermediate folders inside the output folder, refusing
-    any escape (spec section 7) — `resolve_within` raises `ValueError`."""
-    base = Path(output_folder)
+    """Resolves the intermediate folders, refusing any escape (spec
+    section 7) — `resolve_within` raises `ValueError`.
+
+    Both places they can be (1.5.8): the per-machine work folder, where
+    conversion writes them now, and the output folder, where earlier
+    versions did (`workdir.py`)."""
     targets = []
-    for name in INTERMEDIATE_FOLDERS:
-        path = resolve_within(base, name)
-        if path.is_dir():
-            targets.append(path)
+    bases = (workdir.work_folder(output_folder), Path(output_folder))
+    for base in bases:
+        for name in INTERMEDIATE_FOLDERS:
+            path = resolve_within(base, name)
+            if path.is_dir():
+                targets.append(path)
     return targets
 
 

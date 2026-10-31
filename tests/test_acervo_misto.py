@@ -16,6 +16,8 @@ Três defeitos presos aqui, todos vistos no acervo de legislação do Planalto
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import fitz
 
 from gclaude_indexer.classification import WindowPage
@@ -238,7 +240,8 @@ def test_janela_do_claude_code_traz_a_posicao_de_cada_pagina(tmp_path):
     scan(conn, config)
     convert(conn, config)
     extract_pages(conn, config)
-    prepare_windows(conn, config)
+    # 1.5.8: os `.txt` das janelas só são escritos para o motor Claude Code.
+    prepare_windows(conn, replace(config, classification_engine="claude_code"))
 
     janela = next((saida / "windows").glob("*.txt")).read_text(encoding="utf-8")
     assert "--- p. 1 (l1.htm) [#1] ---" in janela

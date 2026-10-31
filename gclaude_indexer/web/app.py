@@ -91,7 +91,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.5.7"
+SYSTEM_VERSION = "1.5.8"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -1515,6 +1515,96 @@ def _request_cpu_sensor_helper() -> str:
     return outcome
 
 
+@app.get("/api/version")
+def api_version() -> dict:
+    """The version this server is running (1.5.8): a newly installed copy
+    asks before starting, to replace a server left over from the previous
+    version instead of deferring to it."""
+    return {"version": SYSTEM_VERSION}
+
+
+def _running_version(host: str, port: int) -> str | None:
+    """The version answering on the port, or `None` when it does not say —
+    a version older than 1.5.8 (no `/api/version`) or not this program."""
+    import json as _json
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/version", timeout=3) as response:
+            return str(_json.loads(response.read().decode("utf-8")).get("version") or "") or None
+    except Exception:
+        return None
+
+
+def _program_process(pid: int):
+    """The root of this program's process tree that `pid` belongs to, or
+    `None` — whatever else holds the port is never touched.
+
+    The venv's `pythonw.exe` is only a launcher: the server holding the
+    port is the base Python it starts as a child (seen on a real machine).
+    So the process itself or one of its first ancestors must run from the
+    venv, and that ancestor is what is returned, to stop the whole tree."""
+    try:
+        import psutil
+
+        from ..paths import machine_local_folder
+
+        venv = os.path.normcase(os.path.abspath(str(machine_local_folder() / "venv")))
+        process = psutil.Process(pid)
+        for _ in range(3):
+            if process is None:
+                break
+            exe = os.path.normcase(os.path.abspath(process.exe()))
+            if exe.startswith(venv + os.sep):
+                return process
+            process = process.parent()
+    except Exception:
+        return None
+    return None
+
+
+def stop_outdated_server(host: str, port: int, pid: int | None, wait_seconds: float = 15.0) -> bool:
+    """Stops a server of another version still holding the port (1.5.8).
+
+    Installing an update did not stop the running server: opening the
+    program again found the port taken, deferred to it, and showed the old
+    version. Only a process started from this program's venv is stopped,
+    with its children (OCR and conversion workers). Returns `True` when the
+    port is free afterwards."""
+    import time as _time
+
+    from ..sensor_service import server_listening
+
+    if pid is None or pid == os.getpid():
+        return False
+    process = _program_process(pid)
+    if process is None or process.pid == os.getpid():
+        return False
+    try:
+        import psutil
+
+        family = [process] + process.children(recursive=True)
+        # Never this new server, nor the launcher that started it: the old
+        # server's tree must not contain either.
+        own_line = {os.getpid()} | {parent.pid for parent in psutil.Process().parents()}
+        if any(member.pid in own_line for member in family):
+            return False
+        for member in family:
+            try:
+                member.kill()
+            except psutil.Error:
+                pass
+        psutil.wait_procs(family, timeout=5)
+    except Exception:
+        return False
+    deadline = _time.monotonic() + wait_seconds
+    while _time.monotonic() < deadline:
+        if not server_listening(host, port):
+            return True
+        _time.sleep(0.3)
+    return not server_listening(host, port)
+
+
 def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Starts the server. Only listens on 127.0.0.1 — never 0.0.0.0
     (section 7)."""
@@ -1560,6 +1650,11 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
         start_elevated_helper,
         write_launch_status,
     )
+
+    if server_listening(host, port) and _running_version(host, port) != SYSTEM_VERSION:
+        outdated_pid = pid_listening_on(port)
+        if stop_outdated_server(host, port, outdated_pid):
+            print(f"[server] stopped the previous version (pid {outdated_pid}); starting {SYSTEM_VERSION}.")
 
     if server_listening(host, port):
         existing_pid = pid_listening_on(port)

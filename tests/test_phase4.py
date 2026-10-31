@@ -208,8 +208,9 @@ def test_extracao_e_retomavel_sem_duplicar_paginas(tmp_path):
 
 
 def test_preparar_janelas_gera_arquivos_com_sobreposicao(tmp_path):
+    # 1.5.8: os `.txt` das janelas só são escritos para o motor Claude Code.
     origem, saida, config, conn = _preparar_projeto(
-        tmp_path, extra={"pages_per_window": 3, "overlap": 1}
+        tmp_path, extra={"pages_per_window": 3, "overlap": 1, "classification_engine": "claude_code"}
     )
     (origem / "volume_1").mkdir()
     _criar_pdf(origem / "volume_1" / "peca.pdf", n_paginas=5)

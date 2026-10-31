@@ -17,6 +17,50 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.8] — 2026-10-31
+
+### Processamento muito mais rápido no Google Drive; a atualização encerra a versão antiga
+
+#### Alterado
+
+- **Os arquivos intermediários ficam no disco local.** Os PDFs com OCR, o
+  texto extraído de cada arquivo e as fatias de PDF (`converted/`,
+  `blocks/`) agora vão para `%LOCALAPPDATA%\GClaudeIndexer\work\`, não para
+  a pasta de saída. No Google Drive cada arquivo pequeno novo levava ~800 ms
+  para ser criado, contra 0,3 ms no disco local, e a conversão de um acervo
+  grande ficava esperando o Drive com o processador parado. Nada do que se
+  usa do projeto depois precisa desses arquivos: as páginas e a busca de
+  texto completo estão no `project.db`, e os índices e as janelas continuam
+  na pasta de saída. Projetos convertidos antes continuam lendo as cópias
+  que já estão lá. Em outro computador, um arquivo cuja cópia não existe
+  volta para a conversão em vez de dar falha.
+- **A conversão roda em duas filas.** Arquivos que não precisam de OCR
+  (HTML, texto, DOCX, e-mail) passam o tempo esperando o disco, então
+  ganham um grupo bem maior de processos (até 4 por núcleo físico no modo
+  "máximo"). O OCR mantém um processo por núcleo. Medido em 1.352 arquivos
+  HTML do Drive: ~5,7 arquivos/s antes, ~234 arquivos/s agora.
+- **Etapa de janelas:** os `.txt` das janelas só são gravados para o motor
+  Claude Code, o único que os lê, em paralelo; os que faltarem são gravados
+  quando esse motor for escolhido depois. Um commit por grupo em vez de um
+  por janela.
+- **A indexação da busca de texto completo** grava em lotes em vez de um
+  commit por arquivo.
+
+#### Corrigido
+
+- **A classificação relia o grupo inteiro a cada janela.** Num grupo de
+  144 mil páginas, isso dava cerca de meio gigabyte lido por janela, para
+  umas dez mil janelas. Agora cada janela carrega só as próprias páginas, e
+  a coluna do grupo ganhou índice. Vale para os motores de regras, local e
+  de revisão.
+- **Instalar uma atualização deixava a versão antiga rodando.** Ao abrir o
+  programa de novo, o servidor antigo ainda ocupava a porta e a versão
+  antiga aparecia. O instalador (e o desinstalador) agora encerra os
+  processos do programa antes, inclusive o servidor que o lançador do
+  ambiente virtual inicia como processo filho. Abrir o programa também
+  substitui um servidor de outra versão que ainda esteja rodando, e o
+  atalho espera o servidor responder antes de abrir o navegador.
+
 ## [1.5.7] — 2026-10-31
 
 ### O OCR não falha mais em PDF com cores incomuns, e o OCR que falhou é refeito

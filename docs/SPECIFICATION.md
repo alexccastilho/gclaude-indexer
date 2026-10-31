@@ -23,7 +23,8 @@ slices oversized PDFs, indexes the content, and produces:
 - `project_instructions.md` — instructions ready to paste into a Claude
   Project
 - `review.md` — a coverage and failure report
-- Sliced PDFs, in readable chunks, written back into the output folder
+- Sliced PDFs, in readable chunks, kept in the machine's local work folder
+  (see "Intermediate files" below)
 
 The original documents are never altered. The extracted text exists to
 locate content; reading the material of record still happens in the
@@ -333,10 +334,34 @@ one group.
 > physical cores): 61.5s → 12.0s (5.14×) on 12 three-page PDFs with forced
 > OCR. The GPU does not accelerate either of these two steps — the
 > Tesseract binary `ocrmypdf` calls is CPU-only.
+>
+> Since 1.5.8 conversion runs two queues. Files that may need OCR (PDFs,
+> images) keep the per-core pool above. Every other file waits on the disk,
+> not the CPU (~200 ms to read a small HTML file from Drive, ~30 ms to
+> convert it), so it gets `parallelism.io_workers_for`: `economy` = 1,
+> `automatic` = 2 × physical cores (at most 16), `maximum` = 4 × physical
+> cores (at most 32), processes rather than threads because the conversion
+> itself is pure Python. Measured on 1,352 HTML files from Drive: ~5.7
+> files/s before, ~234 files/s with both changes.
 
 **3. Slicing.** A PDF with more pages than the configured limit (default 80)
-is cut into chunks, written into the output folder, with the original page
-numbering preserved.
+is cut into chunks, written into the local work folder, with the original
+page numbering preserved.
+
+> **Intermediate files (1.5.8).** `converted/` and `blocks/` live in
+> `%LOCALAPPDATA%\GClaudeIndexer\work\<name>-<hash of the output folder>\`,
+> not in the output folder (`workdir.py`). The output folder is normally in
+> Google Drive, which creates files almost one at a time — ~800 ms per small
+> `.txt` measured, against 0.3 ms locally — and the conversion of a large
+> collection was waiting on it with the CPU idle. Nothing a project is used
+> for needs them afterwards: pages and full-text search are in `project.db`,
+> the indexes and the windows are in the output folder. Reading prefers the
+> local copy and falls back to the output folder, where projects converted
+> before 1.5.8 keep theirs. On a machine without the intermediate,
+> extraction sends the file back to 'discovered' (warning
+> `log.extraction.intermediate_missing`) instead of failing it; the
+> incremental update already treated a missing intermediate as "convert
+> again". Cleanup and project deletion cover both locations.
 
 **4. Page extraction.** For every page: text truncated at the configured
 character limit, character count, embedded-image count, a best-effort table
@@ -345,7 +370,15 @@ detection. Written to `page`.
 **5. Window preparation.** Groups pages into overlapping windows. Writes one
 `.txt` file per window into `<output>/windows/`, with a header identifying
 the group and the page range, and each page labeled with its own
-`reference`.
+`reference`. Since 1.5.8 the files are written only when the configured
+engine is `claude_code`, the one engine that reads them (the others read
+the pages from `project.db`), in parallel, and `engine_claude_code.prepare`
+writes any that are missing when that engine is chosen later. Rows are
+inserted with one commit per group. Classification loads windows through
+`classification.WindowPageLoader`, which keeps each group's page order as
+ids and fetches only the window's pages: reading the whole group per
+window was quadratic (a real group had 144 thousand pages). `file.group_key`
+is indexed.
 
 **6. Classification.** An isolated step behind a single interface, with
 three interchangeable engines selectable in the form (plus an `automatic`
@@ -597,7 +630,8 @@ caused real defects in this project before.
 4. `review.md` reports zero gaps when classification is complete.
 5. A corrupted file is recorded as an error, marked `failed`, and does not
    bring down the run.
-6. No file is written outside the output folder.
+6. No file is written outside the output folder, except the intermediate
+   files in the machine's local work folder (1.5.8, see step 3).
 7. A 3,000-page collection completes the local steps in under two hours.
 
 ## 9. Implementation phases

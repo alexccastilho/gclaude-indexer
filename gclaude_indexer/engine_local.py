@@ -26,7 +26,7 @@ from datetime import date
 from pathlib import Path
 
 from .classification import (
-    WindowPage, ClassifiedItem, load_window_pages, item_to_dict, validate_item,
+    WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages, item_to_dict, validate_item,
     page_order, starts_new_document,
 )
 from .config import ProjectConfig
@@ -1335,12 +1335,13 @@ def classify_pending(
     pending_windows = conn.execute("SELECT * FROM window WHERE status = 'pending' ORDER BY id").fetchall()
     gpu_plan_logged = False
 
+    loader = WindowPageLoader(conn)  # 1.5.8: one read of each group's order
     with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
         for window in pending_windows:
             if should_stop is not None and should_stop():
                 break
 
-            pages = load_window_pages(conn, window)
+            pages = load_window_pages(conn, window, loader)
 
             items = []
             if ollama_available:

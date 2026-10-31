@@ -25,7 +25,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .classification import ClassificationEngine, load_window_pages, item_to_dict, validate_item
+from .classification import ClassificationEngine, WindowPageLoader, load_window_pages, item_to_dict, validate_item
 from .config import ProjectConfig
 from .events import record_event
 from .import_items import RAW_ITEMS_FILE_NAME
@@ -90,12 +90,13 @@ def classify_with_review(
 
     result = ReviewResult(rules_result.windows_processed, len(windows), 0, 0)
 
+    loader = WindowPageLoader(conn)  # 1.5.8: one read of each group's order
     with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
         for window in windows:
             if should_stop is not None and should_stop():
                 break
 
-            pages = load_window_pages(conn, window)
+            pages = load_window_pages(conn, window, loader)
             items = second_engine.classify(pages)
 
             for item in items:

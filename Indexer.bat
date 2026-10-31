@@ -67,7 +67,26 @@ rem errors in the console while debugging.
 echo [Indexer] Starting the GClaude Indexer server...
 start "" /b "%VENV%\Scripts\pythonw.exe" "%ROOT%run_server.py"
 
-timeout /t 2 /nobreak >nul
+rem 1.5.8: wait until the server answers instead of a fixed 2 seconds. A
+rem server left over from the previous version is stopped first (see
+rem start_server), which can take a few seconds; opening the browser before
+rem the new one listens showed an error page. Gives up after ~30 s and opens
+rem the browser anyway. Without curl.exe (Windows older than 1803), the old
+rem fixed wait.
+set "CURL=%SystemRoot%\System32\curl.exe"
+if not exist "%CURL%" (
+    timeout /t 3 /nobreak >nul
+    goto open_browser
+)
+set /a WAITED=0
+:wait_server
+"%CURL%" -s -f -o nul --max-time 2 "%URL%/api/version" && goto open_browser
+set /a WAITED+=1
+if %WAITED% geq 30 goto open_browser
+timeout /t 1 /nobreak >nul
+goto wait_server
+
+:open_browser
 
 echo [Indexer] Opening %URL% in the browser...
 start "" "%URL%"

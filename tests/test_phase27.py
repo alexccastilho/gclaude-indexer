@@ -15,6 +15,7 @@ from dataclasses import replace
 import fitz
 
 from gclaude_indexer import conversion
+from gclaude_indexer import workdir
 from gclaude_indexer.conversion import convert, ocr_retry_count, requeue_ocr_failures
 from gclaude_indexer.db import SCHEMA_SQL, connect, init_schema
 from gclaude_indexer.events import list_events
@@ -91,7 +92,7 @@ def test_falha_parcial_de_ocr_fica_marcada_e_e_refeita_na_proxima_conversao(tmp_
     assert ocr_retry_count(conn) == 0
     assert any("voltaram à fila" in m for m in _mensagens(conn))
 
-    documento = fitz.open(saida / "converted" / "ata_mista.pdf")
+    documento = fitz.open(workdir.work_folder(saida) / "converted" / "ata_mista.pdf")
     assert "RECONHECIMENTO" in documento[1].get_text().upper()
     documento.close()
     conn.close()

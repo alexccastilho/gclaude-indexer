@@ -327,6 +327,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_event_message_columns(conn)
     _ensure_file_mtime_column(conn)
     _ensure_file_ocr_failed_column(conn)
+    _ensure_file_group_key_index(conn)
     conn.commit()
 
 
@@ -359,6 +360,17 @@ def _ensure_file_mtime_column(conn: sqlite3.Connection) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
     if "mtime" not in existing_columns:
         conn.execute("ALTER TABLE file ADD COLUMN mtime REAL")
+
+
+def _ensure_file_group_key_index(conn: sqlite3.Connection) -> None:
+    """1.5.8: the windows step and every classification engine read a
+    group's pages by `file.group_key`; without an index each read scanned
+    the whole file table (144 thousand rows on a real collection). Guarded
+    by column, like the migrations above: a table older than `group_key`
+    has nothing to index."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
+    if "group_key" in columns:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_file_group_key ON file(group_key)")
 
 
 def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:
