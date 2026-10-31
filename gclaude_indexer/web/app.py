@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -51,6 +52,7 @@ from ..artifacts import (
 )
 from ..catalog import CatalogEntry, find_project, list_projects, register_project
 from ..config import ProjectConfig, ConfigError, load_config
+from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
 from ..events import list_events
 from ..deletion import delete_project
@@ -89,7 +91,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.5.4"
+SYSTEM_VERSION = "1.5.5"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -292,18 +294,38 @@ TEXT_FIELDS = (
 # --- utilities ---------------------------------------------------------------
 
 
+@app.exception_handler(sqlite3.OperationalError)
+def _handle_database_busy(request: Request, exc: sqlite3.OperationalError):
+    """`database is locked` is a moment, not a failure (1.5.5). On
+    31/10/2026 the Execution screen's three polls answered it with "Internal
+    Server Error" every two seconds, which read as the program breaking.
+
+    A poll (htmx sends `HX-Request`) gets 204 No Content: htmx keeps the
+    fragment it already shows and asks again on the next tick. A whole page
+    gets a short translated explanation with 503, so the browser does not
+    cache it. Any other database error is still a real error."""
+    if not is_lock_error(exc):
+        raise exc
+    if request.headers.get("hx-request"):
+        return Response(status_code=204)
+    return render(request, "database_busy.html", {}, status_code=503)
+
+
 @contextmanager
-def _open_project(project_id: int):
+def _open_project(project_id: int, timeout: float = WRITER_TIMEOUT_SECONDS):
     """Opens the project for use in this request. The first time, in this
     server session, that this project is touched: checks the incomplete
     sync signal (section 11.4) and the other machine's lock (section 11.3)
     before releasing it — later visits no longer repeat the check, because
-    the lock is already ours."""
+    the lock is already ours.
+
+    `timeout`: the Execution screen's polls pass `READER_TIMEOUT_SECONDS`, so
+    a busy database costs them a few seconds, not thirty."""
     entry = find_project(project_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
     try:
-        config, conn = load_project(entry.output_folder)
+        config, conn = load_project(entry.output_folder, timeout=timeout)
     except ConfigError as exc:
         # No request-scoped language available in this context manager (see
         # `config.py`'s docstring) — `DEFAULT_LANGUAGE`, same as every other
@@ -964,7 +986,7 @@ def log_fragment(request: Request, project_id: int, since: int | None = None):
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
     # Capped either way: a screen left open while a very long step ran must
     # not receive thousands of lines in one response.
-    with _open_project(project_id) as (_entry, _config, conn):
+    with _open_project(project_id, timeout=READER_TIMEOUT_SECONDS) as (_entry, _config, conn):
         events = list_events(conn, language=language, since=since, last=LOG_LINES)
 
     if since is None:
@@ -980,7 +1002,7 @@ def steps_fragment(request: Request, project_id: int):
     (before it only changed when a button was clicked), so progress can be
     followed without clicking anything."""
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    with _open_project(project_id) as (entry, config, conn):
+    with _open_project(project_id, timeout=READER_TIMEOUT_SECONDS) as (entry, config, conn):
         context = _steps_context(project_id, entry, config, conn, language)
     return render(request, "_steps.html", context)
 
@@ -1051,7 +1073,7 @@ def pause_run(request: Request, project_id: int):
 
 @app.get("/projects/{project_id}/run/progress", response_class=HTMLResponse)
 def progress_fragment(request: Request, project_id: int):
-    with _open_project(project_id) as (entry, _config, _conn):
+    with _open_project(project_id, timeout=READER_TIMEOUT_SECONDS) as (entry, _config, _conn):
         task = task_manager.latest_for_project(project_id)
         progress = compute_progress(entry.output_folder, task)
         if task is None:

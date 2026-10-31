@@ -68,7 +68,7 @@ compiler.
 ## 4. Data model
 
 One `project.db` file per project, in the output folder. Opened with
-`PRAGMA journal_mode=DELETE` and `PRAGMA synchronous=FULL` — never WAL (see
+`PRAGMA journal_mode=TRUNCATE` and `PRAGMA synchronous=FULL` — never WAL (see
 section 11.3).
 
 ```sql
@@ -772,9 +772,16 @@ So the first run on a new machine resolves itself with no manual step.
 
 - `project.db` lives in the project's output folder, which may be inside
   the synced folder.
-- Always opened with `PRAGMA journal_mode=DELETE` and
+- Always opened with `PRAGMA journal_mode=TRUNCATE` and
   `PRAGMA synchronous=FULL`. **Never WAL** — its auxiliary files do not
-  survive cloud-sync round trips.
+  survive cloud-sync round trips. TRUNCATE rather than DELETE (1.5.5): the
+  same rollback journal, but it is not created and deleted on every commit,
+  which on a Google Drive folder cost ~0.3 s per commit (TRUNCATE: <0.01 s).
+- Steps write through `db.BatchWriter`: one transaction per batch (at most
+  one second or 200 files), replayed whole after `database is locked`.
+  Worker processes run under `worker_pool.ResilientPool`: a per-file
+  deadline (10 min + 2 min/MB), worker kill and pool rebuild on a stall,
+  never a blocking wait on exit.
 - On opening a project, creates `project.lock` with the machine name, the
   user, and a timestamp, refreshed every minute while the app is open.
 - Finding another machine's lock less than 10 minutes old refuses to open

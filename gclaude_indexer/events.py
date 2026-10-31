@@ -102,8 +102,14 @@ def record_event(
     params: dict[str, object] | None = None,
     *,
     language: str | None = None,
+    commit: bool = True,
 ) -> int:
     """Records an event under `step`/`level`.
+
+    `commit=False` (1.5.5): the event joins the caller's open transaction,
+    for a step that writes through `db.BatchWriter`. If the batch is replayed
+    after a locked database, the log file can show the line twice; the
+    `event` table cannot, because the rollback removed the first insert.
 
     `key` is normally a `log.*` translation key (see `i18n.py`) and
     `params` its interpolation values — `message` is rendered from them in
@@ -141,7 +147,8 @@ def record_event(
         """,
         (step, level, message, stored_key, stored_params, created_at),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     _write_to_log_file(conn, step, level, message, created_at)
     return cursor.lastrowid
 

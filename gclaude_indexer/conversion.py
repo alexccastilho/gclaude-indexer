@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import email
 import os
+import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable
-from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
-from concurrent.futures.process import BrokenProcessPool
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from email import policy
 from pathlib import Path
@@ -32,7 +32,12 @@ import fitz  # PyMuPDF
 
 from . import no_window, tools
 from .config import ProjectConfig
+from .db import BatchWriter
 from .events import record_event
+from .i18n import DEFAULT_LANGUAGE, translate
+from .worker_pool import (
+    ERROR, OK, TIMED_OUT, PoolStalledError, ResilientPool, StepStalledError, deadline_for_size,
+)
 from .parallelism import _physical_cores, workers_for
 from .file_types import category_of_extension
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
@@ -536,42 +541,61 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     }
 
 
-def _apply_result(conn, result: ConversionResult, info: dict, language: str | None = None) -> None:
-    conn.execute(info["sql"], info["params"])
-    for step, level, key, params in info["events"]:
-        record_event(conn, step, level, key, params, language=language)
+def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, language: str | None = None) -> None:
+    def op(conn) -> None:
+        conn.execute(info["sql"], info["params"])
+        for step, level, key, params in info["events"]:
+            record_event(conn, step, level, key, params, language=language, commit=False)
+
+    writer.add(op)
     result.converted += 1
     result.ocr_applied += int(info["ocr_applied"])
     result.sliced += int(info["sliced"])
     result.blocks_generated += info["blocks_generated"]
 
 
-def _record_failure(conn, result: ConversionResult, row, exc: Exception, language: str | None = None) -> None:
-    error_message = str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]
-    conn.execute(
-        "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
-        (error_message, row["id"]),
-    )
+def _record_failure(
+    writer: BatchWriter, result: ConversionResult, row, error_message: str, language: str | None = None
+) -> None:
+    error_message = error_message[:ERROR_MESSAGE_CHAR_LIMIT]
+
+    def op(conn) -> None:
+        conn.execute(
+            "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
+            (error_message, row["id"]),
+        )
+        record_event(
+            conn, "conversion", "error", "log.conversion.failed",
+            {"name": row["name"], "error": error_message}, language=language, commit=False,
+        )
+
+    writer.add(op)
     result.failed += 1
-    record_event(
-        conn, "conversion", "error", "log.conversion.failed",
-        {"name": row["name"], "error": error_message}, language=language,
-    )
+
+
+def _record_event_op(step: str, level: str, key: str, params: dict | None = None, language: str | None = None):
+    return lambda conn: record_event(conn, step, level, key, params, language=language, commit=False)
 
 
 def _convert_sequential(
     conn, config: ProjectConfig, rows, ocrmypdf_jobs: int, should_stop, result, language: str | None = None
 ) -> None:
-    for row in rows:
-        if should_stop is not None and should_stop():
-            break
+    writer = BatchWriter(conn)
+    try:
+        for row in rows:
+            if should_stop is not None and should_stop():
+                break
 
-        try:
-            info = _process_file(config, dict(row), ocrmypdf_jobs)
-            _apply_result(conn, result, info, language=language)
-        except Exception as exc:
-            _record_failure(conn, result, row, exc, language=language)
-        conn.commit()  # commit per file (Phase 11): the progress bar cannot stall
+            try:
+                info = _process_file(config, dict(row), ocrmypdf_jobs)
+            except Exception as exc:
+                _record_failure(writer, result, row, str(exc), language=language)
+                continue
+            _apply_result(writer, result, info, language=language)
+        writer.flush()
+    except BaseException:
+        writer.discard()
+        raise
 
 
 def _convert_in_parallel(
@@ -587,53 +611,81 @@ def _convert_in_parallel(
     carry over on its own. A worker that handles an image calls
     `pytesseract`, which starts `tesseract.exe` through a `subprocess.Popen`
     of its own that we do not control — without the initializer that is one
-    visible console window per image."""
-    with ProcessPoolExecutor(max_workers=workers, initializer=no_window.install) as executor:
-        futures: dict = {}
-        for row in rows:
-            if should_stop is not None and should_stop():
-                break
-            future = executor.submit(_process_file, config, dict(row), ocrmypdf_jobs)
-            futures[future] = row
+    visible console window per image.
 
-        stop_request_handled = False
-        pool_broken = False
-        for future in as_completed(futures):
-            row = futures[future]
+    1.5.5: `ResilientPool` (see `worker_pool.py`) instead of a bare
+    `with ProcessPoolExecutor(...)`, whose exit waited forever for workers
+    stuck on a Google Drive file, and `BatchWriter` instead of one commit
+    per file."""
+    writer = BatchWriter(conn)
+    crash_reported = False
+
+    def on_restart(reason: str, row) -> None:
+        nonlocal crash_reported
+        if reason == "stalled":
+            writer.add(_record_event_op(
+                "conversion", "warning", "log.worker_restarted",
+                {"name": row["name"], "minutes": _minutes(deadline_for_size(row["size"]))}, language,
+            ))
+        elif not crash_reported:
+            # A worker died (e.g. `MemoryError` on a large PDF) and took the
+            # pool down with it (I3, Phase 13 final review). The pool is
+            # rebuilt and the files it held are tried again; a file caught
+            # in two crashes keeps its 'discovered' status for the next run
+            # instead of being failed, since a crash does not say which
+            # file caused it.
+            crash_reported = True
+            writer.add(_record_event_op("conversion", "error", "log.pool_broken", language=language))
+
+    def submit(executor, row):
+        return executor.submit(_process_file, config, dict(row), ocrmypdf_jobs)
+
+    try:
+        with ResilientPool(
+            lambda: ProcessPoolExecutor(max_workers=workers, initializer=no_window.install),
+            workers,
+            deadline_for=lambda row: deadline_for_size(row["size"]),
+            should_stop=should_stop,
+            on_restart=on_restart,
+            on_idle=writer.flush_if_due,
+        ) as pool:
+            for outcome in pool.run(rows, submit):
+                row = outcome.item
+                if outcome.kind == OK:
+                    _apply_result(writer, result, outcome.value, language=language)
+                elif outcome.kind == ERROR:
+                    _record_failure(writer, result, row, str(outcome.value), language=language)
+                elif outcome.kind == TIMED_OUT:
+                    _record_failure(
+                        writer, result, row,
+                        translate(language or DEFAULT_LANGUAGE, "error.file_timed_out", minutes=_minutes(outcome.value)),
+                        language=language,
+                    )
+                # CRASHED: left 'discovered' on purpose (see `on_restart`).
+        writer.flush()
+    except PoolStalledError as exc:
+        writer.add(_record_event_op(
+            "conversion", "error", "log.pool_stalled", {"name": exc.item["name"]}, language,
+        ))
+        writer.flush()
+        raise StepStalledError(
+            translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=exc.item["name"])
+        ) from exc
+    except BaseException as exc:
+        # Work already done is good whatever went wrong elsewhere; a database
+        # error, though, means the batch itself cannot be trusted.
+        if isinstance(exc, sqlite3.Error):
+            writer.discard()
+        else:
             try:
-                info = future.result()
-            except CancelledError:
-                continue
-            except BrokenProcessPool:
-                # A worker died (e.g. `MemoryError` on a large PDF) and took
-                # the whole pool down with it — ALL still-pending futures
-                # receive this same exception, including files that never
-                # got to run (I3, Phase 13 final review). Unlike a real
-                # per-file failure: we don't mark it 'failed' (which would
-                # exclude the file from every future rerun); we leave the
-                # original status ('discovered') for `convert()` to resume
-                # this file on the next run.
-                if not pool_broken:
-                    pool_broken = True
-                    record_event(conn, "conversion", "error", "log.pool_broken", language=language)
-                continue
-            except Exception as exc:
-                _record_failure(conn, result, row, exc, language=language)
-                conn.commit()
-                continue
+                writer.flush()
+            except Exception:
+                writer.discard()
+        raise
 
-            _apply_result(conn, result, info, language=language)
-            conn.commit()  # commit per file (Phase 11), even in parallel
 
-            if not stop_request_handled and should_stop is not None and should_stop():
-                stop_request_handled = True
-                # The pause button must never go unanswered: cancel every
-                # future not yet started. The ones already running finish
-                # (there's no way to interrupt a running process here), but
-                # no new file starts.
-                for pending in futures:
-                    if not pending.done():
-                        pending.cancel()
+def _minutes(seconds: float) -> int:
+    return max(1, round(seconds / 60))
 
 
 def convert(

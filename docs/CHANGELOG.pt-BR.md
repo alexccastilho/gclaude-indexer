@@ -17,6 +17,49 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.5] — 2026-10-31
+
+### O processamento não trava mais, seja qual for o tamanho do acervo
+
+#### Corrigido
+
+- **A conversão podia travar de vez, e a tela de Execução passava a
+  mostrar "Internal Server Error" a cada dois segundos.** Numa pasta de
+  145 mil arquivos no Google Drive, o Drive parou de responder a algumas
+  aberturas de arquivo. Os processos auxiliares esperaram por elas para
+  sempre, e a etapa, que esperava os auxiliares antes de sair, esperou
+  junto, mantendo o banco de dados travado. Agora cada arquivo tem um
+  prazo que cresce com o tamanho (10 minutos mais 2 por MB). Um auxiliar
+  que passa do prazo é encerrado e reiniciado, e o trabalho continua. Um
+  arquivo que trava duas vezes enquanto os outros andam é marcado como
+  falha, com "tempo esgotado". Quando nada anda (o Drive ou o disco
+  travou, não um arquivo), a etapa para com uma mensagem clara e deixa
+  todos os arquivos para a próxima execução.
+- **Um banco de dados ocupado derrubava a etapa em vez de esperar.** Um
+  instante de `database is locked` encerrava a etapa com a transação
+  aberta. Agora a etapa grava em lotes e, com o banco ocupado, desfaz o
+  lote e o aplica de novo logo depois, por até dez minutos.
+- **Um banco ocupado aparecia na tela como "Internal Server Error".** A
+  tela de Execução mantém o que já mostra e pergunta de novo no ciclo
+  seguinte. Uma página inteira explica que o banco está ocupado e que nada
+  se perdeu.
+- **Um processo auxiliar que morria (falta de memória) encerrava a
+  etapa.** Agora o conjunto de auxiliares é refeito e o trabalho continua.
+  Arquivos presos em duas quedas ficam para a próxima execução, como
+  antes.
+
+#### Alterado
+
+- **Conversão e extração ficaram muito mais rápidas numa pasta do Google
+  Drive.** O modo de journal do banco passou de `DELETE` para `TRUNCATE`:
+  um commit numa pasta do Drive caiu de cerca de 0,3 s para menos de
+  0,01 s, porque o Drive não precisa mais criar e apagar o arquivo de
+  journal a cada vez. Continua sendo um journal de reversão, com a mesma
+  segurança, nunca WAL. As etapas também gravam em lotes (pelo menos uma
+  vez por segundo) em vez de uma vez por arquivo.
+- **As consultas da tela esperam no máximo 5 segundos por um banco
+  ocupado**, em vez de 30.
+
 ## [1.5.4] — 2026-10-31
 
 ### A segunda varredura não relê todos os arquivos, e a barra anda

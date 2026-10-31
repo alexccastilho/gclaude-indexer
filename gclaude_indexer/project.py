@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import ProjectConfig, load_config, config_to_json
-from .db import connect, init_schema
+from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .events import record_event
 
 DB_NAME = "project.db"
@@ -164,16 +164,28 @@ def create_project(config: ProjectConfig) -> tuple[sqlite3.Connection, int]:
     return conn, cursor.lastrowid
 
 
-def load_project(output_folder: Path) -> tuple[ProjectConfig, sqlite3.Connection]:
+def load_project(
+    output_folder: Path, timeout: float = WRITER_TIMEOUT_SECONDS
+) -> tuple[ProjectConfig, sqlite3.Connection]:
     """Reopens an existing project from its output folder: reads the config
     stored in `project.config_json` and rebuilds `ProjectConfig` (revalidating
-    — see section 11.4, incomplete-sync or different-machine warning)."""
-    conn = connect(Path(output_folder) / DB_NAME)
+    — see section 11.4, incomplete-sync or different-machine warning).
+
+    `timeout`: how long to wait for a locked database. The screens' polls pass
+    `READER_TIMEOUT_SECONDS`; see `db.py`."""
+    conn = connect(Path(output_folder) / DB_NAME, timeout=timeout)
     # Phase 13 Task 15: projects created before a new table existed (here,
     # `execucao`) only get it if `init_schema` also runs on reopen,
     # not only on create — `CREATE TABLE IF NOT EXISTS` is idempotent, so
     # calling it again on an already up-to-date database costs nothing.
-    init_schema(conn)
+    try:
+        init_schema(conn)
+        rows = conn.execute("SELECT id, config_json FROM project ORDER BY id").fetchall()
+    except sqlite3.Error:
+        # A locked database must not leave a half-open connection behind
+        # holding a lock of its own.
+        conn.close()
+        raise
 
     # `ORDER BY id` — the *first* row, which is the project as it was
     # created. This used to read `ORDER BY id DESC`, the last row, and that
@@ -196,7 +208,6 @@ def load_project(output_folder: Path) -> tuple[ProjectConfig, sqlite3.Connection
     # attempt, and a repair that destroys evidence to tidy up is not a
     # repair. `describe_project` reports how many there are, and the event
     # below says which one is in force.
-    rows = conn.execute("SELECT id, config_json FROM project ORDER BY id").fetchall()
     if not rows:
         conn.close()
         raise ValueError(f"nenhum projeto encontrado em {output_folder}")

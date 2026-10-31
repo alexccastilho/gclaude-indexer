@@ -9,13 +9,24 @@
 """SQLite connection and database schema (spec section 4).
 
 Important (section 11.3): the database lives in a folder synced by Google
-Drive. Always open with `journal_mode=DELETE` and `synchronous=FULL`; never
-WAL, whose auxiliary files do not survive the sync.
+Drive. Always open with a rollback journal (`journal_mode=TRUNCATE`) and
+`synchronous=FULL`; never WAL, whose auxiliary files do not survive the sync.
+
+TRUNCATE, not DELETE (1.5.5): both are rollback journals with the same
+crash safety, but DELETE creates and deletes `project.db-journal` on every
+commit, and on a Google Drive folder each create/delete pair cost ~0.3 s —
+measured 0.285 s per commit against 0.009 s with TRUNCATE on the same
+folder. At one commit per file that was hours of a 145,000-file conversion
+spent only on the journal, and the file churn is what the Drive client
+fights over. TRUNCATE leaves a zero-byte journal behind after each commit:
+nothing for the sync to carry.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 SCHEMA_SQL = """
@@ -162,21 +173,151 @@ CREATE INDEX IF NOT EXISTS idx_event_level ON event(level);
 """
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
+WRITER_TIMEOUT_SECONDS = 30.0
+# The Execution screen polls every two seconds. A poll that waits 30 s for a
+# busy database ties up a server thread and shows nothing; one that gives up
+# after a few seconds keeps the last picture on screen and tries again.
+READER_TIMEOUT_SECONDS = 5.0
+
+
+def connect(db_path: Path, timeout: float = WRITER_TIMEOUT_SECONDS) -> sqlite3.Connection:
     """Opens the project database connection with the pragmas that are safe for Drive."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    # High timeout (sqlite3's default is 5s): the folder is synced by
-    # Google Drive, whose client can briefly hold a file during sync —
-    # without this, a concurrent read (e.g. the Execution screen's
-    # progress bar, which opens its own connection) could fail with
-    # "database is locked" right in the middle of a long step.
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.execute("PRAGMA journal_mode=DELETE")
+    # High timeout for the steps (sqlite3's default is 5s): the folder is
+    # synced by Google Drive, whose client can briefly hold a file during
+    # sync. The screens' polls pass `READER_TIMEOUT_SECONDS` instead.
+    conn = sqlite3.connect(str(db_path), timeout=timeout)
+    conn.execute("PRAGMA journal_mode=TRUNCATE")
     conn.execute("PRAGMA synchronous=FULL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def is_lock_error(exc: BaseException) -> bool:
+    """`database is locked` / `database is busy`: another connection holds
+    the file. Worth waiting for, unlike every other database error."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    text = str(exc).lower()
+    return "locked" in text or "busy" in text
+
+
+# How long a step keeps retrying one batch while the database stays locked
+# before it gives up with an error. Long on purpose: the lock is someone
+# else's (a screen reading, the Drive client syncing) and always ends.
+LOCK_RETRY_SECONDS = 600.0
+
+
+class BatchWriter:
+    """Groups a step's writes into one transaction per batch.
+
+    One commit per file was the 1.5.4 pattern, and it failed two ways on a
+    large collection in a Drive folder. Throughput: every commit is a disk
+    round trip the whole step waits on. Robustness: a commit that met a
+    locked database raised, the step left its loop with the transaction
+    still open, and the open transaction then locked every screen out
+    (31/10/2026, 144,000 files).
+
+    Each write is an `op(conn)` that only touches the database. It runs
+    immediately, so reads on the same connection see it. Ops are kept until
+    the batch commits, and that is what makes a locked database harmless:
+    on `database is locked` the batch is rolled back and **every op is
+    applied again** before the next commit. Never retry a bare `commit()`
+    after a failed statement; that would commit half a batch.
+
+    The batch commits after `max_items` ops or `max_seconds` since its first
+    op, whichever comes first. The progress bar reads committed counts, so
+    `max_seconds` is how stale it can get.
+    """
+
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        max_items: int = 200,
+        max_seconds: float = 1.0,
+        retry_seconds: float = LOCK_RETRY_SECONDS,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self.conn = conn
+        self._max_items = max_items
+        self._max_seconds = max_seconds
+        self._retry_seconds = retry_seconds
+        self._sleep = sleep
+        self._clock = clock
+        self._ops: list[Callable[[sqlite3.Connection], object]] = []
+        self._first_at: float | None = None
+
+    @property
+    def pending(self) -> int:
+        return len(self._ops)
+
+    def add(self, op: Callable[[sqlite3.Connection], object]) -> None:
+        self._ops.append(op)
+        if self._first_at is None:
+            self._first_at = self._clock()
+        try:
+            op(self.conn)
+        except sqlite3.OperationalError as exc:
+            if not is_lock_error(exc):
+                raise
+            self._replay_until_committed()
+            return
+        self.flush_if_due()
+
+    def flush_if_due(self) -> None:
+        if not self._ops:
+            return
+        if len(self._ops) >= self._max_items or self._clock() - self._first_at >= self._max_seconds:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self._ops:
+            return
+        try:
+            self.conn.commit()
+        except sqlite3.OperationalError as exc:
+            if not is_lock_error(exc):
+                raise
+            self._replay_until_committed()
+            return
+        self._reset()
+
+    def discard(self) -> None:
+        """Rolls back whatever is pending. Safe to lose: a step only marks
+        work done inside its ops, so the next run redoes it."""
+        try:
+            self.conn.rollback()
+        finally:
+            self._reset()
+
+    def _reset(self) -> None:
+        self._ops = []
+        self._first_at = None
+
+    def _replay_until_committed(self) -> None:
+        deadline = self._clock() + self._retry_seconds
+        delay = 0.25
+        while True:
+            # Releases our own locks too: a commit that failed on a busy
+            # database keeps a PENDING lock, which shuts out new readers.
+            self.conn.rollback()
+            self._sleep(delay)
+            try:
+                for op in self._ops:
+                    op(self.conn)
+                self.conn.commit()
+            except sqlite3.OperationalError as exc:
+                if not is_lock_error(exc) or self._clock() >= deadline:
+                    self.discard()
+                    raise
+                delay = min(delay * 2, 5.0)
+                continue
+            self._reset()
+            return
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

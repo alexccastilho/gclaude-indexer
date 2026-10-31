@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ t('busy.title') }} — {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('busy.title') }}</h1>
+<div class="errors">
+  <p>{{ t('busy.message') }}</p>
+</div>
+<p><a href="/projects" class="button">&larr; {{ t('new_project.back') }}</a></p>
+{% endblock %}

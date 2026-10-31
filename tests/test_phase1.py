@@ -62,7 +62,9 @@ def test_inicializar_schema_cria_tabelas_e_indices(tmp_path):
     } <= indices
 
     modo = conn.execute("PRAGMA journal_mode").fetchone()[0]
-    assert modo.lower() == "delete"
+    # TRUNCATE desde a 1.5.5: journal de reversão como o DELETE (nunca WAL),
+    # sem criar e apagar o arquivo a cada commit no Google Drive.
+    assert modo.lower() == "truncate"
 
     conn.close()
 

@@ -17,6 +17,49 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.5] — 2026-10-31
+
+### El procesamiento ya no se bloquea, sea cual sea el tamaño del acervo
+
+#### Corregido
+
+- **La conversión podía bloquearse para siempre, y la pantalla de
+  Ejecución pasaba a mostrar "Internal Server Error" cada dos segundos.**
+  En una carpeta de 145 mil archivos en Google Drive, Drive dejó de
+  responder a algunas aperturas de archivo. Los procesos auxiliares las
+  esperaron para siempre, y la etapa, que esperaba a sus auxiliares antes
+  de salir, esperó con ellos manteniendo la base de datos bloqueada. Ahora
+  cada archivo tiene un plazo que crece con su tamaño (10 minutos más 2
+  por MB). Un auxiliar que lo supera se detiene y se reinicia, y el
+  trabajo continúa. Un archivo que se bloquea dos veces mientras los demás
+  avanzan se marca como fallido, con "tiempo agotado". Cuando nada avanza
+  (Drive o el disco se bloqueó, no un archivo), la etapa se detiene con un
+  mensaje claro y deja todos los archivos para la próxima ejecución.
+- **Una base de datos ocupada tumbaba la etapa en lugar de esperar.** Un
+  instante de `database is locked` terminaba la etapa con la transacción
+  abierta. Ahora la etapa graba por lotes y, con la base ocupada, deshace
+  el lote y lo vuelve a aplicar poco después, durante hasta diez minutos.
+- **Una base ocupada aparecía en pantalla como "Internal Server Error".**
+  La pantalla de Ejecución conserva lo que ya muestra y vuelve a consultar
+  en el ciclo siguiente. Una página completa explica que la base está
+  ocupada y que no se perdió nada.
+- **Un proceso auxiliar que moría (falta de memoria) terminaba la
+  etapa.** Ahora el conjunto de auxiliares se rehace y el trabajo
+  continúa. Los archivos atrapados en dos caídas quedan para la próxima
+  ejecución, como antes.
+
+#### Cambiado
+
+- **La conversión y la extracción son mucho más rápidas en una carpeta de
+  Google Drive.** El modo de journal de la base pasó de `DELETE` a
+  `TRUNCATE`: un commit en una carpeta de Drive bajó de unos 0,3 s a menos
+  de 0,01 s, porque Drive ya no tiene que crear y borrar el archivo de
+  journal cada vez. Sigue siendo un journal de reversión, con la misma
+  seguridad, nunca WAL. Las etapas también graban por lotes (al menos una
+  vez por segundo) en lugar de una vez por archivo.
+- **Las consultas de la pantalla esperan como máximo 5 segundos a una base
+  ocupada**, en lugar de 30.
+
 ## [1.5.4] — 2026-10-31
 
 ### El segundo escaneo ya no vuelve a leer todos los archivos, y su barra avanza

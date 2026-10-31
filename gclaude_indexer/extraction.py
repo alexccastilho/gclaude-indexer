@@ -26,17 +26,22 @@ following files keep numbering correctly.
 
 from __future__ import annotations
 
+import sqlite3
 from collections import defaultdict
 from collections.abc import Callable
-from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
-from concurrent.futures.process import BrokenProcessPool
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 import fitz  # PyMuPDF
 
 from .config import ProjectConfig
+from .db import BatchWriter
 from .events import record_event
+from .i18n import DEFAULT_LANGUAGE, translate
+from .worker_pool import (
+    ERROR, OK, TIMED_OUT, PoolStalledError, ResilientPool, StepStalledError, deadline_for_size,
+)
 from .parallelism import workers_for
 from .file_types import category_of_extension
 from .fulltext import index_pending
@@ -166,6 +171,19 @@ def _build_groups(conn) -> dict[str, list]:
 def _extract_sequential(
     conn, config: ProjectConfig, groups: dict[str, list], should_stop, result, language: str | None = None
 ) -> bool:
+    writer = BatchWriter(conn)
+    try:
+        interrupted = _extract_sequential_into(writer, conn, config, groups, should_stop, result, language)
+        writer.flush()
+    except BaseException:
+        writer.discard()
+        raise
+    return interrupted
+
+
+def _extract_sequential_into(
+    writer: BatchWriter, conn, config: ProjectConfig, groups: dict[str, list], should_stop, result, language
+) -> bool:
     interrupted = False
 
     for group_files in groups.values():
@@ -186,27 +204,44 @@ def _extract_sequential(
             try:
                 pages = _extract_file_pages(config, row)
             except Exception as exc:
-                error_message = str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]
-                conn.execute(
-                    "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
-                    (error_message, row["id"]),
-                )
-                conn.commit()
-                result.failed += 1
-                record_event(
-                    conn, "extraction", "error", "log.extraction.failed",
-                    {"name": row["name"], "error": error_message}, language=language,
-                )
+                _queue_failure(writer, row, str(exc), result, language)
                 continue
 
-            running_sheet = _write_pages(conn, config, row, pages, running_sheet)
-            conn.execute("UPDATE file SET status = 'extracted' WHERE id = ?", (row["id"],))
-            conn.commit()
-
-            result.files_processed += 1
-            result.pages_written += len(pages)
+            running_sheet = _queue_pages(writer, config, row, pages, running_sheet, result)
 
     return interrupted
+
+
+def _queue_failure(writer: BatchWriter, row, error_message: str, result: ExtractionResult, language) -> None:
+    error_message = error_message[:ERROR_MESSAGE_CHAR_LIMIT]
+
+    def op(conn) -> None:
+        conn.execute(
+            "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
+            (error_message, row["id"]),
+        )
+        record_event(
+            conn, "extraction", "error", "log.extraction.failed",
+            {"name": row["name"], "error": error_message}, language=language, commit=False,
+        )
+
+    writer.add(op)
+    result.failed += 1
+
+
+def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_sheet: int, result) -> int:
+    """Writes a file's pages through the batch and returns the group's next
+    sheet. The sheet is computed here, not read back from the database, so
+    a batch replayed after a locked database numbers exactly as before."""
+
+    def op(conn) -> None:
+        _write_pages(conn, config, row, pages, start_sheet)
+        conn.execute("UPDATE file SET status = 'extracted' WHERE id = ?", (row["id"],))
+
+    writer.add(op)
+    result.files_processed += 1
+    result.pages_written += len(pages)
+    return start_sheet + len(pages)
 
 
 def _extract_in_parallel(
@@ -229,10 +264,16 @@ def _extract_in_parallel(
     `sqlite3.Connection` never crosses a process boundary: workers only read
     files from disk and return `list[tuple[str, int, bool]]`; the one that
     always writes to the database is this main process.
+
+    1.5.5: `ResilientPool` (see `worker_pool.py`) instead of a bare
+    `with ProcessPoolExecutor(...)`, and `BatchWriter` instead of one commit
+    per file. "Applied as soon as its turn comes" now means queued in the
+    batch, which commits at least once a second.
     """
     current_position: dict[str, int] = {key: 0 for key in groups}
     current_sheet: dict[str, int] = {key: 0 for key in groups}
     ready: dict[str, dict[int, tuple[str, object]]] = {key: {} for key in groups}
+    writer = BatchWriter(conn)
 
     def _apply_ready(group_key: str) -> None:
         group_files = groups[group_key]
@@ -247,28 +288,15 @@ def _extract_in_parallel(
 
             item = ready[group_key].pop(index, None)
             if item is None:
-                return  # not here yet — retry when the next future completes
+                return  # not here yet — retry when the next result arrives
 
             kind, value = item
             if kind == "error":
-                error_message = str(value)[:ERROR_MESSAGE_CHAR_LIMIT]
-                conn.execute(
-                    "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
-                    (error_message, row["id"]),
-                )
-                conn.commit()
-                result.failed += 1
-                record_event(
-                    conn, "extraction", "error", "log.extraction.failed",
-                    {"name": row["name"], "error": error_message}, language=language,
-                )
+                _queue_failure(writer, row, str(value), result, language)
             else:
-                pages = value
-                current_sheet[group_key] = _write_pages(conn, config, row, pages, current_sheet[group_key])
-                conn.execute("UPDATE file SET status = 'extracted' WHERE id = ?", (row["id"],))
-                conn.commit()
-                result.files_processed += 1
-                result.pages_written += len(pages)
+                current_sheet[group_key] = _queue_pages(
+                    writer, config, row, value, current_sheet[group_key], result
+                )
 
             current_position[group_key] += 1
 
@@ -279,50 +307,79 @@ def _extract_in_parallel(
         if row["status"] != "extracted"
     ]
 
-    with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures: dict = {}
-        for group_key, index, row in pending:
-            if should_stop is not None and should_stop():
-                break
-            future = executor.submit(_extract_file_pages, config, dict(row))
-            futures[future] = (group_key, index, row)
+    crash_reported = False
 
-        stop_request_handled = False
-        pool_broken = False
-        for future in as_completed(futures):
-            group_key, index, row = futures[future]
+    def on_restart(reason: str, item) -> None:
+        nonlocal crash_reported
+        if reason == "stalled":
+            row = item[2]
+            writer.add(lambda c: record_event(
+                c, "extraction", "warning", "log.worker_restarted",
+                {"name": row["name"], "minutes": _minutes(deadline_for_size(row["size"]))},
+                language=language, commit=False,
+            ))
+        elif not crash_reported:
+            # A worker died (e.g. `MemoryError` on a large PDF) and took the
+            # pool down with it (I3, Phase 13 final review). The pool is
+            # rebuilt and its files tried again; a file caught in two crashes
+            # gets no result, which stalls its group right there and keeps
+            # the original status ('converted') for the next run.
+            crash_reported = True
+            writer.add(lambda c: record_event(
+                c, "extraction", "error", "log.pool_broken", language=language, commit=False,
+            ))
+
+    def submit(executor, item):
+        return executor.submit(_extract_file_pages, config, dict(item[2]))
+
+    try:
+        with ResilientPool(
+            lambda: ProcessPoolExecutor(max_workers=workers),
+            workers,
+            deadline_for=lambda item: deadline_for_size(item[2]["size"]),
+            should_stop=should_stop,
+            on_restart=on_restart,
+            on_idle=writer.flush_if_due,
+        ) as pool:
+            for outcome in pool.run(pending, submit):
+                group_key, index, _row = outcome.item
+                if outcome.kind == OK:
+                    ready[group_key][index] = ("ok", outcome.value)
+                elif outcome.kind == ERROR:
+                    ready[group_key][index] = ("error", outcome.value)
+                elif outcome.kind == TIMED_OUT:
+                    message = translate(
+                        language or DEFAULT_LANGUAGE, "error.file_timed_out", minutes=_minutes(outcome.value)
+                    )
+                    ready[group_key][index] = ("error", message)
+                else:
+                    continue  # CRASHED: see `on_restart`
+                _apply_ready(group_key)
+        writer.flush()
+    except PoolStalledError as exc:
+        row = exc.item[2]
+        writer.add(lambda c: record_event(
+            c, "extraction", "error", "log.pool_stalled", {"name": row["name"]}, language=language, commit=False,
+        ))
+        writer.flush()
+        raise StepStalledError(
+            translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=row["name"])
+        ) from exc
+    except BaseException as exc:
+        if isinstance(exc, sqlite3.Error):
+            writer.discard()
+        else:
             try:
-                ready[group_key][index] = ("ok", future.result())
-            except CancelledError:
-                continue
-            except BrokenProcessPool:
-                # A worker died (e.g. `MemoryError` on a large PDF) and took
-                # the whole pool down with it — ALL still-pending futures
-                # receive this same exception, including files that never
-                # got to run (I3, Phase 13 final review). Unlike a real
-                # per-file failure: we don't mark it 'failed' (which would
-                # exclude the file from every future rerun) — we leave this
-                # item without a result in `ready`, which stalls the group's
-                # `current_position` right here and keeps the original
-                # status ('converted') to be resumed later.
-                if not pool_broken:
-                    pool_broken = True
-                    record_event(conn, "extraction", "error", "log.pool_broken", language=language)
-                continue
-            except Exception as exc:
-                ready[group_key][index] = ("error", exc)
-
-            _apply_ready(group_key)
-
-            if not stop_request_handled and should_stop is not None and should_stop():
-                stop_request_handled = True
-                # The pause button must never go unanswered: cancel every
-                # future not yet started.
-                for pending_future in futures:
-                    if not pending_future.done():
-                        pending_future.cancel()
+                writer.flush()
+            except Exception:
+                writer.discard()
+        raise
 
     return any(current_position[key] < len(groups[key]) for key in groups)
+
+
+def _minutes(seconds: float) -> int:
+    return max(1, round(seconds / 60))
 
 
 def extract_pages(

@@ -10,6 +10,47 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.5] — 2026-10-31
+
+### Processing no longer freezes, whatever the size of the collection
+
+#### Fixed
+
+- **A conversion could freeze for good, and the Execution screen then
+  showed "Internal Server Error" every two seconds.** On a 145,000-file
+  Google Drive folder, Drive stopped answering a few file opens. The
+  helper processes waited on them forever, and the step, which waited for
+  its helpers before leaving, waited with them while keeping the database
+  locked. Every file now has a time limit that grows with its size (10
+  minutes plus 2 per MB). A helper that goes past it is stopped and
+  restarted, and the work carries on. A file that freezes twice while the
+  others keep moving is marked as failed with "timed out". When nothing
+  moves at all (Drive or the disk has frozen, not one file), the step
+  stops with a clear message and leaves every file for the next run.
+- **A busy database broke the step instead of waiting.** A moment of
+  `database is locked` ended the step with its transaction still open.
+  The step now writes in batches, and on a locked database it undoes the
+  batch and applies it again a moment later, for up to ten minutes.
+- **A busy database showed "Internal Server Error" on screen.** The
+  Execution screen keeps what it already shows and asks again on the next
+  tick. A full page explains that the database is busy and nothing was
+  lost.
+- **A helper process that died (out of memory) ended the step.** The pool
+  of helpers is now rebuilt and the work carries on. Files caught in two
+  crashes are kept for the next run, as before.
+
+#### Changed
+
+- **Conversion and extraction are much faster on a Google Drive folder.**
+  The database journal mode is now `TRUNCATE` instead of `DELETE`: a
+  commit on a Drive folder went from about 0.3 s to under 0.01 s, because
+  Drive no longer has to create and delete the journal file each time.
+  It is still a rollback journal with the same safety, never WAL. The
+  steps also commit in batches (at least once a second) instead of once
+  per file.
+- **The screen's polls wait at most 5 seconds for a busy database**,
+  instead of 30.
+
 ## [1.5.4] — 2026-10-31
 
 ### A second scan no longer rereads every file, and its bar moves

@@ -145,7 +145,7 @@ motor de regras, leva minutos.
 
 ### O jeito fácil: o instalador do Windows
 
-1. Baixe o `GClaude-Indexer-Setup-1.5.4.exe` na
+1. Baixe o `GClaude-Indexer-Setup-1.5.5.exe` na
    [versão mais recente](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
 2. Dê dois cliques. Ele pergunta se a instalação é só para você ou para
    todos os usuários da máquina, mostra a licença e deixa você marcar quais

@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..config import ProjectConfig
+from ..db import READER_TIMEOUT_SECONDS
 from ..run_control import StopSignal
 from ..conversion import convert
 from ..extraction import extract_pages
@@ -249,7 +250,7 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
 
     weight_done: float | None = None
     try:
-        config, conn = load_project(output_folder)
+        config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
         try:
             current = _current_count(conn, task.step)
             if task.weight_total > 0:
