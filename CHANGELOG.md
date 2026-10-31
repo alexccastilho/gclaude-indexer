@@ -10,6 +10,76 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.9] — 2026-10-31
+
+### The full-text search no longer stalls the extraction; a responsive Execution screen
+
+The times below were measured on a local copy of a real project's database
+(144 thousand files, 153 thousand pages). With the database in Google Drive
+they are slower, though not by orders of magnitude.
+
+#### Fixed
+
+- **Adding files to the full-text search slowed down with every file.**
+  Before storing a file, its old passages were deleted through a column
+  the search table does not index, so each file read the whole table —
+  new files included, which had nothing to delete. On a large collection
+  the extraction reached 100% and then sat "running" for what would have
+  been more than 100 hours. Each file's passages now get a recorded range
+  and are removed by it, and the texts are read in parallel: ~0.35
+  files/s before, ~800–1,000 HTML files/s now.
+- **The extraction step was "done" while the search was still being
+  built.** A pause during that phase left the search unfinished and "Run
+  next step" moved on. The step is now done only when every file is in
+  the search, and the progress bar shows that phase on its own instead of
+  sitting at 100%.
+- **The Execution screen took about 90 seconds to open** during a large
+  run, and the steps table as long to refresh. The quality summary read
+  the text of every page just to count them, every two seconds. It now
+  counts without reading the text, computes coverage in one pass, and is
+  recalculated only when something changes: 5.6 s → 0.2 s locally.
+- **The live log filled with "The project's database is busy" and
+  stopped updating.** That notice is meant for a whole page, and the log
+  pasted it into the list whenever the database was busy. The log now
+  skips that cycle and tries again, like the rest of the screen.
+- **Classified items were lost when a summary contained the character
+  U+0085.** Common in HTML read as Latin-1, it split the item's line in
+  `raw_items.jsonl` in two, and the import discarded both halves as
+  corrupt (5 items in the real collection).
+- **A review resumed after a pause sent every low-confidence window back
+  to the model**, including those it had already reviewed. They are now
+  skipped.
+
+#### Changed
+
+- **Classification writes in batches** (rules and local engines): one
+  commit every two seconds instead of one per window plus one per
+  logged event. On a database in Google Drive each commit costs seconds
+  and blocks the screen. The windows step reads the pages without their
+  text when it does not write window files, checks existing windows with
+  one query per group, and lists the windows folder once. Locally, on
+  the same collection: windows in 1.4 s (10,962 windows), rules
+  classification in 77 s.
+- **The steps write less often**: every two seconds or 500 operations
+  (were one second or 200), so the screens find the database free more
+  often.
+- **OCR conversion starts with the largest file.** In path order an
+  809-page PDF started last and ran alone for six minutes after every
+  other file was done.
+- **Binary files are no longer read as text.** With "all extensions"
+  selected, a file with no extractor whose first bytes contain a NUL
+  (zip, audio, font, CAD drawing) is kept in the index by name with no
+  text, instead of a page of control characters that went into the search
+  and into summaries. This applies to files converted from now on; the
+  ones already converted change when reprocessed (project update).
+- **A file whose text cannot be read for the search** is logged and
+  recorded with no passages, so the step can finish, instead of being
+  retried on every run. Reprocessing the file (project update) brings it
+  back.
+- **The installer ticks the classification model download and the CPU
+  sensor shortcut by default.** Both can still be unticked; an update
+  finds the model already downloaded and skips it.
+
 ## [1.5.8] — 2026-10-31
 
 ### Much faster processing on Google Drive; updating stops the old version

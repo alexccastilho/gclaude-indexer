@@ -105,7 +105,7 @@ def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
     from .windows_prep import group_page_positions
 
     mapa: dict[tuple[str, int], tuple[str, int]] = {}
-    for group_key, pages in group_page_positions(conn).items():
+    for group_key, pages in group_page_positions(conn, with_text=False).items():
         for position, page in enumerate(pages, start=1):
             mapa[(group_key, position)] = (page["file_name"], page["number"])
     return mapa
@@ -270,18 +270,15 @@ def _group_ranges(numbers: list[int]) -> list[tuple[int, int]]:
 
 
 def _gaps_by_group(conn) -> dict[str, list[tuple[int, int]]]:
-    from .windows_prep import pages_for_group
+    from .windows_prep import group_page_counts
 
-    groups = [
-        row["group_key"]
-        for row in conn.execute(
-            "SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL AND status = 'extracted'"
-        ).fetchall()
-    ]
+    # 1.5.9: counted, not loaded — this ran on every refresh of the
+    # Execution screen (through `quality_summary`) and read every page's
+    # text to learn how many there were.
+    counts = group_page_counts(conn, only_extracted_groups=True)
 
     gaps = {}
-    for group in groups:
-        page_count = len(pages_for_group(conn, group))
+    for group, page_count in counts.items():
         page_orders = list(range(1, page_count + 1))
         if not page_orders:
             continue
@@ -435,8 +432,21 @@ def generate_project_instructions_md(conn, config: ProjectConfig, language: str)
 
     # Only for collections that have struck text (HTML/DOCX with `~~`): a
     # collection of PDFs keeps the instructions it always had.
+    # 1.5.9: only the pages of files that can carry the mark. In a PDF
+    # collection the old query read the text of every page to find none.
+    from .file_types import EXTENSION_CATEGORIES
+
+    no_struck = sorted(
+        ext.lstrip(".") for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"]
+    )
+    placeholders = ", ".join("?" for _ in no_struck)
     has_struck_text = conn.execute(
-        "SELECT 1 FROM page WHERE instr(text, ?) > 0 LIMIT 1", (STRUCK_MARK,)
+        f"""
+        SELECT 1 FROM page JOIN file ON file.id = page.file_id
+        WHERE lower(file.extension) NOT IN ({placeholders}) AND instr(page.text, ?) > 0
+        LIMIT 1
+        """,
+        (*no_struck, STRUCK_MARK),
     ).fetchone()
     if has_struck_text:
         lines += [t("artifact.project_instructions.struck_text_rule"), ""]

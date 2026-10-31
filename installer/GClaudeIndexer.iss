@@ -465,11 +465,11 @@ begin
   DepsChoicePage.Values[DEP_OLLAMA] := True;
   DepsChoicePage.Values[DEP_SENSORS] := True;
 
-  { Unticked, with the size in the label: gigabytes started without being
-    asked for is how an installation someone expected to take a minute
-    becomes twenty. }
-  DepsChoicePage.Values[DEP_MODEL] := False;
-  DepsChoicePage.Values[DEP_CPUSENSOR] := False;
+  { 1.5.9, at the user's request: both ticked by default. The size stays
+    in the label, so the 3.2 GB download is still a visible choice; an
+    update finds the model already in Ollama and the pull returns at once. }
+  DepsChoicePage.Values[DEP_MODEL] := True;
+  DepsChoicePage.Values[DEP_CPUSENSOR] := True;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);

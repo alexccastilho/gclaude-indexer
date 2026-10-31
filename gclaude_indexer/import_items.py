@@ -112,7 +112,11 @@ def _read_and_validate_lines(
     # Shared across the whole file so each group's pages are read once.
     page_ranges: dict[str, tuple[int, int] | None] = {}
 
-    for line_number, line in enumerate(jsonl_path.read_text(encoding="utf-8").splitlines(), start=1):
+    # 1.5.9: `split("\n")`, not `splitlines()`: the latter also breaks on
+    # U+0085, U+2028 and U+2029, which `json.dumps(ensure_ascii=False)`
+    # leaves unescaped inside strings. Text from HTML decoded as latin-1
+    # carries U+0085, and each one cut an item in two "corrupt" lines.
+    for line_number, line in enumerate(jsonl_path.read_text(encoding="utf-8").split("\n"), start=1):
         line = line.strip()
         if not line:
             continue

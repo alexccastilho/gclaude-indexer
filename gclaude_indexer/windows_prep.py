@@ -82,7 +82,7 @@ def window_key(base_name: str, start: int, end: int) -> str:
     return f"{base_name}::{start + 1:06d}-{end:06d}"
 
 
-def pages_for_group(conn, group_key: str):
+def pages_for_group(conn, group_key: str, with_text: bool = True):
     """Pages of the group, in the order the windows and `RulesEngine` cite.
 
     Ordered by natural path and page number, not by `page.id` (Phase 17).
@@ -92,9 +92,15 @@ def pages_for_group(conn, group_key: str):
     to the end of the group. Natural ordering is not expressible in SQL,
     so the final sort happens here, with the key `extraction` already uses.
     """
+    # 1.5.9: `with_text=False` for callers that only need where each page
+    # is — the text is most of the table (153 thousand pages, ~350 MB).
+    columns = (
+        "page.*" if with_text
+        else "page.id, page.file_id, page.number, page.reference"
+    )
     rows = conn.execute(
-        """
-        SELECT page.*, file.name AS file_name, file.relative_path AS file_relative_path
+        f"""
+        SELECT {columns}, file.name AS file_name, file.relative_path AS file_relative_path
         FROM page
         JOIN file ON file.id = page.file_id
         WHERE file.group_key = ?
@@ -108,7 +114,33 @@ def pages_for_group(conn, group_key: str):
     )
 
 
-def group_page_positions(conn) -> dict[str, list]:
+def group_page_counts(conn, only_extracted_groups: bool = False) -> dict[str, int]:
+    """How many pages each group has: the length of `pages_for_group`
+    without reading a single page.
+
+    1.5.9: the quality summary and the gap report wanted only this number,
+    and got it by loading every page with its text (`pages_for_group`) and
+    sorting it — on 153 thousand pages in a Drive-synced database, the
+    Execution screen took 90 s to open and the steps table, refreshed every
+    two seconds, as long. The count reads `idx_page_file_id` only."""
+    sql = """
+        SELECT file.group_key, COUNT(*)
+        FROM page
+        JOIN file ON file.id = page.file_id
+        WHERE file.group_key IS NOT NULL
+    """
+    if only_extracted_groups:
+        sql += """
+          AND file.group_key IN (
+              SELECT DISTINCT group_key FROM file
+              WHERE group_key IS NOT NULL AND status = 'extracted'
+          )
+        """
+    sql += " GROUP BY file.group_key"
+    return {group: count for group, count in conn.execute(sql)}
+
+
+def group_page_positions(conn, with_text: bool = True) -> dict[str, list]:
     """Every group's pages in group order — index 0 is position 1.
 
     The one definition of "position in the group" that `item.start_order`
@@ -121,7 +153,7 @@ def group_page_positions(conn) -> dict[str, list]:
         row["group_key"]
         for row in conn.execute("SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL")
     ]
-    return {group: pages_for_group(conn, group) for group in groups}
+    return {group: pages_for_group(conn, group, with_text=with_text) for group in groups}
 
 
 def _write_window_file(
@@ -192,12 +224,20 @@ def prepare_windows(
     write_files = window_files_needed(config)
 
     result = WindowsResult()
+    # 1.5.9: one listing of the folder (in Drive) instead of one `exists()`
+    # or `unlink()` per window — 10 thousand calls of ~0.2–0.8 s each on a
+    # first run, almost all of them on files that were never there.
+    try:
+        present = {entry.name for entry in os.scandir(windows_dir)}
+    except OSError:
+        present = set()
 
     for group_key in group_keys:
         if should_stop is not None and should_stop():
             break
 
-        pages = pages_for_group(conn, group_key)
+        # The text only when the window files are written (Claude Code).
+        pages = pages_for_group(conn, group_key, with_text=write_files)
         page_count = len(pages)
         if page_count == 0:
             continue
@@ -206,6 +246,10 @@ def prepare_windows(
         new_rows: list[tuple] = []
         file_jobs: list[tuple] = []
         stale_files: list[Path] = []
+        # One query per group, not one per window (1.5.9).
+        existing_keys = {
+            row[0] for row in conn.execute("SELECT key FROM window WHERE group_key = ?", (group_key,))
+        }
 
         for start, end in window_spans(page_count, window_size, config.overlap):
             page_block = pages[start:end]
@@ -213,7 +257,7 @@ def prepare_windows(
             end_ref = page_block[-1]["reference"]
             key = window_key(base_name, start, end)
 
-            row_exists = conn.execute("SELECT 1 FROM window WHERE key = ?", (key,)).fetchone()
+            row_exists = key in existing_keys
             if row_exists:
                 result.existing += 1
             else:
@@ -225,9 +269,9 @@ def prepare_windows(
                 # Write unconditionally when this call creates the row: if unlink ever failed
                 # during invalidation, the old text must not survive. For existing windows,
                 # keep the shortcut: skip writing if the file exists and was not corrupted.
-                if not row_exists or not file_path.exists():
+                if not row_exists or file_path.name not in present:
                     file_jobs.append((file_path, key, group_key, start_ref, end_ref, page_block, start + 1))
-            elif not row_exists:
+            elif not row_exists and file_path.name in present:
                 # Not written, but a leftover from an unlink that failed during
                 # an update must not survive to be read as this window later.
                 stale_files.append(file_path)

@@ -116,7 +116,8 @@ def sync_progress(conn: sqlite3.Connection, config: ProjectConfig, language: str
     keys_with_item: set[str] = set()
 
     if jsonl_path.exists():
-        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+        # `split("\n")`, not `splitlines()` (1.5.9, see `import_items`).
+        for line in jsonl_path.read_text(encoding="utf-8").split("\n"):
             line = line.strip()
             if not line:
                 continue

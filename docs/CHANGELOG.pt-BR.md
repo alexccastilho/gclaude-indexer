@@ -17,6 +17,77 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.9] — 2026-10-31
+
+### A busca de texto completo não trava mais a extração; tela de execução ágil
+
+Os tempos abaixo foram medidos numa cópia local do banco de um projeto real
+(144 mil arquivos, 153 mil páginas). Com o banco no Google Drive eles são
+maiores, mas não em ordens de grandeza.
+
+#### Corrigido
+
+- **Incluir os arquivos na busca de texto completo ficava mais lento a
+  cada arquivo.** Antes de gravar um arquivo, os trechos antigos dele eram
+  apagados por uma coluna que a tabela de busca não indexa, então cada
+  arquivo lia a tabela inteira — até os novos, que não tinham nada a
+  apagar. Num acervo grande a extração chegava a 100% e ficava "rodando"
+  pelo que seriam mais de 100 horas. Agora os trechos de cada arquivo têm
+  uma faixa registrada e são removidos por ela, e os textos são lidos em
+  paralelo: ~0,35 arquivo/s antes, ~800–1.000 arquivos HTML/s agora.
+- **A etapa de extração ficava "concluída" com a busca ainda em
+  construção.** Uma pausa nessa fase deixava a busca incompleta e "Executar
+  próxima etapa" seguia adiante. Agora a etapa só termina quando todos os
+  arquivos estão na busca, e a barra de progresso mostra essa fase à parte
+  em vez de ficar parada em 100%.
+- **A tela de execução levava cerca de 90 segundos para abrir** durante um
+  processamento grande, e a tabela de etapas o mesmo para se atualizar. O
+  resumo de qualidade lia o texto de todas as páginas só para contá-las, a
+  cada dois segundos. Agora conta sem ler o texto, calcula a cobertura numa
+  passada só e é recalculado apenas quando algo muda: 5,6 s → 0,2 s
+  localmente.
+- **O log ao vivo se enchia de "O banco de dados do projeto está ocupado"
+  e parava de atualizar.** Esse aviso é feito para uma página inteira, e o
+  log o colava na lista sempre que o banco estava ocupado. Agora o log pula
+  aquele ciclo e tenta de novo, como o resto da tela.
+- **Peças classificadas se perdiam quando o resumo tinha o caractere
+  U+0085.** Comum em HTML lido como Latin-1, ele partia a linha da peça no
+  `raw_items.jsonl` em duas, e a importação descartava as duas metades como
+  corrompidas (5 peças no acervo real).
+- **A revisão retomada depois de uma pausa reenviava ao modelo todas as
+  janelas de baixa confiança**, inclusive as que já tinha revisado. Agora
+  elas são puladas.
+
+#### Alterado
+
+- **A classificação grava em lotes** (motores de regras e local): um
+  commit a cada dois segundos em vez de um por janela e mais um por evento
+  registrado. Com o banco no Google Drive cada commit custa segundos e
+  bloqueia a tela. A etapa de janelas lê as páginas sem o texto quando não
+  grava os arquivos das janelas, confere as janelas existentes com uma
+  consulta por grupo e lista a pasta das janelas uma vez só. Localmente, no
+  mesmo acervo: janelas em 1,4 s (10.962 janelas), classificação por
+  regras em 77 s.
+- **As etapas gravam com menos frequência**: a cada dois segundos ou 500
+  operações (eram um segundo ou 200), então as telas encontram o banco
+  livre mais vezes.
+- **A conversão com OCR começa pelo maior arquivo.** Na ordem dos caminhos
+  um PDF de 809 páginas começava por último e rodava sozinho por seis
+  minutos depois que todos os outros já tinham terminado.
+- **Arquivos binários não são mais lidos como texto.** Com "todas as
+  extensões" marcado, um arquivo sem extrator cujos primeiros bytes têm um
+  NUL (zip, áudio, fonte, desenho CAD) fica no índice pelo nome, sem texto,
+  em vez de uma página de caracteres de controle que ia para a busca e para
+  os resumos. Vale para os arquivos convertidos daqui em diante; os já
+  convertidos mudam quando reprocessados (atualização do projeto).
+- **Um arquivo cujo texto não pode ser lido para a busca** é registrado no
+  log e gravado sem trechos, para a etapa poder terminar, em vez de ser
+  tentado de novo a cada execução. Reprocessar o arquivo (atualização do
+  projeto) o traz de volta.
+- **O instalador já vem com o download do modelo de classificação e o
+  atalho do sensor de CPU marcados.** Os dois continuam podendo ser
+  desmarcados; numa atualização o modelo já baixado não é baixado de novo.
+
 ## [1.5.8] — 2026-10-31
 
 ### Processamento muito mais rápido no Google Drive; a atualização encerra a versão antiga

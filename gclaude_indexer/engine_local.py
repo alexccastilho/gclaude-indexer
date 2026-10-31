@@ -26,10 +26,12 @@ from datetime import date
 from pathlib import Path
 
 from .classification import (
-    WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages, item_to_dict, validate_item,
+    CLASSIFICATION_BATCH_SECONDS, WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages,
+    item_to_dict, validate_item,
     page_order, starts_new_document,
 )
 from .config import ProjectConfig
+from .db import BatchWriter
 from .events import record_event
 from .i18n import nested
 from .import_items import RAW_ITEMS_FILE_NAME
@@ -1151,7 +1153,8 @@ class LocalClassificationResult:
 
 
 def _log_rejection_warnings(
-    conn: sqlite3.Connection, local_engine: LocalEngine, window_key: str, language: str | None = None
+    conn: sqlite3.Connection, local_engine: LocalEngine, window_key: str, language: str | None = None,
+    writer=None,
 ) -> None:
     """Logs (at `aviso` level) every item rejected because of an unrecognized
     reference in the last call to `local_engine.classify()` — before, that
@@ -1163,9 +1166,17 @@ def _log_rejection_warnings(
     rest of the event on a later read (`list_events`), see `nested()`'s
     docstring in `i18n.py`."""
     for warning_key, warning_params in local_engine.last_window_warnings:
+        params = {"window": window_key, "reason": nested(warning_key, **warning_params)}
+        if writer is not None:
+            # 1.5.9: joins the window's batch instead of a commit of its own.
+            writer.add(lambda c, params=params: record_event(
+                c, "classification", "warning", "log.local_engine.window_rejection",
+                params, language=language, commit=False,
+            ))
+            continue
         record_event(
             conn, "classification", "warning", "log.local_engine.window_rejection",
-            {"window": window_key, "reason": nested(warning_key, **warning_params)}, language=language,
+            params, language=language,
         )
 
 
@@ -1336,83 +1347,106 @@ def classify_pending(
     gpu_plan_logged = False
 
     loader = WindowPageLoader(conn)  # 1.5.8: one read of each group's order
+    # 1.5.9: the window's events and its "done" go in one batch
+    # (`BatchWriter`) instead of 2–4 commits per window, each costing
+    # seconds on a Drive-synced database and locking the screens out. The
+    # items are flushed to `raw_items.jsonl` before the window is queued.
+    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
     with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
-        for window in pending_windows:
-            if should_stop is not None and should_stop():
-                break
+        try:
+            for window in pending_windows:
+                if should_stop is not None and should_stop():
+                    break
 
-            pages = load_window_pages(conn, window, loader)
+                pages = load_window_pages(conn, window, loader)
 
-            items = []
-            if ollama_available:
-                try:
-                    items = local_engine.classify(pages)
-                    if not gpu_plan_logged:
-                        gpu_plan_logged = _log_gpu_plan(conn, local_engine, language=language)
-                    _log_rejection_warnings(conn, local_engine, window["key"], language=language)
-                except OllamaConnectionError as exc:
-                    record_event(
-                        conn, "classification", "warning", "log.local_engine.connection_lost",
-                        {"error": str(exc)}, language=language,
-                    )
-                    ollama_available = _try_restart_ollama(conn, local_engine, language=language)
-                    if ollama_available:
-                        try:
-                            items = local_engine.classify(pages)
-                            _log_rejection_warnings(conn, local_engine, window["key"], language=language)
-                        except OllamaConnectionError:
-                            ollama_available = False
+                items = []
+                if ollama_available:
+                    try:
+                        items = local_engine.classify(pages)
+                        if not gpu_plan_logged:
+                            # Commits on its own: the batch goes first, so a
+                            # later replay never writes these ops twice.
+                            writer.flush()
+                            gpu_plan_logged = _log_gpu_plan(conn, local_engine, language=language)
+                        _log_rejection_warnings(conn, local_engine, window["key"], language=language, writer=writer)
+                    except OllamaConnectionError as exc:
+                        writer.flush()  # these events commit on their own
+                        record_event(
+                            conn, "classification", "warning", "log.local_engine.connection_lost",
+                            {"error": str(exc)}, language=language,
+                        )
+                        ollama_available = _try_restart_ollama(conn, local_engine, language=language)
+                        if ollama_available:
+                            try:
+                                items = local_engine.classify(pages)
+                                _log_rejection_warnings(
+                                    conn, local_engine, window["key"], language=language, writer=writer
+                                )
+                            except OllamaConnectionError:
+                                ollama_available = False
 
-            if not ollama_available:
-                items = rules_fallback_engine.classify(pages)
-                result.windows_via_rules_fallback += 1
+                if not ollama_available:
+                    items = rules_fallback_engine.classify(pages)
+                    result.windows_via_rules_fallback += 1
 
-            def escrever(item: ClassifiedItem) -> bool:
-                """Valida e grava a peça. `False` quando ela foi recusada."""
-                item_dict = item_to_dict(item, window["key"], window["group_key"])
-                errors = validate_item(item_dict)
-                if errors:
-                    result.invalid_items += 1
-                    record_event(
-                        conn, "classification", "error", "log.local_engine.invalid_item",
-                        {"engine": item.engine, "window": window["key"], "errors": "; ".join(errors)},
-                        language=language,
-                    )
-                    return False
+                def escrever(item: ClassifiedItem) -> bool:
+                    """Valida e grava a peça. `False` quando ela foi recusada."""
+                    item_dict = item_to_dict(item, window["key"], window["group_key"])
+                    errors = validate_item(item_dict)
+                    if errors:
+                        result.invalid_items += 1
+                        params = {"engine": item.engine, "window": window["key"], "errors": "; ".join(errors)}
+                        writer.add(lambda c, params=params: record_event(
+                            c, "classification", "error", "log.local_engine.invalid_item",
+                            params, language=language, commit=False,
+                        ))
+                        return False
 
-                jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
-                result.items_generated += 1
-                if item.confidence == "high":
-                    result.high_confidence += 1
-                elif item.confidence == "medium":
-                    result.medium_confidence += 1
-                else:
-                    result.low_confidence += 1
-                return True
+                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
+                    result.items_generated += 1
+                    if item.confidence == "high":
+                        result.high_confidence += 1
+                    elif item.confidence == "medium":
+                        result.medium_confidence += 1
+                    else:
+                        result.low_confidence += 1
+                    return True
 
-            gravadas = [item for item in items if escrever(item)]
+                gravadas = [item for item in items if escrever(item)]
 
-            # Garantia de cobertura (requisito central: nada pode faltar do
-            # índice). Feita aqui, e não dentro de `classify`, para valer
-            # também quando a janela falhou e caiu no motor de regras.
-            #
-            # Depois da validação, e não antes: uma peça recusada não pode
-            # levar as páginas dela junto. Medido numa corrida real — 20
-            # peças recusadas por causa da data eram 20 faixas de páginas
-            # que sumiam do índice sem deixar rastro, porque a cobertura
-            # já tinha sido calculada contando com elas.
-            faltando = _uncovered_pages(pages, gravadas)
-            if faltando:
-                record_event(
-                    conn, "classification", "warning", "log.local_engine.coverage_filled",
-                    {"window": window["key"], "pages": len(faltando)}, language=language,
-                )
-                for item in _coverage_items(faltando):
-                    escrever(item)
+                # Garantia de cobertura (requisito central: nada pode faltar do
+                # índice). Feita aqui, e não dentro de `classify`, para valer
+                # também quando a janela falhou e caiu no motor de regras.
+                #
+                # Depois da validação, e não antes: uma peça recusada não pode
+                # levar as páginas dela junto. Medido numa corrida real — 20
+                # peças recusadas por causa da data eram 20 faixas de páginas
+                # que sumiam do índice sem deixar rastro, porque a cobertura
+                # já tinha sido calculada contando com elas.
+                faltando = _uncovered_pages(pages, gravadas)
+                if faltando:
+                    params = {"window": window["key"], "pages": len(faltando)}
+                    writer.add(lambda c, params=params: record_event(
+                        c, "classification", "warning", "log.local_engine.coverage_filled",
+                        params, language=language, commit=False,
+                    ))
+                    for item in _coverage_items(faltando):
+                        escrever(item)
 
-            conn.execute("UPDATE window SET status = 'done' WHERE id = ?", (window["id"],))
-            conn.commit()
-            result.windows_processed += 1
+                jsonl_file.flush()
+                writer.add(lambda c, window_id=window["id"]: c.execute(
+                    "UPDATE window SET status = 'done' WHERE id = ?", (window_id,)
+                ))
+                result.windows_processed += 1
+            writer.flush()
+        except BaseException:
+            jsonl_file.flush()
+            try:
+                writer.flush()
+            except Exception:
+                writer.discard()
+            raise
 
     record_event(
         conn,

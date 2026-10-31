@@ -343,6 +343,8 @@ one group.
 > cores (at most 32), processes rather than threads because the conversion
 > itself is pure Python. Measured on 1,352 HTML files from Drive: ~5.7
 > files/s before, ~234 files/s with both changes.
+> Since 1.5.9 the OCR queue starts with the largest file: in path order an
+> 809-page PDF started last and ran alone for six minutes.
 
 **3. Slicing.** A PDF with more pages than the configured limit (default 80)
 is cut into chunks, written into the local work folder, with the original
@@ -367,6 +369,24 @@ page numbering preserved.
 character limit, character count, embedded-image count, a best-effort table
 detection. Written to `page`.
 
+The step ends by adding every extracted file to the full-text search
+(`fulltext.py`, FTS5 table `fulltext`), and is not done while any file
+waits for it: a pause during that phase resumes it on the next run. The
+progress bar shows that phase on its own ("adding the files to the
+full-text search"). Since 1.5.9 each file's passages get consecutive
+rowids and `fulltext_file` records the range (`first_rowid`,
+`last_rowid`), so removing a file never scans the table — `file_id` is
+an UNINDEXED FTS5 column, and the per-file delete by it had made the
+indexing quadratic (0.35 files/s and falling on 144 thousand files). The
+texts are read by a pool of threads (PDFs one at a time, PyMuPDF is not
+thread-safe). A file whose text cannot be read is logged and recorded with
+no passages, so the step can finish; reprocessing the file (project
+update) brings it back to the search.
+
+A file of an extension with no extractor (the "all" category) whose first
+8 KB contain a NUL byte is binary (zip, audio, font, drawing): since 1.5.9
+it is kept in the index by name, with no text.
+
 **5. Window preparation.** Groups pages into overlapping windows. Writes one
 `.txt` file per window into `<output>/windows/`, with a header identifying
 the group and the page range, and each page labeled with its own
@@ -378,7 +398,10 @@ inserted with one commit per group. Classification loads windows through
 `classification.WindowPageLoader`, which keeps each group's page order as
 ids and fetches only the window's pages: reading the whole group per
 window was quadratic (a real group had 144 thousand pages). `file.group_key`
-is indexed.
+is indexed. Since 1.5.9 the step reads the pages without their text unless
+it writes the files, checks existing windows with one query per group,
+and lists the windows folder once instead of an `exists()` or `unlink()`
+per window.
 
 **6. Classification.** An isolated step behind a single interface, with
 three interchangeable engines selectable in the form (plus an `automatic`
@@ -568,6 +591,16 @@ recent lines, with a level filter (all/info/warning/error, in pure CSS) and
 a "follow the tail" checkbox that keeps the scroll pinned to the latest
 line. When the engine is `claude_code`, shows the copyable command and a
 button to recheck whether the windows are done.
+
+Since 1.5.9 the screen stays responsive on a large collection in Drive. The
+quality summary shown with the steps is cached per project and recomputed
+only when items, windows, pages or failures change; page counts come from
+`windows_prep.group_page_counts` (no page text) and coverage from a
+difference sweep, O(pages + items). Before, every two-second refresh read
+the text of every page — the screen took 90 s to open on 153 thousand
+pages. The live log sends `HX-Request`, so a busy database answers 204
+like the other polls, and appends only 200 responses; a 503 page used to
+be pasted into the list.
 
 **Result.** A preview of the four generated files, a button to open the
 output folder in Explorer, a report of what's still pending, and a button
@@ -824,7 +857,17 @@ So the first run on a new machine resolves itself with no manual step.
   same rollback journal, but it is not created and deleted on every commit,
   which on a Google Drive folder cost ~0.3 s per commit (TRUNCATE: <0.01 s).
 - Steps write through `db.BatchWriter`: one transaction per batch (at most
-  one second or 200 files), replayed whole after `database is locked`.
+  two seconds or 500 operations since 1.5.9; one second or 200 before),
+  replayed whole after `database is locked`. A commit on a 400 MB database
+  in Drive takes seconds and blocks the screens' reads; one per second left
+  them locked out ~40% of the time. The classification engines (rules,
+  local) write through it too since 1.5.9, with each window's events and
+  its "done" in the batch instead of 2–4 commits per window, and each
+  window's items flushed to `raw_items.jsonl` before the window is queued.
+  The full-text indexing commits every 3 s. `raw_items.jsonl` is read with
+  `split("
+")`, never `splitlines()`, which also breaks at U+0085,
+  U+2028 and U+2029 inside JSON strings.
   Worker processes run under `worker_pool.ResilientPool`: a per-file
   deadline (10 min + 2 min/MB), worker kill and pool rebuild on a stall,
   never a blocking wait on exit. Economy mode (parallelism 1) runs under

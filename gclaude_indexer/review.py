@@ -45,7 +45,9 @@ def _low_confidence_windows(jsonl_path: Path) -> set[str]:
         return set()
 
     keys = set()
-    for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+    reviewed = set()
+    # `split("\n")`, not `splitlines()` (1.5.9, see `import_items`).
+    for line in jsonl_path.read_text(encoding="utf-8").split("\n"):
         line = line.strip()
         if not line:
             continue
@@ -53,9 +55,19 @@ def _low_confidence_windows(jsonl_path: Path) -> set[str]:
             data = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if data.get("confidence") == "low" and data.get("window"):
-            keys.add(data["window"])
-    return keys
+        window = data.get("window")
+        if not window:
+            continue
+        if data.get("engine") not in (None, "rules"):
+            # 1.5.9: a window the second engine already answered is not
+            # sent again. Nothing else marks it reviewed, so every resumed
+            # run sent every low-confidence window back to the model
+            # (20–30 s each on a local one) for items consolidation then
+            # merged away as duplicates.
+            reviewed.add(window)
+        if data.get("confidence") == "low":
+            keys.add(window)
+    return keys - reviewed
 
 
 def classify_with_review(

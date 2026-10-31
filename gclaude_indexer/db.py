@@ -165,7 +165,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fulltext USING fts5(
     tokenize = 'unicode61 remove_diacritics 2'
 );
 CREATE TABLE IF NOT EXISTS fulltext_file (
-    file_id INTEGER PRIMARY KEY
+    file_id     INTEGER PRIMARY KEY,
+    -- 1.5.9: the file's passages are rowids first..last of `fulltext`,
+    -- so removing it never scans the table (`fulltext.remove_file`).
+    first_rowid INTEGER,
+    last_rowid  INTEGER
 );
 -- The Execution screen counts windows by status every two seconds, and
 -- review.md lists the error events: both scanned the whole table.
@@ -230,15 +234,17 @@ class BatchWriter:
 
     The batch commits after `max_items` ops or `max_seconds` since its first
     op, whichever comes first. The progress bar reads committed counts, so
-    `max_seconds` is how stale it can get.
+    `max_seconds` is how stale it can get. 1.5.9: 2 s and 500 ops (were
+    1 s and 200): on a 400 MB database in Drive a commit takes seconds, and
+    one per second left the screens' reads locked out ~40% of the time.
     """
 
     def __init__(
         self,
         conn: sqlite3.Connection,
         *,
-        max_items: int = 200,
-        max_seconds: float = 1.0,
+        max_items: int = 500,
+        max_seconds: float = 2.0,
         retry_seconds: float = LOCK_RETRY_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -328,6 +334,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_file_mtime_column(conn)
     _ensure_file_ocr_failed_column(conn)
     _ensure_file_group_key_index(conn)
+    _ensure_fulltext_file_range_columns(conn)
+    _ensure_file_ocr_failed_index(conn)
     conn.commit()
 
 
@@ -371,6 +379,27 @@ def _ensure_file_group_key_index(conn: sqlite3.Connection) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
     if "group_key" in columns:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_file_group_key ON file(group_key)")
+
+
+def _ensure_fulltext_file_range_columns(conn: sqlite3.Connection) -> None:
+    """Adds `fulltext_file.first_rowid`/`last_rowid` (1.5.9). Files indexed
+    before keep NULL and are removed the old, slower way."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(fulltext_file)").fetchall()}
+    if columns and "first_rowid" not in columns:
+        conn.execute("ALTER TABLE fulltext_file ADD COLUMN first_rowid INTEGER")
+    if columns and "last_rowid" not in columns:
+        conn.execute("ALTER TABLE fulltext_file ADD COLUMN last_rowid INTEGER")
+
+
+def _ensure_file_ocr_failed_index(conn: sqlite3.Connection) -> None:
+    """1.5.9: the steps table counts the files waiting for an OCR retry
+    every two seconds (`conversion.ocr_retry_count`); without an index that
+    read the whole file table. Partial: only the few flagged rows."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
+    if "ocr_failed" in columns:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_ocr_failed ON file(ocr_failed) WHERE ocr_failed = 1"
+        )
 
 
 def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:

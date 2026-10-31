@@ -77,6 +77,14 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     failed = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'failed'").fetchone()[0]
     extracted = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
     total_pages = conn.execute("SELECT COUNT(*) FROM page").fetchone()[0]
+    # 1.5.9: the full-text search is indexed at the end of the extraction
+    # step; the step is not done while files wait for it. Before, a pause
+    # during the indexing left the step "done" and "Run next step" moved
+    # on, with the search never finished.
+    fulltext_pending = max(0, extracted - conn.execute(
+        "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id"
+        " WHERE file.status = 'extracted'"
+    ).fetchone()[0])
     total_windows = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
     windows_done = conn.execute("SELECT COUNT(*) FROM window WHERE status = 'done'").fetchone()[0]
     windows_pending = total_windows - windows_done
@@ -90,7 +98,8 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
         ("scan", done_or(total_files > 0, total_files > 0), {"total": total_files}),
         ("conversion", done_or(total_files > 0 and discovered == 0, total_files > 0),
          {"converted": converted, "failed": failed, "pending": discovered}),
-        ("extraction", done_or(converted > 0 and converted == extracted, converted > 0),
+        ("extraction",
+         done_or(converted > 0 and converted == extracted and fulltext_pending == 0, converted > 0),
          {"pages": total_pages}),
         ("windows", done_or(total_windows > 0 and extracted > 0, total_windows > 0),
          {"windows": total_windows}),

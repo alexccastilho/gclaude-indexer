@@ -30,8 +30,8 @@ The tokenizer drops accents (`remove_diacritics 2`), so "vigencia" finds
 "vigência". Struck text keeps its `~~` marks, and a result says whether
 what it found is struck — revoked, in legislation.
 
-Indexing runs at the end of the extraction step, one file at a time with a
-commit per file, so it resumes where it stopped. Classification is not
+Indexing runs at the end of the extraction step, in batches committed every
+few seconds, so it resumes where it stopped. Classification is not
 involved: this costs disk, not model time.
 """
 
@@ -39,17 +39,25 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
 from .file_types import category_of_extension, is_whole_document_file
+from .parallelism import io_workers_for
 
 # A passage is cut at the next heading once it holds this many characters,
 # and cut anyway at the next line once it holds the second number.
+# 1.5.9: indexing reads with threads and commits in batches (`index_pending`).
+INDEX_READ_WORKERS = 16
+INDEX_CHUNK = 256
+INDEX_BATCH_SECONDS = 3.0
+
 _SOFT_PASSAGE_CHARS = 600
 _HARD_PASSAGE_CHARS = 2500
 
@@ -155,18 +163,31 @@ def _pdf_passages(pdf_path: Path, references: dict[int, str]) -> list[Passage]:
         document.close()
 
 
+def _page_references(conn: sqlite3.Connection, file_id: int) -> dict[int, str]:
+    return {
+        number: reference
+        for number, reference in conn.execute(
+            "SELECT number, reference FROM page WHERE file_id = ?", (file_id,)
+        )
+    }
+
+
 def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> list[Passage]:
     """Every passage of one extracted file, from the same sources extraction
     reads — the OCR'd copy or the original PDF, or the converted text."""
+    return _read_passages(config, row, _page_references(conn, row["id"]))
+
+
+# PyMuPDF does not promise thread safety; PDFs are few in any collection,
+# so they are read one at a time while the text files go in parallel.
+_PDF_LOCK = threading.Lock()
+
+
+def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> list[Passage]:
+    """`passages_for_file` without the database: safe in a worker thread."""
     from .conversion import converted_artifact_path
 
     relative = row["relative_path"]
-    references = {
-        number: reference
-        for number, reference in conn.execute(
-            "SELECT number, reference FROM page WHERE file_id = ?", (row["id"],)
-        )
-    }
     category = category_of_extension("." + row["extension"])
 
     # 1.5.8: the intermediate may be in the local work folder or, for a
@@ -176,7 +197,8 @@ def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> l
     )
     if category == "pdf":
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative
-        return _pdf_passages(pdf_path, references)
+        with _PDF_LOCK:
+            return _pdf_passages(pdf_path, references)
 
     text = intermediate.read_text(encoding="utf-8")
     if not is_whole_document_file(row["name"]):
@@ -194,7 +216,25 @@ def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> l
 
 
 def remove_file(conn: sqlite3.Connection, file_id: int) -> None:
-    conn.execute("DELETE FROM fulltext WHERE file_id = ?", (file_id,))
+    """Takes one file out of the search.
+
+    1.5.9: by the rowid range recorded when it was indexed. `file_id` is an
+    UNINDEXED column of the FTS5 table, so a delete filtered on it reads the
+    whole table — and the indexing loop did that for every file, new ones
+    included: 0.9 s per file with only 4,389 passages stored, growing with
+    every file (31/10/2026, 144,000 files: over 100 hours). A file never
+    indexed has no `fulltext_file` row and costs nothing; only rows indexed
+    before 1.5.9, which have no range, still pay the full scan."""
+    found = conn.execute(
+        "SELECT first_rowid, last_rowid FROM fulltext_file WHERE file_id = ?", (file_id,)
+    ).fetchone()
+    if found is None:
+        return
+    first, last = found[0], found[1]
+    if first is None or last is None:
+        conn.execute("DELETE FROM fulltext WHERE file_id = ?", (file_id,))
+    elif last >= first:
+        conn.execute("DELETE FROM fulltext WHERE rowid BETWEEN ? AND ?", (first, last))
     conn.execute("DELETE FROM fulltext_file WHERE file_id = ?", (file_id,))
 
 
@@ -204,13 +244,28 @@ def index_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> int:
     return len(passages)
 
 
-def _store_passages(conn: sqlite3.Connection, row, passages: list[Passage]) -> None:
+def _store_passages(conn: sqlite3.Connection, row, passages: list[Passage]) -> int:
+    """Stores one file's passages under consecutive rowids and records the
+    range, so `remove_file` never has to scan the table.
+
+    The rowids are chosen here, so the transaction opens first: between
+    reading the last rowid and inserting, another indexer (the search
+    screen's "add the missing ones") must not take the same numbers. A
+    busy database at this point is a lock error, which `BatchWriter`
+    replays."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     remove_file(conn, row["id"])
+    last = conn.execute("SELECT rowid FROM fulltext ORDER BY rowid DESC LIMIT 1").fetchone()
+    first = (last[0] if last else 0) + 1
     conn.executemany(
-        "INSERT INTO fulltext (text, file_id, locator, line) VALUES (?, ?, ?, ?)",
-        [(p.text, row["id"], p.locator, p.line) for p in passages],
+        "INSERT INTO fulltext (rowid, text, file_id, locator, line) VALUES (?, ?, ?, ?, ?)",
+        [(first + offset, p.text, row["id"], p.locator, p.line) for offset, p in enumerate(passages)],
     )
-    conn.execute("INSERT INTO fulltext_file (file_id) VALUES (?)", (row["id"],))
+    conn.execute(
+        "INSERT INTO fulltext_file (file_id, first_rowid, last_rowid) VALUES (?, ?, ?)",
+        (row["id"], first, first + len(passages) - 1),
+    )
     return len(passages)
 
 
@@ -232,8 +287,8 @@ def index_pending(
     language: str | None = None,
     time_budget: float | None = None,
 ) -> IndexingResult:
-    """Indexes every extracted file not yet in the search, committing per
-    file. Stops early on `should_stop()` or after `time_budget` seconds,
+    """Indexes every extracted file not yet in the search, committing in
+    batches. Stops early on `should_stop()` or after `time_budget` seconds,
     leaving the rest for the next call. A file whose text can no longer be
     read (converted copies cleared, original moved) is logged and skipped,
     never failing the step."""
@@ -242,34 +297,54 @@ def index_pending(
     started = time.monotonic()
     result = IndexingResult()
     rows = pending_files(conn)
-    # 1.5.8: one commit per batch (`BatchWriter`, at least once a second),
+    # 1.5.8: one commit per batch (`BatchWriter`; 1.5.9: every 3 s),
     # not per file — on a Drive-synced database each commit costs a round
     # of journal I/O, which for 100 thousand small files was most of the
     # step. Reading the text stays outside the batch, so a file that cannot
     # be read is reported without touching the others.
-    writer = BatchWriter(conn)
+    writer = BatchWriter(conn, max_seconds=INDEX_BATCH_SECONDS)
+    # 1.5.9: the texts are read by a pool of threads, a chunk at a time and
+    # in order, while this thread writes. Reading waits on the disk (an
+    # intermediate an older version left in a Drive output folder costs
+    # ~200 ms to open); the writes are what has to stay in one thread.
+    workers = max(1, min(INDEX_READ_WORKERS, io_workers_for(config.parallelism)))
+    position = 0
     try:
-        for position, row in enumerate(rows):
-            if (should_stop is not None and should_stop()) or (
-                time_budget is not None and time.monotonic() - started > time_budget
-            ):
-                result.interrupted = True
-                result.pending = len(rows) - position
-                break
-            try:
-                passages = passages_for_file(conn, config, row)
-            except Exception as exc:
-                error = str(exc)[:300]
-                writer.add(lambda c, name=row["name"], error=error: record_event(
-                    c, "extraction", "warning", "log.fulltext.file_failed",
-                    {"name": name, "error": error}, language=language, commit=False,
-                ))
-                writer.flush_if_due()
-                continue
-            writer.add(lambda c, row=row, passages=passages: _store_passages(c, row, passages))
-            result.passages += len(passages)
-            result.files += 1
-            writer.flush_if_due()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            while position < len(rows) and not result.interrupted:
+                chunk = rows[position:position + INDEX_CHUNK]
+                jobs = [
+                    pool.submit(_read_passages, config, row, _page_references(conn, row["id"]))
+                    for row in chunk
+                ]
+                for row, job in zip(chunk, jobs):
+                    if (should_stop is not None and should_stop()) or (
+                        time_budget is not None and time.monotonic() - started > time_budget
+                    ):
+                        for pending_job in jobs:
+                            pending_job.cancel()
+                        result.interrupted = True
+                        result.pending = len(rows) - position
+                        break
+                    position += 1
+                    try:
+                        passages = job.result()
+                    except Exception as exc:
+                        error = str(exc)[:300]
+                        writer.add(lambda c, name=row["name"], error=error: record_event(
+                            c, "extraction", "warning", "log.fulltext.file_failed",
+                            {"name": name, "error": error}, language=language, commit=False,
+                        ))
+                        # 1.5.9: recorded as indexed with no passages, so
+                        # the step can finish (`step_state`) instead of
+                        # retrying the same unreadable file on every run.
+                        writer.add(lambda c, row=row: _store_passages(c, row, []))
+                        writer.flush_if_due()
+                        continue
+                    writer.add(lambda c, row=row, passages=passages: _store_passages(c, row, passages))
+                    result.passages += len(passages)
+                    result.files += 1
+                    writer.flush_if_due()
         writer.flush()
     except BaseException:
         writer.discard()

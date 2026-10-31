@@ -94,6 +94,11 @@ def reference_number(reference: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+# 1.5.9: how often the classification engines commit (`db.BatchWriter`).
+# A window's "done" can wait this long to show on the progress bar.
+CLASSIFICATION_BATCH_SECONDS = 2.0
+
+
 class WindowPageLoader:
     """Loads the pages of window after window without rereading the group.
 

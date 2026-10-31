@@ -81,6 +81,9 @@ class StepTask:
     # transient lock made the bar "disappear"/drop back to 0% for an
     # instant instead of just keeping the last known value.
     last_count: int | None = None
+    # 1.5.9: the last `(indexed, extracted)` read during the extraction's
+    # full-text phase, shown again when a poll meets a busy database.
+    last_fulltext: tuple[int, int] | None = None
     # Instant the step finished — freezes the duration so the elapsed time
     # does not keep growing indefinitely during polling (HTMX keeps
     # fetching the bar every 2s even after completion).
@@ -256,17 +259,53 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
             current = _current_count(conn, task.step)
             if task.weight_total > 0:
                 weight_done = _weight_done(conn, task.step)
+            fulltext = None
+            if task.step == "extraction" and task.running and current - task.baseline >= task.total:
+                fulltext = _fulltext_progress(conn)
         finally:
             conn.close()
         task.last_count = current
+        task.last_fulltext = fulltext
+        if fulltext is not None:
+            return _fulltext_progress_dict(task, *fulltext)
     except sqlite3.OperationalError:
         # "database is locked" — the step is writing at this very instant
         # (more likely while the folder is syncing through Drive). Not a
         # real error: use the last count read successfully and try again on
         # the next poll (2s later), instead of bringing down the screen.
         current = task.last_count if task.last_count is not None else task.baseline
+        if task.step == "extraction" and task.running and task.last_fulltext is not None:
+            return _fulltext_progress_dict(task, *task.last_fulltext)
 
     return _progress_dict(task, current - task.baseline, weight_done)
+
+
+def _fulltext_progress(conn) -> tuple[int, int]:
+    """`(indexed, extracted)` files for the full-text search."""
+    indexed = conn.execute(
+        "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id"
+        " WHERE file.status = 'extracted'"
+    ).fetchone()[0]
+    extracted = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
+    return indexed, extracted
+
+
+def _fulltext_progress_dict(task: StepTask, indexed: int, extracted: int) -> dict:
+    """1.5.9: the extraction step's last phase, the full-text search, gets
+    its own bar. Before, the bar sat at 100% for as long as the indexing
+    took, and the step looked stuck."""
+    total = max(extracted, 0)
+    done = max(0, min(indexed, total))
+    return {
+        "status": "running",
+        "step": task.step,
+        "phase": "fulltext",
+        "percentual": 100 if total == 0 else int(done * 100 / total),
+        "concluidos": done,
+        "total": total,
+        "eta_segundos": None,
+        "error": task.error,
+    }
 
 
 def _progress_dict(task: StepTask, done: int, weight_done: float | None) -> dict:

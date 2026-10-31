@@ -25,6 +25,7 @@ from datetime import date
 from pathlib import Path
 
 from .classification import (
+    CLASSIFICATION_BATCH_SECONDS,
     ClassifiedItem,
     WindowPage,
     WindowPageLoader,
@@ -35,6 +36,7 @@ from .classification import (
     validate_item,
 )
 from .config import ProjectConfig
+from .db import BatchWriter
 from .events import record_event
 from .html_text import without_struck_text
 from .paths import app_root
@@ -306,37 +308,55 @@ def classify_pending(
     ).fetchall()
 
     loader = WindowPageLoader(conn)  # 1.5.8: one read of each group's order
+    # 1.5.9: one commit every couple of seconds instead of one per window
+    # plus one per event. Each commit on a Drive-synced database costs
+    # seconds and locks the screens out; the rules engine itself takes
+    # milliseconds per window. Each window's items reach `raw_items.jsonl`
+    # (flushed) before the window is queued as done, so a commit never
+    # marks done a window whose items could still be lost.
+    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
     with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
-        for window in pending_windows:
-            if should_stop is not None and should_stop():
-                break
+        try:
+            for window in pending_windows:
+                if should_stop is not None and should_stop():
+                    break
 
-            pages = load_window_pages(conn, window, loader)
-            items = engine.classify(pages)
+                pages = load_window_pages(conn, window, loader)
+                items = engine.classify(pages)
 
-            for item in items:
-                item_dict = item_to_dict(item, window["key"], window["group_key"])
-                errors = validate_item(item_dict)
-                if errors:
-                    result.invalid_items += 1
-                    record_event(
-                        conn, "classification", "error", "log.rules.invalid_item",
-                        {"window": window["key"], "errors": "; ".join(errors)}, language=language,
-                    )
-                    continue
+                for item in items:
+                    item_dict = item_to_dict(item, window["key"], window["group_key"])
+                    errors = validate_item(item_dict)
+                    if errors:
+                        result.invalid_items += 1
+                        writer.add(lambda c, key=window["key"], errors=errors: record_event(
+                            c, "classification", "error", "log.rules.invalid_item",
+                            {"window": key, "errors": "; ".join(errors)}, language=language, commit=False,
+                        ))
+                        continue
 
-                jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
-                result.items_generated += 1
-                if item.confidence == "high":
-                    result.high_confidence += 1
-                elif item.confidence == "medium":
-                    result.medium_confidence += 1
-                else:
-                    result.low_confidence += 1
+                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
+                    result.items_generated += 1
+                    if item.confidence == "high":
+                        result.high_confidence += 1
+                    elif item.confidence == "medium":
+                        result.medium_confidence += 1
+                    else:
+                        result.low_confidence += 1
 
-            conn.execute("UPDATE window SET status = 'done' WHERE id = ?", (window["id"],))
-            conn.commit()
-            result.windows_processed += 1
+                jsonl_file.flush()
+                writer.add(lambda c, window_id=window["id"]: c.execute(
+                    "UPDATE window SET status = 'done' WHERE id = ?", (window_id,)
+                ))
+                result.windows_processed += 1
+            writer.flush()
+        except BaseException:
+            jsonl_file.flush()
+            try:
+                writer.flush()
+            except Exception:
+                writer.discard()
+            raise
 
     record_event(
         conn,

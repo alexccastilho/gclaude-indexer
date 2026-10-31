@@ -17,6 +17,80 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.9] — 2026-10-31
+
+### La búsqueda de texto completo ya no traba la extracción; pantalla de ejecución ágil
+
+Los tiempos de abajo se midieron en una copia local de la base de datos de
+un proyecto real (144 mil archivos, 153 mil páginas). Con la base en Google
+Drive son mayores, aunque no en órdenes de magnitud.
+
+#### Corregido
+
+- **Incluir los archivos en la búsqueda de texto completo se volvía más
+  lento con cada archivo.** Antes de grabar un archivo, sus fragmentos
+  anteriores se borraban por una columna que la tabla de búsqueda no
+  indexa, así que cada archivo leía la tabla entera — incluso los nuevos,
+  que no tenían nada que borrar. En un acervo grande la extracción llegaba
+  al 100% y quedaba "en ejecución" por lo que habrían sido más de 100
+  horas. Ahora los fragmentos de cada archivo tienen un rango registrado y
+  se eliminan por él, y los textos se leen en paralelo: ~0,35 archivo/s
+  antes, ~800–1.000 archivos HTML/s ahora.
+- **La etapa de extracción quedaba "concluida" con la búsqueda aún en
+  construcción.** Una pausa en esa fase dejaba la búsqueda incompleta y
+  "Ejecutar siguiente etapa" seguía adelante. Ahora la etapa termina solo
+  cuando todos los archivos están en la búsqueda, y la barra de progreso
+  muestra esa fase aparte en lugar de quedarse en 100%.
+- **La pantalla de ejecución tardaba unos 90 segundos en abrir** durante un
+  procesamiento grande, y la tabla de etapas lo mismo en actualizarse. El
+  resumen de calidad leía el texto de todas las páginas solo para
+  contarlas, cada dos segundos. Ahora cuenta sin leer el texto, calcula la
+  cobertura en una sola pasada y se recalcula solo cuando algo cambia:
+  5,6 s → 0,2 s localmente.
+- **El registro en vivo se llenaba de "La base de datos del proyecto está
+  ocupada" y dejaba de actualizarse.** Ese aviso es para una página entera,
+  y el registro lo pegaba en la lista cada vez que la base estaba ocupada.
+  Ahora el registro salta ese ciclo y vuelve a intentar, como el resto de
+  la pantalla.
+- **Se perdían piezas clasificadas cuando el resumen tenía el carácter
+  U+0085.** Común en HTML leído como Latin-1, partía la línea de la pieza
+  en `raw_items.jsonl` en dos, y la importación descartaba ambas mitades
+  como corruptas (5 piezas en el acervo real).
+- **La revisión reanudada tras una pausa reenviaba al modelo todas las
+  ventanas de baja confianza**, incluso las que ya había revisado. Ahora se
+  omiten.
+
+#### Cambiado
+
+- **La clasificación graba por lotes** (motores de reglas y local): un
+  commit cada dos segundos en lugar de uno por ventana y otro por evento
+  registrado. Con la base en Google Drive cada commit cuesta segundos y
+  bloquea la pantalla. La etapa de ventanas lee las páginas sin su texto
+  cuando no escribe los archivos de las ventanas, comprueba las ventanas
+  existentes con una consulta por grupo y lista la carpeta de ventanas una
+  sola vez. Localmente, en el mismo acervo: ventanas en 1,4 s (10.962
+  ventanas), clasificación por reglas en 77 s.
+- **Las etapas graban con menos frecuencia**: cada dos segundos o 500
+  operaciones (eran un segundo o 200), así las pantallas encuentran la base
+  libre más veces.
+- **La conversión con OCR empieza por el archivo más grande.** En el orden
+  de las rutas un PDF de 809 páginas empezaba último y corría solo durante
+  seis minutos después de que todos los demás habían terminado.
+- **Los archivos binarios ya no se leen como texto.** Con "todas las
+  extensiones" marcado, un archivo sin extractor cuyos primeros bytes
+  contienen un NUL (zip, audio, fuente, dibujo CAD) queda en el índice por
+  su nombre, sin texto, en lugar de una página de caracteres de control que
+  iba a la búsqueda y a los resúmenes. Vale para los archivos convertidos
+  de ahora en adelante; los ya convertidos cambian al reprocesarse
+  (actualización del proyecto).
+- **Un archivo cuyo texto no se puede leer para la búsqueda** se registra
+  en el log y se graba sin fragmentos, para que la etapa pueda terminar, en
+  lugar de reintentarse en cada ejecución. Reprocesar el archivo
+  (actualización del proyecto) lo trae de vuelta.
+- **El instalador trae marcados la descarga del modelo de clasificación y
+  el acceso directo del sensor de CPU.** Ambos se pueden desmarcar; en una
+  actualización el modelo ya descargado no se descarga de nuevo.
+
 ## [1.5.8] — 2026-10-31
 
 ### Procesamiento mucho más rápido en Google Drive; la actualización detiene la versión anterior

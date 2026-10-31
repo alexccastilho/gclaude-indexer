@@ -45,6 +45,8 @@ from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
 MIN_AVG_CHARS_PER_PAGE = 100
+# 1.5.9: how much of an unknown-extension file is checked for a NUL byte.
+_BINARY_SNIFF_BYTES = 8192
 # Categories whose conversion may run OCR — the CPU-bound queue (1.5.8).
 OCR_CATEGORIES = frozenset({"pdf", "imagens"})
 ERROR_MESSAGE_CHAR_LIMIT = 500
@@ -545,7 +547,13 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         # without a dedicated extractor). Reads as text, best-effort — never
         # fails on a binary file with no extractor; worst case it produces a
         # low-quality result, not an error.
-        text = decode_bytes(source_path.read_bytes())[0]
+        data = source_path.read_bytes()
+        # 1.5.9: a NUL byte near the start means a binary file (zip, mp3,
+        # font, CAD drawing…), not text in an unknown extension. Read as
+        # text it became a page of control characters that went into the
+        # search and into classification summaries (31/10/2026: 22 such
+        # pages). It stays in the index, by name, with no text.
+        text = "" if b"\x00" in data[:_BINARY_SNIFF_BYTES] else decode_bytes(data)[0]
         destination = _destination_path(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
         sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
@@ -841,6 +849,10 @@ def convert(
     # larger pool (`parallelism.io_workers_for`). Light files first: they
     # are the bulk of a large collection and show progress at once.
     heavy = [row for row in rows if category_of_extension("." + row["extension"]) in OCR_CATEGORIES]
+    # 1.5.9: largest first. In path order an 809-page PDF started last
+    # and ran alone for six minutes after every other file was done
+    # (31/10/2026); started first, it runs alongside the rest.
+    heavy.sort(key=lambda row: row["size"] or 0, reverse=True)
     light = [row for row in rows if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES]
 
     if light:

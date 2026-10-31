@@ -91,7 +91,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.5.8"
+SYSTEM_VERSION = "1.5.9"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -1009,7 +1009,7 @@ def steps_fragment(request: Request, project_id: int):
 
 def _steps_context(project_id: int, entry, config: ProjectConfig, conn, language: str) -> dict:
     steps = step_status(conn, lambda key: _step_running(project_id, key))
-    quality = quality_summary(conn, config)
+    quality = _cached_quality_summary(project_id, conn, config)
     # Completion notice (Phase 13, Task 9): "every step finished" is not
     # enough — `item` is only populated by "Import and generate reports",
     # which runs separately. Without checking `total_items`, the notice
@@ -1024,6 +1024,39 @@ def _steps_context(project_id: int, entry, config: ProjectConfig, conn, language
         "show_done_notice": show_finished_notice,
         "qualidade": quality,
     }
+
+
+# 1.5.9: the steps table refreshes every two seconds and used to recompute
+# the whole quality summary each time (every page, every item). Its inputs
+# only change when items, windows, pages or failures do, so it is kept per
+# project and recomputed when that cheap signature moves.
+_quality_cache: dict[int, tuple[tuple, dict]] = {}
+_quality_cache_lock = threading.Lock()
+
+
+def _quality_signature(conn, config: ProjectConfig) -> tuple:
+    row = conn.execute(
+        """
+        SELECT (SELECT MAX(id) FROM item), (SELECT COUNT(*) FROM item),
+               (SELECT COUNT(*) FROM window WHERE status = 'done'),
+               (SELECT COUNT(*) FROM window WHERE status = 'pending'),
+               (SELECT MAX(id) FROM page),
+               (SELECT COUNT(*) FROM file WHERE status = 'failed')
+        """
+    ).fetchone()
+    return (tuple(row), config.classification_engine, config.local_model)
+
+
+def _cached_quality_summary(project_id: int, conn, config: ProjectConfig) -> dict:
+    signature = _quality_signature(conn, config)
+    with _quality_cache_lock:
+        cached = _quality_cache.get(project_id)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    summary = quality_summary(conn, config)
+    with _quality_cache_lock:
+        _quality_cache[project_id] = (signature, summary)
+    return summary
 
 
 def _step_running(project_id: int, key: str) -> bool:

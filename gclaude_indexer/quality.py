@@ -96,8 +96,13 @@ def _coverage(conn) -> tuple[int, int, int]:
     gerou `item.start_order` — e não o número dentro de `page.reference`,
     que num acervo "biblioteca" recomeça em 1 a cada arquivo.
     """
-    from .windows_prep import group_page_positions
+    from .windows_prep import group_page_counts
 
+    # 1.5.9: só o número de folhas de cada grupo (sem ler as páginas) e uma
+    # varredura por diferenças em vez de comparar cada folha com cada peça
+    # do grupo — O(folhas + peças), não O(folhas × peças). Com 153 mil
+    # páginas a versão anterior lia o texto de todas a cada atualização da
+    # tela de execução.
     faixas: dict[str, list[tuple[int, int, str]]] = {}
     for group_key, start, end, confidence in conn.execute(
         "SELECT group_key, start_order, end_order, confidence FROM item"
@@ -105,18 +110,29 @@ def _coverage(conn) -> tuple[int, int, int]:
         faixas.setdefault(group_key, []).append((start, end, confidence))
 
     total = cobertas = classificadas = 0
-    posicoes = [
-        (group_key, folha)
-        for group_key, pages in group_page_positions(conn).items()
-        for folha in range(1, len(pages) + 1)
-    ]
-    for group_key, folha in posicoes:
-        total += 1
-        dentro = [c for inicio, fim, c in faixas.get(group_key, []) if inicio <= folha <= fim]
-        if dentro:
-            cobertas += 1
-            if any(c != "low" for c in dentro):
-                classificadas += 1
+    for group_key, n in group_page_counts(conn).items():
+        total += n
+        todas = [0] * (n + 2)
+        descritas = [0] * (n + 2)
+        for inicio, fim, confianca in faixas.get(group_key, []):
+            if inicio is None or fim is None:
+                continue
+            inicio, fim = max(1, inicio), min(n, fim)
+            if inicio > fim:
+                continue
+            todas[inicio] += 1
+            todas[fim + 1] -= 1
+            if confianca != "low":
+                descritas[inicio] += 1
+                descritas[fim + 1] -= 1
+        em_todas = em_descritas = 0
+        for folha in range(1, n + 1):
+            em_todas += todas[folha]
+            em_descritas += descritas[folha]
+            if em_todas > 0:
+                cobertas += 1
+                if em_descritas > 0:
+                    classificadas += 1
     return total, cobertas, classificadas
 
 

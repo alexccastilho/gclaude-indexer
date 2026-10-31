@@ -349,8 +349,12 @@
     }
     pausedNote.hidden = true;
 
-    return fetch(LOG_URL + "?since=" + lastEventId())
-      .then(function (response) { return response.text(); })
+    // `HX-Request` makes a busy database answer 204 (nothing new), as it
+    // does for the other polls. And only a 200 is appended: before 1.5.9 a
+    // 503 "database busy" page was pasted into the list on every busy poll
+    // and the log stopped making sense.
+    return fetch(LOG_URL + "?since=" + lastEventId(), { headers: { "HX-Request": "true" } })
+      .then(function (response) { return response.status === 200 ? response.text() : ""; })
       .then(function (html) {
         if (!html.trim()) return;
         var list = document.getElementById("log-list");
