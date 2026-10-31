@@ -26,6 +26,9 @@ from gclaude_indexer.web.step_state import step_status
 from .test_phase3 import _criar_pdf_escaneado, _criar_pdf_misto, _preparar_projeto
 
 
+_run_original = conversion.subprocess.run
+
+
 class _Resultado:
     def __init__(self, returncode: int, stderr: str = ""):
         self.returncode = returncode
@@ -81,7 +84,10 @@ def test_falha_parcial_de_ocr_fica_marcada_e_e_refeita_na_proxima_conversao(tmp_
     assert etapas["conversion"]["status"] != "done"
     assert etapas["conversion"]["vars"]["pending"] == 1
 
-    monkeypatch.undo()
+    # O ocrmypdf de verdade de volta. Não `monkeypatch.undo()`: desfaria
+    # também a pasta de trabalho temporária do conftest, e o OCR iria para
+    # a pasta real da máquina.
+    monkeypatch.setattr(conversion.subprocess, "run", _run_original)
     resultado = convert(conn, config, language="pt-BR")
 
     linha = _linha(conn, "ata_mista.pdf")
