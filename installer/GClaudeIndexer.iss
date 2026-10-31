@@ -87,6 +87,7 @@ brazilianportuguese.DepModel=Modelo padrão de classificação (cerca de 3,2 GB)
 brazilianportuguese.DepSensors=Bibliotecas de sensor (temperatura, potência, relógios)
 brazilianportuguese.CpuSensorComment=GClaude Indexer lendo os sensores da CPU: o Windows pede administrador na abertura, só para o leitor de sensores.
 brazilianportuguese.DepCpuSensor=Atalho do sensor de CPU na área de trabalho
+brazilianportuguese.DepPawnIO=Driver PawnIO (temperatura e potência da CPU; o Windows pede administrador)
 
 english.OptionalGroup=Optional:
 english.DownloadModel=Download the local classification model now (about 3.2 GB)
@@ -113,6 +114,7 @@ english.DepModel=Default classification model (about 3.2 GB)
 english.DepSensors=Sensor libraries (temperature, power, clocks)
 english.CpuSensorComment=GClaude Indexer with the CPU sensor: Windows asks for administrator at launch, for the sensor reader only.
 english.DepCpuSensor=CPU sensor shortcut on the desktop
+english.DepPawnIO=PawnIO driver (CPU temperature and power; Windows asks for administrator)
 
 spanish.OptionalGroup=Opcionales:
 spanish.DownloadModel=Descargar ahora el modelo de clasificación local (unos 3,2 GB)
@@ -139,6 +141,7 @@ spanish.DepModel=Modelo de clasificación predeterminado (unos 3,2 GB)
 spanish.DepSensors=Bibliotecas de sensor (temperatura, potencia, relojes)
 spanish.CpuSensorComment=GClaude Indexer leyendo los sensores de CPU: Windows pide administrador al abrir, solo para el lector de sensores.
 spanish.DepCpuSensor=Acceso directo del sensor de CPU en el escritorio
+spanish.DepPawnIO=Controlador PawnIO (temperatura y potencia de la CPU; Windows pide administrador)
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -201,6 +204,7 @@ const
   DEP_MODEL = 3;
   DEP_SENSORS = 4;
   DEP_CPUSENSOR = 5;
+  DEP_PAWNIO = 6;
 
 var
   StatusFilePath: String;
@@ -324,6 +328,8 @@ begin
     Args := Args + ' -SkipOllama';
   if not DependencyWanted(DEP_SENSORS) then
     Args := Args + ' -SkipSensors';
+  if not DependencyWanted(DEP_PAWNIO) then
+    Args := Args + ' -SkipPawnIO';
 
   Result := Args;
 end;
@@ -452,6 +458,7 @@ begin
   DepsChoicePage.Add(ExpandConstant('{cm:DepModel}'));
   DepsChoicePage.Add(ExpandConstant('{cm:DepSensors}'));
   DepsChoicePage.Add(ExpandConstant('{cm:DepCpuSensor}'));
+  DepsChoicePage.Add(ExpandConstant('{cm:DepPawnIO}'));
 
   { Ticked and greyed out rather than hidden. Without OCR and Ghostscript
     the program cannot read a scanned page, which is the entire job, so
@@ -470,6 +477,10 @@ begin
     update finds the model already in Ollama and the pull returns at once. }
   DepsChoicePage.Values[DEP_MODEL] := True;
   DepsChoicePage.Values[DEP_CPUSENSOR] := True;
+  { 1.5.10, at the user's request: LibreHardwareMonitor 0.9.6 reads the CPU
+    through the PawnIO kernel driver, and without it CPU temperature and
+    power stay empty even in the elevated sensor helper. }
+  DepsChoicePage.Values[DEP_PAWNIO] := True;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);

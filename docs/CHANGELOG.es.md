@@ -17,6 +17,30 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.10] — 2026-10-31
+
+### Velocidad de los ventiladores en portátiles Dell; controlador PawnIO para los sensores de la CPU
+
+#### Añadido
+
+- **Velocidad de los ventiladores de la CPU y de la GPU en portátiles gamer
+  de Dell** (serie G, Alienware), leída por la interfaz térmica de la
+  propia Dell (la que usa Alienware Command Center). En un portátil los
+  ventiladores pertenecen al controlador embebido: ni la biblioteca de
+  sensores ni el controlador de vídeo los ven (`nvidia-smi` informa
+  `N/A`). La misma interfaz da la temperatura de la CPU, que aparece
+  incluso sin el controlador PawnIO. Solo se usan operaciones de lectura;
+  el control de los ventiladores nunca se toca. Medido en un Dell G15
+  5511: CPU a 76 °C, ventiladores a 2.079 y 2.385 RPM. Depende del acceso
+  directo del sensor de CPU (el lector de sensores elevado); en las demás
+  máquinas nada cambia.
+- **El instalador ofrece el controlador PawnIO, ya marcado.** La
+  biblioteca de sensores lee la temperatura y la potencia de la CPU a
+  través de él; sin él ambas quedaban vacías incluso con el acceso directo
+  del sensor de CPU. Es un controlador de kernel de terceros
+  (https://pawnio.eu/), instalado con winget, y Windows pide administrador
+  para instalarlo. Se puede desmarcar; todo lo demás funciona sin él.
+
 ## [1.5.9] — 2026-10-31
 
 ### La búsqueda de texto completo ya no traba la extracción; pantalla de ejecución ágil

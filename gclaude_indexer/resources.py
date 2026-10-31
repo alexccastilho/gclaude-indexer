@@ -54,6 +54,7 @@ class ResourceSample:
     gpu_temp_c: float | None = None
     gpu_hotspot_c: float | None = None
     gpu_fan_rpm: int | None = None
+    cpu_fan_rpm: int | None = None
     cpu_power_w: float | None = None
     gpu_power_w: float | None = None
 
@@ -182,6 +183,7 @@ def sample_resources() -> ResourceSample:
         gpu_temp_c=sensors["gpu_temp_c"],
         gpu_hotspot_c=sensors["gpu_hotspot_c"],
         gpu_fan_rpm=sensors["gpu_fan_rpm"],
+        cpu_fan_rpm=sensors.get("cpu_fan_rpm"),
         cpu_power_w=sensors["cpu_potencia_w"],
         gpu_power_w=sensors["gpu_potencia_w"],
     )

@@ -30,6 +30,8 @@ LEITURA_COMPLETA = {
     # quanto a placa reduz o clock.
     "gpu_hotspot_c": 61.0,
     "gpu_fan_rpm": 1450,
+    # 1.5.10: ventoinha da CPU (interface térmica da Dell).
+    "cpu_fan_rpm": 2100,
     "clock_gpu_mhz": 109,
 }
 

@@ -10,6 +10,29 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.10] — 2026-10-31
+
+### Fan speeds on Dell laptops; PawnIO driver for the CPU sensors
+
+#### Added
+
+- **Fan speeds of the CPU and the GPU on Dell gaming laptops** (G series,
+  Alienware), read from Dell's own thermal interface (the one Alienware
+  Command Center uses). On a laptop the fans belong to the embedded
+  controller: neither the sensor library nor the graphics driver sees
+  them (`nvidia-smi` reports `N/A`). The same interface gives the CPU
+  temperature, so it shows even without the PawnIO driver. Only read
+  operations are used; fan control is never touched. Measured on a Dell
+  G15 5511: CPU 76 °C, fans at 2,079 and 2,385 RPM. Needs the CPU sensor
+  shortcut (the elevated sensor reader); on other machines nothing
+  changes.
+- **The installer offers the PawnIO driver, ticked by default.** The
+  sensor library reads the CPU temperature and power through it; without
+  it they stayed empty even with the CPU sensor shortcut. It is a kernel
+  driver from a third party (https://pawnio.eu/), installed through
+  winget, and Windows asks for an administrator to install it. It can be
+  unticked; everything else works without it.
+
 ## [1.5.9] — 2026-10-31
 
 ### The full-text search no longer stalls the extraction; a responsive Execution screen

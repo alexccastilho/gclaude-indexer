@@ -17,6 +17,29 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.10] — 2026-10-31
+
+### Rotação das ventoinhas em notebooks Dell; driver PawnIO para os sensores da CPU
+
+#### Adicionado
+
+- **Rotação das ventoinhas da CPU e da GPU em notebooks gamer da Dell**
+  (série G, Alienware), lida pela interface térmica da própria Dell (a que
+  o Alienware Command Center usa). Num notebook as ventoinhas pertencem ao
+  controlador embarcado: nem a biblioteca de sensores nem o driver de
+  vídeo as enxergam (o `nvidia-smi` informa `N/A`). A mesma interface dá a
+  temperatura da CPU, que aparece mesmo sem o driver PawnIO. Só operações
+  de leitura são usadas; o controle das ventoinhas nunca é tocado. Medido
+  num Dell G15 5511: CPU a 76 °C, ventoinhas a 2.079 e 2.385 RPM. Depende
+  do atalho do sensor de CPU (o leitor de sensores elevado); nas outras
+  máquinas nada muda.
+- **O instalador oferece o driver PawnIO, já marcado.** A biblioteca de
+  sensores lê a temperatura e a potência da CPU por ele; sem ele as duas
+  ficavam vazias mesmo com o atalho do sensor de CPU. É um driver de kernel
+  de terceiros (https://pawnio.eu/), instalado pelo winget, e o Windows
+  pede administrador para instalá-lo. Pode ser desmarcado; todo o resto
+  funciona sem ele.
+
 ## [1.5.9] — 2026-10-31
 
 ### A busca de texto completo não trava mais a extração; tela de execução ágil

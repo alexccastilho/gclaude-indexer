@@ -91,7 +91,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.5.9"
+SYSTEM_VERSION = "1.5.10"
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 # Onde o projeto vive. Aqui e não no i18n: um endereço não se traduz, e
 # três cópias dele seriam três oportunidades de divergir.
@@ -1151,6 +1151,7 @@ def resources_json(project_id: int):
         "gpu_temp_c": sample.gpu_temp_c,
         "gpu_hotspot_c": sample.gpu_hotspot_c,
         "gpu_fan_rpm": sample.gpu_fan_rpm,
+        "cpu_fan_rpm": sample.cpu_fan_rpm,
         "cpu_power_w": sample.cpu_power_w,
         "gpu_power_w": sample.gpu_power_w,
         "sensors_unavailable_reason": unavailable_reason(),

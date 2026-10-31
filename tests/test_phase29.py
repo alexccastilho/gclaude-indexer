@@ -322,3 +322,71 @@ def test_binario_de_extensao_desconhecida_nao_vira_texto(tmp_path):
     assert binario.read_text(encoding="utf-8") == ""
     assert "valor legível" in texto.read_text(encoding="utf-8")
     conn.close()
+
+
+# --- sensores: ventoinhas pela interface térmica da Dell -----------------------
+
+
+def _firmware_g15(argumento):
+    """Respostas medidas num Dell G15 5511 (31/10/2026)."""
+    operacao, valor = argumento & 0xFF, (argumento >> 8) & 0xFF
+    if operacao == 0x02:
+        return 0x04000202  # 2 ventoinhas, 2 temperaturas
+    if operacao == 0x03:
+        return {0: 0x32, 1: 0x33, 2: 0x01, 3: 0x06}.get(valor, 0xFFFFFFFF)
+    if operacao == 0x05:
+        return {0x32: 2101, 0x33: 2387}.get(valor, 0xFFFFFFFF)
+    if operacao == 0x04:
+        return {0x01: 73, 0x06: 58}.get(valor, 0xFFFFFFFF)
+    return 0xFFFFFFFF
+
+
+def test_ventoinhas_e_temperaturas_do_dell_g15():
+    from gclaude_indexer.dell_thermal import DellThermal
+
+    leitura = DellThermal(invoke=_firmware_g15).read()
+    assert leitura == {"cpu_fan_rpm": 2101, "gpu_fan_rpm": 2387, "cpu_temp_c": 73.0, "gpu_temp_c": 58.0}
+
+
+def test_maquina_sem_a_interface_da_dell_nao_quebra_nem_insiste():
+    from gclaude_indexer.dell_thermal import DellThermal
+
+    chamadas = []
+
+    def _ausente(argumento):
+        chamadas.append(argumento)
+        raise RuntimeError("Classe inválida")
+
+    termica = DellThermal(invoke=_ausente)
+    assert all(v is None for v in termica.read().values())
+    assert all(v is None for v in termica.read().values())
+    assert len(chamadas) == 1
+
+
+def test_leitura_da_dell_so_preenche_o_que_a_biblioteca_deixou_vazio(monkeypatch):
+    from gclaude_indexer import dell_thermal, sensors
+
+    monkeypatch.setattr(sensors, "_is_admin", lambda: True)
+    monkeypatch.setattr(dell_thermal, "read", lambda: {
+        "cpu_fan_rpm": 2101, "gpu_fan_rpm": 2387, "cpu_temp_c": 73.0, "gpu_temp_c": 58.0,
+    })
+    biblioteca = {key: None for key in sensors.KEYS}
+    biblioteca["gpu_temp_c"] = 61.0
+    leitura = sensors._with_dell_thermal(biblioteca)
+    assert leitura["gpu_temp_c"] == 61.0  # a biblioteca vence
+    assert (leitura["cpu_temp_c"], leitura["cpu_fan_rpm"], leitura["gpu_fan_rpm"]) == (73.0, 2101, 2387)
+
+    monkeypatch.setattr(sensors, "_is_admin", lambda: False)
+    assert sensors._with_dell_thermal(biblioteca) == biblioteca
+
+
+def test_instalador_oferece_o_pawnio_marcado():
+    raiz = Path(__file__).parent.parent
+    iss = (raiz / "installer" / "GClaudeIndexer.iss").read_text(encoding="utf-8-sig")
+    assert "DepsChoicePage.Values[DEP_PAWNIO] := True;" in iss
+    assert "' -SkipPawnIO'" in iss
+    for idioma in ("brazilianportuguese", "english", "spanish"):
+        assert f"{idioma}.DepPawnIO=" in iss
+    script = (raiz / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "[switch]$SkipPawnIO" in script
+    assert "winget install --id namazso.PawnIO -e --silent" in script

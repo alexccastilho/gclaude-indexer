@@ -797,6 +797,18 @@ run — Ollama's own native behavior.
 - The first few windows' time is measured and shown as a completion
   estimate before the rest proceeds.
 
+> **Fans and PawnIO (1.5.10).** The elevated sensor helper also reads
+> Dell's thermal interface (`dell_thermal.py`: WMI class
+> `AWCCWmiMethodFunction`, method `Thermal_Information`, read operations
+> only — system description 0x02, resource id 0x03, temperature 0x04, fan
+> RPM 0x05; fans 0x32 CPU and 0x33 GPU, temperatures 0x01 CPU and 0x06
+> GPU). It fills only what LibreHardwareMonitor left empty: the fans,
+> which on a laptop belong to the embedded controller, and the CPU
+> temperature when PawnIO is missing. Any failure disables it for the
+> session. The installer offers the PawnIO driver (`winget install
+> namazso.PawnIO`, ticked by default, `-SkipPawnIO` when not), which
+> LibreHardwareMonitorLib 0.9.6 needs for the CPU temperature and power.
+
 ### 10.6 Uninstallation
 
 A button removes the downloaded model and reports how much space that

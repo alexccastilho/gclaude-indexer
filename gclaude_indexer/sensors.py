@@ -83,6 +83,8 @@ _SHIMS = (
 KEYS = (
     "cpu_temp_c", "gpu_temp_c", "cpu_potencia_w", "gpu_potencia_w", "clock_gpu_mhz",
     "gpu_hotspot_c", "gpu_fan_rpm",
+    # 1.5.9: CPU fan, from Dell's thermal interface (`dell_thermal.py`).
+    "cpu_fan_rpm",
 )
 
 _EMPTY = {key: None for key in KEYS}
@@ -359,6 +361,32 @@ def sensors_available() -> bool:
 
 
 def _read_sensors_uncached() -> dict:
+    return _with_dell_thermal(_read_library_sensors())
+
+
+def _with_dell_thermal(reading: dict) -> dict:
+    """1.5.9: fills what LibreHardwareMonitor left empty from Dell's own
+    thermal interface — fans, which on a laptop belong to the embedded
+    controller and are invisible to both the library and the GPU driver,
+    and the CPU temperature, which the library only reads through the
+    PawnIO driver. Only an administrator may ask, so only the elevated
+    helper does; anywhere else every value stays as it was."""
+    if not _is_admin():
+        return reading
+    try:
+        from . import dell_thermal
+
+        dell = dell_thermal.read()
+    except Exception:
+        return reading
+    merged = dict(reading)
+    for key in ("cpu_fan_rpm", "gpu_fan_rpm", "cpu_temp_c", "gpu_temp_c"):
+        if merged.get(key) is None and dell.get(key) is not None:
+            merged[key] = dell[key]
+    return merged
+
+
+def _read_library_sensors() -> dict:
     try:
         computer, reason = _state()
     except Exception:

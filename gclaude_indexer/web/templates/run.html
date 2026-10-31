@@ -60,6 +60,7 @@
     <div class="resource-extra">
       <span>{{ t('resources.clock') }}: <strong id="clock-cpu">—</strong></span>
       <span>{{ t('resources.temperature') }}: <strong id="temp-cpu">—</strong></span>
+      <span>{{ t('resources.fan') }}: <strong id="fan-cpu">—</strong></span>
       <span>{{ t('resources.power') }}: <strong id="power-cpu">—</strong></span>
     </div>
   </div>
@@ -245,6 +246,7 @@
       showOrDash("temp-gpu", data.gpu_temp_c, " °C");
       showOrDash("hotspot-gpu", data.gpu_hotspot_c, " °C");
       showOrDash("fan-gpu", data.gpu_fan_rpm, " RPM");
+      showOrDash("fan-cpu", data.cpu_fan_rpm, " RPM");
       showOrDash("power-cpu", data.cpu_power_w, " W");
       showOrDash("power-gpu", data.gpu_power_w, " W");
 

@@ -173,6 +173,8 @@ param(
     # the system cannot read a scanned page, which is the whole job.
     [switch]$SkipOllama,
     [switch]$SkipSensors,
+    # 1.5.10: skip the PawnIO driver (CPU temperature and power).
+    [switch]$SkipPawnIO,
     # Phase 19. Path the installer polls to keep its progress label
     # truthful. Empty means nobody is watching — the default for anyone
     # running this script by hand, who sees no difference at all.
@@ -2877,6 +2879,40 @@ if ($SkipSensors) {
         Write-Host "Sensor libraries: $SensorLibrariesInstalled of $($SensorLibraries.Count) installed." -ForegroundColor Yellow
         Write-Host "This does not stop the installation and breaks nothing: temperature, power and clocks" -ForegroundColor Yellow
         Write-Host "will read as unavailable on the Run screen. Run this installer again to retry." -ForegroundColor Yellow
+    }
+}
+
+# --- 4i. PawnIO driver (1.5.10) ---------------------------------------------
+#
+# LibreHardwareMonitorLib 0.9.6 reads the CPU's temperature and power
+# through PawnIO, a signed kernel driver installed system-wide (WinRing0,
+# which older versions used, is blocked by Windows). Without it those two
+# readings stay empty even in the elevated sensor helper. It is a separate
+# choice in the installer because it is a kernel driver from a third party
+# (namazso, https://pawnio.eu/), installed through winget, and Windows asks
+# for an administrator to install it.
+function Test-PawnIOInstalled {
+    return [bool](Get-Service -Name "PawnIO" -ErrorAction SilentlyContinue)
+}
+
+if ($SkipPawnIO) {
+    Write-Host "PawnIO driver: not selected in the installer; skipping." -ForegroundColor Yellow
+} elseif ($SensorArchitecture -ne "AMD64") {
+    Write-Host "PawnIO driver: not installed on Windows $SensorArchitecture." -ForegroundColor Yellow
+} elseif (Test-PawnIOInstalled) {
+    Write-Host "PawnIO driver: already installed." -ForegroundColor Green
+} elseif (-not (Test-WingetAvailable)) {
+    Write-Host "PawnIO driver: winget is not available; install it from https://pawnio.eu/ to read" -ForegroundColor Yellow
+    Write-Host "the CPU temperature and power. Everything else works without it." -ForegroundColor Yellow
+} else {
+    Write-Host "Installing the PawnIO driver (Windows asks for administrator) ..." -ForegroundColor Cyan
+    Invoke-NativeCommand { winget install --id namazso.PawnIO -e --silent --accept-package-agreements --accept-source-agreements } | Out-Host
+    Update-SessionPath
+    if (Test-PawnIOInstalled) {
+        Write-Host "PawnIO driver installed." -ForegroundColor Green
+    } else {
+        Write-Host "PawnIO driver: not installed (refused or failed). Nothing else depends on it;" -ForegroundColor Yellow
+        Write-Host "the CPU temperature and power will read as unavailable. Run the installer again to retry." -ForegroundColor Yellow
     }
 }
 
