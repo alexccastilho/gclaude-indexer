@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ..conversion import ocr_retry_count
 from ..project import load_project
 
 STEPS: tuple[str, ...] = ("scan", "conversion", "extraction", "windows", "classification")
@@ -64,7 +65,12 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     # which a duplicate never has — so a duplicate shows up in the scan
     # total but never inflates any count afterward.
     total_files = conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
-    discovered = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'discovered'").fetchone()[0]
+    # 1.5.7: plus the files whose OCR failed — the next conversion sends
+    # them back to the queue, so the step is not done while they wait.
+    discovered = (
+        conn.execute("SELECT COUNT(*) FROM file WHERE status = 'discovered'").fetchone()[0]
+        + ocr_retry_count(conn)
+    )
     converted = conn.execute(
         "SELECT COUNT(*) FROM file WHERE status IN ('converted', 'extracted')"
     ).fetchone()[0]

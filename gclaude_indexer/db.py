@@ -24,6 +24,7 @@ nothing for the sync to carry.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from collections.abc import Callable
@@ -325,6 +326,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
     _ensure_event_message_columns(conn)
     _ensure_file_mtime_column(conn)
+    _ensure_file_ocr_failed_column(conn)
     conn.commit()
 
 
@@ -357,3 +359,47 @@ def _ensure_file_mtime_column(conn: sqlite3.Connection) -> None:
     existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
     if "mtime" not in existing_columns:
         conn.execute("ALTER TABLE file ADD COLUMN mtime REAL")
+
+
+def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:
+    """Adds `file.ocr_failed` (1.5.7): set when `ocrmypdf` failed on the
+    file, so the next conversion tries it again
+    (`conversion.requeue_ocr_failures`).
+
+    The column is added once per database, and that is also the one moment
+    the files that failed before 1.5.7 can be found and flagged — from the
+    two traces older versions left:
+    - a whole-file failure kept the message in `file.error`, always
+      starting with "ocrmypdf falhou" (the wording since the first release);
+    - a file with native text whose scanned pages failed stayed 'converted'
+      with no error, and only a `log.conversion.ocr_pages_failed` event
+      names it. Event parameters carry the name, not the path, so a
+      same-named PDF may be flagged too; it costs one more conversion of
+      that file, nothing else.
+    Doing it here, inside the guard, keeps it a one-time recovery: running
+    it on every load would flag the same files again from the old events."""
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
+    if "ocr_failed" in existing_columns:
+        return
+    conn.execute("ALTER TABLE file ADD COLUMN ocr_failed INTEGER NOT NULL DEFAULT 0")
+    if not {"name", "extension", "error"} <= existing_columns:
+        return  # a table older than any OCR failure: nothing to recover
+    conn.execute(
+        "UPDATE file SET ocr_failed = 1 WHERE status = 'failed' AND error LIKE 'ocrmypdf falhou%'"
+    )
+    names: set[str] = set()
+    for (params,) in conn.execute(
+        "SELECT message_params FROM event WHERE message_key = 'log.conversion.ocr_pages_failed'"
+    ).fetchall():
+        try:
+            name = json.loads(params or "{}").get("name")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(name, str) and name:
+            names.add(name)
+    for name in names:
+        conn.execute(
+            "UPDATE file SET ocr_failed = 1 WHERE name = ? AND extension = 'pdf'"
+            " AND status IN ('converted', 'extracted')",
+            (name,),
+        )

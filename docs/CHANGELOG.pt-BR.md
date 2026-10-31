@@ -17,6 +17,33 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.7] — 2026-10-31
+
+### O OCR não falha mais em PDF com cores incomuns, e o OCR que falhou é refeito
+
+#### Corrigido
+
+- **O OCR falhava em PDF com espaço de cor incomum** (comum em PDF de
+  gráfica), com `ColorConversionNeededError`. O reconhecimento de texto em
+  si funcionava; o que falhava era a conversão do resultado para PDF/A, o
+  formato de arquivamento, e o OCR do arquivo inteiro era descartado junto.
+  A cópia com OCR só é lida para extrair o texto, então agora ela é um PDF
+  comum (`--output-type pdf`). Também fica um pouco mais rápido.
+- **Um arquivo cujo OCR falhou ficava assim para sempre.** Um PDF com texto
+  nativo mantinha as páginas escaneadas em branco, e um PDF todo escaneado
+  continuava com falha; rodar as etapas de novo não revisitava nenhum dos
+  dois. Agora o arquivo cujo OCR falhou fica marcado e volta à fila no
+  começo da conversão seguinte, até o OCR dar certo. Só as falhas de OCR:
+  um arquivo corrompido ou protegido por senha não é tentado de novo. A
+  tela de Execução mostra a conversão como pendente enquanto houver arquivo
+  nessa situação.
+- **Os arquivos que falharam antes desta versão são recuperados.** Na
+  primeira vez que a 1.5.7 abre um projeto, ela marca os arquivos cujo OCR
+  falhou antes, encontrados pelo erro guardado no arquivo e pelos avisos do
+  log, e a conversão seguinte os refaz. Um arquivo que já está nas janelas
+  de classificação não volta, porque as janelas ficariam desatualizadas; o
+  log diz o nome dele.
+
 ## [1.5.6] — 2026-10-31
 
 ### O modo econômico e a varredura também não travam mais; atualizações de segurança

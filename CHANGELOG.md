@@ -10,6 +10,32 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.7] — 2026-10-31
+
+### OCR no longer fails on PDFs with unusual colors, and failed OCR is retried
+
+#### Fixed
+
+- **OCR failed on PDFs with an unusual color space** (common in print-shop
+  PDFs), with `ColorConversionNeededError`. Text recognition itself worked;
+  what failed was converting the result to PDF/A, the archival format, and
+  the whole file's OCR was thrown away with it. The OCR'd copy is only read
+  for its text, so it is now a plain PDF (`--output-type pdf`). This is also
+  a little faster.
+- **A file whose OCR failed stayed that way for good.** A PDF with native
+  text kept its scanned pages blank, and a fully scanned PDF stayed failed;
+  running the steps again did not revisit either. Now a file on which OCR
+  failed is marked and goes back to the queue at the start of the next
+  conversion, until OCR succeeds. Only OCR failures: a corrupt or
+  password-protected file is not retried. The Execution screen shows the
+  conversion as pending while such files wait.
+- **Files that failed before this version are recovered.** The first time
+  1.5.7 opens a project it marks the files whose OCR failed earlier, found
+  from the error stored for the file and from the log's warnings, and the
+  next conversion redoes them. A file already inside the classification
+  windows is not sent back, since its windows would go out of date; the log
+  names it.
+
 ## [1.5.6] — 2026-10-31
 
 ### Economy mode and the scan cannot freeze either; security updates

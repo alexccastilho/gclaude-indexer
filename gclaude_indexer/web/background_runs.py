@@ -31,7 +31,7 @@ from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
 from ..i18n import DEFAULT_LANGUAGE, translate
 from ..run_control import StopSignal
-from ..conversion import convert
+from ..conversion import convert, requeue_ocr_failures
 from ..extraction import extract_pages
 from ..windows_prep import prepare_windows
 from ..engine_local import model_to_use
@@ -358,7 +358,7 @@ class TaskManager:
         def body():
             run_id: int | None = None
             try:
-                files = self._measure(task, entry_output_folder, step)
+                files = self._measure(task, entry_output_folder, step, language)
                 if task.stop_signal.should_stop():
                     return  # paused while counting: nothing started, nothing to record
                 _, work_conn = load_project(entry_output_folder)
@@ -433,13 +433,20 @@ class TaskManager:
         return task
 
     @staticmethod
-    def _measure(task: StepTask, entry_output_folder: str, step: str) -> list[Path] | None:
+    def _measure(
+        task: StepTask, entry_output_folder: str, step: str, language: str | None = None
+    ) -> list[Path] | None:
         """Fills in the task's totals and baselines. For the scan, also
         returns the walk, which the scan then uses instead of walking the
         folder again."""
         read_config, read_conn = load_project(entry_output_folder)
         try:
             files = None
+            if step == "conversion":
+                # 1.5.7: files whose OCR failed go back to the queue before
+                # counting, so the bar's total includes them. `convert` does
+                # the same on its own (a no-op by then).
+                requeue_ocr_failures(read_conn, language=language)
             if step == "scan":
                 def found(count: int) -> None:
                     task.counted = count

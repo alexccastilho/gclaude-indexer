@@ -273,12 +273,24 @@ one group.
   vector drawing (decided page by page since 1.5.2 — a native PDF with a
   few scanned sheets used to pass on its average):
   `ocrmypdf --force-ocr --pages <those pages> --language <ocr_language>
-  --deskew --invalidate-digital-signatures`, writing a copy into the output
-  folder. The other pages pass through untouched; the original stays
-  untouched, signature included. A low-text page with nothing drawn on it
-  (a blank verso) does not count. If OCR fails on a PDF that also has
-  native text, the file goes on with that text and a warning names the
-  pages left blank; a fully scanned PDF still fails. Note: the
+  --deskew --invalidate-digital-signatures --output-type pdf`, writing a
+  copy into the output folder. The other pages pass through untouched; the
+  original stays untouched, signature included. A low-text page with
+  nothing drawn on it (a blank verso) does not count. If OCR fails on a PDF
+  that also has native text, the file goes on with that text and a warning
+  names the pages left blank; a fully scanned PDF still fails. Since 1.5.7
+  the copy is a plain PDF, not PDF/A: it is only read for its text, and the
+  PDF/A conversion refused PDFs with an unusual color space. Also since
+  1.5.7, a file on which `ocrmypdf` failed (either way) gets
+  `file.ocr_failed = 1`, and every conversion starts by sending those files
+  back to 'discovered' (pages and full-text entries dropped) until one
+  succeeds. Other failures (corrupt, protected) are not retried. An
+  'extracted' file is held back with a warning once the project has
+  windows, since the windows step never rewrites an existing window file.
+  The column is added once per database, and that migration also flags the
+  files older versions failed on: `status = 'failed'` with an error
+  starting "ocrmypdf falhou", and the names in
+  `log.conversion.ocr_pages_failed` events. Note: the
   specification originally also called for `--clean`, but that flag depends
   on the `unpaper` binary, which has no official Windows distribution — the
   code omits it on this platform (see the comment in `conversion.py`).

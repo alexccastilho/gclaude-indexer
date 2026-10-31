@@ -61,6 +61,14 @@ class ConversionError(Exception):
     """Failure converting a file. The message must not contain document content."""
 
 
+class OcrError(ConversionError):
+    """`ocrmypdf` itself failed (1.5.7). Kept apart from every other
+    conversion failure because it is the one worth trying again: a file
+    that failed this way gets `file.ocr_failed = 1` and goes back to the
+    queue at the start of the next conversion (`requeue_ocr_failures`),
+    while a corrupt or password-protected file stays failed."""
+
+
 def _destination_path(output_dir: Path, subfolder: str, relative_path: str, new_extension: str) -> Path:
     destination = output_dir / subfolder / Path(relative_path).with_suffix(new_extension)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -203,6 +211,12 @@ def _run_ocrmypdf(
         "--invalidate-digital-signatures",
         "--jobs",
         str(max(1, jobs)),
+        # 1.5.7: a plain PDF, not PDF/A. The copy is only read for its text,
+        # and the PDF/A conversion (Ghostscript) refuses a PDF with an
+        # unusual color space (`ColorConversionNeededError`) — which threw
+        # away the OCR of every page of the file. Skipping it is also faster.
+        "--output-type",
+        "pdf",
         # Section 5 also asks for "--clean", but that option depends on the
         # `unpaper` binary, which has no official Windows distribution and
         # is not on the installable dependency list in section 10.3. Omitted
@@ -222,7 +236,7 @@ def _run_ocrmypdf(
     )
 
     if result.returncode != 0:
-        raise ConversionError(
+        raise OcrError(
             f"ocrmypdf falhou (código {result.returncode}): "
             f"{result.stderr.strip()[-ERROR_MESSAGE_CHAR_LIMIT:]}"
         )
@@ -430,6 +444,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     # run in a worker process (see the docstring above) and never does.
     events: list[tuple[str, str, str, dict]] = []
     ocr_applied = False
+    ocr_failed = False
     sliced = False
     blocks_generated = 0
 
@@ -445,13 +460,15 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
                 _run_ocrmypdf(
                     source_path, ocr_destination, config.ocr_language, jobs=ocrmypdf_jobs, pages=ocr_pages
                 )
-            except ConversionError as exc:
+            except OcrError as exc:
                 # A file with native text used to skip OCR altogether; one
                 # failed scanned page must not cost the rest of it. Read the
                 # original, as before, and say which pages stayed blank.
+                # `ocr_failed` brings it back on the next conversion.
                 if not partial:
                     raise
                 needs_ocr = False
+                ocr_failed = True
                 events.append((
                     "conversion", "warning", "log.conversion.ocr_pages_failed",
                     {"name": name, "pages": len(ocr_pages), "total": page_count,
@@ -481,8 +498,11 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
                 "conversion", "info", "log.conversion.sliced", {"name": name, "blocks": len(blocks)},
             ))
 
-        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ? WHERE id = ?"
-        params = (page_count, int(needs_ocr), row["id"])
+        sql = (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
+            " ocr_failed = ? WHERE id = ?"
+        )
+        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
     elif category == "imagens":
         text = _extract_text_image(source_path, config.ocr_language)
@@ -556,14 +576,15 @@ def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, lan
 
 
 def _record_failure(
-    writer: BatchWriter, result: ConversionResult, row, error_message: str, language: str | None = None
+    writer: BatchWriter, result: ConversionResult, row, error_message: str, language: str | None = None,
+    ocr_failed: bool = False,
 ) -> None:
     error_message = error_message[:ERROR_MESSAGE_CHAR_LIMIT]
 
     def op(conn) -> None:
         conn.execute(
-            "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
-            (error_message, row["id"]),
+            "UPDATE file SET status = 'failed', error = ?, ocr_failed = ? WHERE id = ?",
+            (error_message, int(ocr_failed), row["id"]),
         )
         record_event(
             conn, "conversion", "error", "log.conversion.failed",
@@ -660,7 +681,10 @@ def _convert_guarded(
                 if outcome.kind == OK:
                     _apply_result(writer, result, outcome.value, language=language)
                 elif outcome.kind == ERROR:
-                    _record_failure(writer, result, row, str(outcome.value), language=language)
+                    _record_failure(
+                        writer, result, row, str(outcome.value), language=language,
+                        ocr_failed=isinstance(outcome.value, OcrError),
+                    )
                 elif outcome.kind == TIMED_OUT:
                     _record_failure(
                         writer, result, row,
@@ -694,6 +718,70 @@ def _minutes(seconds: float) -> int:
     return max(1, round(seconds / 60))
 
 
+def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
+    """`(rows to requeue, names held back)` — see `requeue_ocr_failures`."""
+    has_windows = conn.execute("SELECT 1 FROM window LIMIT 1").fetchone() is not None
+    rows = conn.execute(
+        "SELECT id, name, status FROM file WHERE ocr_failed = 1"
+        " AND status IN ('converted', 'extracted', 'failed') ORDER BY relative_path"
+    ).fetchall()
+    requeue = [row for row in rows if not (row["status"] == "extracted" and has_windows)]
+    held_back = [row["name"] for row in rows if row["status"] == "extracted" and has_windows]
+    return requeue, held_back
+
+
+def ocr_retry_count(conn) -> int:
+    """How many files the next conversion will send back to the queue —
+    the Execution screen counts them as pending conversion."""
+    return len(_ocr_retry_candidates(conn)[0])
+
+
+def requeue_ocr_failures(conn, language: str | None = None) -> int:
+    """Sends every file whose OCR failed (`file.ocr_failed = 1`) back to
+    'discovered', so this conversion tries it again (1.5.7). Only OCR
+    failures: a corrupt or protected file would fail the same way forever.
+
+    The flag stays set until a conversion succeeds, so a file that keeps
+    failing is retried on every run — at the cost of one more attempt.
+
+    An 'extracted' file is only requeued while the project has no windows.
+    Its pages are already inside window text files, which the windows step
+    never rewrites (`prepare_windows` keeps a `.txt` that exists); sending
+    it back would silently leave the old blank pages in those windows.
+    Those files are named in a warning instead — the project update is the
+    path that discards windows correctly."""
+    from .fulltext import remove_file as remove_from_search
+
+    rows, held_back = _ocr_retry_candidates(conn)
+    requeued = 0
+    try:
+        for row in rows:
+            remove_from_search(conn, row["id"])
+            conn.execute("DELETE FROM page WHERE file_id = ?", (row["id"],))
+            # Same reset as a changed file in `invalidation.apply_update`.
+            conn.execute(
+                "UPDATE file SET status = 'discovered', page_count = NULL, error = NULL WHERE id = ?",
+                (row["id"],),
+            )
+            requeued += 1
+        if requeued:
+            record_event(
+                conn, "conversion", "info", "log.conversion.ocr_retry",
+                {"count": requeued}, language=language, commit=False,
+            )
+        if held_back:
+            record_event(
+                conn, "conversion", "warning", "log.conversion.ocr_retry_held",
+                {"count": len(held_back), "names": ", ".join(held_back[:20])},
+                language=language, commit=False,
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return requeued
+
+
 def convert(
     conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> ConversionResult:
@@ -703,6 +791,8 @@ def convert(
     no_window.install()
 
     result = ConversionResult()
+
+    requeue_ocr_failures(conn, language=language)
 
     rows = conn.execute(
         "SELECT * FROM file WHERE status = 'discovered' ORDER BY relative_path"

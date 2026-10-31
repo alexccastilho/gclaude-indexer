@@ -251,7 +251,7 @@ def test_falha_no_ocr_de_pdf_misto_mantem_o_texto_nativo(tmp_path, monkeypatch):
     _criar_pdf_misto(origem / "ata_mista.pdf")
 
     def _ocr_falha(*args, **kwargs):
-        raise conversion.ConversionError("ocrmypdf falhou (código 2): teste")
+        raise conversion.OcrError("ocrmypdf falhou (código 2): teste")
 
     monkeypatch.setattr(conversion, "_run_ocrmypdf", _ocr_falha)
     scan(conn, config)
@@ -275,7 +275,7 @@ def test_falha_no_ocr_de_pdf_todo_escaneado_continua_sendo_falha(tmp_path, monke
     _criar_pdf_escaneado(origem / "peca_escaneada.pdf")
 
     def _ocr_falha(*args, **kwargs):
-        raise conversion.ConversionError("ocrmypdf falhou (código 2): teste")
+        raise conversion.OcrError("ocrmypdf falhou (código 2): teste")
 
     monkeypatch.setattr(conversion, "_run_ocrmypdf", _ocr_falha)
     scan(conn, config)
