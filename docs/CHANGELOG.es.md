@@ -17,6 +17,17 @@ informa la aplicación (`SYSTEM_VERSION`, en `web/app.py`) se mantuvo en
 incremento, y publica todo lo que el bloque de la fase 16, más abajo,
 venía arrastrando como no publicado.
 
+## [1.5.11] — 2026-10-31
+
+### Corregido
+
+- **La velocidad de los ventiladores quedaba vacía después de reiniciar
+  Windows.** El lector de sensores elevado arranca antes de que el
+  servicio térmico de Dell esté listo, y la primera lectura fallida
+  apagaba los ventiladores durante toda la sesión. Ahora vuelve a intentar
+  cada 30 segundos y solo desiste tras diez fallos seguidos (equipo sin la
+  interfaz de Dell).
+
 ## [1.5.10] — 2026-10-31
 
 ### Velocidad de los ventiladores en portátiles Dell; controlador PawnIO para los sensores de la CPU

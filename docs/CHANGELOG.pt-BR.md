@@ -17,6 +17,16 @@ reportada pelo aplicativo (`SYSTEM_VERSION`, em `web/app.py`) ficou em
 publica tudo o que o bloco da fase 16, mais abaixo, vinha carregando como
 não lançado.
 
+## [1.5.11] — 2026-10-31
+
+### Corrigido
+
+- **A rotação das ventoinhas ficava vazia depois de reiniciar o Windows.**
+  O leitor de sensores elevado sobe antes de o serviço térmico da Dell
+  estar pronto, e a primeira leitura com falha desligava as ventoinhas a
+  sessão inteira. Agora ele tenta de novo a cada 30 segundos e só desiste
+  depois de dez falhas seguidas (máquina sem a interface da Dell).
+
 ## [1.5.10] — 2026-10-31
 
 ### Rotação das ventoinhas em notebooks Dell; driver PawnIO para os sensores da CPU

@@ -390,3 +390,44 @@ def test_instalador_oferece_o_pawnio_marcado():
     script = (raiz / "install.ps1").read_text(encoding="utf-8-sig")
     assert "[switch]$SkipPawnIO" in script
     assert "winget install --id namazso.PawnIO -e --silent" in script
+
+
+def test_interface_da_dell_que_ainda_nao_subiu_e_tentada_de_novo():
+    """Logo depois de reiniciar, o leitor elevado sobe antes do serviço da
+    Dell; a primeira falha não pode deixar as ventoinhas vazias a sessão
+    inteira (31/10/2026)."""
+    from gclaude_indexer import dell_thermal
+    from gclaude_indexer.dell_thermal import DellThermal
+
+    agora = [0.0]
+    pronto = [False]
+
+    def _firmware(argumento):
+        if not pronto[0]:
+            raise RuntimeError("provedor WMI ainda não respondeu")
+        return _firmware_g15(argumento)
+
+    termica = DellThermal(invoke=_firmware, clock=lambda: agora[0])
+    assert termica.read()["cpu_fan_rpm"] is None
+    pronto[0] = True
+    assert termica.read()["cpu_fan_rpm"] is None  # ainda no intervalo
+    agora[0] += dell_thermal._RETRY_SECONDS + 1
+    assert termica.read()["cpu_fan_rpm"] == 2101
+
+
+def test_maquina_sem_a_interface_desiste_depois_de_algumas_tentativas():
+    from gclaude_indexer import dell_thermal
+    from gclaude_indexer.dell_thermal import DellThermal
+
+    agora = [0.0]
+    chamadas = []
+
+    def _ausente(argumento):
+        chamadas.append(argumento)
+        raise RuntimeError("Classe inválida")
+
+    termica = DellThermal(invoke=_ausente, clock=lambda: agora[0])
+    for _ in range(dell_thermal._MAX_FAILURES + 5):
+        termica.read()
+        agora[0] += dell_thermal._RETRY_SECONDS + 1
+    assert len(chamadas) == dell_thermal._MAX_FAILURES

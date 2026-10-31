@@ -25,12 +25,13 @@ at 2101 and 2387 RPM, 2 temperatures (0x01 = CPU 73 °C, 0x06 = GPU 58 °C),
 with no third-party driver installed.
 
 **Never raises**: on any other machine the class does not exist and every
-reading is `None`.
+reading is `None`; it stops asking after a few spaced attempts.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 
 # `Thermal_Information` operations (low byte of the argument; the next byte
 # is the operation's own argument).
@@ -47,6 +48,11 @@ _TEMP_GPU = 0x06
 
 # The firmware answers an invalid request with all bits set (or nearly).
 _INVALID_FLOOR = 0xFFFFFFF0
+
+# A failed read is tried again after this long, up to this many times in a
+# row (1.5.11): about five minutes for Dell's service to come up.
+_RETRY_SECONDS = 30.0
+_MAX_FAILURES = 10
 
 KEYS = ("cpu_fan_rpm", "gpu_fan_rpm", "cpu_temp_c", "gpu_temp_c")
 
@@ -65,11 +71,15 @@ class DellThermal:
     `invoke(arg) -> int` is the only thing that talks to the firmware, so a
     test can drive the protocol without WMI."""
 
-    def __init__(self, invoke=None):
+    def __init__(self, invoke=None, clock=time.monotonic):
+        self._given_invoke = invoke
         self._invoke = invoke
         self._fans: list[int] | None = None
         self._temps: list[int] | None = None
         self._broken = False
+        self._failures = 0
+        self._retry_at = 0.0
+        self._clock = clock
         self._lock = threading.Lock()
 
     def _call(self, operation: int, argument: int = 0) -> int | None:
@@ -93,7 +103,7 @@ class DellThermal:
     def read(self) -> dict:
         reading = _empty()
         with self._lock:
-            if self._broken:
+            if self._broken or self._clock() < self._retry_at:
                 return reading
             try:
                 if self._invoke is None:
@@ -118,10 +128,22 @@ class DellThermal:
                     elif sensor == _TEMP_GPU:
                         reading["gpu_temp_c"] = float(value)
             except Exception:
-                # Not a Dell, not elevated, or the firmware said no: stop
-                # asking, every two seconds, for the rest of the session.
-                self._broken = True
+                # Not a Dell, not elevated, or not ready yet. 1.5.11: tried
+                # again later instead of given up at once — right after a
+                # restart the helper starts before Dell's WMI provider
+                # answers, and the first failure used to leave the fans
+                # empty for the whole session (31/10/2026). A machine
+                # without the interface stops being asked after a few
+                # spaced attempts.
+                self._failures += 1
+                self._invoke = self._given_invoke
+                self._fans = self._temps = None
+                if self._failures >= _MAX_FAILURES:
+                    self._broken = True
+                else:
+                    self._retry_at = self._clock() + _RETRY_SECONDS
                 return _empty()
+            self._failures = 0
         return reading
 
 

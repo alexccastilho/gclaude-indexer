@@ -142,7 +142,7 @@ With the rules engine, it takes minutes.
 
 ### The easy way: the Windows installer
 
-1. Download `GClaude-Indexer-Setup-1.5.10.exe` from the
+1. Download `GClaude-Indexer-Setup-1.5.11.exe` from the
    [latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest).
 2. Double-click it. It asks whether to install just for you or for everyone
    on the machine, shows the licence and lets you tick which dependencies to

@@ -10,6 +10,16 @@ version — the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.5.11] — 2026-10-31
+
+### Fixed
+
+- **The fan speeds stayed empty after restarting Windows.** The elevated
+  sensor reader starts before Dell's thermal service is ready, and its
+  first failed read switched the fans off for the whole session. It now
+  tries again every 30 seconds, and only gives up after ten failures in a
+  row (a machine without Dell's interface).
+
 ## [1.5.10] — 2026-10-31
 
 ### Fan speeds on Dell laptops; PawnIO driver for the CPU sensors

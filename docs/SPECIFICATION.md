@@ -804,8 +804,9 @@ run — Ollama's own native behavior.
 > RPM 0x05; fans 0x32 CPU and 0x33 GPU, temperatures 0x01 CPU and 0x06
 > GPU). It fills only what LibreHardwareMonitor left empty: the fans,
 > which on a laptop belong to the embedded controller, and the CPU
-> temperature when PawnIO is missing. Any failure disables it for the
-> session. The installer offers the PawnIO driver (`winget install
+> temperature when PawnIO is missing. A failed read is retried every 30 s
+> (1.5.11; Dell's service may not be up yet right after a restart) and
+> disabled for the session after ten failures in a row. The installer offers the PawnIO driver (`winget install
 > namazso.PawnIO`, ticked by default, `-SkipPawnIO` when not), which
 > LibreHardwareMonitorLib 0.9.6 needs for the CPU temperature and power.
 
