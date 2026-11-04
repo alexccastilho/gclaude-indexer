@@ -1,0 +1,58 @@
+name: CodeQL
+
+# Code scanning, advanced setup. Three languages: the Python of the
+# program and its tools, the JavaScript of the web interface and the
+# GitHub Actions workflows themselves. Nothing needs compiling, so every
+# language runs with `build-mode: none`.
+#
+# `security-and-quality` is the widest query suite CodeQL ships: the
+# security queries of `security-extended` plus the maintainability ones.
+# What is scanned and what is not is in .github/codeql/codeql-config.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays, 06:23 UTC: new queries reach code that did not change.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

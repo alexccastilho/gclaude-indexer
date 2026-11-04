@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('instructions.title') }} · {{ project.name }}{% endblock %}
+{% block content %}
+<p class="breadcrumb"><a href="/projects/{{ project.id }}/result">&larr; {{ project.name }}</a></p>
+<h1>{{ t('instructions.title') }}</h1>
+<p>{{ t('instructions.intro') }}</p>
+
+{% if message %}
+<div class="notice{{ ' notice-ok' if saved else '' }}" role="status"><p>{{ message }}</p></div>
+{% endif %}
+{% if not exists %}
+<p class="help">{{ t('instructions.no_file') }}</p>
+{% endif %}
+
+{% if dedup %}
+<section id="dedup" class="card dedup-panel" aria-labelledby="dedup-title">
+  <h2 id="dedup-title">{{ t('instructions.dedup.title') }}</h2>
+  <p>{{ t('instructions.dedup.intro') }}</p>
+  <form method="post" action="/projects/{{ project.id }}/instructions/dedup">
+    <input type="hidden" name="fingerprint" value="{{ dedup.fingerprint }}">
+    {% if dedup.copies %}
+    <h3>{{ t('instructions.dedup.copies_title') }}</h3>
+    <ul>
+      {% for copy in dedup.copies %}
+      <li>{{ t('instructions.dedup.copy_line', title=copy.title, share=copy.share) }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if dedup.volatile %}
+    <h3>{{ t('instructions.dedup.volatile_title') }}</h3>
+    <p class="help">{{ t('instructions.dedup.volatile_help') }}</p>
+    <ul>
+      {% for line in dedup.volatile %}<li><code>{{ line }}</code></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if dedup.references %}
+    <h3>{{ t('instructions.dedup.references_title') }}</h3>
+    <ul>
+      {% for ref in dedup.references %}
+      <li>{{ t('instructions.dedup.reference_line', before=ref.before, after=ref.after) }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if dedup.candidates %}
+    <h3>{{ t('instructions.dedup.candidates_title') }}</h3>
+    <p class="help">{{ t('instructions.dedup.candidates_help') }}</p>
+    <ul class="dedup-candidates">
+      {% for c in dedup.candidates %}
+      <li><label><input type="checkbox" name="move" value="{{ c.id }}"{{ ' checked' if c.suggested else '' }}>
+        {{ c.text }}{% if c.sentence %} <span class="help">{{ t('instructions.dedup.sentence_tag') }}</span>{% endif %}</label></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p>
+      <button type="submit" name="action" value="remove" class="button-primary">{{ m.icon('check') }} {{ t('instructions.dedup.remove') }}</button>
+      <button type="submit" name="action" value="keep">{{ t('instructions.dedup.keep') }}</button>
+    </p>
+  </form>
+</section>
+{% endif %}
+
+<form method="post" action="/projects/{{ project.id }}/instructions" class="card">
+  <p class="help">{{ t('instructions.help') }}</p>
+  <label for="user_instructions">{{ t('instructions.label') }}</label>
+  <textarea id="user_instructions" name="user_instructions" rows="18" spellcheck="false">{{ user_text }}</textarea>
+  <p><button type="submit" class="button-primary">{{ m.icon('check') }} {{ t('instructions.save') }}</button></p>
+</form>
+
+{% if generated %}
+<details class="card">
+  <summary>{{ t('instructions.generated_title') }}</summary>
+  <pre class="instructions-generated">{{ generated }}</pre>
+</details>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{# Settings proposal for "Slicing, windows and OCR" (`settings_proposal.py`).
+   Returned by POST /projects/propose-settings into #settings_proposal. The
+   values are only applied when the user presses the button: a proposal
+   never overwrites a field silently. #}
+{% if proposal is none %}
+<p class="help">{{ t('proposal.no_folder') if not folder else t('proposal.folder_not_found', folder=folder) }}</p>
+{% elif proposal.survey.files == 0 %}
+<p class="help notice-inline">{{ t('proposal.empty') }}</p>
+{% else %}
+<div class="proposal" data-proposal
+     data-pages_per_block="{{ proposal.pages_per_block }}"
+     data-pages_per_window="{{ proposal.pages_per_window }}"
+     data-overlap="{{ proposal.overlap }}"
+     data-chars_per_page="{{ proposal.chars_per_page }}"
+     data-ocr_language="{{ proposal.ocr_language }}">
+  <p><strong>{{ t('proposal.title') }}</strong></p>
+  <p class="help">{{ t('proposal.analyzed', files=proposal.survey.files, pages=estimated_pages) }}
+    {{ composition | join('; ') }}.</p>
+  {% if proposal.survey.partial %}
+  <p class="help notice-inline">{{ t('proposal.partial', files=proposal.survey.files, seconds=proposal.survey.seconds | round | int) }}</p>
+  {% endif %}
+  <dl class="proposal-values">
+    {% for name in ['pages_per_block', 'pages_per_window', 'overlap', 'chars_per_page', 'ocr_language'] %}
+    <dt>{{ t('new_project.' + name) }}: <strong>{{ proposal[name] }}</strong></dt>
+    <dd>{% for text in reasons.get(name, []) %}{{ text }}{% if not loop.last %} {% endif %}{% endfor %}</dd>
+    {% endfor %}
+  </dl>
+  <p class="actions">
+    <button type="button" class="button button-primary" onclick="applySettingsProposal(this)">
+      {{ t('proposal.apply') }}
+    </button>
+    <span class="help" data-proposal-applied hidden>{{ t('proposal.applied') }}</span>
+  </p>
+</div>
+{% endif %}

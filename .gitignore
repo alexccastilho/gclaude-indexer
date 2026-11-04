@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Machine-local development history (not part of the product)
+.remember/
+.superpowers/
+.claude/
+
+# Test and tooling artifacts
+.playwright-mcp/
+*.log
+_tmp_*/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Arte-fonte da marca, guardada fora do repositório: as versões que o
+# produto usa (logo.png, logo.ico, o ícone da web e as prévias sociais)
+# já estão versionadas.
+GClaude Indexer Logo.png
+
+# Project output — never commit a processed collection.
+# Both the current names and the pre-Phase-14 Portuguese ones: a folder
+# processed by an older version still carries the old names.
+converted/
+blocks/
+windows/
+convertidos/
+blocos/
+janelas/
+logs/
+*.db
+*.lock
+raw_items.jsonl
+pecas_brutas.jsonl
+
+# The four generated artifacts (index.md, timeline.md, review.md,
+# project_instructions.md) are deliberately NOT listed: they only ever
+# appear inside a project's output folder, which lives outside this
+# repository, and listing them here would silently swallow a legitimate
+# docs/index.md later.
+
+# Phase 19: the compiled installer. Built from source by
+# installer/build.ps1 and published as a release asset, never committed.
+dist/
+
+# Local knowledge graph (graphify), rebuilt on each machine.
+graphify-out/

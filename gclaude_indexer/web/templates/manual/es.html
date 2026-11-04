@@ -1,0 +1,368 @@
+<nav class="manual-toc" aria-label="Índice">
+  <p class="manual-toc-title">Índice</p>
+  <ol>
+    <li><a href="#o-que-e">Qué es y para qué sirve</a></li>
+    <li><a href="#comeco-rapido">Inicio rápido en 6 pasos</a></li>
+    <li><a href="#demonstracao">Pruébelo con el acervo de demostración</a></li>
+    <li><a href="#projetos">Pantalla Proyectos</a></li>
+    <li><a href="#novo-projeto">Nuevo proyecto: cada campo</a></li>
+    <li><a href="#motores">Motores de clasificación: cuál elegir</a></li>
+    <li><a href="#acerto">Qué acierto esperar</a></li>
+    <li><a href="#execucao">Pantalla Ejecución: las etapas</a></li>
+    <li><a href="#pausa">Pausar y continuar</a></li>
+    <li><a href="#sensores">Sensores de la máquina y el pedido de administrador</a></li>
+    <li><a href="#resultado">Pantalla Resultado: qué se genera</a></li>
+    <li><a href="#normas-e-busca">Normas citadas y búsqueda en el acervo</a></li>
+    <li><a href="#usar-com-claude">Uso con Claude</a></li>
+    <li><a href="#conjuntos">Conjuntos: varios acervos en un Project</a></li>
+    <li><a href="#instrucoes">Sus instrucciones se conservan</a></li>
+    <li><a href="#atualizar">Actualizar el acervo</a></li>
+    <li><a href="#atualizar-programa">Actualizar el programa</a></li>
+    <li><a href="#outro-computador">Otra computadora y uso en equipo</a></li>
+    <li><a href="#aparencia">Temas y diseños</a></li>
+    <li><a href="#dicas">Consejos: más rápido o mejor calidad</a></li>
+    <li><a href="#problemas">Problemas frecuentes</a></li>
+    <li><a href="#privacidade">Privacidad y seguridad</a></li>
+  </ol>
+</nav>
+
+<article class="manual-body">
+
+<section id="o-que-e">
+<h2>1. Qué es y para qué sirve</h2>
+<p>GClaude Indexer lee una carpeta llena de documentos (PDF, Word, hojas de cálculo, correos electrónicos, imágenes escaneadas) y arma, <strong>en su computadora</strong>, un índice de todo lo que contiene: qué es cada pieza, de qué fecha, de quién y en qué página está. Este índice está pensado para usarse con Claude.</p>
+<p>Resuelve cinco problemas:</p>
+<ol>
+  <li><strong>Ahorro de su suscripción de Claude.</strong> En lugar de enviar todo el acervo para que Claude lo lea, usted entrega solo el índice. Claude consulta el índice, descubre qué documento y qué página interesan, y abre solo eso.</li>
+  <li><strong>Acervos mucho más grandes de lo que Claude soporta.</strong> Claude tiene un límite de cuánto texto considera a la vez. Un índice compacto, dividido por grupo, cabe en ese límite incluso cuando el acervo tiene miles de páginas.</li>
+  <li><strong>Confidencialidad.</strong> La lectura, el reconocimiento de texto (OCR) y la clasificación ocurren en esta máquina. Ningún documento se envía a internet durante el procesamiento. La base queda en una carpeta suya. Si esa carpeta está en Google Drive, puede usarla desde cualquier computadora.</li>
+  <li><strong>Actualización sin empezar de nuevo.</strong> Cuando usted agrega, modifica o elimina documentos, el programa rehace solo lo que cambió.</li>
+  <li><strong>Uso personal o en equipo.</strong> Funciona para una sola persona o para un equipo que comparte la misma carpeta en Drive o en un servidor de archivos.</li>
+</ol>
+</section>
+
+<section id="comeco-rapido">
+<h2>2. Inicio rápido en 6 pasos</h2>
+<ol class="manual-steps">
+  <li><strong>Nuevo proyecto.</strong> Haga clic en <em>+ Nuevo proyecto</em>, póngale un nombre, elija la <em>Carpeta de origen</em> (donde están sus documentos) y revise la <em>Carpeta de salida</em> sugerida. Lo demás puede quedar como está. Haga clic en <em>Crear proyecto</em>.</li>
+  <li><strong>Ejecutar todo.</strong> En la pantalla Ejecución, haga clic en <em>Ejecutar todo hasta la clasificación</em>. Puede dejar la ventana abierta y hacer otra cosa: el progreso se actualiza solo.</li>
+  <li><strong>Generar los informes.</strong> Cuando termine la clasificación, haga clic en <em>Importar y generar informes</em>.</li>
+  <li><strong>Revisar.</strong> La pantalla Resultado muestra la calidad, los pendientes y una vista previa de cada archivo generado.</li>
+  <li><strong>Descargar el paquete.</strong> En <em>Paquete para un Claude Project nuevo</em>, haga clic en <em>Descargar paquete (.zip)</em>.</li>
+  <li><strong>Llevarlo a Claude.</strong> En claude.ai, cree un Project, pegue el contenido de <code>project_instructions.md</code> en las instrucciones y suba los demás archivos como conocimiento del proyecto. Vea los detalles en <a href="#usar-com-claude">Uso con Claude</a>.</li>
+</ol>
+<p class="manual-tip">Consejo: en cada pantalla, el botón <strong>Ayuda</strong> de arriba abre un resumen de esa pantalla, y el ícono <strong>?</strong> junto a cada campo explica el campo.</p>
+</section>
+
+<section id="demonstracao">
+<h2>3. Pruébelo con el acervo de demostración</h2>
+<p>No necesita un acervo propio para ver lo que produce el programa. La carpeta <code>demo/acervo</code> del repositorio en GitHub es un acervo pequeño y completamente inventado: 72 páginas y 41 piezas, con dos tomos de un expediente en PDF, un contrato, un memorando en Word, una hoja de cálculo, un oficio digitalizado y un correo electrónico. El archivo <code>demo/gabarito.csv</code> dice qué es cada página. El instalador no trae esa carpeta: descargue el repositorio como ZIP (botón <em>Code</em>, <em>Download ZIP</em>) o clónelo.</p>
+<ol>
+  <li>Cree un proyecto con la carpeta de origen apuntando a <code>demo/acervo</code>. Marque PDF, Word, Excel, imágenes y correo electrónico en las extensiones.</li>
+  <li>Ejecute todo hasta la clasificación. Con el motor de reglas tarda segundos; con el modelo local, algunos minutos.</li>
+  <li>Genere los informes y abra el <code>index.md</code> en la carpeta de salida. Compárelo con el <code>gabarito.csv</code>, o mida el acierto con la herramienta descrita en <a href="#acerto">Qué acierto esperar</a>.</li>
+</ol>
+</section>
+
+<section id="projetos">
+<h2>4. Pantalla Proyectos</h2>
+<p>Lista todos los proyectos que esta computadora conoce. Cada proyecto vive entero en su <strong>carpeta de salida</strong> (el archivo <code>project.db</code> que está dentro guarda todo).</p>
+<ul>
+  <li><strong>Estado</strong>: <em>no iniciado</em> (todavía no se leyó nada), <em>en proceso</em> (alguna etapa está en ejecución), <em>clasificación pendiente</em> (aún quedan tramos por clasificar) o el número de piezas ya listas.</li>
+  <li><strong>Abrir</strong>: lleva a la pantalla Ejecución del proyecto.</li>
+  <li><strong>Eliminar</strong>: quita el proyecto de la lista. Usted elige entre <em>solo quitar de la lista</em> (los archivos quedan en el disco) o <em>borrar también los archivos generados</em>. En ese caso el programa borra solo lo que él mismo creó (base, informes, <code>buscar.bat</code>, la carpeta de trabajo local). Los archivos suyos que estén en la carpeta de salida se conservan, y la carpeta solo desaparece si queda vacía. La carpeta de origen nunca se toca.</li>
+  <li><strong>Abrir proyecto existente</strong>: para un proyecto que no está en la lista (reinstalación, computadora nueva, carpeta recibida de otra persona). Basta con indicar la carpeta de salida.</li>
+  <li><strong>Catálogo compartido</strong>: vea <a href="#outro-computador">Otra computadora y uso en equipo</a>.</li>
+  <li><strong>Conjuntos</strong>: varios acervos en un único Project. Vea <a href="#conjuntos">Conjuntos</a>.</li>
+</ul>
+</section>
+
+<section id="novo-projeto">
+<h2>5. Nuevo proyecto: cada campo</h2>
+<p>En la mayoría de los casos solo necesita completar <em>Nombre</em> y <em>Carpeta de origen</em>. Los demás campos ya vienen con valores que funcionan bien.</p>
+
+<h3>Identificación</h3>
+<dl>
+  <dt>Nombre del proyecto</dt><dd>Solo para que usted reconozca el proyecto en la lista. No cambia ningún archivo.</dd>
+  <dt>Tema de la colección</dt><dd>Una o dos frases sobre el contenido (p. ej.: "proceso de licitación de la obra X"). Se incluye en las instrucciones generadas para Claude y es lo que más ayuda al modelo local a entender lo que está leyendo.</dd>
+</dl>
+
+<h3>Carpetas</h3>
+<dl>
+  <dt>Carpeta de origen</dt><dd>Donde están los documentos originales. <strong>Nunca se modifica</strong>: el programa solo lee.</dd>
+  <dt>Carpeta de salida</dt><dd>Donde se guardan los informes y la base. Por defecto es la carpeta de origen con <code>_indexado</code> al final. Puede estar en Google Drive o en un servidor de archivos para usarse en otras computadoras. Los archivos intermedios (PDF con OCR, trozos de texto) quedan en una carpeta de trabajo local de esta máquina, no aquí, para no sincronizar gigabytes.</dd>
+</dl>
+
+<h3>Colección</h3>
+<dl>
+  <dt>Tipo de colección</dt><dd><em>expediente</em> numera por folio (f. 1, f. 2...), como un expediente administrativo o judicial; la numeración continúa de un tomo al siguiente. <em>biblioteca</em> numera por página (p. 1, p. 2...), como libros e informes.</dd>
+  <dt>Cómo agrupar</dt><dd>Un "agrupador" es un conjunto de archivos que forman una unidad (un expediente con varios tomos, por ejemplo). <em>por subcarpeta</em> usa el nombre de la primera subcarpeta, el caso más común; <em>por patrón en el nombre</em> agrupa por el comienzo del nombre del archivo, usando el campo siguiente; <em>todo junto</em> trata toda la carpeta como un único grupo.</dd>
+  <dt>Patrón de agrupación</dt><dd>Solo para <em>por patrón en el nombre</em>. Es una expresión regular, una opción avanzada: si no sabe qué es, déjelo en blanco. Ejemplo: <code>^(\d{4}-\d+)</code> junta <code>2024-001 - petição.pdf</code> y <code>2024-001 - despacho.pdf</code> en el grupo "2024-001".</dd>
+  <dt>Extensiones incluidas</dt><dd>Qué tipos de archivo entran. Marque <em>TODOS</em> para aceptar cualquier formato de texto o documento (los ejecutables, los comprimidos y los archivos <code>.ini</code> nunca entran). Las páginas web (<code>.htm</code>, <code>.html</code>, <code>.mht</code>) se leen como texto limpio, sin el marcado, y la codificación de todo archivo de texto se descubre sola (UTF-8, Windows-1252, ISO-8859-1), sin nada que configurar. El texto tachado en el original, en HTML, DOCX, PPTX o XLSX, aparece como <code>~~texto~~</code>: en la legislación, es la disposición derogada.</dd>
+</dl>
+
+<h3>Fraccionamiento, ventanas y OCR</h3>
+<p>Una <strong>ventana</strong> es un tramo de páginas seguidas que el clasificador lee de una vez para descubrir dónde empieza y termina cada pieza.</p>
+<p><strong>Propuesta automática.</strong> Al elegir la carpeta de origen, el programa examina una muestra (hasta 6 segundos): cuántos PDF, escaneados o no, cuántos documentos enteros (HTML, DOCX, TXT), el tamaño de las páginas y el idioma. Con eso propone los cinco valores de abajo, cada uno con su motivo. Haga clic en <em>Aplicar esta configuración</em> para usarlos; sin eso nada cambia. El botón <em>Analizar la carpeta y proponer</em> repite el análisis después de cambiar las extensiones.</p>
+<dl>
+  <dt>Páginas por bloque (80)</dt><dd>Los PDF más grandes que esto se cortan en partes antes de procesarlos, para no trabarse con archivos enormes. No cambia el índice.</dd>
+  <dt>Páginas por ventana (16)</dt><dd>Las ventanas más pequeñas se equivocan menos cuando hay muchos documentos cortos mezclados, pero tardan más. Las ventanas más grandes son más rápidas, pero pueden juntar dos piezas en una sola.</dd>
+  <dt>Solapamiento (2)</dt><dd>Cuántas páginas del final de una ventana se repiten al comienzo de la siguiente, para no cortar una pieza por la mitad. Tiene que ser menor que <em>Páginas por ventana</em>.</dd>
+  <dt>Caracteres por página (2000)</dt><dd>Límite de texto de cada página que se envía al clasificador. Evita que una página con una tabla gigante ocupe toda la ventana. La búsqueda en el acervo ve el texto completo, sin ese límite.</dd>
+  <dt>Idioma del OCR</dt><dd>Idioma usado para reconocer el texto de las páginas escaneadas: <code>por</code> (portugués), <code>eng</code> (inglés) o <code>por+eng</code> para los dos en el mismo acervo. El OCR solo pasa por las páginas que no tienen texto; un PDF con texto y algunas hojas escaneadas en el medio recibe OCR solo en esas hojas.</dd>
+</dl>
+
+<h3>Clasificación</h3>
+<dl>
+  <dt>Motor de clasificación</dt><dd>Quién identifica las piezas. Vea la comparación en <a href="#motores">Motores de clasificación</a>.</dd>
+  <dt>Modelo local</dt><dd>Qué modelo de Ollama usa el motor local. <em>automático</em> elige según la tarjeta de video: <code>qwen3.5:9b</code> en una tarjeta con 8 GB de memoria o más, <code>qwen3.5:4b</code> en las más pequeñas. Elegir otro sirve para comparar calidad.</dd>
+  <dt>Procesamiento</dt><dd>Si el motor local usa la tarjeta de video (GPU). <em>automático</em> y <em>forzar GPU</em> la aprovechan al máximo, bastante más rápido. <em>solo CPU/RAM</em> deja la tarjeta libre para otros programas, pero es más lento.</dd>
+  <dt>Paralelismo</dt><dd>Cuántos archivos procesan al mismo tiempo la conversión y la lectura. <em>económico</em>: uno a la vez; <em>automático</em>: usa los núcleos del procesador y deja uno libre para que usted siga usando la computadora (recomendado); <em>máximo</em>: termina antes, pero la computadora se pone lenta mientras tanto.</dd>
+  <dt>Revisar confianza baja</dt><dd>Primero ejecuta el motor de reglas (instantáneo) en todo y envía al motor elegido solo los tramos en los que las reglas quedaron en duda. Ahorra tiempo cuando el acervo tiene muchos documentos estandarizados.</dd>
+</dl>
+
+<h3>Instrucciones del proyecto</h3>
+<dl>
+  <dt>Instrucciones que ya usa</dt><dd>Si su Project en Claude ya tiene instrucciones, péguelas aquí. Quedan al principio del archivo de instrucciones generado y nunca se borran. Vea <a href="#instrucoes">Sus instrucciones se conservan</a>.</dd>
+  <dt>Rol en las instrucciones</dt><dd>Reemplaza el párrafo predeterminado que le dice a Claude cuál es su rol en este acervo (p. ej.: "usted es un asistente jurídico..."). Si se deja en blanco, se usa el texto predeterminado.</dd>
+  <dt>Reglas adicionales</dt><dd>Reglas específicas del acervo, que se agregan al final de las instrucciones (p. ej.: "cite siempre el número del expediente", un glosario de siglas).</dd>
+</dl>
+</section>
+
+<section id="motores">
+<h2>6. Motores de clasificación: cuál elegir</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>Motor</th><th>Velocidad</th><th>Calidad</th><th>Necesita</th><th>Cuándo usarlo</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Automático</strong> (recomendado)</td><td>la del motor que elija</td><td>la del motor que elija</td><td>nada</td><td>En caso de duda. Usa el modelo local si la computadora lo soporta; si no, las reglas.</td></tr>
+    <tr><td><strong>Reglas</strong></td><td>segundos</td><td>buena en el tipo de la pieza, floja en la fecha y el autor</td><td>nada</td><td>Acervos muy grandes y estandarizados (oficios, providencias), o para tener un primer resultado ahora.</td></tr>
+    <tr><td><strong>Modelo local (Ollama)</strong></td><td>de segundos a medio minuto por ventana, según la tarjeta de video</td><td>buena en la fecha y el autor; a veces parte una pieza en dos</td><td>Ollama instalado; una tarjeta de video ayuda mucho</td><td>El mejor equilibrio: sin internet y sin gastar la suscripción de Claude.</td></tr>
+    <tr><td><strong>Claude Code (manual)</strong></td><td>depende de usted y de Claude</td><td>la mejor</td><td>Claude Code instalado y suscripción de Claude</td><td>Acervos más pequeños o críticos, en los que la precisión vale el consumo de la suscripción. No termina solo: usted ejecuta un comando.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Para que tenga una idea del tiempo, en el acervo de demostración (72 páginas): 4 segundos con las reglas, 4 minutos con el <code>qwen3.5:9b</code> en una tarjeta de 12 GB. Un acervo de miles de páginas tarda horas con el modelo local y minutos con las reglas.</p>
+<p>Las páginas de leyes, decretos y resoluciones guardadas del sitio del Planalto no pasan por ningún motor: el programa las lee por la estructura de la propia página y sabe el tipo, el número, la fecha y la síntesis. Vea <a href="#normas-e-busca">Normas citadas y búsqueda</a>.</p>
+<p class="manual-tip">Consejo: la pantalla Resultado tiene la tabla <em>Comparar motores y modelos</em>. Procese el mismo acervo con motores diferentes y compare tiempo y puntuación antes de decidir.</p>
+</section>
+
+<section id="acerto">
+<h2>7. Qué acierto esperar</h2>
+<p>La nota de calidad de la pantalla Resultado dice cuánta confianza declaró el propio motor y cuántos campos completó. No dice si la pieza está bien. Para eso, el índice se mide contra una clave de respuestas revisada a mano en el acervo de demostración, en cada versión que toque el clasificador. En la última medición (02/11/2026):</p>
+<ul>
+  <li><strong>Ninguna página se perdió</strong>, con ninguno de los dos motores. El programa lo garantiza: toda página del acervo entra en alguna pieza del índice.</li>
+  <li><strong>Reglas</strong>: encontró 36 de las 41 piezas, acertó el tipo del 94 % de ellas, la fecha de la mitad y el autor de una de cada cinco. En 4 segundos.</li>
+  <li><strong>Modelo local (<code>qwen3.5:9b</code>)</strong>: acertó la fecha del 89 % y el autor del 84 % de las piezas encontradas, pero partió piezas (65 en el índice frente a 41 en la clave). En 4 minutos.</li>
+</ul>
+<p>En la práctica: el índice lleva a Claude a la página correcta, y Claude verifica el texto en el documento original antes de responder, como lo mandan las instrucciones generadas. Quien programa puede medir el acierto en su propia máquina con la herramienta <code>tools/medir_acerto.py</code>, sobre la carpeta de salida del acervo de demostración. Los números completos, qué significa cada uno y qué no dicen están en <code>docs/QUALITY.es.md</code> en el repositorio.</p>
+</section>
+
+<section id="execucao">
+<h2>8. Pantalla Ejecución: las etapas</h2>
+<p>El procesamiento sigue siempre este orden. Cada etapa se puede interrumpir y reanudar: pausar, cerrar el programa o incluso apagar la computadora a mitad de camino no estropea nada. Al ejecutarlo de nuevo, continúa desde donde se quedó.</p>
+<ul class="manual-stages">
+  <li><strong>1. Barrido</strong>: encuentra los archivos de la carpeta de origen e identifica copias repetidas (un documento idéntico a otro entra una sola vez). Un contador muestra cuántos archivos ya se vieron; en un segundo barrido, los archivos iguales no se vuelven a leer.</li>
+  <li><strong>2 y 3. Conversión, OCR y troceado</strong>: transforma cada archivo en texto. Las páginas escaneadas pasan por el reconocimiento de texto (OCR); los PDF enormes se cortan en bloques. Es la etapa más lenta en acervos escaneados. Un archivo cuyo OCR falló se rehace la próxima vez, y la etapa queda "pendiente" mientras haya alguno así.</li>
+  <li><strong>4. Extracción por página</strong>: guarda el texto de cada página con su numeración (f. N o p. N) y arma el índice de la búsqueda. La etapa solo termina con la búsqueda lista.</li>
+  <li><strong>5. Preparación de ventanas</strong>: divide las páginas en tramos para la clasificación.</li>
+  <li><strong>6. Clasificación</strong>: el motor elegido identifica cada pieza: tipo, fecha, autor, resumen e intervalo de páginas.</li>
+</ul>
+<ul>
+  <li><strong>Ejecutar siguiente etapa</strong>: ejecuta solo la etapa siguiente. Útil para seguir el proceso paso a paso.</li>
+  <li><strong>Ejecutar todo hasta la clasificación</strong>: encadena todas. Es lo que usará casi siempre.</li>
+  <li><strong>Importar y generar informes</strong>: después de la clasificación, junta las piezas y guarda los archivos para Claude. No forma parte de "Ejecutar todo"; el programa avisa cuando llega el momento.</li>
+  <li><strong>Barra de actividad</strong>: toda operación larga aparece en una barra con el nombre y un cronómetro, que sigue ahí si usted recarga la página (F5). Si pide otra operación sobre el mismo proyecto mientras una está en marcha, aparece una página "en curso"; nada se pierde, solo hay que esperar.</li>
+  <li><strong>Registro en vivo</strong>: cuenta lo que está pasando, en lenguaje sencillo. El filtro muestra solo avisos o solo errores; <em>copiar</em> copia el registro para enviárselo a alguien. Con el modelo local, el registro dice qué tarjeta de video está en uso, si el modelo cupo en ella y cuándo la respuesta del modelo llegó incompleta y se pidió de nuevo.</li>
+  <li><strong>Motor Claude Code</strong>: aparece un recuadro con la frase que hay que decirle a Claude Code (<code>procese las ventanas</code>). Abra Claude Code en la carpeta de salida, diga la frase y, cuando termine, haga clic en <em>Comprobar de nuevo si las ventanas terminaron</em>.</li>
+</ul>
+</section>
+
+<section id="pausa">
+<h2>9. Pausar y continuar</h2>
+<p>El botón <em>Pausar</em> responde al instante: la barra pasa a decir "deteniéndose" y la etapa termina en el próximo punto seguro (en la clasificación, al acabar la ventana actual, lo que puede tardar algunos segundos con el modelo local). Nada de lo ya hecho se pierde.</p>
+<p>Para reanudar, haga clic en <em>Continuar</em>: la etapa sigue desde donde se quedó. Cerrar el programa o apagar la computadora en medio de una etapa tiene el mismo efecto que una pausa; al abrirlo de nuevo, basta con ejecutar la etapa o <em>Ejecutar todo</em>.</p>
+</section>
+
+<section id="sensores">
+<h2>10. Sensores de la máquina y el pedido de administrador</h2>
+<p>Esta sección es solo para quien quiere seguir el esfuerzo de la máquina durante la ejecución; puede saltarla sin perder nada.</p>
+<p>La pantalla Ejecución muestra, en tiempo real, el uso del procesador, de la memoria y de la tarjeta de video, con temperatura, consumo, frecuencia y ventiladores. Con el modelo local en marcha, muestra también la memoria de la tarjeta en uso y qué modelo está cargado en ella: así ve si el modelo cupo entero.</p>
+<p>Los sensores de la CPU (temperatura, consumo y el ventilador, que está en el chip de la placa base) solo se pueden leer con privilegio de administrador. El botón <em>Leer sensores de la CPU y ventiladores</em> pide ese privilegio cuando usted quiera, para un lector separado y pequeño; el programa en sí y sus documentos siguen sin privilegio. Responder <em>No</em> es seguro: todo lo demás sigue funcionando, y el botón queda disponible para intentarlo de nuevo. El instalador también ofrece un acceso directo que lo pide al abrir, y un pequeño componente opcional, el PawnIO, que lee la temperatura de los procesadores más recientes.</p>
+<p>Qué quieren decir las palabras: ventilador <em>detenido</em> es 0 RPM de verdad (las tarjetas de video modernas detienen el ventilador cuando están frías); <em>requiere administrador</em> es un valor que existe pero necesita el lector; <em>no medido</em> es un sensor que la máquina no expone. En las notebooks, los ventiladores suelen pertenecer al fabricante y solo aparecen en algunos modelos (Dell, por ejemplo).</p>
+</section>
+
+<section id="resultado">
+<h2>11. Pantalla Resultado: qué se genera</h2>
+<p>Todos los archivos quedan en la carpeta de salida:</p>
+<dl>
+  <dt><code>index.md</code></dt><dd>El sumario: lista los grupos e indica qué archivo de índice abrir para cada uno; cuenta las páginas de legislación y apunta al <code>normas-citadas.md</code>.</dd>
+  <dt><code>index-&lt;grupo&gt;.md</code></dt><dd>Un índice por grupo: cada pieza con folios, tipo, fecha, autor, archivo de origen y página dentro de él, y un resumen. La columna Confianza solo aparece cuando hay alguna pieza por debajo de <code>high</code> (alta) o la revisión de confianza baja está activada. Un índice de más de 25 MB sale en partes <code>index-&lt;grupo&gt;-1.md</code>, <code>-2.md</code>, cortando solo entre archivos de origen.</dd>
+  <dt><code>normas-citadas.md</code></dt><dd>Una línea por norma reconocida en el acervo (ley, decreto, medida provisional, resolución): tipo, número, fecha, síntesis, en qué grupos y páginas aparece y un enlace al texto en LexML. Solo existe cuando hay al menos una norma. Vea <a href="#normas-e-busca">Normas citadas y búsqueda</a>.</dd>
+  <dt><code>timeline.md</code></dt><dd>La cronología: las piezas con fecha, en orden, sin los actos del Planalto. Un grupo con más de 2.000 piezas fechadas obtiene su propio <code>timeline-&lt;grupo&gt;.md</code>, y <code>timeline.md</code> apunta a él; ese archivo queda fuera del paquete de Claude, porque repite el índice del grupo por fecha.</dd>
+  <dt><code>review.md</code></dt><dd>La verificación: qué se leyó, qué falló, vacíos de numeración y documentos eliminados.</dd>
+  <dt><code>project_instructions.md</code></dt><dd>Las instrucciones para Claude: cómo usar el índice, cómo encontrar una norma y la regla de confirmar siempre los valores en el documento original.</dd>
+  <dt><code>buscar.bat</code></dt><dd>La búsqueda por tema para Claude Code. Vea <a href="#normas-e-busca">Normas citadas y búsqueda</a>.</dd>
+</dl>
+<ul>
+  <li><strong>Calidad de la clasificación</strong>: una puntuación basada en la confianza que el propio motor declaró y en cuántos campos completó. No es una medida de acierto real; vea <a href="#acerto">Qué acierto esperar</a>.</li>
+  <li><strong>Pendientes</strong>: tramos aún no clasificados, folios sin pieza y archivos que fallaron. Resuélvalos antes de dar el acervo por terminado.</li>
+  <li><strong>Paquete para un Claude Project nuevo</strong>: un .zip con los archivos del índice de arriba (el <code>buscar.bat</code> queda solo en la carpeta) y una guía paso a paso. Antes del botón, una tabla muestra lo que va en el paquete, con tamaño y tokens estimados. Un Project de Claude tiene tres límites: 30 MB por archivo; por encima de unos 500 mil tokens, Claude pasa a consultar el material por búsqueda en vez de leerlo todo; por encima de unos millones, deja de responder bien. La pantalla avisa en los dos últimos. Un archivo de más de 30 MB nunca entra en el paquete, porque el Project lo rechazaría; la pantalla lista lo que quedó fuera. En general basta con generar los informes de nuevo para que el índice salga en partes más pequeñas; la excepción es un único archivo de origen cuyo índice, por sí solo, supere los 30 MB.</li>
+  <li><strong>Liberar espacio</strong>: borra las copias convertidas y los bloques de la carpeta de trabajo local. Hágalo solo con los informes listos: las etapas normales no rehacen lo que se borró, y una actualización del acervo que necesite volver a leer un documento pasa de nuevo por el OCR, lo que tarda.</li>
+</ul>
+</section>
+
+<section id="normas-e-busca">
+<h2>12. Normas citadas y búsqueda en el acervo</h2>
+<h3>Normas citadas</h3>
+<p>Las páginas de leyes, decretos, medidas provisionales, ordenanzas y resoluciones guardadas del sitio del Planalto se leen por la estructura de la propia página, sin modelo: tipo, número, fecha, autor y síntesis salen del epígrafe. Cada norma se convierte en una línea del <code>normas-citadas.md</code>, con los grupos y páginas en que aparece y un enlace al texto en LexML (el portal de legislación del Senado de Brasil). El texto de las normas no va en el paquete de Claude: él abre el enlace cuando lo necesita, y las instrucciones se lo dicen.</p>
+<h3>Buscar en el acervo</h3>
+<p>El índice describe las piezas; la búsqueda encuentra cualquier palabra de cualquier archivo, incluso lo que queda más allá de "Caracteres por página". Abra <em>Buscar en el acervo</em> desde las pantallas Ejecución o Resultado. Todas las palabras escritas deben aparecer; use "comillas" para una frase exacta y <code>*</code> al final para el comienzo de una palabra. Los acentos y las mayúsculas no importan. Cada resultado indica el archivo y el lugar dentro de él: la página, en un PDF, o la línea, en un documento leído entero, como un Word o un correo. Además resalta lo encontrado, avisa cuando el fragmento estaba <del>tachado</del> en el original (en legislación, derogado) y tiene el botón <em>Abrir archivo</em>. Si el acervo fue leído por una versión anterior del programa, parte de los archivos todavía no entra en la búsqueda: la pantalla dice cuántos faltan, y el botón <em>Incluir los que faltan</em> los agrega sin volver a leer el resto.</p>
+<h3>LexML</h3>
+<p>La casilla <em>Buscar también en LexML</em> consulta el portal del Senado por las normas federales que tratan el término, incluso las que no están en su acervo. Solo el término escrito sale de la computadora. Desde el 02/11/2026 el portal pide una verificación en el navegador antes de responder a programas; cuando eso ocurre, la pantalla lo dice y muestra el enlace para hacer la búsqueda allí. El programa no intenta eludir la verificación. Los enlaces de cada norma siguen abriéndose normalmente.</p>
+<h3>En Claude Code</h3>
+<p>La carpeta de salida tiene un <code>buscar.bat</code>: <code>buscar.bat saneamento</code> lista los archivos y páginas en que aparece el término, con el enlace de la norma junto a los fragmentos de legislación; LexML se consulta cuando ninguna norma del acervo cita el término o cuando usted agrega <code>--lexml</code>. El <code>CLAUDE.md</code> de la carpeta le explica el comando a Claude Code, y él lo usa solo cuando la pregunta es por tema.</p>
+</section>
+
+<section id="usar-com-claude">
+<h2>13. Uso con Claude</h2>
+<h3>En claude.ai (Projects)</h3>
+<ol>
+  <li>Cree un Project nuevo (o abra el de este acervo).</li>
+  <li>Pegue el contenido <strong>completo</strong> de <code>project_instructions.md</code> en el campo de instrucciones del Project.</li>
+  <li>Suba como conocimiento del proyecto todo lo que está en el paquete: <code>index.md</code>, los <code>index-&lt;grupo&gt;.md</code> (y sus partes, si las hay), <code>normas-citadas.md</code>, <code>timeline.md</code> y <code>review.md</code>. Los <code>timeline-&lt;grupo&gt;.md</code> de grupo grande quedan en la carpeta de salida, fuera del paquete; la pantalla de resultado muestra su tamaño, y usted decide si los sube por separado.</li>
+  <li>Cuando necesite el contenido exacto de una pieza, envíe a la conversación solo el documento original que indica el índice. Ahí está el ahorro.</li>
+</ol>
+<h3>En Claude Code</h3>
+<p>Abra Claude Code en la carpeta de salida (o en una carpeta que tenga acceso a ella y a la carpeta de origen). Claude lee el <code>index.md</code>, elige el índice del grupo, usa el <code>buscar.bat</code> cuando la pregunta es por tema y abre solo los archivos originales necesarios, en la página indicada.</p>
+<p class="manual-tip">Por qué esto ahorra: el índice de un acervo de miles de páginas suele ocupar una fracción mínima del tamaño del texto completo. Claude gasta su cuota leyendo el índice y una o dos piezas, no todo el acervo.</p>
+</section>
+
+<section id="conjuntos">
+<h2>14. Conjuntos: varios acervos en un Project</h2>
+<p>Cada proyecto es un acervo. Cuando la pregunta atraviesa varios ("¿qué tenemos sobre el proveedor X en contratos y en actas?"), la pantalla <em>Conjuntos</em> junta dos o más proyectos en un solo paquete, para un único Claude Project.</p>
+<ul>
+  <li><strong>Crear un conjunto</strong>: póngale un nombre, marque los proyectos y revise el <em>alias</em> de cada uno. El alias se propone a partir del nombre ("Diretoria / Região Sul" se convierte en <code>diretoria-regiao-sul</code>) y va al comienzo del nombre de cada archivo del paquete: <code>diretoria-regiao-sul__index.md</code> y, para un proyecto llamado "Contratos", <code>contratos__index-Processo.md</code>. Así ningún nombre choca, incluso cuando dos proyectos tienen el mismo grupo. El campo <em>Instrucciones que ya usa en el Project</em> va al principio de las instrucciones del conjunto.</li>
+  <li><strong>El paquete combinado</strong>: un único <code>project_instructions.md</code> con una sección "En qué acervo buscar" y una sección por acervo; los sumarios y cronologías con los enlaces ya reescritos a los nombres con alias; el presupuesto de tokens sumado, medido contra el límite más bajo entre los proyectos.</li>
+  <li><strong>Grabar en la carpeta</strong>: escribe los mismos archivos en una carpeta que usted elija, más un <code>CLAUDE.md</code> que le dice a Claude Code dónde está cada acervo y cómo buscar en cada uno. La carpeta no puede ser la de origen ni la de salida de un acervo. Grabar de nuevo conserva lo que usted escribió fuera de las marcas (vea la sección siguiente) y borra los archivos de un alias que dejó de existir.</li>
+  <li><strong>Un proyecto fuera de alcance</strong> (carpeta de otra computadora, Drive apagado) o sin informes aparece deshabilitado con el motivo. Si ya formaba parte del conjunto, sigue en él y vuelve al paquete cuando la carpeta vuelva.</li>
+  <li><strong>Eliminar un conjunto</strong> quita solo la entrada de la lista. No toca ningún proyecto ni ninguna carpeta ya grabada.</li>
+</ul>
+</section>
+
+<section id="instrucoes">
+<h2>15. Sus instrucciones se conservan</h2>
+<p>El texto que GClaude Indexer escribe en <code>project_instructions.md</code> y en el <code>CLAUDE.md</code> de la carpeta de salida queda entre dos marcas invisibles (<code>GCLAUDE-INDEXER:BEGIN</code> y <code>GCLAUDE-INDEXER:END</code>).</p>
+<ul>
+  <li>Todo lo que esté <strong>fuera</strong> de las marcas es suyo y <strong>nunca</strong> se borra, ni siquiera en las actualizaciones.</li>
+  <li>En cada nueva generación, solo se rehace el tramo entre las marcas. Lo que usted pegó como instrucciones no se repite.</li>
+  <li>Si la carpeta de salida ya tenía un <code>CLAUDE.md</code> suyo, se conserva y se le agrega el bloque del programa. La primera vez se guarda una copia del original como <code>CLAUDE.md.bak</code>.</li>
+  <li>Si su Project ya tiene instrucciones, péguelas en el campo <em>Instrucciones que ya usa</em> al crear el proyecto: van al principio del archivo.</li>
+  <li>Cuando el archivo tiene instrucciones suyas, la parte del programa pasa a ser una sección de ellas, <em>Acervo indexado por GClaude Indexer</em>, solo con las cifras, los archivos y las reglas del acervo. No tiene título ni rol propios, para no contradecir lo que usted escribió.</li>
+  <li>Lo mismo vale para las instrucciones y el <code>CLAUDE.md</code> de un conjunto grabado en una carpeta.</li>
+  <li><strong>En cualquier momento</strong>: el enlace <em>Instrucciones del proyecto</em>, en las pantallas Ejecución y Resultado, muestra su parte del archivo para corregirla o pegar la versión actual del Proyecto de Claude. La parte del programa aparece debajo, solo para lectura. Cada vez que guarda, la versión anterior queda en una copia <code>.bak</code> con la fecha en el nombre.</li>
+  <li><strong>Repetición del bloque automático</strong>: si su parte del archivo ya tiene una copia de lo que el programa escribe en el bloque (la regla innegociable, cómo localizar una pieza, las columnas, recuentos de piezas o de páginas), la generación no toca su texto: pone un aviso al inicio del bloque y en el registro, y las pantallas Ejecución y Resultado muestran un enlace para revisarlo. En la pantalla <em>Instrucciones del proyecto</em> ve las secciones repetidas, las líneas con números que solo el bloque actualiza y las referencias del tipo "sección 4" que pasarían a apuntar al bloque. Elija <em>Quitar las repeticiones</em> (la versión anterior queda en una copia <code>.bak</code>) o <em>Mantener como está</em>. Los fragmentos suyos que hablan del acervo pueden ir a las <em>Reglas extra del proyecto</em>: marque los que quiera mover y pasan a salir dentro del bloque.</li>
+</ul>
+</section>
+
+<section id="atualizar">
+<h2>16. Actualizar el acervo</h2>
+<p>Al abrir la pantalla Ejecución, el programa revisa la carpeta de origen y sus subcarpetas (aparece "Revisando la carpeta de origen..."; en un acervo grande tarda unos segundos). Si algo cambió, aparece un aviso con cuántos documentos son nuevos, modificados o eliminados. Haga clic en <em>Actualizar</em> para ver el plan antes de confirmar.</p>
+<ul>
+  <li><strong>Nuevos</strong>: se leen y se clasifican.</li>
+  <li><strong>Modificados</strong>: se leen de nuevo (con OCR, si hace falta) y se reclasifican. Un archivo cuyo OCR falló la última vez también se rehace.</li>
+  <li><strong>Eliminados</strong>: sus páginas y piezas salen del índice, la copia convertida se borra y el nombre queda registrado en <code>review.md</code>. Si había una copia idéntica del documento en la carpeta, esa copia pasa a indexarse en su lugar.</li>
+  <li><strong>Cambio de numeración</strong>: en un acervo de tipo expediente, la numeración de folios es continua dentro del grupo. Si un documento entra o sale del medio, los folios de los documentos siguientes cambian de número. El plan muestra cuáles son, y el registro lo avisa. Las conversaciones antiguas que citaban esos folios pueden quedar desactualizadas.</li>
+  <li>Solo se reclasifican los tramos afectados; el resto se aprovecha.</li>
+  <li>Si la carpeta de origen no se puede leer (disco desconectado, carpeta movida), la pantalla avisa y no ofrece nada.</li>
+  <li><strong>Instrucciones del Project</strong>: la pantalla de actualización trae un campo con sus instrucciones tal como están en <code>project_instructions.md</code>. Si las cambió directamente en el Project de Claude, pegue allí la versión actual: reemplaza su parte del archivo, tal como se pegó, y la versión anterior queda en una copia <code>.bak</code>. Si nada cambió, déjelo como está.</li>
+  <li><strong>Detener</strong>: <em>Actualizar</em> e <em>Importar y generar informes</em> funcionan en segundo plano. Un panel en el centro de la pantalla muestra lo que está en curso, el tiempo transcurrido y el botón <em>Detener</em>. Detener no graba nada a medias: la actualización vuelve al estado anterior al clic, y en la generación de informes cada archivo queda el antiguo o el nuevo (el registro dice cuáles cambiaron). Puede cambiar el tema, recargar la página o abrir otra pestaña: el panel sigue ahí. Cuando termina, la pantalla pasa sola al siguiente paso.</li>
+  <li>¿Olvidó pegar las instrucciones al actualizar? Use después el enlace <em>Instrucciones del proyecto</em>; no hace falta actualizar de nuevo.</li>
+</ul>
+<p>Después de actualizar, use <em>Ejecutar todo hasta la clasificación</em> e <em>Importar y generar informes</em>. Solo se vuelven a escribir los archivos de salida que cambiaron, y el registro dice cuáles: esos son los que vuelve a subir al Project de Claude.</p>
+</section>
+
+<section id="atualizar-programa">
+<h2>17. Actualizar el programa</h2>
+<p>Descargue el instalador de la versión nueva e instálelo encima, sin desinstalar: el instalador cierra la versión anterior que esté abierta, y sus proyectos quedan donde están. Si el programa se abre mientras la versión anterior sigue abierta, el nuevo la reemplaza y avisa.</p>
+<p>Cuando el programa se actualiza mientras está abierto, aparece un aviso que dice que el sistema fue actualizado: cierre el programa y ábralo de nuevo con el acceso directo. La pantalla <em>Acerca de</em> muestra la versión instalada y el diagnóstico de la instalación.</p>
+<p>Después de actualizar, genere los informes de nuevo en los proyectos que usa: así reciben lo que la versión nueva produce (por ejemplo, el <code>normas-citadas.md</code> y el <code>buscar.bat</code>) y pierden lo que dejó de producir.</p>
+</section>
+
+<section id="outro-computador">
+<h2>18. Otra computadora y uso en equipo</h2>
+<ul>
+  <li><strong>Carpeta de salida en Google Drive</strong> (o en un servidor de archivos): el proyecto se puede abrir desde cualquier computadora que tenga acceso a ella.</li>
+  <li><strong>Catálogo compartido</strong>: en la pantalla Proyectos, indique una carpeta dentro de Drive para guardar la lista de proyectos. Todas las computadoras con el mismo Drive pasan a ver los mismos proyectos.</li>
+  <li><strong>Bloqueo de uso</strong>: solo una computadora a la vez trabaja en un proyecto. Si otra lo está usando, el programa avisa cuál es. Cerrar el navegador libera el bloqueo en unos cinco minutos; una máquina que se colgó lo libera en diez.</li>
+  <li><strong>Regla de oro al cambiar de computadora</strong>: cierre el programa en la primera, espere a que Google Drive termine de sincronizar y solo entonces ábralo en la segunda.</li>
+  <li>Los <strong>conjuntos</strong> quedan en cada máquina, no en el catálogo compartido.</li>
+  <li><strong>¿Catálogo compartido o Abrir proyecto existente?</strong> El catálogo es la <em>lista</em> de proyectos. Compartido, hace que todas las computadoras con el mismo Drive vean la misma lista, sin hacer nada proyecto por proyecto. <em>Abrir proyecto existente</em> agrega a la lista de esta máquina <em>un</em> proyecto que ella no conoce: después de reinstalar Windows, en una carpeta movida o en una carpeta que alguien le envió. Los dos usan el proyecto tal como está; ninguno copia ni rehace nada.</li>
+</ul>
+</section>
+
+<section id="aparencia">
+<h2>19. Temas y diseños</h2>
+<p>Hay dos opciones independientes, en <strong>Preferencias</strong> (al pie de la barra lateral) o en la parte superior de la pantalla, según el diseño:</p>
+<ul>
+  <li><strong>Tema</strong> (los colores): Estudio, Estudio oscuro, Claro, Oscuro, Sepia, Alto contraste, Aurora, Toga, Grafito y Océano.</li>
+  <li><strong>Diseño</strong> (la forma: fuentes, espaciados, esquinas): Área de trabajo, Predeterminado, Técnico, Editorial y Compacto.</li>
+</ul>
+<p>El diseño <strong>Área de trabajo</strong> es el predeterminado desde la versión 1.10.0. A la izquierda hay una barra con las pantallas principales y todos los proyectos; el punto al lado de cada proyecto muestra su situación (verde: importado; naranja: en curso o con clasificación pendiente). Arriba aparece dónde está usted y, dentro de un proyecto, pestañas para Ejecución, Resultado, Búsqueda, Actualizar acervo e Instrucciones.</p>
+<p>Para ir a cualquier lugar sin el ratón, presione <kbd>Ctrl</kbd> + <kbd>K</kbd> (o haga clic en "Buscar o ejecutar"): escriba parte del nombre de una pantalla, de un proyecto o de un tema, elija con las flechas y presione Enter. Los acentos no importan. La paleta solo navega y cambia preferencias; lo que inicia un trabajo sigue en el botón de su propia pantalla.</p>
+<p>Quien ya usaba otro diseño ve el Área de trabajo una vez, después de la actualización; para volver, basta con elegir el diseño anterior. El tema que eligió antes sigue igual.</p>
+<p>Cualquier combinación funciona. La elección queda guardada en este navegador. Si Windows pide menos movimiento (configuración de accesibilidad), las animaciones se reducen solas.</p>
+</section>
+
+<section id="dicas">
+<h2>20. Consejos: más rápido o mejor calidad</h2>
+<div class="manual-table-wrap">
+<table class="manual-table">
+  <thead><tr><th>Si usted quiere...</th><th>Haga esto</th></tr></thead>
+  <tbody>
+    <tr><td>El resultado más rápido posible</td><td>Motor <em>Reglas</em>, Paralelismo <em>máximo</em>.</td></tr>
+    <tr><td>Rapidez, sin renunciar a la calidad</td><td>Motor <em>Modelo local</em> con <em>Revisar confianza baja</em> marcado.</td></tr>
+    <tr><td>La mejor calidad</td><td>Motor <em>Claude Code</em>, ventanas de 12 a 16 páginas.</td></tr>
+    <tr><td>Usar la computadora mientras procesa</td><td>Paralelismo <em>automático</em> o <em>económico</em>; Procesamiento <em>solo CPU/RAM</em> si necesita la tarjeta de video.</td></tr>
+    <tr><td>Acervo con muchos documentos cortos</td><td>Reduzca <em>Páginas por ventana</em> (p. ej.: 8 o 10).</td></tr>
+    <tr><td>Acervo con documentos largos y estandarizados</td><td>Aumente <em>Páginas por ventana</em> (p. ej.: 24).</td></tr>
+    <tr><td>Ahorrar la suscripción de Claude</td><td>Use el índice en el Project y envíe solo los originales necesarios en cada pregunta.</td></tr>
+  </tbody>
+</table>
+</div>
+<ul>
+  <li>Empiece con una parte pequeña del acervo para probar la configuración; después indique la carpeta completa.</li>
+  <li>Complete bien el <em>Tema de la colección</em>: mejora la clasificación y las respuestas de Claude.</li>
+  <li>Use una tarjeta de video si puede, y un modelo que quepa en ella: el registro dice si cupo. Un modelo que cabe y termina vale más que uno más grande que se desborda a la memoria común.</li>
+  <li>Pídale siempre a Claude la referencia (f. N o p. N) y compruebe el valor en el documento original antes de usarlo.</li>
+</ul>
+</section>
+
+<section id="problemas">
+<h2>21. Problemas frecuentes</h2>
+<dl>
+  <dt>"Proyecto en uso en otra máquina"</dt><dd>Cierre el programa en la otra computadora. Si se colgó o se apagó, espere a que venza el bloqueo o elija <em>Asumir de todos modos</em>, solo si está seguro de que la otra no lo está usando.</dd>
+  <dt>"Posible sincronización incompleta"</dt><dd>Google Drive todavía no terminó de descargar el proyecto. Espere a que el ícono de Drive indique que terminó.</dd>
+  <dt>"Base de datos ocupada" u "Otra operación está en curso"</dt><dd>Otra operación está usando el proyecto. Nada se perdió: espere a que la barra de actividad termine e inténtelo de nuevo.</dd>
+  <dt>El motor local pasó a "reglas"</dt><dd>Solo ocurre en una máquina sin tarjeta de video: Ollama no se está ejecutando o falta memoria. No es un error; el programa vuelve al modelo cuando Ollama responda. Con tarjeta de video, espera a Ollama en lugar de pasar a las reglas. La pantalla Acerca de muestra el diagnóstico de la instalación.</dd>
+  <dt>La clasificación está lenta y la tarjeta de video casi vacía</dt><dd>Vea en el registro si el modelo cupo en la tarjeta. Si no cupo, elija el modelo más pequeño en <em>Modelo local</em>.</dd>
+  <dt>Archivos con fallo en Pendientes</dt><dd>En general son archivos protegidos con contraseña, dañados o sin ningún texto. Ábralos, guarde una copia sin protección en la carpeta de origen y actualice el acervo. Un OCR que falló se rehace solo en la próxima conversión.</dd>
+  <dt>Vacíos de folios</dt><dd>Folios sin pieza clasificada. Ejecute la clasificación de nuevo en esos tramos o compruebe si el PDF tiene páginas en blanco.</dd>
+  <dt>Aparece "Solicitud rechazada"</dt><dd>Algún sitio web intentó enviar un comando al programa y fue bloqueado. Use siempre el acceso directo de GClaude Indexer o la dirección <code>http://127.0.0.1:8000</code>.</dd>
+  <dt>LexML pidió verificación</dt><dd>El portal del Senado responde a los programas con una página de verificación. Abra el enlace mostrado y haga la búsqueda en el navegador.</dd>
+</dl>
+</section>
+
+<section id="privacidade">
+<h2>22. Privacidad y seguridad</h2>
+<ul>
+  <li>Los documentos se leen y se clasifican <strong>solo en esta computadora</strong>. El motor local se comunica únicamente con el Ollama de esta máquina, nunca a través de internet.</li>
+  <li>El programa solo acepta comandos de sus propias pantallas: un sitio web abierto en el navegador no puede darle órdenes.</li>
+  <li>La carpeta de origen nunca se modifica.</li>
+  <li>La base del proyecto guarda el texto de las páginas. Si el acervo contiene datos personales (LGPD), proteja la carpeta de salida como protegería los propios documentos, también en Google Drive.</li>
+  <li>La única consulta a un servicio externo es la búsqueda en LexML, que envía solo el término escrito: en la pantalla, solo con la casilla marcada; en <code>buscar.bat</code>, también cuando ninguna norma del acervo cita el término.</li>
+  <li>Al usar el motor Claude Code o enviar archivos a Claude, entonces sí el contenido enviado pasa por su cuenta de Claude, según las condiciones de su plan.</li>
+</ul>
+</section>
+
+</article>

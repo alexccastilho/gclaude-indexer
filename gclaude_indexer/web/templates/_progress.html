@@ -1,0 +1,56 @@
+{% import "_macros.html" as m %}
+{% if progresso.status == "none" %}
+<p class="help">{{ t('run.no_task') }}</p>
+{% else %}
+<div class="progress-box">
+  {% if progresso.status == "counting" %}
+  <div class="progress-header">
+    <strong>{{ t('step.' + progresso.step + '.title') }}</strong>
+    <span>{{ t('run.counting', count=progresso.contados) }}</span>
+  </div>
+  {# No total yet, so no percentage: a bar that keeps moving, and the count
+     above that grows on every poll. #}
+  <div class="progress-bar" role="progressbar" aria-busy="true" aria-valuetext="{{ t('run.counting', count=progresso.contados) }}">
+    <div class="progress-bar-fill progress-bar-counting"></div>
+  </div>
+  {% else %}
+  <div class="progress-header">
+    <strong>{{ t('step.' + progresso.step + '.title') }}{% if progresso.phase == 'fulltext' %} · {{ t('run.phase_fulltext') }}{% endif %}</strong>
+    <span>{{ progresso.concluidos }} / {{ progresso.total }} ({{ progresso.percentual }}%)</span>
+  </div>
+  <div class="progress-bar" role="progressbar" aria-valuenow="{{ progresso.percentual }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-bar-fill progress-bar-{{ progresso.status }}" style="width: {{ progresso.percentual }}%"></div>
+  </div>
+  {% endif %}
+  <p class="help">
+    {% if progresso.stop_requested %}
+      {# Fase 34: between the click and the step's next check (the
+         classification only looks between windows) the box says so,
+         instead of looking as if the click was lost. #}
+      {{ t('run.stopping') }} ·
+    {% endif %}
+    {% if progresso.status == "counting" %}
+      {{ t('run.counting_help') }} {{ t('run.elapsed') }}: {{ progresso.tempo_decorrido }}
+    {% elif progresso.status == "running" %}
+      {{ t('run.elapsed') }}: {{ progresso.tempo_decorrido }}{% if progresso.eta_segundos %} · {{ t('run.estimated_remaining') }}: {{ progresso.eta_formatado }}{% endif %}
+    {% elif progresso.status == "done" %}
+      {{ t('run.completed_in') }} {{ progresso.tempo_decorrido }}
+    {% elif progresso.status == "stopped" %}
+      {{ t('run.paused') }}
+    {% elif progresso.status == "error" %}
+      {{ t('run.error') }}: {{ progresso.error }}
+    {% endif %}
+  </p>
+  {% if progresso.status in ("running", "counting") and not progresso.stop_requested %}
+  <button hx-post="/projects/{{ project.id }}/pause" hx-target="#progress" hx-swap="innerHTML" class="pause-button">
+    {{ m.icon('pause') }} {{ t('run.pause') }}
+  </button>
+  {% elif progresso.status in ("stopped", "done") and progresso.has_pending %}
+  {# Fase 34: "Continue" where "Pause" was. `/resume` starts the chain at
+     the first pending step — the paused one — not at the scan. #}
+  <button hx-post="/projects/{{ project.id }}/resume" hx-target="#steps" hx-swap="innerHTML" class="button-primary">
+    {{ m.icon('play-all') }} {{ t('run.resume') }}
+  </button>
+  {% endif %}
+</div>
+{% endif %}

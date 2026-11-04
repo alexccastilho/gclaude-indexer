@@ -1,0 +1,165 @@
+/* GClaude Indexer, 1.9.0: acabamento visual, para todos os temas.
+
+   Carregada por último, com seletores simples: vence o style.css (mesma
+   especificidade, vem depois) e perde para os layouts, que usam
+   html[data-layout=...] e por isso continuam mandando no que é deles.
+   Só cores do próprio tema (variáveis --color-*): nada aqui escolhe uma
+   cor fixa que possa ficar ilegível num tema escuro. */
+
+:root {
+  /* Fontes do próprio Windows 11, sem baixar nada: o programa roda
+     offline. A versão "Display" é desenhada para tamanhos grandes. */
+  --font-text: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 14px;
+  --radius-small: 9px;
+  --shadow-card:
+    0 1px 0 color-mix(in srgb, var(--color-border) 55%, transparent),
+    0 10px 28px -18px color-mix(in srgb, var(--color-header-bg) 45%, transparent);
+  --shadow-floating: 0 18px 44px -18px color-mix(in srgb, var(--color-header-bg) 60%, transparent);
+  /* Movimento mais curto: a entrada da tela não pode parecer demora. */
+  --duration: 200ms;
+  --duration-slow: 260ms;
+}
+
+html { scroll-behavior: smooth; scrollbar-color: var(--color-border) transparent; }
+::selection { background: color-mix(in srgb, var(--color-accent) 28%, transparent); }
+
+body {
+  font-family: var(--font-text);
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+}
+/* Um brilho discreto da cor do tema no alto da página, só nos temas que
+   não têm fundo próprio. */
+html:is([data-theme="light"], [data-theme="dark"], [data-theme="sepia"]) body {
+  background-image:
+    radial-gradient(1100px 520px at 0% -8%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 62%),
+    radial-gradient(900px 480px at 100% 0%, color-mix(in srgb, var(--color-accent) 4%, transparent), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Tipografia --------------------------------------------------------------- */
+h1 {
+  font-family: var(--font-display);
+  font-weight: 650;
+  font-size: clamp(1.55rem, 1.25rem + 0.9vw, 2rem);
+  letter-spacing: -0.022em;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+h2 {
+  font-family: var(--font-display);
+  text-transform: none;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  text-wrap: balance;
+}
+h3 { font-weight: 600; letter-spacing: -0.005em; }
+p, li { text-wrap: pretty; }
+.help, .content > p { max-width: 78ch; }
+.help { line-height: 1.6; }
+table, .progress-header, .resource-value, .about-version, code, .wait-clock { font-variant-numeric: tabular-nums; }
+
+/* Cabeçalho ---------------------------------------------------------------- */
+.header {
+  padding: 0.6rem 1.5rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 10px 30px -20px rgba(0, 0, 0, 0.7);
+}
+.nav-link { font-weight: 500; }
+.nav-link[aria-current="page"] { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.nav-link[aria-current="page"]::after { transform: scaleX(1); }
+.header-button, .preference-form select { transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease; }
+.preference-form select:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* Conteúdo ------------------------------------------------------------------ */
+.content { max-width: 1080px; padding: 2rem 1.5rem 3.5rem; }
+.breadcrumb { gap: 0.15rem 0.5rem; }
+.breadcrumb a {
+  padding: 0.2rem 0.5rem;
+  margin: 0 -0.2rem;
+  border-radius: 999px;
+  transition: background var(--duration-fast) ease;
+}
+.breadcrumb a:hover { text-decoration: none; background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+/* Superfícies: borda mais leve, sombra com a cor do tema, cantos maiores
+   por fora e menores por dentro. */
+.card, .artifact, .claude-package, .progress-box, .table, .install-diagnostics {
+  border-color: color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+/* Botões -------------------------------------------------------------------- */
+.button, button, input[type="submit"] {
+  padding: 0.55rem 1.05rem;
+  font-weight: 500;
+  line-height: 1.2;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out);
+}
+.button:hover, button:hover { box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--color-text) 40%, transparent); }
+.button-primary, button.button-primary {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 8px 18px -10px color-mix(in srgb, var(--color-accent) 75%, transparent);
+}
+.button-primary:hover, button.button-primary:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 12px 24px -12px color-mix(in srgb, var(--color-accent) 85%, transparent);
+}
+button:disabled, .button[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Campos -------------------------------------------------------------------- */
+input[type="text"], input[type="number"], input[type="search"], textarea, .content select {
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  padding: 0.5rem 0.7rem;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus, textarea:focus, .content select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+textarea { line-height: 1.5; resize: vertical; }
+
+/* Tabelas ------------------------------------------------------------------- */
+.table th, .install-diagnostics th { font-size: 0.76rem; letter-spacing: 0.06em; }
+.table tbody tr td, .install-diagnostics tbody tr td { transition: background var(--duration-fast) ease; }
+
+/* Entrada da tela: só os primeiros blocos, e rápido. Antes eram atrasos de
+   até 240 ms somados a 560 ms de animação, quase um segundo para a tela
+   "assentar", o que somava à sensação de lentidão. */
+.content > *:nth-child(n+3) { animation-delay: 40ms; }
+
+/* Pular para o conteúdo, para quem navega pelo teclado. */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 1100;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-floating);
+  transition: top var(--duration-fast) ease;
+}
+.skip-link:focus { top: 0.75rem; }
+
+/* The instructions clean-up panel */
+.dedup-panel > h2:first-child { margin-top: 0; }
+.dedup-panel h3 { margin-top: 1.25rem; }
+.dedup-candidates { list-style: none; padding-left: 0; }
+.dedup-candidates li { margin: .4rem 0; }
+.dedup-candidates label { display: flex; gap: .5rem; align-items: baseline; font-weight: normal; }
+.dedup-panel code { white-space: normal; }

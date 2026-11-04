@@ -1,0 +1,350 @@
+# GClaude Indexer — document collection indexer
+# Copyright (C) 2026  Alex Camacho Castilho
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version. See the LICENSE file for details.
+
+"""Common classification interface (spec section 5, step 6).
+
+Every classification engine — `rules`, `local`, `claude_code` — receives the
+text of one window and returns the same item structure, so that the import
+step (phase 6) does not need to know which engine ran. This module defines
+that common structure and the validation required by section 7 before any
+item is written.
+"""
+
+from __future__ import annotations
+
+import re
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import date
+from typing import Protocol
+
+VALID_ENGINES = {"rules", "local", "claude_code", "structured"}  # structured: planalto.py
+VALID_CONFIDENCES = {"high", "medium", "low"}
+
+
+@dataclass
+class WindowPage:
+    """One page inside a window — what the engines receive as input.
+    `text` is already the truncated text written in phase 4."""
+
+    reference: str
+    file_name: str
+    text: str
+    has_table: bool
+    image_count: int
+    # Position of the page in its group, 1-based — what `item.start_order`
+    # and `end_order` mean. Not the number in `reference`: in a "biblioteca"
+    # collection the reference restarts at "p. 1" in every file, so in a
+    # group of many files that number repeats. 0 = unknown (a page built by
+    # hand), and `page_order` falls back to the reference.
+    order: int = 0
+
+
+def page_order(page: WindowPage) -> int:
+    return page.order or reference_number(page.reference)
+
+
+def starts_new_document(previous: WindowPage | None, page: WindowPage) -> bool:
+    """Whether `page` must open a new item because the file changed and one
+    of the two files is a whole document (HTML, DOCX, TXT, e-mail…).
+
+    PDFs and images are left to the engine: a scanned document often spans
+    several image files, and a case file several PDF volumes."""
+    from .file_types import is_whole_document_file
+
+    if previous is None or page.file_name == previous.file_name:
+        return False
+    return is_whole_document_file(previous.file_name) or is_whole_document_file(page.file_name)
+
+
+@dataclass
+class ClassifiedItem:
+    """Output structure common to every engine — same shape as the `item`
+    table (minus `id`/`group`, filled in by whoever orchestrates)."""
+
+    start_ref: str
+    end_ref: str
+    start_order: int
+    end_order: int
+    type: str | None
+    date: str | None
+    author: str | None
+    summary: str | None
+    has_table: bool
+    has_image: bool
+    engine: str
+    confidence: str
+    files: list[str] = field(default_factory=list)
+
+
+class ClassificationEngine(Protocol):
+    """Single interface every classification engine implements."""
+
+    def classify(self, pages: list[WindowPage]) -> list[ClassifiedItem]: ...
+
+
+def reference_number(reference: str) -> int:
+    """Extracts the numeric part of a reference ('f. 178' -> 178)."""
+    match = re.search(r"(\d+)\s*$", reference)
+    return int(match.group(1)) if match else 0
+
+
+# How often the classification engines commit (`db.BatchWriter`).
+# A window's "done" can wait this long to show on the progress bar.
+CLASSIFICATION_BATCH_SECONDS = 2.0
+
+
+class WindowPageLoader:
+    """Loads the pages of window after window without rereading the group.
+
+    `load_window_pages` alone rebuilds the whole group — every page, text
+    included, naturally sorted — to slice out the 16 pages of one window.
+    Classifying all of a group's windows that way reads the group once per
+    window: for a group of a hundred thousand pages or more that is
+    thousands of reads of half a gigabyte each. This keeps only the
+    group's page ids in order (a few MB) and fetches each window's pages by
+    id. Same order as `windows_prep.pages_for_group`, so the same slice.
+
+    Valid while the pages do not change — the length of one classification
+    run, which only ever writes windows and items."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+        # Every group seen so far: windows come in id order, and an update
+        # appends a group's new windows after other groups' ones.
+        self._ids: dict[str, list[int]] = {}
+
+    def _ordered_ids(self, group_key: str) -> list[int]:
+        if group_key not in self._ids:
+            from .paths import natural_sort_key
+
+            rows = self._conn.execute(
+                """
+                SELECT page.id, page.number, file.relative_path
+                FROM page JOIN file ON file.id = page.file_id
+                WHERE file.group_key = ?
+                """,
+                (group_key,),
+            ).fetchall()
+            rows.sort(key=lambda row: (natural_sort_key(row[2]), row[1]))
+            self._ids[group_key] = [row[0] for row in rows]
+        return self._ids[group_key]
+
+    def load(self, window_row: sqlite3.Row) -> list[WindowPage]:
+        start, end = _key_positions(window_row["key"])
+        ids = self._ordered_ids(window_row["group_key"])[start - 1 : end]
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        by_id = {
+            row["id"]: row
+            for row in self._conn.execute(
+                f"SELECT page.*, file.name AS file_name FROM page"
+                f" JOIN file ON file.id = page.file_id WHERE page.id IN ({placeholders})",
+                ids,
+            )
+        }
+        return [
+            WindowPage(
+                reference=by_id[page_id]["reference"],
+                file_name=by_id[page_id]["file_name"],
+                text=readable_text(by_id[page_id]["text"]),
+                has_table=bool(by_id[page_id]["has_table"]),
+                image_count=by_id[page_id]["image_count"],
+                order=start + offset,
+            )
+            for offset, page_id in enumerate(ids)
+        ]
+
+
+def readable_text(text: str | None) -> str:
+    """The page text, or `""` when it is the raw bytes of a binary file.
+
+    1.5.9 stopped reading zip, font, audio and CAD files as text, but pages
+    converted before that stayed in the database ("no change" in the scan).
+    Sent to the model, those control characters made it repeat itself until
+    Ollama aborted the answer ("token repeat limit reached", on a .zip
+    file). An empty page is still indexed, by file name,
+    through the coverage guarantee."""
+    if text and "\x00" in text:
+        return ""
+    return text or ""
+
+
+def load_window_pages(
+    conn: sqlite3.Connection, window_row: sqlite3.Row, loader: WindowPageLoader | None = None
+) -> list[WindowPage]:
+    """Rebuilds, from the database, exactly the pages that make up a
+    window — the same slice used to write the `.txt` in phase 4.
+
+    Pass a `WindowPageLoader` when loading many windows in a row."""
+    if loader is not None:
+        return loader.load(window_row)
+    from .windows_prep import pages_for_group  # late import avoids a cycle
+
+    start, end = _key_positions(window_row["key"])
+    all_pages = pages_for_group(conn, window_row["group_key"])
+    block = all_pages[start - 1 : end]
+
+    return [
+        WindowPage(
+            reference=row["reference"],
+            file_name=row["file_name"],
+            text=row["text"],
+            has_table=bool(row["has_table"]),
+            image_count=row["image_count"],
+            order=start + offset,
+        )
+        for offset, row in enumerate(block)
+    ]
+
+
+def _key_positions(key: str) -> tuple[int, int]:
+    match = re.search(r"::(\d+)-(\d+)$", key)
+    if not match:
+        raise ValueError(f"chave de janela em formato inesperado: {key!r}")
+    return int(match.group(1)), int(match.group(2))
+
+
+# Words a model sometimes returns instead of leaving `type` empty. Stored
+# as-is they become their own document type in the index, sitting next to
+# the real ones and inflating the "types found" count with nothing.
+_EMPTY_TYPES = {"NULL", "NONE", "N/A", "NA", "-", "--", "?", "DESCONHECIDO", "INDEFINIDO", "SEM TIPO"}
+
+
+def normalize_type(type_: object) -> str | None:
+    """Canonical form of a document type, or `None`.
+
+    Upper-cased and stripped, because a model is not consistent about case
+    across windows: one collection came back with both `ÍNDICE` and
+    `Índice`, which the index then listed as two different kinds of
+    document and the quality report counted twice. Case is not information
+    here — the type is a label, and two labels differing only in case are
+    the same label.
+    """
+    if not isinstance(type_, str):
+        return None
+    cleaned = " ".join(type_.split()).upper()
+    if not cleaned or cleaned in _EMPTY_TYPES:
+        return None
+    return cleaned
+
+
+def item_to_dict(item: ClassifiedItem, window_key: str, group: str) -> dict:
+    return {
+        "window": window_key,
+        "group": group,
+        "ref_start": item.start_ref,
+        "ref_end": item.end_ref,
+        "order_start": item.start_order,
+        "order_end": item.end_order,
+        "type": normalize_type(item.type),
+        "date": normalize_date(item.date),
+        "author": item.author,
+        "summary": item.summary,
+        "has_table": bool(item.has_table),
+        "has_image": bool(item.has_image),
+        "engine": item.engine,
+        "confidence": item.confidence,
+        "files": ", ".join(item.files),
+    }
+
+
+_ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ISO_MONTH_REGEX = re.compile(r"^\d{4}-\d{2}$")
+_ISO_YEAR_REGEX = re.compile(r"^\d{4}$")
+
+
+def normalize_date(value: object) -> str | None:
+    """A data na maior precisão que ela realmente sustenta, ou `None`.
+
+    Documentos contábeis e administrativos datam por competência — "jan/
+    2020", "exercício 2019" — e o modelo devolve `2020-01` porque é o que
+    o documento diz. Exigir `AAAA-MM-DD` fazia a peça INTEIRA ser
+    descartada por causa de um campo opcional: num acervo grande, peças
+    inteiras se perdiam só por isso.
+
+    A precisão reduzida é ISO 8601 legítima e, o que decide aqui, ordena
+    corretamente na ordenação lexicográfica que `artifacts.py` usa na
+    linha do tempo (`2019-12` < `2020-01` < `2020-01-05`). Então ela é
+    guardada como veio, em vez de virar um dia 1 que o documento não
+    afirma.
+
+    Quando a precisão mais fina não se sustenta, cai um degrau em vez de
+    sumir: `2021-09-31` (dia que não existe) vira `2021-09`, porque o mês
+    continua confiável. O que não é data nenhuma — um intervalo, uma data
+    em formato brasileiro — vira `None`, e a peça segue sem ela.
+    """
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+
+    if _ISO_DATE_REGEX.match(text):
+        try:
+            date.fromisoformat(text)
+            return text
+        except ValueError:
+            text = text[:7]  # o dia não existe; o mês ainda pode valer
+
+    if _ISO_MONTH_REGEX.match(text):
+        if 1 <= int(text[5:7]) <= 12:
+            return text
+        text = text[:4]  # mês impossível; sobra o ano
+
+    if _ISO_YEAR_REGEX.match(text):
+        return text
+
+    return None
+
+
+def validate_item(item: dict) -> list[str]:
+    """Field-by-field validation required by section 7 before writing an
+    item: type, range within the group, plausible ISO date. Returns the
+    list of problems found (empty if valid)."""
+    errors: list[str] = []
+
+    if not item.get("group"):
+        errors.append("agrupador ausente")
+
+    if not item.get("ref_start") or not item.get("ref_end"):
+        errors.append("ref_inicial/ref_final ausente")
+
+    if not item.get("files"):
+        errors.append("arquivos ausente")
+
+    order_start = item.get("order_start")
+    order_end = item.get("order_end")
+    if not isinstance(order_start, int) or not isinstance(order_end, int):
+        errors.append("ordem_inicial/ordem_final devem ser inteiros")
+    elif order_start > order_end:
+        errors.append("ordem_inicial maior que ordem_final")
+
+    type_ = item.get("type")
+    if type_ is not None and not isinstance(type_, str):
+        errors.append("tipo deve ser texto ou nulo")
+
+    date_str = item.get("date")
+    if date_str is not None:
+        # A forma canônica é o que `normalize_date` devolveria: AAAA,
+        # AAAA-MM ou AAAA-MM-DD, esta última existindo no calendário.
+        # Qualquer outra coisa não passou por `item_to_dict` e a
+        # validação segue sendo a rede de segurança.
+        canonical = normalize_date(date_str)
+        if canonical is None:
+            errors.append(f"data fora do formato ISO (AAAA, AAAA-MM ou AAAA-MM-DD): {date_str!r}")
+        elif canonical != date_str:
+            errors.append(f"data não é uma data de calendário válida: {date_str!r}")
+
+    if item.get("engine") not in VALID_ENGINES:
+        errors.append(f"motor inválido: {item.get('engine')!r}")
+
+    if item.get("confidence") not in VALID_CONFIDENCES:
+        errors.append(f"confianca inválida: {item.get('confidence')!r}")
+
+    return errors

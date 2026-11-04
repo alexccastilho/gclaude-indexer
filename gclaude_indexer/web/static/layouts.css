@@ -1,0 +1,344 @@
+/* Layouts: vary structure, density and typography over the same
+   templates. Color stays with the themes (`style.css`) — a layout never
+   defines `--color-*`, or the 16 combinations would stop being predictable.
+
+   Each layout can redefine *non-color* tokens (`--radius`,
+   `--radius-small`, `--shadow-card`) — they control shape and depth, not
+   palette, and cascading through them avoids repeating the same change in
+   every component that uses them. Borders and backgrounds always use
+   existing `var(--color-*)`, never a new color.
+
+   All fonts come from Windows (offline system: no @import, no external
+   host) — stacks with fallback, never the usual generic fonts. */
+
+html[data-layout="standard"] { /* current identity, no change */ }
+
+/* ============================================================ technical =
+   Instrument panel: dense, square corners, monospaced tabular numbers,
+   striped tables. Built to stay open all afternoon while following a
+   long run. */
+
+html[data-layout="technical"] {
+  --radius: 4px;
+  --radius-small: 3px;
+  --shadow-card: none;
+}
+
+html[data-layout="technical"] body {
+  font-family: "Segoe UI", "Segoe UI Variable", Corbel, system-ui, sans-serif;
+  font-size: 0.91rem;
+}
+
+html[data-layout="technical"] h1 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+
+html[data-layout="technical"] h2 {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+}
+
+html[data-layout="technical"] .content {
+  max-width: 1180px;
+  padding: 1.1rem 1.25rem 2rem;
+}
+
+html[data-layout="technical"] .card,
+html[data-layout="technical"] .progress-box,
+html[data-layout="technical"] .quality-box,
+html[data-layout="technical"] .comparison-box,
+html[data-layout="technical"] .claude-code-box,
+html[data-layout="technical"] .cleanup-box,
+html[data-layout="technical"] .resource-box {
+  padding: 0.7rem 0.85rem;
+}
+
+/* tables: stripes + monospaced tabular numbers --------------------------- */
+html[data-layout="technical"] .table,
+html[data-layout="technical"] .table-sortable,
+html[data-layout="technical"] .install-diagnostics {
+  font-variant-numeric: tabular-nums;
+}
+html[data-layout="technical"] .table th,
+html[data-layout="technical"] .table td,
+html[data-layout="technical"] .table-sortable th,
+html[data-layout="technical"] .table-sortable td,
+html[data-layout="technical"] .install-diagnostics th,
+html[data-layout="technical"] .install-diagnostics td {
+  padding: 0.4rem 0.7rem;
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.82rem;
+}
+html[data-layout="technical"] .table th,
+html[data-layout="technical"] .table-sortable th,
+html[data-layout="technical"] .install-diagnostics th {
+  letter-spacing: 0.03em;
+}
+html[data-layout="technical"] .table tbody tr:nth-child(even) td,
+html[data-layout="technical"] .table-sortable tbody tr:nth-child(even) td,
+html[data-layout="technical"] .install-diagnostics tbody tr:nth-child(even) td {
+  background: var(--color-surface-alt);
+}
+
+/* step table load-in transition: this layout's only animation, it does not
+   repeat on an element that updates every 2s (log/charts). */
+@keyframes layout-technical-row-appear {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+html[data-layout="technical"] #steps .table tbody tr {
+  animation: layout-technical-row-appear 0.2s ease both;
+}
+
+/* resources: cards side by side, no shadow, monospaced values ------------ */
+html[data-layout="technical"] .resources-grid {
+  gap: 0.6rem;
+}
+html[data-layout="technical"] .resource-value,
+html[data-layout="technical"] .resource-detail,
+html[data-layout="technical"] .resource-extra,
+html[data-layout="technical"] .quality-score,
+html[data-layout="technical"] .quality-run,
+html[data-layout="technical"] .quality-bar-value {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+html[data-layout="technical"] .resource-title {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.74rem;
+}
+
+/* log: more visible lines, highlight rule on the left --------------------- */
+html[data-layout="technical"] .log-box {
+  max-height: 420px;
+  border-left: 3px solid var(--color-border);
+}
+
+/* form: more compact extensions, same row as before (a fixed-width grid
+   would squeeze the chip text until it became a circle —
+   `.checkbox-inline` is a "pill" with a 999px radius, high risk in a
+   narrow column) --------------------------------------------------------- */
+html[data-layout="technical"] .extension-family {
+  gap: 0.3rem 0.6rem;
+  padding: 6px 10px 8px;
+}
+
+html[data-layout="technical"] .progress-header,
+html[data-layout="technical"] .progress-bar {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+html[data-layout="technical"] .progress-bar {
+  height: 0.6rem;
+}
+
+/* ============================================================ editorial =
+   Long collection reading: narrow column, serif, generous line height,
+   gridless tables, strong heading hierarchy. */
+
+html[data-layout="editorial"] {
+  --radius: 16px;
+  --radius-small: 10px;
+  --shadow-card: none;
+}
+
+html[data-layout="editorial"] body {
+  font-family: Constantia, Georgia, Cambria, "Times New Roman", serif;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+html[data-layout="editorial"] .content {
+  max-width: 760px;
+  padding: 2.25rem 1.5rem 3.5rem;
+}
+
+html[data-layout="editorial"] h1 {
+  font-family: Constantia, Georgia, Cambria, serif;
+  font-weight: 400;
+  font-size: 2.1rem;
+  letter-spacing: 0;
+  margin-bottom: 1.4rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+html[data-layout="editorial"] h2 {
+  font-family: Constantia, Georgia, Cambria, serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: var(--color-text);
+  margin-top: 2.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+html[data-layout="editorial"] h3 { font-family: Constantia, Georgia, Cambria, serif; font-weight: 700; }
+
+/* gridless tables: just a rule under the header, breathing room between rows */
+html[data-layout="editorial"] .table,
+html[data-layout="editorial"] .table-sortable,
+html[data-layout="editorial"] .install-diagnostics {
+  box-shadow: none;
+  background: transparent;
+}
+html[data-layout="editorial"] .table th,
+html[data-layout="editorial"] .table-sortable th,
+html[data-layout="editorial"] .install-diagnostics th {
+  background: transparent;
+  border-bottom: 2px solid var(--color-text);
+  font-family: Constantia, Georgia, Cambria, serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.92rem;
+}
+html[data-layout="editorial"] .table td,
+html[data-layout="editorial"] .table-sortable td,
+html[data-layout="editorial"] .install-diagnostics td {
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.85rem 1rem;
+  /* Cambria before Constantia only for numbers: Constantia's zero reads as
+     a lowercase "o" in a count table — legibility wins over aesthetic
+     preference here. */
+  font-family: Cambria, Constantia, Georgia, serif;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+html[data-layout="editorial"] .table tbody tr:hover td,
+html[data-layout="editorial"] .table-sortable tbody tr:hover td,
+html[data-layout="editorial"] .install-diagnostics tbody tr:hover td {
+  background: transparent;
+}
+
+@keyframes layout-editorial-row-appear {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+html[data-layout="editorial"] #steps .table tbody tr {
+  animation: layout-editorial-row-appear 0.4s ease both;
+}
+
+/* resources: stacked cards, more breathing room, no dense instrumentation */
+html[data-layout="editorial"] .resources-grid {
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+html[data-layout="editorial"] .resource-box {
+  border-width: 1px;
+  padding: 1.1rem 1.3rem;
+}
+html[data-layout="editorial"] .resource-title {
+  font-family: Constantia, Georgia, Cambria, serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.95rem;
+}
+
+html[data-layout="editorial"] .log-box {
+  border-radius: var(--radius);
+}
+
+html[data-layout="editorial"] .extension-family {
+  padding: 0.9rem 1.1rem 1rem;
+}
+html[data-layout="editorial"] .extension-family legend {
+  font-family: Constantia, Georgia, Cambria, serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ============================================================ compact ===
+   Maximum information per screen: smaller fonts, minimal spacing,
+   ornament reduced to thin borders — no shadow, no flourish. */
+
+html[data-layout="compact"] {
+  --radius: 6px;
+  --radius-small: 4px;
+  --shadow-card: none;
+}
+
+html[data-layout="compact"] body {
+  font-family: Corbel, Candara, "Segoe UI", system-ui, sans-serif;
+  font-size: 0.82rem;
+}
+
+html[data-layout="compact"] .content {
+  max-width: 1240px;
+  padding: 0.9rem 1rem 1.4rem;
+}
+
+html[data-layout="compact"] h1 { font-size: 1.15rem; margin-bottom: 0.5rem; }
+html[data-layout="compact"] h2 { font-size: 0.78rem; margin: 1rem 0 0.4rem; }
+html[data-layout="compact"] h3 { font-size: 0.85rem; }
+
+html[data-layout="compact"] .card,
+html[data-layout="compact"] .progress-box,
+html[data-layout="compact"] .quality-box,
+html[data-layout="compact"] .comparison-box,
+html[data-layout="compact"] .claude-code-box,
+html[data-layout="compact"] .cleanup-box,
+html[data-layout="compact"] .resource-box {
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+html[data-layout="compact"] .table th,
+html[data-layout="compact"] .table td,
+html[data-layout="compact"] .table-sortable th,
+html[data-layout="compact"] .table-sortable td,
+html[data-layout="compact"] .install-diagnostics th,
+html[data-layout="compact"] .install-diagnostics td {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+html[data-layout="compact"] .table td,
+html[data-layout="compact"] .table-sortable td,
+html[data-layout="compact"] .install-diagnostics td {
+  /* Candara/Corbel have a round zero, easy to confuse with an "o" in a
+     small count column — numbers get a monospaced font, consistent with
+     fitting more data per screen without losing clarity. */
+  font-variant-numeric: tabular-nums;
+}
+html[data-layout="compact"] .table tbody td:nth-child(3),
+html[data-layout="compact"] .table-sortable tbody td {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+
+html[data-layout="compact"] .resources-grid {
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.7rem;
+}
+html[data-layout="compact"] .resource-box canvas {
+  height: 58px;
+}
+html[data-layout="compact"] .resource-title {
+  font-size: 0.7rem;
+}
+html[data-layout="compact"] .resource-value {
+  font-size: 0.92rem;
+}
+
+html[data-layout="compact"] .log-box {
+  max-height: 220px;
+}
+html[data-layout="compact"] .log li {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+html[data-layout="compact"] .extension-family {
+  gap: 0.3rem;
+  padding: 5px 8px 6px;
+  margin: 0 0 6px;
+}
+
+html[data-layout="compact"] .quality-bar-row {
+  grid-template-columns: 6.5rem 1fr 1.8rem;
+}
+
+html[data-layout="compact"] .progress-header,
+html[data-layout="compact"] .quality-header {
+  margin-bottom: 0.3rem;
+}

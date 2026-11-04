@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('sets.title') }} · {{ t('app.name') }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ t('sets.title') }}</h1>
+</div>
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('nav.projects') }}</a></p>
+<p class="help">{{ t('sets.intro') }}</p>
+<p class="actions">
+  <a href="/sets/new" class="button button-primary">{{ m.icon('plus') }} {{ t('sets.new') }}</a>
+</p>
+
+<table class="table">
+  <thead>
+    <tr><th>{{ t('sets.column_name') }}</th><th>{{ t('sets.column_members') }}</th><th>{{ t('sets.column_created_at') }}</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for row in sets %}
+    <tr>
+      <td>{{ row.entry.name }}</td>
+      <td>{{ row.members }}</td>
+      <td>{{ datetime(row.entry.created_at) }}</td>
+      <td class="col-actions">
+        <a href="/sets/{{ row.entry.id }}" class="button button-small">{{ m.icon('open') }} {{ t('sets.open') }}</a>
+        {# Apagar o conjunto não toca em arquivo nenhum: nem nos projetos,
+           nem numa pasta combinada já gravada. Por isso não pede confirmação. #}
+        <form method="post" action="/sets/{{ row.entry.id }}/delete" style="display:inline">
+          <button type="submit" class="button button-small button-danger">{{ m.icon('trash') }} {{ t('sets.delete') }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">{{ t('sets.empty') }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.sets.title', ['help.sets.p1', 'help.sets.p2', 'help.sets.p3']) }}{% endblock %}

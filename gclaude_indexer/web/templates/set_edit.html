@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set page_title = t('sets.edit_title', name=entry.name) if entry.id else t('sets.edit_title_new') %}
+{% block title %}{{ page_title }} · {{ t('app.name') }}{% endblock %}
+{% block help_button %}{{ m.help_button(t) }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ page_title }}</h1>
+</div>
+<p class="breadcrumb"><a href="/sets">{{ m.icon('back') }} {{ t('nav.sets') }}</a></p>
+
+{% if errors %}
+<div class="errors">
+  {{ m.icon('warning') }}
+  <ul style="margin:0">
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if notice %}
+<p class="notice-ok">{{ m.icon('check') }} {{ notice }}</p>
+{% endif %}
+
+<form method="post" action="{% if entry.id %}/sets/{{ entry.id }}{% else %}/sets/new{% endif %}" class="set-form">
+  <div class="field">
+    <label for="name">{{ t('sets.name_label') }}</label>
+    <input type="text" id="name" name="name" value="{{ entry.name }}" placeholder="{{ t('sets.name_placeholder') }}" required>
+  </div>
+
+  <fieldset class="set-members">
+    <legend>{{ t('sets.members_label') }}</legend>
+    <p class="help">{{ t('sets.members_help') }}</p>
+    <table class="table">
+      <thead>
+        <tr><th></th><th>{{ t('sets.column_project') }}</th><th>{{ t('sets.column_alias') }}</th></tr>
+      </thead>
+      <tbody>
+        {% for choice in choices %}
+        <tr{% if choice.reason %} class="project-unavailable"{% endif %}>
+          <td>
+            <input type="checkbox" id="project_{{ choice.id }}" name="project_{{ choice.id }}" value="1"
+                   {% if choice.selected %}checked{% endif %}{% if choice.reason %} disabled{% endif %}>
+          </td>
+          <td>
+            <label for="project_{{ choice.id }}">{{ choice.name }}</label>
+            {% if choice.reason %}<span class="explanation">{{ t('sets.cannot_join', reason=choice.reason) }}</span>{% endif %}
+          </td>
+          <td>
+            <input type="text" name="alias_{{ choice.id }}" value="{{ choice.alias }}"
+                   placeholder="{{ choice.proposed }}"{% if choice.reason %} disabled{% endif %}>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3">{{ t('projects.empty') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="help">{{ t('sets.alias_help') }}</p>
+  </fieldset>
+
+  <div class="field">
+    <label for="personal_instructions">{{ t('sets.personal_label') }}</label>
+    <textarea id="personal_instructions" name="personal_instructions" rows="6">{{ entry.personal_instructions }}</textarea>
+    <p class="help">{{ t('sets.personal_help') }}</p>
+  </div>
+
+  <button type="submit" class="button button-primary">{{ m.icon('check') }} {{ t('sets.save') }}</button>
+  <a href="/sets" class="button">{{ t('general.cancel') }}</a>
+</form>
+
+{% if not entry.id %}
+<p class="help">{{ t('sets.save_first') }}</p>
+{% else %}
+<div class="claude-package">
+  <div id="set-budget" class="package-budget" data-budget-level="{{ plan.level }}">
+    <strong>{{ t('sets.budget_title') }}</strong>
+    {% if plan.entries %}
+    <table class="budget-table">
+      <thead>
+        <tr><th>{{ t('result.budget_file') }}</th><th>{{ t('result.budget_size') }}</th><th>{{ t('result.budget_tokens') }}</th></tr>
+      </thead>
+      <tbody>
+        {% for entrada in plan.entries %}
+        <tr>
+          <td><code>{{ entrada.name }}</code></td>
+          <td>{{ (entrada.size_bytes / 1048576) | round(1) }} MB</td>
+          <td>{{ "{:,}".format(entrada.tokens).replace(",", ".") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><th>{{ t('result.budget_total') }}</th><th></th><th>{{ "{:,}".format(plan.total_tokens).replace(",", ".") }}</th></tr>
+      </tfoot>
+    </table>
+    {% endif %}
+    {% if plan.level == "over" %}
+    <p class="budget-warning budget-over">{{ t('result.budget_over', limit="{:,}".format(plan.limit_tokens).replace(",", ".")) }}</p>
+    {% elif plan.level == "rag" %}
+    <p class="budget-warning budget-rag">{{ t('result.budget_rag', threshold="{:,}".format(rag_threshold).replace(",", ".")) }}</p>
+    {% else %}
+    <p class="help">{{ t('result.budget_ok') }}</p>
+    {% endif %}
+    {% if plan.excluded %}
+    <div id="set-excluded" class="budget-warning budget-over budget-excluded">
+      <strong>{{ t('result.budget_excluded_title') }}</strong>
+      <ul>
+        {% for entrada in plan.excluded %}
+        <li>{{ t('result.budget_too_big', file=entrada.name, mb=(entrada.size_bytes / 1048576) | round(1)) }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if plan.unavailable %}
+    <div id="set-unavailable" class="budget-warning budget-over budget-excluded">
+      <strong>{{ t('sets.unavailable_title') }}</strong>
+      <ul>
+        {% for member in plan.unavailable %}
+        <li><strong>{{ member.alias }}</strong> ({{ member.name }}): {{ member.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  <a class="button button-primary" href="/sets/{{ entry.id }}/package" data-activity data-download data-budget-level="{{ plan.level }}">
+    {{ m.icon('download') }} {{ t('sets.download') }}
+  </a>
+</div>
+
+<div class="cleanup-box">
+  <div>
+    <strong>{{ m.icon('explorer') }} {{ t('sets.write_folder_title') }}</strong>
+    <p>{{ t('sets.write_folder_text') }}</p>
+    <form method="post" action="/sets/{{ entry.id }}/write-folder" data-activity>
+      <label for="target_folder">{{ t('sets.write_folder_label') }}</label>
+      <div id="target_folder_group" class="field-with-button">
+        <input type="text" id="target_folder" name="target_folder" value="{{ target_folder }}" required>
+        <button type="button"
+                hx-post="/select-folder" hx-target="#target_folder_group" hx-swap="innerHTML"
+                hx-vals='{"field": "target_folder"}'
+                hx-include="#target_folder">{{ t('new_project.browse') }}</button>
+      </div>
+      <button type="submit" class="button">{{ m.icon('download') }} {{ t('sets.write_folder') }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block help_modal %}{{ m.help_modal(t, 'help.sets.title', ['help.sets.p1', 'help.sets.p2', 'help.sets.p3']) }}{% endblock %}

@@ -1,0 +1,348 @@
+# GClaude Indexer — document collection indexer
+# Copyright (C) 2026  Alex Camacho Castilho
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version. See the LICENSE file for details.
+
+"""Import and consolidation of `raw_items.jsonl` (spec section 5, step 7).
+
+Reads the file line by line, validates it field by field (reusing
+`classification.validate_item` and adding the range check within the
+group), discards the duplicate from window overlap and glues an item split
+across windows back together before writing it to `item`. An invalid line
+becomes an error event and processing moves on to the next — it never
+aborts the import.
+
+The `item` table is always recomputed from scratch from the full
+`raw_items.jsonl`: since deciding duplicate/fragment requires seeing
+every item of a group at once, reimporting everything on every run is
+simpler and more correct than attempting an incremental import.
+
+Every event recorded here uses the step key `"import"` (Task 18, Phase 14 —
+before this fix it was `"importacao"`, which had no `step.*.title` i18n
+entry and leaked raw into the live log, in any language). `"import"` is
+deliberately **not** added to `step_state.STEPS`: that tuple drives
+`next_pending_step`/`step_status` for the "Run next step"/"Run all steps"
+buttons, which only ever chain the five pipeline steps (scan through
+classification) — the interface's own help text documents "5 etapas"
+(`help.run.p1` in `i18n.py`) and import is started by its own separate
+button (`run.import_and_generate`), never by "run all". Folding "import"
+into `STEPS` would make it a candidate for `next_pending_step` and the
+step-progress table, silently changing that behavior. Instead it gets its
+own `step.import.title` i18n key and is added to the *display* whitelist
+only (`web/app.py`'s `known_steps` passed to `_log.html`), so the log shows
+a translated label without touching the pipeline's step machinery.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+
+from .classification import validate_item
+from .config import ProjectConfig
+from .events import record_event
+from .item_normalize import clean_authors, clean_placeholders, fill_structured_authors, normalize_types
+from .windows_prep import pages_for_group
+from .run_control import checkpoint
+
+RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
+_CONFIDENCE_ORDER = {"high": 3, "medium": 2, "low": 1}
+
+
+@dataclass
+class ImportResult:
+    lines_read: int = 0
+    invalid_lines: int = 0
+    valid_items: int = 0
+    consolidated_items: int = 0
+
+
+def _group_page_range(conn, group: str, cache: dict[str, tuple[int, int] | None]) -> tuple[int, int] | None:
+    """First and last page order of a group, or `None` when the group has no
+    extracted pages.
+
+    Cached per import run: the range depends only on the group, and a real
+    acquis has thousands of items spread over a handful of groups. Without
+    the cache this query ran once per item — on a project of 5230 items over
+    3 groups, with the database on a network drive, that alone took ~41
+    minutes (488 ms per query there, against 9.3 ms on a local disk)."""
+    if group not in cache:
+        # Positions run 1..N over the group's pages (see
+        # `windows_prep.group_page_positions`), so the count is the range.
+        count = conn.execute(
+            "SELECT COUNT(*) FROM page JOIN file ON file.id = page.file_id WHERE file.group_key = ?",
+            (group,),
+        ).fetchone()[0]
+        cache[group] = (1, count) if count else None
+    return cache[group]
+
+
+def _validate_range_within_group(
+    conn, item: dict, cache: dict[str, tuple[int, int] | None] | None = None
+) -> list[str]:
+    """Rejects an item whose range is not contained in the group's actual
+    pages — a sign of a made-up reference or a wrong window."""
+    group = item.get("group")
+    order_start = item.get("order_start")
+    order_end = item.get("order_end")
+    if group is None or not isinstance(order_start, int) or not isinstance(order_end, int):
+        return []  # already reported by validate_item
+
+    page_range = _group_page_range(conn, group, {} if cache is None else cache)
+
+    if page_range is None:
+        return [f"agrupador desconhecido ou sem páginas extraídas: {group!r}"]
+
+    minimum, maximum = page_range
+
+    errors = []
+    if not (minimum <= order_start <= maximum):
+        errors.append(f"ordem_inicial {order_start} fora do intervalo do agrupador '{group}' ({minimum}-{maximum})")
+    if not (minimum <= order_end <= maximum):
+        errors.append(f"ordem_final {order_end} fora do intervalo do agrupador '{group}' ({minimum}-{maximum})")
+    return errors
+
+
+def _read_and_validate_lines(
+    conn, jsonl_path: Path, result: ImportResult, language: str | None = None
+) -> list[dict]:
+    valid_items = []
+    # Shared across the whole file so each group's pages are read once.
+    page_ranges: dict[str, tuple[int, int] | None] = {}
+
+    # `split("\n")`, not `splitlines()`: the latter also breaks on
+    # U+0085, U+2028 and U+2029, which `json.dumps(ensure_ascii=False)`
+    # leaves unescaped inside strings. Text from HTML decoded as latin-1
+    # carries U+0085, and each one cut an item in two "corrupt" lines.
+    for line_number, line in enumerate(jsonl_path.read_text(encoding="utf-8").split("\n"), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        result.lines_read += 1
+
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError as exc:
+            result.invalid_lines += 1
+            record_event(
+                conn, "import", "error", "log.import.invalid_json",
+                {"line": line_number, "error": str(exc)}, language=language,
+            )
+            continue
+
+        if not isinstance(data, dict):
+            result.invalid_lines += 1
+            record_event(
+                conn, "import", "error", "log.import.not_a_json_object",
+                {"line": line_number}, language=language,
+            )
+            continue
+
+        errors = validate_item(data) + _validate_range_within_group(conn, data, page_ranges)
+        if errors:
+            result.invalid_lines += 1
+            record_event(
+                conn, "import", "error", "log.import.invalid_item",
+                {"line": line_number, "errors": "; ".join(errors)}, language=language,
+            )
+            continue
+
+        result.valid_items += 1
+        valid_items.append(data)
+
+    return valid_items
+
+
+def _types_compatible(type_a: str | None, type_b: str | None) -> bool:
+    return type_a is None or type_b is None or type_a == type_b
+
+
+def _merge(a: dict, b: dict) -> dict:
+    """Merges two items whose ranges touch or overlap: covers both the pure
+    duplicate (one range contained in the other, same content seen by two
+    windows) and the item split across windows (a small fragment that just
+    continues the other window's)."""
+    best, worst = (
+        (a, b) if _CONFIDENCE_ORDER.get(a["confidence"], 0) >= _CONFIDENCE_ORDER.get(b["confidence"], 0) else (b, a)
+    )
+    merged = dict(best)
+
+    for field_name in ("type", "date", "author", "summary"):
+        if not merged.get(field_name):
+            merged[field_name] = worst.get(field_name)
+
+    merged["has_table"] = bool(a.get("has_table")) or bool(b.get("has_table"))
+    merged["has_image"] = bool(a.get("has_image")) or bool(b.get("has_image"))
+
+    if a["order_start"] <= b["order_start"]:
+        merged["order_start"], merged["ref_start"] = a["order_start"], a["ref_start"]
+    else:
+        merged["order_start"], merged["ref_start"] = b["order_start"], b["ref_start"]
+
+    if a["order_end"] >= b["order_end"]:
+        merged["order_end"], merged["ref_end"] = a["order_end"], a["ref_end"]
+    else:
+        merged["order_end"], merged["ref_end"] = b["order_end"], b["ref_end"]
+
+    files_a = [name.strip() for name in str(a.get("files", "")).split(",") if name.strip()]
+    files_b = [name.strip() for name in str(b.get("files", "")).split(",") if name.strip()]
+    merged["files"] = ", ".join(dict.fromkeys(files_a + files_b))
+
+    return merged
+
+
+def _consolidate(items: list[dict]) -> list[dict]:
+    by_group: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        by_group[item["group"]].append(item)
+
+    consolidated: list[dict] = []
+
+    for group_items in by_group.values():
+        sorted_items = sorted(group_items, key=lambda p: (p["order_start"], p["order_end"]))
+        current: dict | None = None
+
+        for item in sorted_items:
+            if (
+                current is not None
+                and item["order_start"] <= current["order_end"]
+                and _types_compatible(current.get("type"), item.get("type"))
+            ):
+                current = _merge(current, item)
+            else:
+                if current is not None:
+                    consolidated.append(current)
+                current = dict(item)
+
+        if current is not None:
+            consolidated.append(current)
+
+    consolidated.sort(key=lambda p: (p["group"], p["order_start"]))
+    return consolidated
+
+
+def _trim_overlaps(conn, items: list[dict]) -> int:
+    """Items of one group that still overlap after consolidating.
+
+    Two neighbours of different types are not merged, and the window
+    overlap lets the model stretch an item one page into the next one: a
+    "PÁGINA EM BRANCO" f. 14-15 followed by a letter that starts at f. 15.
+    When the next item starts inside this one and ends after it, this one
+    ends on the page before. An item wholly inside another (an attachment
+    within a process) is left as it is, and so is one that starts on the
+    same page. `items` is sorted by group and start; in place; returns how
+    many were trimmed."""
+    references: dict[str, list] = {}
+    trimmed = 0
+    for current, following in zip(items, items[1:]):
+        if current["group"] != following["group"]:
+            continue
+        start = following["order_start"]
+        if not (current["order_start"] < start <= current["order_end"] < following["order_end"]):
+            continue
+        group = current["group"]
+        if group not in references:
+            try:
+                references[group] = [row["reference"] for row in pages_for_group(conn, group, with_text=False)]
+            except sqlite3.Error:
+                references[group] = []
+        pages = references[group]
+        new_end = start - 1
+        current["order_end"] = new_end
+        if 1 <= new_end <= len(pages) and pages[new_end - 1]:
+            current["ref_end"] = pages[new_end - 1]
+        trimmed += 1
+    return trimmed
+
+
+def _write_items(conn, items: list[dict]) -> None:
+    conn.execute("DELETE FROM item")
+    for item in items:
+        conn.execute(
+            """
+            INSERT INTO item
+                (group_key, start_ref, end_ref, start_order, end_order,
+                 type, date, author, summary, has_table, has_image, engine, confidence, files)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item["group"],
+                item["ref_start"],
+                item["ref_end"],
+                item["order_start"],
+                item["order_end"],
+                item.get("type"),
+                item.get("date"),
+                item.get("author"),
+                item.get("summary"),
+                int(bool(item.get("has_table"))),
+                int(bool(item.get("has_image"))),
+                item["engine"],
+                item["confidence"],
+                item.get("files", ""),
+            ),
+        )
+    conn.commit()
+
+
+def import_and_consolidate(
+    conn, config: ProjectConfig, language: str | None = None, should_stop=None
+) -> ImportResult:
+    """`should_stop` is checked before the item table is touched:
+    `_write_items` replaces it in one transaction, so a stop either comes
+    before it (nothing changed) or not at all."""
+    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    result = ImportResult()
+
+    if not jsonl_path.exists():
+        record_event(conn, "import", "warning", "log.import.file_not_found", language=language)
+        return result
+
+    valid_items = _read_and_validate_lines(conn, jsonl_path, result, language=language)
+    # One name per type and the Planalto authors past the page cut,
+    # before consolidating — two halves of an item now carry the same type
+    # and merge.
+    # Placeholders ("null") out first, so they never count as a
+    # value when two halves are merged or a spelling is chosen.
+    fields_cleaned = clean_placeholders(valid_items)
+    types_changed = normalize_types(valid_items)
+    authors_found = fill_structured_authors(conn, valid_items)
+    authors_fixed = clean_authors(valid_items)
+    if types_changed or authors_found:
+        record_event(
+            conn, "import", "info", "log.import.normalized",
+            {"types": types_changed, "authors": authors_found}, language=language,
+        )
+    checkpoint(should_stop)
+    consolidated = _consolidate(valid_items)
+    trimmed = _trim_overlaps(conn, consolidated)
+    if fields_cleaned or authors_fixed or trimmed:
+        record_event(
+            conn, "import", "info", "log.import.cleaned",
+            {"fields": fields_cleaned, "authors": authors_fixed, "trimmed": trimmed},
+            language=language,
+        )
+    result.consolidated_items = len(consolidated)
+
+    checkpoint(should_stop)
+    _write_items(conn, consolidated)
+
+    record_event(
+        conn,
+        "import",
+        "info",
+        "log.import.summary",
+        {
+            "lines": result.lines_read, "invalid": result.invalid_lines,
+            "valid": result.valid_items, "consolidated": result.consolidated_items,
+        },
+        language=language,
+    )
+
+    return result
