@@ -1,0 +1,102 @@
+/* GClaude Indexer — camada de movimento (1.4), para todos os temas.
+
+   Regras que esta folha segue, de propósito:
+   - só `transform` e `opacity` animam (nada de largura, altura, posição):
+     é o que a placa de vídeo faz sozinha, sem recalcular a página;
+   - curvas com massa (desaceleram no fim), nunca `linear`;
+   - quem pede menos movimento no Windows (Configurações > Acessibilidade >
+     Efeitos visuais) recebe tudo desligado — o bloco no fim do arquivo. */
+
+:root {
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 160ms;
+  --duration: 320ms;
+  --duration-slow: 560ms;
+}
+
+/* Troca de tela sem "piscar": o navegador funde a página antiga na nova.
+   Chrome e Edge fazem isso entre páginas do mesmo site; os outros só
+   ignoram a regra. */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt-out var(--duration) var(--ease-out) both; }
+::view-transition-new(root) { animation: vt-in var(--duration-slow) var(--ease-out) both; }
+@keyframes vt-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(10px); } }
+
+/* Entrada da tela: os blocos sobem em sequência, cada um um pouco depois. */
+.content > * { animation: rise-in var(--duration-slow) var(--ease-out) both; }
+.content > *:nth-child(2) { animation-delay: 40ms; }
+.content > *:nth-child(3) { animation-delay: 80ms; }
+.content > *:nth-child(4) { animation-delay: 120ms; }
+.content > *:nth-child(5) { animation-delay: 160ms; }
+.content > *:nth-child(6) { animation-delay: 200ms; }
+.content > *:nth-child(n+7) { animation-delay: 240ms; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(12px); } }
+
+/* Cartões e blocos: sobem um pouco sob o mouse. */
+.card, .artifact, .resource-box, .manual-body section, .claude-package {
+  transition: transform var(--duration) var(--ease-out), box-shadow var(--duration) var(--ease-out), border-color var(--duration) var(--ease-out);
+}
+.card:hover, .resource-box:hover, .claude-package:hover { transform: translateY(-2px); box-shadow: var(--shadow-floating); }
+
+/* Botões: respondem ao mouse e "afundam" ao clicar, como uma tecla. */
+.button, button, .header-button, .nav-link {
+  transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration) var(--ease-out),
+              border-color var(--duration) var(--ease-out), color var(--duration) var(--ease-out), box-shadow var(--duration) var(--ease-out);
+}
+.button:hover, .button-primary:hover { transform: translateY(-1px); }
+.button:active, button:active, .header-button:active { transform: scale(0.97); transition-duration: 80ms; }
+
+/* Link do menu: um traço que se estende por baixo. */
+.nav-link { position: relative; }
+.nav-link::after {
+  content: ""; position: absolute; left: 0.6rem; right: 0.6rem; bottom: 0.15rem; height: 2px; border-radius: 2px;
+  background: currentColor; opacity: 0.6; transform: scaleX(0); transform-origin: left;
+  transition: transform var(--duration) var(--ease-out);
+}
+.nav-link:hover::after, .nav-link:focus-visible::after { transform: scaleX(1); }
+
+/* Foco do teclado: anel visível que aparece suave. */
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; transition: outline-offset var(--duration-fast) var(--ease-out); }
+
+/* Janela de ajuda: abre crescendo de leve, com o fundo escurecendo. */
+dialog.modal[open] { animation: modal-in var(--duration) var(--ease-spring) both; }
+dialog.modal[open]::backdrop { animation: backdrop-in var(--duration) var(--ease-out) both; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+@keyframes backdrop-in { from { opacity: 0; } }
+
+/* Barra de progresso: um brilho percorre a parte preenchida enquanto roda. */
+.progress-bar-fill { position: relative; overflow: hidden; }
+.progress-bar-fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.8s var(--ease-in-out) infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+/* Linhas novas do log entram deslizando. */
+#log-list li { animation: log-in var(--duration) var(--ease-out) both; }
+@keyframes log-in { from { opacity: 0; transform: translateX(-6px); } }
+
+/* Seções do manual abertas por link: um realce rápido. */
+.manual-body section:target { animation: target-pulse 900ms var(--ease-out); }
+@keyframes target-pulse { 0% { transform: scale(1.01); } 100% { transform: scale(1); } }
+
+/* Etapa em andamento: o indicador "respira". */
+.status-running { animation: breathe 1.6s var(--ease-in-out) infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+
+/* Menos movimento, quando o sistema pede. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  html[data-theme="aurora"] body::before { animation: none !important; }
+}

@@ -1,0 +1,479 @@
+/* GClaude Indexer, 1.10.0: o layout "Área de trabalho".
+
+   Barra lateral com as telas e os projetos, barra no alto com onde a pessoa
+   está, abas para as telas de um projeto e a paleta de comandos (Ctrl+K).
+   Só é carregado nesse layout, e todo seletor começa por
+   html[data-layout="workspace"]: os outros layouts não mudam nada.
+   Só cores do tema (--color-*), para os dez temas continuarem legíveis.
+   As fontes ficam junto com o programa: ele roda sem internet. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/static/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/static/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+html[data-layout="workspace"] {
+  --font-text: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --ws-side-width: 248px;
+  --radius: 10px;
+  --radius-small: 6px;
+  --ws-side-bg: color-mix(in srgb, var(--color-surface-alt) 70%, var(--color-bg));
+  --ws-hover: color-mix(in srgb, var(--color-text) 6%, transparent);
+  --ws-active: color-mix(in srgb, var(--color-accent) 13%, var(--color-surface));
+  font-size: 15px;
+}
+html[data-layout="workspace"] body {
+  font-family: var(--font-text);
+  font-feature-settings: "cv11", "ss01";
+  background: var(--color-bg);
+  background-image: none;
+  margin: 0;
+}
+html[data-layout="workspace"] code,
+html[data-layout="workspace"] kbd,
+html[data-layout="workspace"] .log li,
+html[data-layout="workspace"] #user_instructions { font-family: var(--font-mono); }
+html[data-layout="workspace"] code,
+html[data-layout="workspace"] kbd { font-size: 0.84em; letter-spacing: -0.01em; }
+
+/* Estrutura ------------------------------------------------------------- */
+html[data-layout="workspace"] .ws-app {
+  display: grid;
+  grid-template-columns: var(--ws-side-width) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+html[data-layout="workspace"] .ws-side {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.9rem 0.7rem;
+  background: var(--ws-side-bg);
+  border-right: 1px solid var(--color-border);
+  scrollbar-width: thin;
+}
+html[data-layout="workspace"] .ws-main { min-width: 0; display: flex; flex-direction: column; }
+
+/* Marca e busca ---------------------------------------------------------- */
+html[data-layout="workspace"] .ws-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.5rem 0.8rem;
+  color: var(--color-text);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+html[data-layout="workspace"] .ws-logo { width: 26px; height: 26px; border-radius: 7px; }
+html[data-layout="workspace"] .ws-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0 0 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text-weak);
+  font: inherit;
+  font-size: 0.87rem;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+html[data-layout="workspace"] .ws-search:hover { border-color: var(--color-accent); color: var(--color-text); background: var(--color-surface); }
+html[data-layout="workspace"] .ws-search span { flex: 1; }
+html[data-layout="workspace"] .ws-search svg { width: 15px; height: 15px; }
+html[data-layout="workspace"] kbd {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--color-surface-alt);
+  color: var(--color-text-weak);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* Itens da barra lateral ------------------------------------------------- */
+html[data-layout="workspace"] .ws-nav,
+html[data-layout="workspace"] .ws-projects { display: flex; flex-direction: column; gap: 1px; }
+html[data-layout="workspace"] .ws-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.05rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-small);
+  color: var(--color-text-weak);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+html[data-layout="workspace"] .ws-item svg { width: 17px; height: 17px; flex: none; }
+html[data-layout="workspace"] .ws-item > span:not(.ws-count):not(.ws-avatar):not(.ws-dot) { flex: 1; min-width: 0; }
+html[data-layout="workspace"] .ws-item:hover { background: var(--ws-hover); color: var(--color-text); text-decoration: none; }
+html[data-layout="workspace"] .ws-item[aria-current="page"] {
+  background: var(--ws-active);
+  color: var(--color-text);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+html[data-layout="workspace"] .ws-item[aria-current="page"] svg { color: var(--color-accent); }
+html[data-layout="workspace"] .ws-count {
+  min-width: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-weak);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+html[data-layout="workspace"] .ws-sec {
+  margin: 1.1rem 0 0.35rem;
+  padding: 0 0.55rem;
+  color: var(--color-text-weak);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+html[data-layout="workspace"] .ws-avatar {
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  color: var(--color-accent-strong, var(--color-accent));
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+html[data-layout="workspace"] .ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-layout="workspace"] .ws-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-text-weak);
+  opacity: 0.55;
+}
+html[data-layout="workspace"] .ws-dot-imported { background: var(--color-ok); opacity: 1; }
+html[data-layout="workspace"] .ws-dot-in_progress { background: var(--color-warning); opacity: 1; animation: ws-pulse 1.8s ease-in-out infinite; }
+html[data-layout="workspace"] .ws-dot-classification_pending { background: var(--color-warning); opacity: 1; }
+html[data-layout="workspace"] .ws-dot-unavailable { background: var(--color-error); opacity: 1; }
+@keyframes ws-pulse { 50% { opacity: 0.35; } }
+
+html[data-layout="workspace"] .ws-foot {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+html[data-layout="workspace"] .ws-prefs > summary { list-style: none; }
+html[data-layout="workspace"] .ws-prefs > summary::-webkit-details-marker { display: none; }
+html[data-layout="workspace"] .ws-prefs[open] > summary { color: var(--color-text); background: var(--ws-hover); }
+html[data-layout="workspace"] .ws-prefs-body { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem 0.3rem 0.2rem; }
+html[data-layout="workspace"] .ws-prefs-body .preference-form { margin: 0; }
+html[data-layout="workspace"] .ws-prefs-body select {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/* Barra do alto e abas --------------------------------------------------- */
+html[data-layout="workspace"] .ws-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding: 0.4rem 2rem;
+  background: color-mix(in srgb, var(--color-bg) 86%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--color-border);
+}
+html[data-layout="workspace"] .ws-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--color-text-weak);
+  font-size: 0.9rem;
+}
+html[data-layout="workspace"] .ws-crumbs a { color: var(--color-text-weak); text-decoration: none; }
+html[data-layout="workspace"] .ws-crumbs a:hover { color: var(--color-text); }
+html[data-layout="workspace"] .ws-crumbs b { color: var(--color-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-layout="workspace"] .ws-top-actions { display: flex; align-items: center; gap: 0.5rem; }
+html[data-layout="workspace"] .ws-top-actions button,
+html[data-layout="workspace"] .ws-top-actions .header-button {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+html[data-layout="workspace"] .ws-top-actions button:hover,
+html[data-layout="workspace"] .ws-top-actions .header-button:hover { background: var(--color-surface-alt); }
+
+html[data-layout="workspace"] .ws-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 2rem;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-layout="workspace"] .ws-tabs a {
+  position: relative;
+  padding: 0.75rem 0.7rem 0.7rem;
+  color: var(--color-text-weak);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+html[data-layout="workspace"] .ws-tabs a:hover { color: var(--color-text); }
+html[data-layout="workspace"] .ws-tabs a[aria-current="page"] { color: var(--color-text); }
+html[data-layout="workspace"] .ws-tabs a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0.55rem;
+  right: 0.55rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+/* Conteúdo ---------------------------------------------------------------- */
+html[data-layout="workspace"] .content {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0;
+  padding: 1.75rem 2rem 3.5rem;
+  box-sizing: border-box;
+}
+/* A barra lateral, a barra do alto e as abas já levam a todas essas
+   telas: a linha de atalhos de cada tela seria repetição. */
+html[data-layout="workspace"] .content > .breadcrumb { display: none; }
+html[data-layout="workspace"] h1 { font-size: clamp(1.4rem, 1.2rem + 0.6vw, 1.75rem); font-weight: 650; letter-spacing: -0.025em; }
+html[data-layout="workspace"] h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.012em; margin-top: 2rem; }
+html[data-layout="workspace"] .card,
+html[data-layout="workspace"] .progress-box,
+html[data-layout="workspace"] .quality-box,
+html[data-layout="workspace"] .comparison-box,
+html[data-layout="workspace"] .claude-code-box,
+html[data-layout="workspace"] .cleanup-box,
+html[data-layout="workspace"] .resource-box {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: none;
+  background: var(--color-surface);
+}
+html[data-layout="workspace"] .table {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: none;
+}
+html[data-layout="workspace"] .table th {
+  background: var(--color-surface-alt);
+  color: var(--color-text-weak);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Execução: a etapa da vez em destaque, como uma linha do tempo. */
+html[data-layout="workspace"] #steps .table tbody tr { transition: background 150ms ease; }
+html[data-layout="workspace"] #steps .table tbody tr.step-running td {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+}
+html[data-layout="workspace"] #steps .table tbody tr.step-running td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: 600; }
+html[data-layout="workspace"] #steps .table tbody tr.step-done td:first-child { color: var(--color-text-weak); }
+html[data-layout="workspace"] .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+html[data-layout="workspace"] .status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.9;
+}
+html[data-layout="workspace"] .status-running::before { animation: ws-pulse 1.4s ease-in-out infinite; }
+html[data-layout="workspace"] .resource-value,
+html[data-layout="workspace"] .progress-header { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* Painel de espera no canto, como um aviso discreto. */
+html[data-layout="workspace"] .wait-overlay.wait-corner .wait-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 16px 40px -18px rgba(0, 0, 0, 0.45);
+}
+
+/* Paleta de comandos ----------------------------------------------------- */
+html[data-layout="workspace"] .ws-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, #000 38%, transparent);
+  backdrop-filter: blur(2px);
+}
+html[data-layout="workspace"] .ws-palette {
+  position: fixed;
+  z-index: 91;
+  top: 12vh;
+  left: 50%;
+  width: min(620px, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: ws-pop 140ms ease-out;
+}
+html[data-layout="workspace"] .ws-palette[hidden],
+html[data-layout="workspace"] .ws-scrim[hidden] { display: none; }
+@keyframes ws-pop { from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.985); } }
+html[data-layout="workspace"] .ws-palette-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-weak);
+}
+html[data-layout="workspace"] .ws-palette-field svg { width: 18px; height: 18px; flex: none; }
+html[data-layout="workspace"] .ws-palette-field input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 0.2rem 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+  box-shadow: none;
+}
+html[data-layout="workspace"] .ws-palette-list { list-style: none; margin: 0; padding: 0.4rem; overflow-y: auto; }
+html[data-layout="workspace"] .ws-palette-group {
+  padding: 0.6rem 0.6rem 0.25rem;
+  color: var(--color-text-weak);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+html[data-layout="workspace"] .ws-palette-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+html[data-layout="workspace"] .ws-palette-option[aria-selected="true"] {
+  background: var(--ws-active);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+html[data-layout="workspace"] .ws-palette-option.is-current::after {
+  content: "\2713";
+  color: var(--color-accent);
+  font-weight: 700;
+}
+html[data-layout="workspace"] .ws-palette-empty { margin: 0; padding: 1rem 1.1rem; color: var(--color-text-weak); }
+html[data-layout="workspace"] .ws-palette-hint {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-weak);
+  font-size: 0.78rem;
+}
+html.ws-palette-open { overflow: hidden; }
+
+/* Foco visível em tudo que se alcança pelo teclado. */
+html[data-layout="workspace"] .ws-item:focus-visible,
+html[data-layout="workspace"] .ws-search:focus-visible,
+html[data-layout="workspace"] .ws-tabs a:focus-visible,
+html[data-layout="workspace"] .ws-brand:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Telas estreitas: a barra lateral vira uma faixa no alto. */
+@media (max-width: 860px) {
+  html[data-layout="workspace"] .ws-app { grid-template-columns: 1fr; }
+  html[data-layout="workspace"] .ws-side {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  html[data-layout="workspace"] .ws-search { width: auto; margin: 0; }
+  html[data-layout="workspace"] .ws-nav { flex-direction: row; flex-wrap: wrap; }
+  html[data-layout="workspace"] .ws-sec,
+  html[data-layout="workspace"] .ws-projects { display: none; }
+  html[data-layout="workspace"] .ws-foot { margin: 0; padding: 0; border: 0; flex-direction: row; }
+  html[data-layout="workspace"] .ws-top,
+  html[data-layout="workspace"] .ws-tabs,
+  html[data-layout="workspace"] .content { padding-left: 1rem; padding-right: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-layout="workspace"] .ws-palette,
+  html[data-layout="workspace"] .ws-dot-in_progress,
+  html[data-layout="workspace"] .status-running::before { animation: none; }
+}

@@ -1,0 +1,1083 @@
+# Specification: GClaude Indexer
+
+A local tool that turns a folder of documents into three artifacts that
+feed a Claude Project: an index, a timeline, and instructions.
+
+This file is the implementation's source of truth. This is an internal
+technical reference, kept in English only — the user-facing documentation
+(README, CONTRIBUTING) ships in English, Brazilian Portuguese and Spanish;
+see [README.md](../README.md).
+
+---
+
+## 1. Objective
+
+The user points at a folder — commonly, but not necessarily, one synced by
+Google Drive — containing documents of any type and quantity. The system
+scans it, converts what needs converting, applies OCR where necessary,
+slices oversized PDFs, indexes the content, and produces:
+
+- `index.md` — a catalog of items with origin, type, date, author and
+  summary
+- `timeline.md` — the dated items in chronological order
+- `project_instructions.md` — instructions ready to paste into a Claude
+  Project
+- `review.md` — a coverage and failure report
+- `normas-citadas.md` — one line per federal act recognised in the
+  collection, with a LexML link (1.8.0)
+- `buscar.bat` — a topic search over the output folder for Claude Code
+  (1.8.0)
+- Sliced PDFs, in readable chunks, kept in the machine's local work folder
+  (see "Intermediate files" below)
+
+The original documents are never altered. The extracted text exists to
+locate content; reading the material of record still happens in the
+original file.
+
+## 2. Constraints
+
+- Application name: **GClaude Indexer**.
+- Runs on Windows, offline, except for the classification step when the
+  optional `claude_code` engine is chosen (see section 5.6).
+- The source code can live in a folder synced by a cloud drive and be used
+  from more than one machine, one at a time. See section 11.
+- The `claude_code` engine drives classification through a Claude Code
+  session already installed on the machine, under the user's own
+  subscription. **Never** call the Anthropic API over HTTP and never use
+  `ANTHROPIC_API_KEY` — this application has no code path that does either,
+  in any engine.
+- Browser interface, served on `127.0.0.1`, no authentication (single-user,
+  local machine only — see section 7).
+- No writes outside the folders the user configured.
+- Every step is resumable: interrupting and reopening continues where it
+  left off.
+
+## 3. Technical stack
+
+| Layer | Choice | Reason |
+|---|---|---|
+| Language | Python 3.12 | mature document libraries; newer interpreters (3.13/3.14) are known to break this project's pinned dependency versions |
+| Interface | FastAPI + Jinja2 + HTMX | forms and progress updates with no separate front-end build |
+| Database | SQLite via the standard library's `sqlite3` | one file per project, zero installation |
+| PDF | PyMuPDF | reading, page counting, slicing, image detection |
+| OCR | ocrmypdf + Tesseract | text layer without altering the original image |
+| DOCX | python-docx | text and tables |
+| XLSX | openpyxl | cells as tabulated text |
+| PPTX | python-pptx | slide and notes text |
+| Images | Pillow + pytesseract | direct OCR |
+| Email | standard library `email` module | `.eml`, and `.msg` via `extract-msg` |
+
+Versions are pinned in `requirements.txt`. No dependency that requires a
+compiler.
+
+## 4. Data model
+
+One `project.db` file per project, in the output folder. Opened with
+`PRAGMA journal_mode=TRUNCATE` and `PRAGMA synchronous=FULL` — never WAL (see
+section 11.3).
+
+```sql
+CREATE TABLE project (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    subject       TEXT,
+    source_folder TEXT NOT NULL,
+    output_folder TEXT NOT NULL,
+    config_json   TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE file (
+    id            INTEGER PRIMARY KEY,
+    relative_path TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    extension     TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    sha256_hash   TEXT NOT NULL,
+    mtime         REAL,             -- modification time, for the update's fast path (section 5.0)
+    group_key     TEXT,             -- volume, subfolder or subject, per config.group_mode
+    page_count    INTEGER,
+    needs_ocr     INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL,    -- discovered|converted|extracted|failed|duplicate|skipped
+    error         TEXT
+);
+
+CREATE TABLE removed_file (
+    id            INTEGER PRIMARY KEY,
+    relative_path TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    removed_at    TEXT NOT NULL
+);
+
+-- Phase 18: the state the four artifacts describe, written when they are
+-- generated. One row, always id 1. See section 6, "Reports that have
+-- fallen behind".
+CREATE TABLE artifact_state (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    generated_at  TEXT NOT NULL,
+    files         INTEGER NOT NULL,
+    windows_done  INTEGER NOT NULL,
+    items         INTEGER NOT NULL
+);
+
+CREATE TABLE page (
+    id            INTEGER PRIMARY KEY,
+    file_id       INTEGER NOT NULL REFERENCES file(id),
+    number        INTEGER NOT NULL, -- position within the file
+    reference     TEXT NOT NULL,    -- citable label, e.g. "f. 178" or "p. 12"
+    char_count    INTEGER NOT NULL,
+    image_count   INTEGER NOT NULL,
+    has_table     INTEGER NOT NULL,
+    text          TEXT NOT NULL,
+    UNIQUE (file_id, number)
+);
+
+CREATE TABLE window (
+    id            INTEGER PRIMARY KEY,
+    key           TEXT NOT NULL UNIQUE,
+    group_key     TEXT NOT NULL,
+    start_ref     TEXT NOT NULL,
+    end_ref       TEXT NOT NULL,
+    status        TEXT NOT NULL     -- pending|done
+);
+
+CREATE TABLE item (
+    id            INTEGER PRIMARY KEY,
+    group_key     TEXT NOT NULL,
+    start_ref     TEXT NOT NULL,
+    end_ref       TEXT NOT NULL,
+    start_order   INTEGER NOT NULL, -- for ordering and gap detection
+    end_order     INTEGER NOT NULL,
+    type          TEXT,
+    date          TEXT,             -- ISO or NULL
+    author        TEXT,
+    summary       TEXT,
+    has_table     INTEGER NOT NULL DEFAULT 0,
+    has_image     INTEGER NOT NULL DEFAULT 0,
+    engine        TEXT NOT NULL,    -- rules|local|claude_code
+    confidence    TEXT NOT NULL,    -- high|medium|low
+    files         TEXT NOT NULL     -- names of the PDFs that contain the range
+);
+
+CREATE TABLE event (
+    id            INTEGER PRIMARY KEY,
+    step          TEXT NOT NULL,
+    level         TEXT NOT NULL,    -- info|warning|error
+    message       TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+-- Duration and outcome of each step run, to compare engines/models by time
+-- as well as by quality (section 6, "Result" screen). `parallelism` is
+-- recorded because two times measured under different parallelism modes
+-- (e.g. "economy" vs. "maximum") are not comparable even on the same
+-- collection and machine.
+CREATE TABLE run (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    step          TEXT NOT NULL,
+    engine        TEXT,
+    model         TEXT,
+    parallelism   TEXT,
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT,
+    items         INTEGER NOT NULL DEFAULT 0,
+    ok            INTEGER NOT NULL DEFAULT 0
+);
+```
+
+Indexes on `file(status)`, `page(file_id)`, `item(group_key, start_order)`.
+
+The output folder **is** the project's identity: this database holds
+everything needed to reopen it, so a machine that has never seen the project
+recovers it by being pointed at the folder ("Open existing project"), with no
+identifier to create and nothing to recreate. Exactly one row of `project` is
+in force — the first, `ORDER BY id`; more than one row means the database
+went through the defect where "New project" was pointed at an occupied
+folder, and the later rows are kept but unused.
+
+A separate `projects.json` (not in this database) is the catalog of "which
+output folders have been opened" — see section 11.1. It is per-machine by
+default, and can be moved into a folder on the Drive chosen by the user, at
+which point every computer signed into that Drive shares one list. Entries
+in a shared catalog also carry the output folder **relative to the catalog
+folder**, and that relative path wins on read: the drive letter differs
+between machines (section 11.5), so the absolute path written by one
+computer is meaningless on the next.
+
+## 5. Processing steps
+
+Each step is an independent function that reads from and writes to the
+database, can be run on its own, and is safe to repeat.
+
+**0. Update (only for a collection already indexed).** Not a step of the
+pipeline and not a mode of one: an invalidation that runs *before* the
+eight steps below and returns the database to a state they already know
+how to resume from. Their sequence, their contracts and the criteria by
+which each picks its work are unchanged.
+
+It has three phases.
+
+*Plan — read-only.* Compares the source folder with the index and reports
+what is new, edited and removed, plus what invalidating that would cost.
+It writes nothing, which is what lets it run every time the Execution
+screen is opened. Detection compares size and modification time first and
+hashes only the candidates that differ, because hashing a Drive-synced
+collection on every open would force the client to download files nobody
+asked for; the hash still decides, because Drive rewrites modification
+times on files whose content never changed. If the source folder cannot be
+read — missing, or empty while the index is not — the plan is an error,
+never a proposal to remove everything.
+
+*Invalidation — transactional.* Deletes the windows the change invalidates
+and the pages that must be renumbered, removes files that vanished
+(recording them in `removed_file`), prunes the discarded windows' items
+from `raw_items.jsonl`, and returns each remaining file to the status the
+pipeline resumes from. All database work in one transaction; files are
+removed from disk only after it commits. The plan the user confirmed is
+re-derived and its fingerprint re-checked before anything is written, so a
+folder that changed while the confirmation screen was open produces a
+refusal rather than a write.
+
+*Re-execution.* The eight steps below, unchanged.
+
+**Granularity, and why it is not per file.** Outside library mode a page's
+reference (`f. N`) is counted running through the whole group, so a file
+that gains or loses pages shifts the numbering of every file after it.
+Invalidation is therefore "from this point of the group onward", where the
+point is the first position at which the intended file order stops
+matching the stored one. Everything before it keeps its pages, its
+references and its classification. Windows are discarded from the first
+one that covers a moved page — and also the group's last window when it
+was truncated by the old page count, since appending pages extends it.
+
+**Cost.** Files after the divergence that did not themselves change are
+returned to `converted`, not `discovered`: extraction re-reads them from
+`<output_folder>/converted/` and no OCR is run. Only a file whose own
+content changed pays that. When the converted artifact is missing — the
+user cleared intermediates from the Result screen — the file goes to
+`discovered` instead and is converted again, which is slower and correct.
+
+**Safety net.** If the window layout derived from the current pages
+disagrees with the window rows actually stored, the derived layout is not
+trusted: every window of that group is discarded and an event records why.
+Discarding is the conservative direction, and the event makes the cost
+visible instead of silent.
+
+**1. Scan.** Walks the source folder recursively. Hashes every file (SHA-256)
+— except one already in the inventory under the same path with the same
+size and modification time, which is counted as unchanged without reading
+its bytes (the same rule as the update check above). A file whose hash is already recorded is skipped as a duplicate (recorded
+with `status = 'duplicate'`, not silently dropped, so scan-progress counts
+stay consistent). Derives `group_key` per the project's `group_mode`:
+subfolder name, a regular expression over the file name, or everything in
+one group.
+
+**2. Conversion and OCR.** By type:
+- PDF with a text layer already: nothing to do.
+- PDF with pages under 100 characters of text that carry an image or a
+  vector drawing (decided page by page since 1.5.2 — a native PDF with a
+  few scanned sheets used to pass on its average):
+  `ocrmypdf --force-ocr --pages <those pages> --language <ocr_language>
+  --deskew --invalidate-digital-signatures --output-type pdf`, writing a
+  copy into the output folder. The other pages pass through untouched; the
+  original stays untouched, signature included. A low-text page with
+  nothing drawn on it (a blank verso) does not count. If OCR fails on a PDF
+  that also has native text, the file goes on with that text and a warning
+  names the pages left blank; a fully scanned PDF still fails. Since 1.5.7
+  the copy is a plain PDF, not PDF/A: it is only read for its text, and the
+  PDF/A conversion refused PDFs with an unusual color space. Also since
+  1.5.7, a file on which `ocrmypdf` failed (either way) gets
+  `file.ocr_failed = 1`, and every conversion starts by sending those files
+  back to 'discovered' (pages and full-text entries dropped) until one
+  succeeds. Other failures (corrupt, protected) are not retried. An
+  'extracted' file is held back with a warning once the project has
+  windows, since the windows step never rewrites an existing window file.
+  The column is added once per database, and that migration also flags the
+  files older versions failed on: `status = 'failed'` with an error
+  starting "ocrmypdf falhou", and the names in
+  `log.conversion.ocr_pages_failed` events. Note: the
+  specification originally also called for `--clean`, but that flag depends
+  on the `unpaper` binary, which has no official Windows distribution — the
+  code omits it on this platform (see the comment in `conversion.py`).
+- Image: direct OCR, text stored as a single page.
+- DOCX, XLSX, PPTX, TXT, MD, CSV, HTML, XML, JSON, EML/MSG: text extraction,
+  no OCR.
+- Every text-like file is decoded by `text_decoding.py`: byte-order mark,
+  then the declared encoding (HTML `<meta>`, XML declaration, MIME
+  `charset`) if the bytes agree, then UTF-8, then statistical detection
+  (`charset_normalizer`), then Windows-1252/Latin-1. `iso-8859-1` and
+  `ascii` labels are read as Windows-1252 (WHATWG). It never raises.
+- HTML and derivatives (`.htm`, `.html`, `.xhtml`, `.xht`, `.shtml`,
+  `.mht`/`.mhtml`, an `.xml` whose root is `<html>`, HTML e-mail bodies)
+  become text through `html_text.py`: `head`/`script`/`style` dropped,
+  block elements on their own lines, headings `#`, list items `- `, table
+  cells joined by ` | `, `<sup>o</sup>` as `º`. Other XML and JSON stay
+  literal.
+- Strikethrough is kept as `~~text~~`, one pair per line: `<s>`,
+  `<strike>`, `<del>`, inline `text-decoration: line-through` and CSS
+  classes declared with it; struck runs in DOCX, PPTX and XLSX too. The
+  rules engine ignores struck text when looking for type, date, author and
+  summary; the local engine prompt, the `claude_code` `CLAUDE.md` and
+  `project_instructions.md` (when the collection has any) explain the
+  mark. Strikethrough in PDFs is not detected — it is a drawn line, not a
+  text attribute.
+- Under the special `all` extension category, any extension with no
+  dedicated extractor falls back to reading the file as plain text
+  (decoded as above), never failing the step.
+- Extensions on the fixed executable/binary blocklist are always excluded,
+  even under `all`.
+
+> **Parallelism (conversion/OCR and extraction):** the project's
+> "Parallelism" field (`economy`/`automatic`/`maximum`, `parallelism.py`)
+> controls how many workers `ProcessPoolExecutor` uses in these two steps —
+> always physical cores, never logical ones, because OCR and PDF rendering
+> saturate the execution unit and counting hyperthreads produces contention
+> instead of gain. `economy` = 1, `maximum` = all physical cores,
+> `automatic` (default) = physical cores minus one, so the interface stays
+> responsive during processing. Measured gain on the development machine (8
+> physical cores): 61.5s → 12.0s (5.14×) on 12 three-page PDFs with forced
+> OCR. The GPU does not accelerate either of these two steps — the
+> Tesseract binary `ocrmypdf` calls is CPU-only.
+>
+> Since 1.5.8 conversion runs two queues. Files that may need OCR (PDFs,
+> images) keep the per-core pool above. Every other file waits on the disk,
+> not the CPU (~200 ms to read a small HTML file from Drive, ~30 ms to
+> convert it), so it gets `parallelism.io_workers_for`: `economy` = 1,
+> `automatic` = 2 × physical cores (at most 16), `maximum` = 4 × physical
+> cores (at most 32), processes rather than threads because the conversion
+> itself is pure Python. On a folder of small HTML files in Drive, the two
+> changes took the step from a few files per second to hundreds.
+> Since 1.5.9 the OCR queue starts with the largest file: in path order a
+> PDF with hundreds of pages could start last and run alone for minutes.
+
+**3. Slicing.** A PDF with more pages than the configured limit (default 80)
+is cut into chunks, written into the local work folder, with the original
+page numbering preserved.
+
+> **Intermediate files (1.5.8).** `converted/` and `blocks/` live in
+> `%LOCALAPPDATA%\GClaudeIndexer\work\<name>-<hash of the output folder>\`,
+> not in the output folder (`workdir.py`). The output folder is normally in
+> Google Drive, which creates files almost one at a time — ~800 ms per small
+> `.txt` measured, against 0.3 ms locally — and the conversion of a large
+> collection was waiting on it with the CPU idle. Nothing a project is used
+> for needs them afterwards: pages and full-text search are in `project.db`,
+> the indexes and the windows are in the output folder. Reading prefers the
+> local copy and falls back to the output folder, where projects converted
+> before 1.5.8 keep theirs. On a machine without the intermediate,
+> extraction sends the file back to 'discovered' (warning
+> `log.extraction.intermediate_missing`) instead of failing it; the
+> incremental update already treated a missing intermediate as "convert
+> again". Cleanup and project deletion cover both locations.
+
+**4. Page extraction.** For every page: text truncated at the configured
+character limit, character count, embedded-image count, a best-effort table
+detection. Written to `page`.
+
+The step ends by adding every extracted file to the full-text search
+(`fulltext.py`, FTS5 table `fulltext`), and is not done while any file
+waits for it: a pause during that phase resumes it on the next run. The
+progress bar shows that phase on its own ("adding the files to the
+full-text search"). Since 1.5.9 each file's passages get consecutive
+rowids and `fulltext_file` records the range (`first_rowid`,
+`last_rowid`), so removing a file never scans the table — `file_id` is
+an UNINDEXED FTS5 column, and the per-file delete by it had made the
+indexing quadratic (slower with every file on a collection of tens of
+thousands of files). The
+texts are read by a pool of threads (PDFs one at a time, PyMuPDF is not
+thread-safe). A file whose text cannot be read is logged and recorded with
+no passages, so the step can finish; reprocessing the file (project
+update) brings it back to the search.
+
+A file of an extension with no extractor (the "all" category) whose first
+8 KB contain a NUL byte is binary (zip, audio, font, drawing): since 1.5.9
+it is kept in the index by name, with no text.
+
+**5. Window preparation.** Groups pages into overlapping windows. Writes one
+`.txt` file per window into `<output>/windows/`, with a header identifying
+the group and the page range, and each page labeled with its own
+`reference`. Since 1.5.8 the files are written only when the configured
+engine is `claude_code`, the one engine that reads them (the others read
+the pages from `project.db`), in parallel, and `engine_claude_code.prepare`
+writes any that are missing when that engine is chosen later. Rows are
+inserted with one commit per group. Classification loads windows through
+`classification.WindowPageLoader`, which keeps each group's page order as
+ids and fetches only the window's pages: reading the whole group per
+window was quadratic (a group can have tens of thousands of pages). `file.group_key`
+is indexed. Since 1.5.9 the step reads the pages without their text unless
+it writes the files, checks existing windows with one query per group,
+and lists the windows folder once instead of an `exists()` or `unlink()`
+per window.
+
+**6. Classification.** An isolated step behind a single interface, with
+three interchangeable engines selectable in the form (plus an `automatic`
+mode that resolves to one of the first two, described below). All of them
+receive a window's text and return the same item structure, so the
+following steps never need to know which engine ran.
+
+| Engine | Cost | Billed to | Leaves the machine | Expected quality |
+|---|---|---|---|---|
+| `rules` | zero | nobody | no | good on a well-structured collection; lower on irregular ones |
+| `local` | zero | nobody | no | close to `claude_code` |
+| `claude_code` | the user's own subscription | Claude | yes | best |
+
+**`rules` engine, the zero-dependency default.** Purely deterministic:
+- Date by regular expression, covering `15/05/2024`, `15.05.2024` and
+  `15 de maio de 2024` (and their English/Spanish equivalents), with
+  calendar validation.
+- Type by a dictionary of markers at the start of the page (document-type
+  words such as memorandum, opinion, order, minutes, certificate, term,
+  notice, invoice, appeal, decision, ordinance, resolution). The dictionary
+  lives in an editable file (`config/classification_rules.json`), not in
+  code.
+- Item start detected by a type marker, a preceding blank page, a protocol
+  stamp, or a change in a repeated header.
+- Item end on the page before the next detected start.
+- Author by footer and signature-block patterns.
+- Summary by extraction: a line starting with "Subject:"/"Re:" or, failing
+  that, the first sentence longer than 40 characters.
+- A page with no marker at all joins the previous item and is marked
+  `confidence = "low"`.
+
+**`local` engine.** An open model served by Ollama on
+`http://127.0.0.1:11434`. No account, no key, no external network traffic
+after the model is downloaded once. The default model is
+`qwen3.5:4b` (`engine_local.py:DEFAULT_LOCAL_MODEL`), used regardless of
+hardware unless the project's "Local model" field names a different,
+already-installed Ollama model — that field is fed by `GET /api/tags`
+against the local Ollama instance, with a free-text fallback when Ollama
+does not respond. A connection failure falls back to the `rules` engine,
+with a warning event. Hardware too small to hold the chosen model
+(combined VRAM + RAM, with a 20% margin) is checked before running it —
+see section 10.2.
+
+**`claude_code` engine.** What already exists on disk (`CLAUDE.md` and the
+window files) is enough for an external Claude Code session, launched by
+the user in that folder, to do the classification: the user types a
+trigger phrase (in the interface's current language — English "process the
+windows", Portuguese "processe as janelas", or Spanish "procese las
+ventanas"; `CLAUDE.md` documents all three as valid regardless of which one
+generated it), Claude Code writes `raw_items.jsonl`, and this application
+re-reads that file to track progress and imports the result once done.
+Nothing in this codebase compares the trigger phrase as a string — that
+matching happens inside the external Claude Code session, reading
+`CLAUDE.md`'s own natural-language instructions.
+
+**Review mode.** A form option: run the `rules` engine over everything, and
+submit only the low-confidence items to a second engine of the user's
+choice. Cuts the expensive engine's usage by roughly 90% while keeping
+most of the quality gain.
+
+**Automatic engine selection.** When `classification_engine == "automatic"`,
+`orchestrator.py:resolve_effective_engine` picks `local` if the hardware
+diagnostic says the chosen model fits, otherwise `rules`. It never resolves
+to `claude_code` — that engine is only ever used when explicitly selected.
+
+Every item records which engine classified it, for auditing, and every
+step run is recorded in the `run` table (engine, model, parallelism mode,
+item count, timing) to support the quality/benchmark comparison on the
+Result screen (section 6).
+
+**7. Import and consolidation.** Reads `raw_items.jsonl` (the wire format
+every engine writes to, including `claude_code`'s external session), validates
+each line, discards duplicates from window overlap, stitches an item split
+across windows back together, and writes to `item`. An invalid line becomes
+an error event, without stopping the process.
+
+**8. Artifact generation.** Produces `index.md`, `timeline.md`, `review.md`
+and `project_instructions.md`, in the interface's current language. The
+instructions file is assembled from a template filled with the fields the
+user entered in the New Project form.
+
+> **Cited acts and topic search (1.8.0).** The per-group legislation file
+> of 1.5.14 to 1.7.5 (`legislacao-<group>.md`, with its `planalto_in_package`
+> option) no longer exists; a project that still has one loses it at the
+> next generation, and the retired config key is accepted and dropped
+> (`config._RETIRED_FIELDS`). In its place, `normas-citadas.md` lists each
+> act recognised by `planalto.parse` once, deduplicated by (kind, number,
+> date), with the groups and physical pages where it appears and a link
+> (`artifacts.norm_url`: the LexML URN when the kind has one, otherwise the
+> LexML search). The summary counts the legislation pages and points to it;
+> the generated instructions tell Claude to open the link instead of
+> expecting the act's text in the Project. The file exists only when at
+> least one act was recognised. Every generation also writes `buscar.bat`,
+> which runs `gclaude_indexer.search_cli` with the program's own Python
+> over this output folder: results grouped by file with locator and
+> excerpt, the act's link beside legislation passages, `--grupo`,
+> `--so-legislacao`, `--limite`, and `--lexml` (also automatic when no local
+> act cites the term). `lexml.py` queries the Senate's SRU endpoint with an
+> honest User-Agent, refuses DTDs, entities and bodies over 4 MB before
+> parsing, never raises, and reports the Senate's verification page as
+> `status="challenge"` with the browser link; it never tries to bypass it.
+> The Claude package never includes a file above 30 MB (`MAX_FILE_BYTES`),
+> because a Project refuses it; the Result screen lists what stayed out.
+> Known gap: a group whose single source file produces more than 30 MB of
+> index cannot be sliced, since `em_partes` only splits between source
+> files.
+
+> **Sets (1.8.0).** `sets.py` keeps, in the machine-local `sets.json`, named
+> sets of two or more catalog projects, each member with an alias
+> (`propose_alias`: NFKD, lowercase, `[^a-z0-9]+` → `-`, collisions `-2`,
+> `-3`). `combined_package.py` builds one package from them: every artifact
+> prefixed `<alias>__`, `index.md` and `timeline.md` links rewritten token
+> by token inside backticks and in Markdown links (`rewrite_links`), one
+> `project_instructions.md` with the set's personal text on top, a "which
+> collection to search" section and one section per member
+> (`artifacts.project_instructions_sections` with `ArtifactNames`), the
+> token budget summed and the limit the smallest `package_token_limit`
+> among the members. A member whose folder is unreachable, whose database
+> does not open or which never generated reports is reported with its
+> reason and left out, and survives a save made while it is unavailable.
+> `write_folder` writes the same files plus a combined `CLAUDE.md` through
+> `merge_managed`, refuses a project's source or output folder
+> (`ProtectedFolderError`) and removes prefixed files that left the plan.
+
+## 6. Interface
+
+Seven screens plus a "Manual" and an "About" page, served on
+`http://127.0.0.1:8000`.
+
+| Screen | Route |
+|---|---|
+| Projects | `GET /projects` |
+| New project | `GET /projects/new`, `POST /projects/new` |
+| Execution | `GET /projects/{project_id}/run` |
+| Update collection | `GET /projects/{project_id}/update`, `POST /projects/{project_id}/update` |
+| Result | `GET /projects/{project_id}/result` |
+| Search the collection | `GET /projects/{project_id}/search` (query `q`, `p`, `lexml`) |
+| Sets | `GET /sets`, `GET|POST /sets/new`, `GET|POST /sets/{set_id}`, `POST /sets/{set_id}/delete`, `GET /sets/{set_id}/package`, `POST /sets/{set_id}/write-folder` |
+| Manual | `GET /help` |
+| About | `GET /about` |
+
+**Update collection.** Shows the plan from step 0: documents new, edited
+and removed, named rather than counted, with the cost of confirming —
+files that will go through OCR again, windows that will be reclassified,
+windows that keep their classification. The first two numbers are exact;
+the windows a new document will add depend on its page count, unknown
+before extraction, so the screen states that rather than estimating it.
+The `GET` writes nothing. The `POST` is refused while a run is in
+progress, and refused with the plan's fingerprint if the folder changed
+while the screen was open.
+
+**Reports that have fallen behind (phase 18).** Steps 7 and 8 — importing
+the classified items and writing the four files — are not part of "run all
+steps"; they sit behind their own button. So classification can finish and
+leave the four files describing an earlier state: documents scanned,
+converted, extracted and classified, and `review.md` still reporting the
+previous files and windows.
+
+`generate_all_artifacts` therefore records into `artifact_state` the three
+counts the files describe. When they no longer match the database, two
+screens say so, each carrying the regenerate button:
+
+- **Result** — whenever the counts differ, naming what changed since the
+  files were written. The files on display genuinely predate the project
+  whatever else is happening, so the notice has no further condition.
+- **Execution** — only once nothing is left to process, meaning no file in
+  `discovered`/`converted` and no window `pending`. With windows still
+  queued for the model, generating would produce reports incomplete the
+  moment they were written, and the screen's existing advice — run the
+  steps — is the honest one.
+
+Note that this is a *different* pending-work test from the one that
+silences the update banner above, which deliberately ignores pending
+windows so that stopping classification part-way does not hide the banner
+forever. The two questions share a word and must not share a predicate.
+
+Counts, not file modification times: the output folder is synced (section
+11.1) and the client rewrites timestamps on files whose bytes never
+changed — the same trap step 0's detection avoids. A project carrying no
+recorded state is never reported stale; there is nothing to compare
+against, and the first generation on this version establishes the
+baseline.
+
+A fragment route, `GET /projects/{project_id}/update/banner`, backs the
+notice on the Execution screen. It is fetched by HTMX after that page
+renders, never inline: on a large Drive-synced collection the folder walk
+takes seconds, and paying them before the first pixel would trade one
+problem for another. An unreachable source folder renders nothing there —
+the explanation belongs on the update screen, not as an alarm on a screen
+the user opened for something else.
+
+**Projects.** Lists existing projects with creation date and status. Button
+to create a new one.
+
+**New project.** A form with the fields below. Fields have a sensible
+default already filled in; the user only touches what needs changing. Field
+names match `ProjectConfig`'s own attribute names (`config.py`) — they are
+also the HTTP form field names, so the two never drift apart.
+
+| Field | Type | Default | What it's for |
+|---|---|---|---|
+| `name` | text | — | identifies the project in the list |
+| `subject` | long text | — | **shown to the classifying model** as context, and goes into the generated instructions |
+| `source_folder` | folder picker | — | where the documents are |
+| `output_folder` | folder picker | `<source>\_indexed` | where everything is written |
+| `collection_type` | choice | `processo` (case file) | `processo` numbers by sheet; `biblioteca` (library) numbers by page |
+| `group_mode` | choice | `subfolder` | subfolder, name pattern, or everything together |
+| `group_pattern` | regex | empty | used when grouping is by name pattern |
+| `extensions` | multiple, grouped by family (Documents, Images, Text and data, Messages) | `pdf`, `docx`, `imagens` | what enters the scan — the family grouping is presentation only, see `categories_by_family()` in `file_types.py` |
+| `pages_per_block` | number | 80 | slicing limit for the auxiliary `blocks/` files; **does not affect the index** — extraction reads the whole PDF, not the slices |
+| `pages_per_window` | number | 16 | pages per request to the model, and the setting that decides classification quality: the reply carries one line per page, and a window too wide truncates it (8 is the measured recommendation) |
+| `overlap` | number | 2 | pages repeated between windows |
+| `chars_per_page` | number | 2000 | how much text goes into classification |
+| `ocr_language` | choice | `por` | Tesseract language code |
+| `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
+| `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `qwen3.5:4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
+| `processing_mode` | choice | `automatic` | `automatic`/`gpu` use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
+| `parallelism` | choice | `automatic` | `economy` (1 worker), `automatic` (physical cores minus one), `maximum` (all physical cores) — see section 5.2 |
+| `review_low_confidence` | checkbox | off | reprocess only low-confidence items with another engine |
+| `role_instructions` | long text | a default template | **shown to the classifying model** as context; who Claude is, in the generated instructions |
+| `extra_rules` | long text | empty | **shown to the classifying model** as context; appended to the generated instructions |
+
+**Execution.** One row per step (scan, conversion, extraction, windows,
+classification — `step_state.STEPS`), with status and count. A button runs
+the next step, and a separate "Import and generate reports" action runs
+import + artifact generation once classification is done; both trigger a
+background task and return immediately. Below: a progress bar with
+percentage and an ETA for the running step, and a pause/interrupt button
+(cooperative — every step is resumable by design, so "pause" is just "run
+again later"). A live CPU/RAM/GPU usage graph (plain `<canvas>`, no
+library). A live log panel reading the `event` table, up to 200 of the most
+recent lines, with a level filter (all/info/warning/error, in pure CSS) and
+a "follow the tail" checkbox that keeps the scroll pinned to the latest
+line. When the engine is `claude_code`, shows the copyable command and a
+button to recheck whether the windows are done.
+
+Since 1.5.9 the screen stays responsive on a large collection in Drive. The
+quality summary shown with the steps is cached per project and recomputed
+only when items, windows, pages or failures change; page counts come from
+`windows_prep.group_page_counts` (no page text) and coverage from a
+difference sweep, O(pages + items). Before, every two-second refresh read
+the text of every page — the screen took more than a minute to open on a
+collection of tens of thousands of pages. The live log sends `HX-Request`, so a busy database answers 204
+like the other polls, and appends only 200 responses; a 503 page used to
+be pasted into the list.
+
+**Result.** A preview of the generated files, the Claude package with its
+token budget (per-file size and estimated tokens, warnings at the RAG
+threshold of 500 thousand tokens and at the project's limit, and the list
+of files above 30 MB that stay out), a button to open the
+output folder in Explorer, a report of what's still pending, and a button
+to delete the intermediate files (`converted/` and `blocks/`), preserving
+the database, the four reports, `raw_items.jsonl` and `logs/` — permanent
+for the project, since the conversion step only processes files with
+`status = 'discovered'` (`cleanup.py`). Also shows a quality summary for the
+current run and, when more than one classification run has been recorded,
+a side-by-side comparison by engine/model (`quality.py`), with three
+limitations shown on screen, not hidden: (1) time is only comparable within
+the same collection and the same machine; (2) the score measures the
+engine's own declared confidence and how many fields it filled in, **not
+actual correctness**, which would require a hand-checked answer key; (3)
+the quality score can only be attributed to the (engine, model) group of
+the **last** import, because `import_and_consolidate` recreates the whole
+`item` table on every import — any other group from the history gets a
+`None` score, never a number computed over items that no longer belong to
+that engine/model.
+
+A language selector and a theme selector (four color themes: light, dark,
+sepia, high-contrast) sit in the header of every screen, in a `<select>`
+each, persisted in a cookie. A separate layout selector (four layouts:
+standard, technical, editorial, compact — `web/layout.py` +
+`static/layouts.css`) is orthogonal to the theme: 4 layouts × 4 palettes,
+same Jinja2 templates for all of them, varying only via `data-layout` and
+CSS rules. All fonts used across every layout (Segoe UI, Cascadia Mono,
+Constantia, Corbel and equivalents) ship with Windows itself — never Google
+Fonts nor any font loaded from outside the machine, keeping the interface
+consistent with the project's offline design.
+
+Step status (`step_state.py`) is always a stable ASCII key
+(`"done"`, `"scan"`, ...), never screen text — the template translates the
+key into the current language. Do not let a status value double as display
+text, CSS class and comparison value at the same time; see
+[CONTRIBUTING.md](../CONTRIBUTING.md) for why that specific coupling has
+caused real defects in this project before.
+
+## 7. Security
+
+- The server listens only on `127.0.0.1`. Never `0.0.0.0`.
+- Every path input is resolved with `Path.resolve()` and validated against
+  the project's folders (`paths.py:resolve_within`). Any path outside them
+  is refused, including via `..`.
+- `subprocess` always runs with an argument list and `shell=False`
+  (`subprocess_utils.run_hidden`).
+- No SQL query built by string concatenation. Bound parameters only.
+- No `eval`, `exec` or `pickle` over data coming from a file.
+- The JSON the classification engines return is validated field by field
+  before being written: type, range within the group, plausible ISO date
+  format.
+- Logs never contain document content, only file names and counts.
+
+## 8. Acceptance criteria
+
+1. Running twice in a row on the same folder reprocesses nothing and
+   creates no duplicates.
+2. Adding a new file to the folder and running again processes only that
+   file.
+3. Interrupting mid-step and reopening resumes with no loss.
+4. `review.md` reports zero gaps when classification is complete.
+5. A corrupted file is recorded as an error, marked `failed`, and does not
+   bring down the run.
+6. No file is written outside the output folder, except the intermediate
+   files in the machine's local work folder (1.5.8, see step 3).
+7. A 3,000-page collection completes the local steps in under two hours.
+8. The index of the demo collection (`demo/acervo`, fictional, 72 pages)
+   measured against its answer key (`demo/gabarito.csv`) covers every
+   page with the rules engine — the CI run enforces this on every push —
+   and `docs/QUALITY.md` publishes boundary, type, date and author
+   accuracy for the rules engine and for the default local model
+   (1.7.5). Accuracy is reported, not enforced: the classifier is not
+   tuned to the demo.
+
+## 9. Implementation phases
+
+Each phase ends running, with tests, before the next one starts. (This
+list reflects the original build order; see [CHANGELOG.md](../CHANGELOG.md)
+for what was added, changed or fixed phase by phase, including work after
+phase 11.)
+
+1. Structure, database, configuration and logging.
+2. Scan and inventory.
+3. Conversion, OCR and slicing.
+4. Page extraction and windows.
+5. `rules` engine and the common classification interface.
+6. Import, consolidation and artifact generation.
+7. Hardware diagnostics and silent dependency installation.
+8. `local` and `claude_code` engines, and review mode.
+9. Web interface.
+10. Cross-machine portability and database locking.
+11. Packaging and desktop shortcut.
+12. GPU/sensor telemetry for any vendor, parallelism, quality/benchmark
+    reporting, and four interface layouts.
+13. Internationalization (English source code and database schema; a
+    three-language interface, output artifacts and log messages;
+    documentation in three languages) and open-source preparation.
+
+## 10. Automatic dependency installation
+
+No manual installation by the user. The installer resolves everything and
+reports progress in the interface (or its own console output), never in a
+silent background window.
+
+### 10.1 Machine diagnostics
+
+Before installing anything, gather and record as an event:
+
+- GPU and VRAM: `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader`
+  when present. Without it, AMD and Intel GPUs are detected through
+  `Win32_VideoController` over WMI, and — for VRAM specifically — through
+  the registry (`HardwareInformation.qwMemorySize`, 64-bit), because
+  `Win32_VideoController.AdapterRAM` is 32-bit and saturates at 4095 MB on
+  cards with more than that. On any GPU, live utilization and VRAM usage
+  come from Windows's own Performance Counters
+  (`\GPU Engine(*)\Utilization Percentage`,
+  `\GPU Adapter Memory(*)\Dedicated Usage`) when `nvidia-smi` is
+  unavailable — `nvidia-smi` stays preferred when present, for more precise
+  total-VRAM reporting.
+- System memory and free disk space at the destination.
+- Presence of Tesseract, Ghostscript and Ollama.
+
+### 10.2 Local model choice
+
+The `local` engine's model is fixed to `qwen3.5:4b`
+(`engine_local.py:DEFAULT_LOCAL_MODEL`) by default, on any hardware, unless
+the project's "Local model" field names a different, already-installed
+model (see section 6) — in which case that model is what actually runs,
+and what the hardware check below evaluates. Ollama is always asked to use
+`num_gpu: -1` (as much GPU as fits, the rest spilling into RAM
+automatically), regardless of which model runs.
+
+`hardware.py:choose_model` decides whether the machine can run the model
+that will actually be used:
+
+- The model's size comes from Ollama's own `/api/tags` when the model is
+  already downloaded; otherwise the check falls back to a calibrated
+  estimate for the default model (`qwen3.5:4b`, roughly 3.0 GB).
+- Required combined memory (VRAM + RAM) is the model size plus a 20%
+  margin.
+- Below that, classification falls back to the `rules` engine, with the
+  reason recorded as an event — never a silent failure.
+- Required free disk space is at least twice the model's size before
+  downloading it; below that, the download is skipped and the `rules`
+  engine is used instead.
+
+An earlier design (superseded, kept here only as history) picked among
+several `qwen2.5` model sizes by VRAM tier. That table no longer reflects
+the running code; do not use it as a reference.
+
+### 10.3 Silent installation
+
+Order of attempts for each dependency, stopping at the first that works:
+
+1. `winget install --id <package> -e --silent --accept-package-agreements --accept-source-agreements`
+2. The vendor's official installer, downloaded to a temporary folder and
+   run with its packager's silent flag (e.g. `/VERYSILENT /NORESTART` for
+   Inno Setup, `/S` for NSIS).
+3. Both failing: record an error, continue with the `rules` engine, and
+   show the manual command in the interface as a last resort.
+
+Packages: `Ollama.Ollama`, `UB-Mannheim.TesseractOCR`. There is no
+Ghostscript package any more: `ArtifexSoftware.GhostScript` was removed
+from the winget repository, so that route cannot be relied on.
+
+Ghostscript also cannot be installed unattended by its own installer. It
+is manifested `requireAdministrator`, so every destination raises a UAC
+prompt, and since 10.01.0 the vendor stopped honouring the NSIS `/S`
+flag — the installer leaves a "Finish" page waiting for a click. What
+`install.ps1` does instead is **unpack** the installer's payload into
+`%LOCALAPPDATA%\GClaudeIndexer\gs` and add its `bin` to the user PATH:
+no administrator, no window, no click. Ghostscript resolves its own
+resources relative to the executable, so it runs correctly from there.
+
+Verify the downloaded file's hash when the vendor publishes one. Download
+only from an official domain, over HTTPS, without following a redirect to
+a different domain.
+
+After installing, confirm it actually works before declaring success:
+`tesseract --version`, `ollama --version`, and a real test call to the
+model.
+
+### 10.4 Model download
+
+`ollama pull <model>`, with its output read in real time and turned into a
+progress bar in the interface. An interrupted download resumes on the next
+run — Ollama's own native behavior.
+
+### 10.5 Performance
+
+- Ollama detects CUDA, ROCm and Vulkan on its own; nothing here forces a
+  backend, and the installer never installs ROCm (`HSA_OVERRIDE_GFX_VERSION`
+  is removed, not written — phase 15). What the program does (1.7.4) is
+  read the server log (`ollama-serve.log`, or the tray app's
+  `%LOCALAPPDATA%\Ollama\server.log`, read-only, latest discovery block)
+  and record in the project log which backend is in use, whether Ollama
+  pins the model's family to one request at a time, and — on AMD RX
+  5000/6000 — that ROCm is out of reach because the driver ships no
+  `amdhip64_7.dll` (`ollama_backend.py`).
+- Flash attention off on Vulkan over AMD RX 5000/6000 (1.7.4): measured on
+  an RX 6700 XT, prompt reading 735 against 373 tokens/s, generation −5%,
+  a window 23–28% shorter; the KV cache type on its own changed nothing.
+  `server_environment()` and the installer set `OLLAMA_FLASH_ATTENTION=0`
+  and `OLLAMA_KV_CACHE_TYPE=f16` on those cards. A variable holding exactly
+  the installer's value is the installer's and gives way; any other value
+  is the user's and wins; the uninstaller removes either.
+- `OLLAMA_KEEP_ALIVE=30m`, so the model doesn't leave memory between
+  windows.
+- `LLAMA_ARG_CACHE_RAM=0` (1.7.3): Ollama's runner keeps no prompt cache
+  in system RAM. Its default is 8 GB, meant to resume an earlier
+  conversation; with one window at a time every prompt is new, and the
+  cache was measured never to be reused.
+- `OLLAMA_NUM_PARALLEL=1`: windows are sent one at a time, and the KV
+  cache is sized for that one request instead of the default four (phase
+  16) — the single largest source of VRAM that used to go unused.
+- `num_ctx` is computed from the real window size (calibrated characters
+  per token plus room for the answer) and only ever grows during a run.
+  Its ceiling (1.7.4) is computed once per run: the largest multiple of
+  4096 whose KV cache fits on the card next to the whole model,
+  `SAFETY_MARGIN_MB` and the runner's compute buffers (512 MB reserved;
+  measured ~400 MiB), at most 131072 and the model's `context_length`;
+  without a card, in "cpu" mode, or when the model does not fit the card
+  whole, the same calculation over available RAM minus 2 GB, at most 32768,
+  never below 4096. The KV cost counts only the layers that keep a cache
+  (`attention.recurrent_layers` / `full_attention_interval`; qwen3.5: 8 of
+  32).
+- No window reaches the model cut (1.7.4). The request carries
+  `truncate: false`; Ollama ≥ 0.40 refuses an oversize prompt with HTTP 400
+  (`request (N tokens) exceeds the available context size`), which the
+  engine turns into a larger `num_ctx` (N plus the answer budget, up to the
+  ceiling) and a retry of the whole window. On an older server that still
+  cuts, the cut's signature (`prompt_eval_count ≈ num_ctx / 2`, confirmed by
+  the calibrated estimate being ≥ 1.35× what was read) counts as a failed
+  attempt. A window whose estimate already exceeds the ceiling is split in
+  two before any request; a window short of rows at the ceiling is split
+  after. Each raise or split is a project-log entry, and the step ends with
+  a one-line context summary.
+- The first few windows' time is measured and shown as a completion
+  estimate before the rest proceeds.
+
+> **Fans and PawnIO (1.5.10).** The elevated sensor helper also reads
+> Dell's thermal interface (`dell_thermal.py`: WMI class
+> `AWCCWmiMethodFunction`, method `Thermal_Information`, read operations
+> only — system description 0x02, resource id 0x03, temperature 0x04, fan
+> RPM 0x05; fans 0x32 CPU and 0x33 GPU, temperatures 0x01 CPU and 0x06
+> GPU). It fills only what LibreHardwareMonitor left empty: the fans,
+> which on a laptop belong to the embedded controller, and the CPU
+> temperature when PawnIO is missing. A failed read is retried every 30 s
+> (1.5.11; Dell's service may not be up yet right after a restart) and
+> disabled for the session after ten failures in a row. The installer offers the PawnIO driver (`winget install
+> namazso.PawnIO`, ticked by default, `-SkipPawnIO` when not), which
+> LibreHardwareMonitorLib 0.9.6 needs for the CPU temperature and power.
+
+> **Local engine without the Rules fallback (1.5.12).** With a dedicated
+> graphics card (NVIDIA, or AMD with 2 GB or more) and a processing mode
+> other than "cpu", `engine_local.classify_pending` never uses the Rules
+> engine: a model that stops answering is restarted and waited for (every
+> 60 s), and the run carries on from the same window; a window that fails
+> three times while the server answers stays pending. Without one, the
+> Rules engine covers the window and its lines carry `"fallback": true`;
+> `requeue_fallback_windows` gives those windows back to the model at the
+> start of the next classification. Generation timeout: 300 s. A server
+> the program starts logs to `%LOCALAPPDATA%\GClaudeIndexer\ollama-serve.log`.
+
+> **Planalto acts (1.5.14).** Before a window goes to an engine,
+> `planalto.split` takes out the pages of `.htm`/`.html` files that read as
+> federal acts: a title (kind, number, date) within the first 15 lines,
+> confirmed by the enacting clause or by the closing "… da Independência e
+> … da República" line. Each becomes one item with engine `structured`
+> (type, date, signer, official ementa as summary, revocation note).
+> Everything else goes to the configured engine as before. The installer
+> upgrades Ollama with winget on every run, stopping `ollama.exe` first.
+
+### 10.6 Uninstallation
+
+A button removes the downloaded model and reports how much space that
+frees. Ollama, Tesseract and Ghostscript themselves are never removed —
+other programs on the machine may depend on them.
+
+### 10.7 Installation diagnostics
+
+`install_diagnostics.py:check_installation()` checks the presence and
+version of Tesseract, Ghostscript, Ollama, the local model, and the
+hardware-sensor DLLs, without ever raising — it feeds both the installer
+script (decides what to offer) and the "About" screen (shows the user what
+is missing and how to fix it, with no terminal required). `-AutoInstall`
+runs every install unattended, without confirmation, including Ollama and
+its default model — use with care, since those are large downloads.
+
+## 11. Cross-machine portability
+
+The source code can live in a cloud-synced folder (this project's own
+development setup uses Google Drive) and be used from more than one
+machine, one at a time.
+
+### 11.1 What syncs and what stays local
+
+| Goes to the synced folder | Stays local, per machine |
+|---|---|
+| source code, text templates, dictionaries | the Python virtual environment |
+| `requirements.txt` and its installed-hash marker | `__pycache__` and temporary files |
+| each project's configuration (inside `project.db`'s `config_json` column, in its output folder) | the project catalog, `projects.json` — per machine unless the user points it at a Drive folder (see section 4) |
+| the shared project catalog, when configured (a Drive folder of the user's choosing) | `settings.json`, which names that folder — it is the pointer *into* the synced world and so cannot itself be synced |
+| — | `tools.json`: the absolute path of each installed program, recorded by `install.ps1` so a fresh install does not depend on `PATH` having reached the running processes |
+| generated artifacts: index, timeline, review, instructions | downloaded Ollama models |
+| sliced PDFs | — |
+| execution logs (`<output_folder>/logs/execution.log`, written alongside the `event` table) | — |
+
+Default local path: `%LOCALAPPDATA%\GClaudeIndexer`. Never create a virtual
+environment, cache, or temporary folder inside the synced folder.
+
+### 11.2 Environment per machine
+
+The launcher (`launcher.py`) checks, on every run:
+
+1. Does `%LOCALAPPDATA%\GClaudeIndexer\venv` exist? If not, create it.
+2. Has `requirements.txt`'s hash changed since the last install? If so,
+   run `pip install -r requirements.txt` and record the new hash.
+3. Are the external dependencies present on this machine? If not, trigger
+   the silent installation from section 10.
+
+So the first run on a new machine resolves itself with no manual step.
+
+### 11.3 Database
+
+- `project.db` lives in the project's output folder, which may be inside
+  the synced folder.
+- Always opened with `PRAGMA journal_mode=TRUNCATE` and
+  `PRAGMA synchronous=FULL`. **Never WAL** — its auxiliary files do not
+  survive cloud-sync round trips. TRUNCATE rather than DELETE (1.5.5): the
+  same rollback journal, but it is not created and deleted on every commit,
+  which on a Google Drive folder cost ~0.3 s per commit (TRUNCATE: <0.01 s).
+- Steps write through `db.BatchWriter`: one transaction per batch (at most
+  two seconds or 500 operations since 1.5.9; one second or 200 before),
+  replayed whole after `database is locked`. A commit on a large database
+  in Drive takes seconds and blocks the screens' reads; one per second left
+  them locked out a large share of the time. The classification engines (rules,
+  local) write through it too since 1.5.9, with each window's events and
+  its "done" in the batch instead of 2–4 commits per window, and each
+  window's items flushed to `raw_items.jsonl` before the window is queued.
+  The full-text indexing commits every 3 s. `raw_items.jsonl` is read with
+  `split("
+")`, never `splitlines()`, which also breaks at U+0085,
+  U+2028 and U+2029 inside JSON strings.
+  Worker processes run under `worker_pool.ResilientPool`: a per-file
+  deadline (10 min + 2 min/MB), worker kill and pool rebuild on a stall,
+  never a blocking wait on exit. Economy mode (parallelism 1) runs under
+  the same pool with `DaemonThreadExecutor` (in-process, abandoned on a
+  stall) since 1.5.6. The scan guards each folder listing, `stat` and
+  hash with `call_with_deadline`; a folder that never answers stops the
+  scan (`SourceFolderStalled`) and is never read as removed files.
+- On opening a project, creates `project.lock` with the machine name, the
+  user, and a timestamp, refreshed every minute while the app is open.
+- Finding another machine's lock less than 10 minutes old refuses to open
+  and explains which machine is using it (HTTP 423). An older lock is
+  considered abandoned and can be taken over, with user confirmation
+  (HTTP 409).
+- The lock is removed when the server closes.
+
+### 11.4 Switching machines
+
+The interface shows a persistent notice with the rule: close the app, wait
+for the sync tool to finish, and only then open it on the other machine.
+The notice can be dismissed with a "×" button, remembered per browser in
+`localStorage` (not a cookie, since it is a local display preference, not
+something the server needs to know).
+
+On startup, the project's file modification times are compared against the
+last known record. Any sign of incomplete sync triggers a warning before
+letting the user continue.
+
+### 11.5 Paths
+
+- No absolute path is ever written into code or into the database. Paths
+  are always stored relative to the project, resolved at runtime.
+- The drive letter can change between machines. The application root is
+  located from the running file's own position, never a fixed letter.
+- Any path containing spaces, including the application's own folder,
+  needs quoting in generated commands.
+
+## 12. Implementation status
+
+The system is complete through phase 38 (several collections in one
+Project, cited acts and topic search, documentation for people outside
+IT), with the full test suite passing (1197 tests as of this
+document). Phase-by-phase
+detail, including every user-requested deviation from this specification
+and why, lives in [CHANGELOG.md](../CHANGELOG.md) — this section
+intentionally does not duplicate that history.
+
+Since phase 38 the user-facing documentation (README ×3, manual ×3,
+`demo/README.md`, `tools/README.md`, `docs/TECHNICAL` ×3) is written for
+people outside IT and held to a language rule by
+`tests/test_phase38_docs.py`: no em or en dash as an aside, straight
+quotes, no ellipsis character, no inflated vocabulary. This specification,
+the CHANGELOG, the plans and the specs are technical history and stay
+outside that rule.
+
+Known, deliberate departures from earlier drafts of this specification,
+still true as of phase 17:
+
+- **Updating a collection was not in the original design.** Section 5's
+  step 0, the `removed_file` table, the `file.mtime` column and the
+  "Update collection" screen were added in phase 17. The eight numbered
+  steps were left as they were: the update returns the database to a
+  state they already handled, rather than becoming a step of its own.
+- **Sheet references are renumbered from the divergence point** on an
+  update, not recomputed for the whole group. The original specification
+  did not contemplate a group being processed in more than one pass.
+- **The artifacts now carry a record of what they describe**
+  (`artifact_state`, section 6). The original design treated generation as
+  a terminal step and never asked whether its output was still current —
+  which it stops being the moment any later step runs.
+
+- **Local model choice.** Section 10.2's original VRAM-tiered `qwen2.5`
+  table was replaced by a single fixed default (`qwen3.5:4b`) with an
+  optional user override that takes effect — see section 10.2 for the
+  current rule.
+- **Execution logs sync with the rest of the output folder**
+  (`<output_folder>/logs/execution.log`), which section 11.1's original
+  draft listed as machine-local; the table in this document already
+  reflects the corrected behavior.
+- **Intermediate file cleanup** (`converted/`/`blocks/`, deletable from the
+  Result screen) was not in the original design; see section 6.
+- **The GPU/sensor telemetry, parallelism, and quality/benchmark
+  reporting** described in sections 5, 6 and 10.1 were added in phase 13,
+  after the phases originally scoped in section 9.

@@ -1,0 +1,15 @@
+{# One <li> per event, with nothing around them.
+
+   Included by `_log.html` for the first load and returned on its own by
+   `/run/log?since=<id>` so the Execution screen can *append* new lines
+   instead of rebuilding the whole panel — see `log_fragment` in `app.py`.
+
+   `data-event-id` is what makes that work: the screen reads the last one
+   it holds and asks only for what came after it. #}
+{% for evento in eventos %}
+<li class="log-{{ evento.level }}" data-log-level="{{ evento.level }}" data-event-id="{{ evento.id }}">
+  <span class="log-time">{{ datetime(evento.created_at) }}</span>
+  <span class="log-step">{{ t('step.' + evento.step + '.title') if evento.step in known_steps else evento.step }}</span>
+  <span class="log-message">{{ evento.message }}</span>
+</li>
+{% endfor %}

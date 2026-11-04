@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('activity.busy.title') }} · {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('activity.busy.title') }}</h1>
+<div class="errors">
+  <p>{{ t('activity.busy.message', operation=operation) }}</p>
+</div>
+{# The person can stop it from here too, not only wait. #}
+<form method="post" action="/projects/{{ project_id }}/operation/stop" data-no-wait
+      hx-post="/projects/{{ project_id }}/operation/stop" hx-swap="none" style="display:inline">
+  <button type="submit" class="button-danger">{{ m.icon('pause') }} {{ t('activity.stop') }}</button>
+</form>
+<p><a href="/projects/{{ project_id }}/result" class="button">&larr; {{ t('activity.busy.back') }}</a></p>
+{% endblock %}

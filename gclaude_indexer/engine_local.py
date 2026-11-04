@@ -1,0 +1,1969 @@
+# GClaude Indexer — document collection indexer
+# Copyright (C) 2026  Alex Camacho Castilho
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version. See the LICENSE file for details.
+
+"""`local` engine (spec section 5, step 6) — open model served by Ollama at
+`http://127.0.0.1:11434`. No account, no API key, no external network: the
+host is fixed to loopback and never comes from external configuration. A
+connection failure falls back to the `rules` engine, with a warning — it
+never brings the run down.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+from .classification import (
+    CLASSIFICATION_BATCH_SECONDS, WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages,
+    item_to_dict, validate_item,
+    page_order, starts_new_document,
+)
+from .config import ProjectConfig
+from .db import BatchWriter
+from .events import record_event
+from .i18n import nested
+from .import_items import RAW_ITEMS_FILE_NAME
+from .engine_rules import RulesEngine, load_rules
+from .gpu_budget import server_environment
+from .html_text import STRUCK_MARK
+from . import ollama_backend
+from .subprocess_utils import start_in_background
+from . import planalto
+from .paths import machine_local_folder
+from .tools import find as find_tool
+
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+# Was 120. A full window in the per-page mode answers ~1,800
+# tokens; on a 6 GB laptop card running hot (84 °C) that took
+# 40 s on average and past 120 s on the heavy ones, which then timed out,
+# restarted Ollama and started the same window over. This is a hang
+# detector, not a pace target.
+GENERATION_TIMEOUT_S = 300
+# What a server this program brings up prints goes here instead of
+# nowhere, so the cause of a crash can be read afterwards.
+OLLAMA_SERVE_LOG_NAME = "ollama-serve.log"
+PING_TIMEOUT_S = 5
+# Explicit user request: when Ollama does not respond, try to restart the
+# server on our own before giving up and falling back to the 'rules' engine.
+OLLAMA_RESTART_ATTEMPTS = 3
+WAIT_BETWEEN_ATTEMPTS_S = 4.0
+
+# By explicit user decision, the 'local' engine always uses this model, on
+# any machine — the hardware table from section 10.2 (phase 7) still exists
+# for diagnostics/reporting, but no longer decides the model used here. Only
+# a manual choice in `modelo_local` (form) overrides this.
+#
+# Version 1.0.1 moved the default from `gemma4:e4b` to `qwen3.5:4b`, on the
+# benchmark this project ran over the same windows of a 31-page document,
+# every model fully resident on an 8 GB card:
+#
+#   qwen3.5:4b     3.0 GB   100% of types filled    30.8 s/window
+#   gemma4:e4b     3.1 GB    79.5%                  38.5 s/window
+#   qwen3.5:9b     5.3 GB    79.5%                  86.2 s/window
+#   qwen3:8b       5.4 GB   100%                   108.8 s/window
+#   granite4.2:8b  5.7 GB   100%                   116.9 s/window
+#
+# `qwen3.5:4b` wins on both axes at once — best quality, fastest — and it is
+# also the smallest download by far: `gemma4:e4b` pulls ~9.6 GB from Ollama
+# even though only ~3.1 GB is resident, so the switch cuts the first-run
+# download roughly threefold and fits a 6 GB card as comfortably as an 8 GB
+# one. `gemma4:e4b` remains selectable in the form for comparison; it is no
+# longer downloaded by the installer.
+DEFAULT_LOCAL_MODEL = "qwen3.5:4b"
+
+# A card with 8 GB or more of VRAM holds the 9B model whole, and the
+# bigger model reads names, signatures and dates better. Cards of 6 GB or
+# less keep `qwen3.5:4b`: measured on a 6 GB laptop card, every larger
+# model tried (bonsai-2:9b, ornith-1.5:9b, qwen3-vl:8b) spilled into system
+# RAM and ran 2x to 9x slower, some failing windows. 8 GB cards report a
+# little under 8192 MB, hence the margin.
+LARGE_LOCAL_MODEL = "qwen3.5:9b"
+LARGE_MODEL_MIN_VRAM_MB = 7680
+
+_vram_cache: list[int] = []
+
+
+def gpu_vram_mb() -> int:
+    """Total VRAM of the dedicated graphics card, in MB (0 without one).
+    Measured once per process."""
+    if not _vram_cache:
+        vram = 0
+        try:
+            from . import hardware
+
+            gpu = hardware._detect_nvidia_gpu() or hardware._detect_wmi_gpu()
+            vram = int(gpu.vram_mb) if gpu else 0
+        except Exception:
+            vram = 0
+        _vram_cache.append(vram)
+    return _vram_cache[0]
+
+
+def recommended_local_model(vram_mb: int | None = None) -> str:
+    """`qwen3.5:9b` for a card with 8 GB of VRAM or more, `qwen3.5:4b`
+    otherwise."""
+    if vram_mb is None:
+        vram_mb = gpu_vram_mb()
+    return LARGE_LOCAL_MODEL if vram_mb >= LARGE_MODEL_MIN_VRAM_MB else DEFAULT_LOCAL_MODEL
+
+# NOTE (do not translate): this prompt is sent verbatim to the local model,
+# and the project owner's collections are in Portuguese. Translating it would
+# change classification behavior — it's a behavior knob, not code — so it
+# stays in Portuguese on purpose.
+_PROMPT = """\
+Você é um classificador de peças de um acervo documental.
+{context}
+Abaixo está o \
+texto de uma janela: um trecho contínuo de páginas, cada uma rotulada por \
+sua referência citável (ex. "f. 12" ou "p. 5") e pelo nome do arquivo de \
+origem.
+
+Identifique as peças (documentos individuais) contidas neste texto. Uma \
+peça pode ocupar uma ou mais páginas consecutivas. Responda SOMENTE com um \
+objeto JSON, sem nenhum texto fora dele, neste formato exato:
+
+{{"items": [
+  {{"ref_start": "<referência que aparece literalmente no texto>",
+   "ref_end": "<referência que aparece literalmente no texto>",
+   "type": "<tipo do documento em MAIÚSCULAS, adequado a este acervo, ou null>",
+   "date": "<AAAA-MM-DD ou null>",
+   "author": "<autor ou null>",
+   "summary": "<frase curta ou null>",
+   "has_table": true ou false,
+   "has_image": true ou false,
+   "confidence": "high", "medium" ou "low"}}
+]}}
+
+Regras:
+- ref_inicial e ref_final têm que ser referências que aparecem literalmente \
+no texto abaixo — nunca invente uma.
+- data só em ISO (AAAA-MM-DD); sem data clara no texto, use null.
+- confianca "low" quando você não tiver certeza do tipo ou dos limites \
+da peça; nunca finja certeza.
+- Não copie o texto inteiro no resumo — uma frase basta.
+- COBERTURA TOTAL, esta é a regra mais importante: TODA página listada \
+abaixo tem de estar dentro de exatamente uma peça. Some as faixas que você \
+devolver — elas precisam cobrir da primeira à última página, sem buraco e \
+sem sobreposição. Uma página que não aparece em nenhuma peça é informação \
+PERDIDA para quem for consultar este índice depois. Se um trecho for \
+irrelevante ou você não souber nomeá-lo, devolva-o mesmo assim como uma \
+peça com "type": null e um resumo do que há ali — nunca o omita.
+- UMA PEÇA POR UNIDADE DE ASSUNTO. Uma peça é o menor trecho que alguém \
+procuraria inteiro: um documento, um exame, um capítulo, uma seção com \
+título próprio. Páginas seguidas que continuam o MESMO assunto formam uma \
+peça só; um assunto novo começa uma peça nova. Os dois extremos são \
+igualmente errados: fatiar um assunto contínuo em peças de uma ou duas \
+páginas, e juntar assuntos distintos numa peça gigante que obriga a ler \
+tudo para achar qualquer coisa.
+- O "summary" é o que será lido para decidir se vale abrir esta página. \
+Escreva-o para responder "o que exatamente está aqui": cite os nomes, \
+números, exames, artigos ou temas que aparecem no trecho. Um resumo \
+genérico ("continuação do texto", "informações diversas") torna a peça \
+inútil no índice.
+- Preencha "type" sempre que o documento permitir reconhecê-lo, usando os \
+tipos que fazem sentido para ESTE acervo (veja o contexto acima, quando \
+houver). Use null apenas quando o trecho realmente não permitir dizer o \
+que é.
+
+Texto da janela:
+{text}
+"""
+
+
+class OllamaConnectionError(Exception):
+    """Ollama did not respond on 127.0.0.1:11434 — reason to fall back to
+    the `rules` engine, never to bring the run down."""
+
+
+class ModelAnswerError(Exception):
+    """Ollama is up and answered, but with an error about *this* prompt,
+e.g. "prediction aborted, token repeat limit reached" when the
+    model loops on garbled text. Not an outage: restarting Ollama or sending
+    the same window again gets the same answer. The window is split instead
+    (`_classify_in_parts`)."""
+
+
+# Words every "prompt too long" error from Ollama carries. Strings found in
+# the 0.40.13 binary: "the input length exceeds the context length", "input
+# exceeds maximum context length and cannot be truncated further", "exceeds
+# the model's maximum context length", and the one measured here
+# with `truncate: false` at `num_ctx` 4096 — HTTP 400, `request
+# (10289 tokens) exceeds the available context size (4096 tokens), try
+# increasing it`. Any other error about the prompt stays a
+# `ModelAnswerError`.
+_PROMPT_TOO_LONG_MARKERS = ("exceed", "context")
+_PROMPT_TOKENS_IN_ERROR = re.compile(r"\((\d+) tokens\)")
+
+
+class PromptTooLongError(ModelAnswerError):
+    """Ollama refused the prompt because it does not fit `num_ctx` (fase 36:
+    the request carries `truncate: false`, so a window that does not fit is
+    refused instead of cut to half in silence). `tokens` is the prompt's
+    real size when the error text says it (0.40.13 does), else 0. Handled
+    inside `_classify_pages`: the context grows, then the window splits —
+    never `_classify_in_parts` straight away."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        found = _PROMPT_TOKENS_IN_ERROR.search(message or "")
+        self.tokens = int(found.group(1)) if found else 0
+
+
+def _try_restart_ollama(
+    conn: sqlite3.Connection, local_engine: "LocalEngine", language: str | None = None
+) -> bool:
+    """Explicit user request: before giving up on the 'local' engine because
+    Ollama is not responding, check why and try to restart the server on our
+    own, up to `OLLAMA_RESTART_ATTEMPTS` times. Returns `True` if Ollama
+    started responding again."""
+    ollama_path = find_tool("ollama")
+    if not ollama_path:
+        record_event(conn, "classification", "warning", "log.local_engine.ollama_binary_missing", language=language)
+        return False
+
+    record_event(
+        conn, "classification", "warning", "log.local_engine.restarting",
+        {"url": local_engine.url_base, "path": ollama_path, "attempts": OLLAMA_RESTART_ATTEMPTS},
+        language=language,
+    )
+
+    for attempt in range(1, OLLAMA_RESTART_ATTEMPTS + 1):
+        try:
+            # With the VRAM settings applied: Ollama reads them once, at
+            # server startup, so a server we bring up ourselves is the one
+            # chance to set them from here (`install.ps1` writes the same
+            # values as user environment variables, for the server Windows
+            # starts on its own).
+            start_in_background(
+                [ollama_path, "serve"], env=server_environment(),
+                log_path=machine_local_folder() / OLLAMA_SERVE_LOG_NAME,
+            )
+        except OSError as exc:
+            record_event(
+                conn, "classification", "warning", "log.local_engine.restart_attempt_failed_to_start",
+                {"attempt": attempt, "total": OLLAMA_RESTART_ATTEMPTS, "error": str(exc)},
+                language=language,
+            )
+            continue
+
+        time.sleep(WAIT_BETWEEN_ATTEMPTS_S)
+
+        if local_engine.is_available():
+            record_event(
+                conn, "classification", "info", "log.local_engine.restart_succeeded",
+                {"attempt": attempt, "total": OLLAMA_RESTART_ATTEMPTS}, language=language,
+            )
+            return True
+
+        record_event(
+            conn, "classification", "warning", "log.local_engine.restart_attempt_timed_out",
+            {"attempt": attempt, "total": OLLAMA_RESTART_ATTEMPTS}, language=language,
+        )
+
+    record_event(
+        conn, "classification", "warning", "log.local_engine.restart_gave_up",
+        {"attempts": OLLAMA_RESTART_ATTEMPTS}, language=language,
+    )
+    return False
+
+
+def model_to_use(conn: sqlite3.Connection | None, config: ProjectConfig) -> str:
+    """Model the 'local' engine will use.
+
+    The user's choice in the form wins; `DEFAULT_LOCAL_MODEL` is just the
+    default. This function used to ignore `config.local_model` and always
+    return the default — the selector on the screen was decorative. It
+    started to matter when the user asked to compare the quality of
+    different models, which is impossible if every run uses the same one.
+    """
+    chosen = (config.local_model or "").strip()
+    if chosen and chosen != "automatic":
+        return chosen
+    recommended = recommended_local_model()
+    if recommended != DEFAULT_LOCAL_MODEL:
+        # A machine upgraded from an older version may not have the 9B model
+        # yet; the 4B one it already has beats waiting for a download.
+        try:
+            from .web.ollama_models import model_downloaded_on_disk
+
+            if not model_downloaded_on_disk(recommended) and model_downloaded_on_disk(DEFAULT_LOCAL_MODEL):
+                return DEFAULT_LOCAL_MODEL
+        except Exception:
+            pass
+    return recommended
+
+
+def _num_gpu_for(processing_mode: str) -> int:
+    """Value of Ollama's `options.num_gpu` according to the processing mode
+    chosen by the user in the project (the "Processamento" field, explicit
+    request): -1 uses as much GPU as possible and overflows the rest to RAM
+    (default and "gpu" mode); 0 forces CPU/RAM, even with a GPU available.
+
+    `-1` is the *starting point*, not the final value: on the GPU path
+    `LocalEngine` replaces it with a measured layer count when it can read
+    the card and the model (see `gpu_budget.py`), because `-1` leaves the
+    decision to Ollama's deliberately conservative scheduler and measurably
+    leaves VRAM unused.
+    """
+    return 0 if processing_mode == "cpu" else -1
+
+
+# Characters per token, for sizing the context window. Deliberately low
+# (real ratios for Portuguese prose run nearer 4): overestimating the token
+# count costs a slightly larger context, while underestimating it silently
+# truncates the window and the model classifies a document whose end it
+# never saw.
+_CHARS_PER_TOKEN = 3.0
+
+# Piso da calibração. Uma razão abaixo disto não descreve texto nenhum —
+# é resposta corrompida ou telemetria absurda — e aceitá-la infla o
+# contexto de todas as janelas seguintes, já que ele só cresce.
+_CHARS_PER_TOKEN_FLOOR = 1.2
+
+# Folga para reconhecer a assinatura do truncamento. O Ollama 0.34 corta o
+# prompt em exatamente metade do `num_ctx`, medido em 1026/2048,
+# 1538/3072 e 2050/4096 — sempre dois tokens acima da metade exata. 64 é
+# folga larga para uma assinatura que vem com erro de 2.
+_TRUNCATION_TOLERANCE = 64
+
+# Fase 36: with `truncate: false` a current Ollama refuses an oversize
+# prompt, so a server that still cuts is an old one — and on it the
+# signature alone is treated as a failed attempt. To keep an honest prompt
+# that merely lands near `num_ctx / 2` from paying a whole attempt, the
+# signature only counts when the calibrated estimate of the prompt is at
+# least this many times what the model read: a real cut leaves the read
+# part at half the prompt or less, so the ratio is ≥ 1.4 even with the
+# estimate 30% optimistic, while an honest prompt sits between 0.8 and 1.3.
+_TRUNCATION_RATIO = 1.35
+
+# Room for the model's own answer on top of the prompt.
+#
+# 1024 was sized for the ranges mode, whose reply is a handful of items. The
+# per-page mode answers with one object per page — nine fields each — and on
+# an 8-page window that runs past this budget. When it does, the JSON is cut
+# off mid-object and every page after the cut disappears from the answer.
+#
+# Measured on the 31-page report, and the correlation is the whole story:
+#
+#   granite4.2:8b   0 windows short of pages -> 100% of items typed
+#   qwen3:8b        2 windows short          ->  50% typed
+#   qwen3.5:4b      4 windows short          ->  16% typed
+#
+# It reads like the smaller models being worse at the task. They were being
+# cut off. `_response_tokens_for` sizes the budget by what is actually being
+# asked for.
+_RESPONSE_TOKENS = 1024
+
+# Per page, in the per-page mode: nine short fields plus JSON punctuation,
+# with room for a two-sentence `detail`. Measured at 90-130 tokens on real
+# answers; 220 leaves the margin that matters, since running out truncates
+# and losing a page is the one outcome this system must not have.
+_RESPONSE_TOKENS_PER_PAGE = 220
+
+
+def _response_tokens_for(page_count: int = 0) -> int:
+    """Tokens to reserve for the answer. `page_count` of 0 means the ranges
+    mode, whose reply does not grow with the window."""
+    if page_count <= 0:
+        return _RESPONSE_TOKENS
+    return max(_RESPONSE_TOKENS, page_count * _RESPONSE_TOKENS_PER_PAGE)
+
+# Context sizes are rounded up to a multiple of this — a stable value
+# across windows of slightly different lengths means Ollama keeps one
+# loaded model instead of reloading it whenever the prompt grows by a
+# sentence.
+_CONTEXT_GRANULARITY = 1024
+
+# Ollama's own default when `num_ctx` is not sent. A prompt longer than
+# this is silently truncated, which is why the context is now computed and
+# sent explicitly instead of left out.
+_OLLAMA_DEFAULT_CONTEXT = 4096
+
+
+def _looks_truncated(generation: "Generation", estimated_prompt_tokens: int = 0) -> bool:
+    """Se o Ollama cortou este prompt. Com `estimated_prompt_tokens` (a
+    estimativa calibrada do prompt enviado), a assinatura só vale quando a
+    estimativa é ≥ `_TRUNCATION_RATIO` vezes o lido — ver a constante.
+
+    Comportamento observado, não documentado: quando o prompt não cabe, o
+    Ollama o trunca para metade do contexto pedido. É comportamento interno
+    e pode mudar de versão — por isso ele NUNCA decide sozinho se a janela
+    falhou (esse critério é o número de linhas devolvidas, em
+    `_classify_pages`). Serve para escolher o próximo `num_ctx` e para
+    descartar uma calibração que ensinaria a razão errada.
+    """
+    if not generation.context or not generation.prompt_tokens:
+        return False
+    if abs(generation.prompt_tokens - generation.context / 2) > _TRUNCATION_TOLERANCE:
+        return False
+    if estimated_prompt_tokens > 0:
+        return estimated_prompt_tokens >= _TRUNCATION_RATIO * generation.prompt_tokens
+    return True
+
+
+def context_tokens_for(
+    prompt: str,
+    model_limit: int = 0,
+    page_count: int = 0,
+    chars_per_token: float = _CHARS_PER_TOKEN,
+) -> int:
+    """Context size to request for `prompt`.
+
+    Never below Ollama's own default, so this can only ever widen the
+    window, never narrow it; never above what the model itself supports,
+    when that is known.
+
+    `page_count` is the number of pages the answer has to describe, in the
+    per-page mode — the reply grows with it, and a budget that does not
+    grow along truncates the answer (see `_RESPONSE_TOKENS_PER_PAGE`).
+    """
+    estimated = int(len(prompt) / chars_per_token) + _response_tokens_for(page_count)
+    rounded = -(-estimated // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+    wanted = max(_OLLAMA_DEFAULT_CONTEXT, rounded)
+    if model_limit and model_limit > 0:
+        wanted = min(wanted, model_limit)
+    return wanted
+
+
+@dataclass
+class Generation:
+    """O que uma chamada ao Ollama devolveu, com a telemetria junto.
+
+    `prompt_tokens` é `prompt_eval_count`: quantos tokens do prompt o
+    modelo realmente leu, contados pelo tokenizador dele. Quando é menor
+    que o prompt enviado, o prompt foi cortado — e essa é a única forma de
+    saber, já que o Ollama trunca em silêncio e a versão 0.34 não expõe
+    endpoint de tokenização.
+    """
+
+    text: str
+    prompt_tokens: int = 0
+    response_tokens: int = 0
+    context: int = 0
+
+
+@dataclass
+class LocalEngine:
+    model: str
+    # A factory, not a plain default: a dataclass default is bound when the
+    # class is defined, and the test suite replaces `OLLAMA_BASE_URL` with a
+    # closed port so that no test ever reaches the Ollama of the machine it
+    # runs on (fase 37). In production the two are the same value.
+    url_base: str = field(default_factory=lambda: OLLAMA_BASE_URL)
+    timeout: int = GENERATION_TIMEOUT_S
+    num_gpu: int = -1
+    # Explicit context size. `None` means "let Ollama use its default",
+    # which is 4096 tokens and silently truncates a longer window —
+    # `plan_gpu_use()` computes a real value from the prompt on the first
+    # call.
+    num_ctx: int | None = None
+    # The project, so the prompt can say what this collection *is*. Kept
+    # optional: `LocalEngine` is constructed directly in several tests, and
+    # a missing config simply means the prompt has no context block — the
+    # exact behaviour this class had before `build_context` existed.
+    config: "ProjectConfig | None" = None
+    # "uma linha por página" em vez de "enumere as faixas". Ver
+    # `_PAGE_PROMPT`: modelos pequenos leem bem uma página e erram a
+    # aritmética de um particionamento, e a cobertura do índice é o
+    # requisito que não admite erro.
+    per_page: bool = True
+    # Warnings from the last call to `classify()` — items rejected because of
+    # an unrecognized reference. `classify_pending`
+    # reads this right after calling `classify()` to record an event; it is
+    # not part of the common `ClassificationEngine` interface (only
+    # `LocalEngine` exposes it). Each entry is (i18n key, params) — Task 12
+    # — rendered by `_log_rejection_warnings`, not pre-rendered
+    # text, so the final log event follows the interface's language.
+    last_window_warnings: list[tuple[str, dict]] = field(default_factory=list)
+    # Fase 36: what happened to the last window's context — raised to fit
+    # it whole, or split by size before/after asking — as (i18n key,
+    # params), at `info` level. Same contract as `last_window_warnings`;
+    # `classify_pending` turns them into events and counts them.
+    last_window_notes: list[tuple[str, dict]] = field(default_factory=list)
+    # Filled by `plan_gpu_use()` on the first window and reused after that:
+    # the measurement costs two HTTP calls plus a performance counter read,
+    # and neither the card's capacity nor the model changes during a run.
+    gpu_plan: dict | None = field(default=None, repr=False)
+    _planned: bool = field(default=False, repr=False)
+    # A razão caracteres/token deste acervo, aprendida durante a corrida.
+    # `_CHARS_PER_TOKEN` é só a semente da primeira janela, quando ainda não
+    # há medição. Guardamos o MÍNIMO observado, e não a média, pela mesma
+    # assimetria que justificava a constante: superestimar custa um pouco de
+    # VRAM, subestimar custa a janela inteira.
+    _chars_per_token: float = field(default=_CHARS_PER_TOKEN, repr=False)
+    # Maior `num_ctx` que a placa (ou a RAM, sem placa) comporta com o
+    # modelo inteiro. Medido uma vez por corrida (`gpu_budget.
+    # measure_context_ceiling`); `ceiling_details` é o que entrou na conta,
+    # para o log.
+    context_ceiling: int = field(default=0, repr=False)
+    ceiling_details: dict = field(default_factory=dict, repr=False)
+
+    def _measure_ceiling(self) -> int:
+        """O maior contexto que ainda cabe na placa com o modelo inteiro.
+
+        Uma janela que precise de mais que isto é subdividida, e não
+        empurrada para a RAM: um acervo grande tem centenas de janelas, e
+        uma janela seis vezes mais lenta multiplicada por algumas centenas
+        custa horas.
+
+        Fase 36: calculado da VRAM livre e do custo do KV por token, em vez
+        da lista fixa que parava em 16384. Numa rodada num acervo grande
+        (RX 6700 XT) o teto fixo deixava gigabytes da placa parados enquanto
+        parte dos pedidos era cortada pelo Ollama; a mesma conta dá 131072
+        nessa placa, e as janelas de 20 a 26 mil tokens cabem inteiras. Em modo "cpu" o teto vem
+        da RAM (`use_gpu=False`).
+        """
+        if self.context_ceiling:
+            return self.context_ceiling
+        from . import gpu_budget
+
+        try:
+            teto, detalhes = gpu_budget.measure_context_ceiling(
+                self.model, self.url_base, use_gpu=self.num_gpu != 0
+            )
+        except Exception:
+            teto, detalhes = _OLLAMA_DEFAULT_CONTEXT, {"source": "none", "reason": "erro"}
+        self.context_ceiling = int(teto) or _OLLAMA_DEFAULT_CONTEXT
+        self.ceiling_details = dict(detalhes or {})
+        return self.context_ceiling
+
+    def _calibrate(self, prompt: str, generation: "Generation") -> None:
+        """Aprende a razão caracteres/token com o que o modelo acabou de ler.
+
+        Só vale para a chamada íntegra: num prompt truncado,
+        `prompt_eval_count` conta o pedaço que sobrou, e a razão calculada
+        sobre o prompt inteiro sairia otimista — exatamente o erro que se
+        quer corrigir.
+        """
+        if not generation.prompt_tokens or _looks_truncated(generation):
+            return
+        observada = len(prompt) / generation.prompt_tokens
+        self._chars_per_token = max(
+            _CHARS_PER_TOKEN_FLOOR, min(self._chars_per_token, observada)
+        )
+
+    def plan_gpu_use(self, prompt: str, page_count: int = 0, minimum: int = 0) -> dict | None:
+        """Replaces `num_gpu = -1` with a measured layer count.
+
+        Runs on the first window and again whenever a later window needs
+        more context than the one measured so far. Returns the details of
+        the decision (for the log) or `None` when nothing could be measured
+        and the previous behaviour stands.
+
+        It used to run exactly once, sizing the whole run by the first
+        window. A denser window further in then overflowed the context the
+        first one had asked for, Ollama truncated the answer, the JSON came
+        back unclosed and the parser got zero rows — the window reached the
+        index with no classification at all, in a noticeable share of the
+        windows of a large run.
+
+        The context only ever grows. A `num_ctx` that oscillates makes
+        Ollama reload the model between windows, which is what the single
+        measurement was avoiding in the first place.
+
+        In "cpu" mode (`num_gpu == 0`) the layer count is never measured —
+        that is the user asking for the CPU on purpose — but `num_ctx` is
+        still sized here (fase 36): until then this path returned before
+        setting it, the request went out without `num_ctx`, and Ollama's
+        4096 default cut every full window in silence. The ceiling on
+        that path comes from the RAM (`measure_context_ceiling(use_gpu=
+        False)`).
+        """
+        context = context_tokens_for(
+            prompt, page_count=page_count, chars_per_token=self._chars_per_token
+        )
+        context = max(context, minimum)
+        teto = self._measure_ceiling()
+        if teto:
+            context = min(context, teto)
+        if self.num_gpu == 0:
+            if context > (self.num_ctx or 0):
+                self.num_ctx = context
+            return self.gpu_plan
+        if self._planned and context <= (self.num_ctx or 0):
+            return self.gpu_plan
+        self._planned = True
+
+        try:
+            from .gpu_budget import plan
+
+            layers, details = plan(self.model, self.url_base, context)
+        except Exception:
+            # A measurement that fails must cost nothing: the run carries
+            # on with `-1`, exactly as it did before this existed.
+            return None
+
+        self.num_ctx = context
+        if layers is not None:
+            self.num_gpu = layers
+        details["context_ceiling"] = teto
+        self.gpu_plan = details
+        return details
+
+    def classify_per_page(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
+        """Uma linha por página, agrupadas em peças pelo código.
+
+        A cobertura sai garantida por construção: `_group_pages_into_items`
+        percorre as páginas da janela, não as linhas que o modelo devolveu,
+        então uma página que ele esqueceu entra no índice de qualquer
+        forma — com o que se souber dela.
+        """
+        self.last_window_warnings = []
+        self.last_window_notes = []
+        return self._classify_pages(pages)
+
+    def _classify_pages(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
+        """A janela inteira primeiro; o contexto sobe até ela caber; só
+        então ela é dividida.
+
+        Fase 36, numa rodada num acervo grande: parte dos pedidos eram
+        janelas de 20–26 mil tokens num `num_ctx` de 16384. O Ollama as cortava pela
+        metade em silêncio, o modelo respondia sobre meia janela, a guarda
+        `linhas < páginas` dividia — e cada uma tinha pago ~70 s por uma
+        tentativa que não podia dar certo. Agora: (1) se a estimativa
+        calibrada já passa do teto, a janela é dividida antes de qualquer
+        pedido; (2) o pedido leva `truncate: false`, e a recusa do Ollama
+        (ou, num servidor antigo, a assinatura do corte) é falha da
+        tentativa, nunca resposta aceita; (3) a falha sobe o `num_ctx` até
+        o necessário e repete a janela inteira; (4) só quando nem o teto
+        basta ela é dividida. O gatilho final continua `linhas < páginas`.
+        """
+        prompt = _build_page_prompt(pages, self.config)
+        total = len(pages)
+        teto = self._measure_ceiling()
+        precisa = context_tokens_for(prompt, page_count=total, chars_per_token=self._chars_per_token)
+        if teto and precisa > teto and total > 1:
+            self.last_window_notes.append((
+                "log.local_engine.window_split_for_size",
+                {"pages": total, "needed": precisa, "ceiling": teto},
+            ))
+            meio = total // 2
+            return self._classify_pages(pages[:meio]) + self._classify_pages(pages[meio:])
+
+        self.plan_gpu_use(prompt, page_count=total)
+        rows, alvo = self._attempt(prompt, total)
+
+        # `alvo` above the ceiling is an exact count (the server said how
+        # many tokens the prompt has): no context this machine allows holds
+        # the window, and raising `num_ctx` to the ceiling would only reload
+        # the model to receive the same refusal — and leave a "context
+        # raised" note with nothing read (revisão da fase 36). A guess
+        # (`_context_needed`) never exceeds the ceiling, so it still raises.
+        if len(rows) < total and alvo > (self.num_ctx or 0) and not (teto and alvo > teto):
+            self.plan_gpu_use(prompt, page_count=total, minimum=alvo)
+            self.last_window_notes.append((
+                "log.local_engine.window_context_raised", {"context": self.num_ctx},
+            ))
+            novas, _alvo = self._attempt(prompt, total)
+            if len(novas) > len(rows):
+                rows = novas
+
+        # Ainda faltando e há o que dividir: duas janelas menores cabem
+        # onde uma não coube. As PEÇAS são concatenadas, e não as linhas —
+        # cada metade numera as suas páginas de 1 a N.
+        if len(rows) < total and total > 1:
+            if teto and alvo >= teto:
+                self.last_window_notes.append((
+                    "log.local_engine.window_split_for_size",
+                    {"pages": total, "needed": alvo, "ceiling": teto},
+                ))
+            meio = total // 2
+            return self._classify_pages(pages[:meio]) + self._classify_pages(pages[meio:])
+
+        faltantes = max(0, len(pages) - len(rows))
+        if faltantes:
+            # Não é motivo para recusar nada — o agrupamento cobre a página
+            # de qualquer modo. É registrado porque distingue um modelo que
+            # respondeu sobre tudo de um que respondeu sobre metade.
+            self.last_window_warnings.append((
+                "log.local_engine.pages_missing_from_answer",
+                {"missing": faltantes, "total": len(pages)},
+            ))
+        return _group_pages_into_items(pages, rows)
+
+    def _attempt(self, prompt: str, page_count: int) -> tuple[list[dict], int]:
+        """Uma tentativa da janela: `(linhas, contexto que ela pediria)`.
+
+        O segundo valor é 0 quando a resposta cobriu todas as páginas. Uma
+        recusa por tamanho (`PromptTooLongError`) ou a assinatura do corte
+        num servidor antigo valem como zero linhas — a resposta a um prompt
+        cortado nunca é aceita, mesmo com o número certo de linhas. A
+        calibração só aprende com uma chamada íntegra.
+        """
+        teto = self._measure_ceiling()
+        try:
+            generation = self._generate(prompt)
+        except PromptTooLongError as exc:
+            if exc.tokens:
+                # Exact: returned uncapped, so that a count above the ceiling
+                # is recognisable as "does not fit at all" by the caller.
+                alvo = exc.tokens + _response_tokens_for(page_count)
+                return [], -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+            alvo = (self.num_ctx or _OLLAMA_DEFAULT_CONTEXT) * 2
+            alvo = -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+            return [], min(alvo, teto) if teto else alvo
+
+        estimativa = int(len(prompt) / self._chars_per_token)
+        if _looks_truncated(generation, estimativa):
+            return [], self._context_needed(generation, page_count)
+        self._calibrate(prompt, generation)
+        rows = _pages_json(generation.text)
+        if len(rows) < page_count:
+            return rows, self._context_needed(generation, page_count)
+        return rows, 0
+
+    def _context_needed(self, generation: "Generation", page_count: int) -> int:
+        """O contexto que esta janela pedia, lido da tentativa que falhou.
+
+        Quando o prompt foi cortado não dá para saber de quanto ele
+        precisava — `prompt_eval_count` conta só o pedaço lido. Dobrar o
+        contexto é o passo que cobre a maior janela deste acervo numa
+        tentativa só: 4096 vira 8192, e a janela de 5091 tokens cabe.
+        """
+        if _looks_truncated(generation):
+            alvo = generation.context * 2
+        else:
+            alvo = generation.prompt_tokens + _response_tokens_for(page_count)
+        alvo = -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
+        teto = self._measure_ceiling()
+        return min(alvo, teto) if teto else alvo
+
+    def is_available(self) -> bool:
+        request = urllib.request.Request(f"{self.url_base}/api/version", method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=PING_TIMEOUT_S) as response:
+                response.read()
+            return True
+        except (urllib.error.URLError, OSError, TimeoutError):
+            return False
+
+    def classify(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
+        if self.per_page:
+            return self.classify_per_page(pages)
+        prompt = _build_prompt(pages, self.config)
+        self.plan_gpu_use(prompt)
+        response_text = self._generate(prompt).text
+        raw_items = _extract_items_json(response_text)
+        reference_map = _reference_map(pages)
+
+        items: list[ClassifiedItem] = []
+        warnings: list[tuple[str, dict]] = []
+        for raw in raw_items:
+            item = _dict_to_item(raw, pages, reference_map)
+            if item is None:
+                reason = _reference_rejection_reason(raw, reference_map)
+                if reason:
+                    warnings.append(reason)
+                continue
+            items.append(item)
+
+        if raw_items and len(warnings) == len(raw_items):
+            warnings.append((
+                "log.local_engine.all_items_rejected",
+                {"model": self.model, "count": len(raw_items)},
+            ))
+
+        self.last_window_warnings = warnings
+        return items
+
+    def _generate(self, prompt: str) -> Generation:
+        options: dict = {
+            "temperature": 0,
+            # How many of the model's layers run on the GPU. `-1` asks
+            # Ollama to decide, which is what this used to send always;
+            # `plan_gpu_use()` normally replaces it with a measured count
+            # that fills the card instead of leaving VRAM idle behind
+            # Ollama's own margin. `0` forces CPU/RAM when the project asks
+            # for "cpu" processing, and is never overridden.
+            "num_gpu": self.num_gpu,
+        }
+        if self.num_ctx:
+            # Sent explicitly because Ollama's default (4096) is smaller
+            # than a full window of this project's default settings (16
+            # pages x 2000 characters), and a prompt over the limit is
+            # truncated silently — the model would classify a window whose
+            # end it never received.
+            options["num_ctx"] = self.num_ctx
+
+        body = json.dumps(
+            {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                # Turns off the "thinking" channel for models that have it
+                # (e.g. qwen3, qwen3.5): without this, those models dump the
+                # whole answer into `thinking` and return an empty
+                # `response` — the engine only read `response`, so every
+                # window silently turned into 0 items (Defect 3, Phase 13;
+                # confirmed by running the real prompt against qwen3.5:9b).
+                # Top-level Ollama field, not under `options`; models without
+                # this capability (e.g. gemma4:e4b) ignore it with no effect.
+                "think": False,
+                # Fase 36: a prompt that does not fit `num_ctx` comes back as
+                # an HTTP 400 (`PromptTooLongError`) instead of being cut to
+                # half in silence — measured on 0.40.13. An older server
+                # that ignores the field cuts as before, and the cut is then
+                # caught by its signature (`_looks_truncated`).
+                "truncate": False,
+                "options": options,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.url_base}/api/generate", data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # An HTTP error with Ollama's own JSON body is the model refusing
+            # this prompt, not the server being down.
+            try:
+                message = json.loads(exc.read().decode("utf-8", "replace")).get("error")
+            except Exception:
+                message = None
+            if message and exc.code < 503:
+                lowered = str(message).lower()
+                if all(marker in lowered for marker in _PROMPT_TOO_LONG_MARKERS):
+                    raise PromptTooLongError(str(message)) from exc
+                raise ModelAnswerError(str(message)) from exc
+            raise OllamaConnectionError(f"{self.url_base}: {exc}") from exc
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            raise OllamaConnectionError(f"{self.url_base}: {exc}") from exc
+        # Second safety net for the same "thinking" problem above: if for
+        # some reason (model ignores `think`, old Ollama version) the text
+        # still comes back in `thinking` with an empty `response`, use it
+        # instead of treating the answer as empty.
+        return Generation(
+            text=data.get("response") or data.get("thinking") or "",
+            prompt_tokens=int(data.get("prompt_eval_count") or 0),
+            response_tokens=int(data.get("eval_count") or 0),
+            context=int(options.get("num_ctx") or 0),
+        )
+
+
+# How each `collection_type` reads in the prompt. The stored values are
+# internal keys, and handing "processo" to the model as-is says less than
+# the sentence it stands for.
+_COLLECTION_TYPE_TEXT = {
+    "processo": "processo/dossiê: peças numeradas por folha, em ordem cronológica de juntada",
+    "biblioteca": "biblioteca/acervo bibliográfico: obras e documentos independentes entre si",
+}
+
+# Caps on what goes into the prompt from the project's free-text fields.
+# These are the user's own words, but they share the context window with
+# the pages being classified: a very long instruction would push out the
+# document it is supposed to help read.
+_CONTEXT_FIELD_LIMIT = 700
+
+
+def _clip(text: str, limit: int = _CONTEXT_FIELD_LIMIT) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def build_context(config: ProjectConfig | None) -> str:
+    """The "what am I looking at" block of the prompt, from the project form.
+
+    This is the fix for the largest defect found in the quality review: the
+    Subject, Collection type, Role instructions and Extra rules fields were
+    collected on the New project form, stored, and then used **only** to
+    write `instrucoes-do-projeto.md` — an artifact produced *after*
+    classification. No engine ever showed them to the model.
+
+    What that cost is measurable. A collection of teaching material
+    classified by a prompt whose only worked examples were
+    "OFÍCIO, MEMORANDO, PARECER" came back with almost no item typed at
+    all, because those examples describe an administrative case file and
+    the documents were lecture notes. The model was not failing — it was
+    answering the question it had been asked.
+
+    The user's free text is presented as **context for recognising the
+    documents**, never as the task: `extra_rules` in that same collection
+    said "all current legislation must be observed, as well as case law" —
+    an instruction for the later research use of the index, not something
+    the classifier should try to carry out. The framing below keeps the job
+    unchanged and uses the text only for what it genuinely tells us: what
+    this collection is about.
+
+    Returns `""` when there is nothing to say, which leaves the prompt
+    exactly as it was before this existed.
+    """
+    if config is None:
+        return ""
+
+    lines: list[str] = []
+    subject = _clip(getattr(config, "subject", "") or "")
+    if subject:
+        lines.append(f"- Assunto do acervo: {subject}")
+
+    collection_type = getattr(config, "collection_type", "") or ""
+    description = _COLLECTION_TYPE_TEXT.get(collection_type)
+    if description:
+        lines.append(f"- Natureza do acervo: {description}")
+
+    role = _clip(getattr(config, "role_instructions", "") or "")
+    if role:
+        lines.append(f"- Papel definido para este acervo: {role}")
+
+    rules = _clip(getattr(config, "extra_rules", "") or "")
+    if rules:
+        lines.append(f"- Observações do responsável pelo acervo: {rules}")
+
+    if not lines:
+        return ""
+
+    return (
+        "\nContexto deste acervo (serve para você reconhecer e nomear os "
+        "documentos; NÃO é a sua tarefa, que continua sendo identificar as "
+        "peças do texto abaixo):\n" + "\n".join(lines) + "\n"
+    )
+
+
+# Só entra no prompt quando alguma página tem o marcador: um acervo de PDFs
+# não paga os tokens de uma regra que nunca se aplica a ele.
+_STRUCK_TEXT_NOTE = (
+    "\nTexto entre ~~ e ~~ estava tachado no original: é dispositivo "
+    "revogado, suprimido ou substituído. Ele continua fazendo parte da "
+    "peça, mas não o use como data, tipo ou resumo do que está em vigor.\n"
+)
+
+
+def _prompt_context(pages: list[WindowPage], config: ProjectConfig | None) -> str:
+    context = build_context(config)
+    if any(STRUCK_MARK in page.text for page in pages):
+        context += _STRUCK_TEXT_NOTE
+    return context
+
+
+def _build_prompt(pages: list[WindowPage], config: ProjectConfig | None = None) -> str:
+    blocks = [f"--- {page.reference} ({page.file_name}) ---\n{page.text}" for page in pages]
+    return _PROMPT.format(context=_prompt_context(pages, config), text="\n\n".join(blocks))
+
+
+def _extract_items_json(response_text: str) -> list[dict]:
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        items = data.get("items")
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+    return []
+
+
+_ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SHEET_PREFIX_REGEX = re.compile(r"^fl\.?")
+
+# The reference at the start of what the model returned, ignoring anything
+# it appended. Each page is presented as `--- f. 2 (Arquivo.pdf) ---`, and
+# a model that copies the whole label back — `"ref_start": "f. 2
+# (Arquivo.pdf)"` — has identified the page correctly and written it in a
+# form that exact-string matching rejects. Measured: with the improved
+# prompt, `qwen3:8b` returned one item spanning f. 2 to f. 16 (the whole
+# document, exactly as asked) and every single one was discarded for this,
+# leaving a window with zero items and no visible reason.
+_REFERENCE_HEAD_REGEX = re.compile(r"^\s*((?:f|fl|p|pag|pág)\.?\s*\d+)", re.IGNORECASE)
+
+
+def _normalize_reference(reference: str) -> str:
+    """Comparison key tolerant of case, spacing, the alternate abbreviation
+    'fl.' (folha) for 'f.', and anything the model appended after the
+    reference itself.
+
+    The model may return 'F. 1', 'f.1' or 'fl. 1' for the same 'f. 1'
+    reference in the window, and comparing by exact string equality used to
+    silently discard the whole item. It may also
+    return 'f. 1 (Contrato.pdf)', echoing the label the page was presented
+    under — also a correct identification, and also discarded.
+
+    Never merges different prefixes: 'f. 1' and 'p. 1' remain distinct
+    references, on purpose.
+    """
+    head = _REFERENCE_HEAD_REGEX.match(reference or "")
+    text = head.group(1) if head else (reference or "")
+    text = re.sub(r"\s+", "", text.strip().lower())
+    return _SHEET_PREFIX_REGEX.sub("f.", text)
+
+
+# --- modo "uma linha por página" -------------------------------------------
+#
+# Por que existe um segundo prompt.
+#
+# O prompt principal pede FAIXAS: "devolva as peças, cada uma de ref_start a
+# ref_end". Isso obriga o modelo a fazer contabilidade — enumerar intervalos
+# que, somados, cubram exatamente as páginas da janela, sem buraco e sem
+# sobreposição. Medido em dois benchmarks sobre um relatório de 31 páginas:
+#
+#   janelas de 16 páginas, 5 modelos: cobertura de 0% a 9,7%
+#   janelas de 8 páginas, com o prompt já exigindo cobertura total
+#     explicitamente: qwen3.5:4b e gemma4:e4b cobriram 22,6% cada
+#
+# Cinco modelos de três famílias, o mesmo buraco, e o número idêntico entre
+# modelos diferentes é o que fecha o diagnóstico: não é falta de capacidade
+# de um modelo, é a tarefa que está mal colocada. Um modelo pequeno lê bem
+# uma página; o que ele não faz de forma confiável é fechar a aritmética de
+# um particionamento.
+#
+# Aqui a pergunta muda: para CADA página listada, diga o que há nela. Uma
+# linha por página, nenhuma faixa a calcular. A cobertura passa a ser
+# garantida por construção — se o modelo responde sobre a página, ela está
+# no índice — e o agrupamento em peças vira trabalho do código, que sabe
+# somar. O modelo só informa se a página continua o assunto da anterior.
+_PAGE_PROMPT = """\
+Você é um indexador de um acervo documental.
+{context}
+Abaixo estão {count} páginas de um trecho do acervo, NUMERADAS de 1 a \
+{count}.
+
+Para CADA uma das {count} páginas, devolva um objeto. Exatamente {count} \
+objetos, na mesma ordem. Responda SOMENTE com um objeto JSON neste formato:
+
+{{"pages": [
+  {{"n": <o NÚMERO da página, de 1 a {count} — apenas o número, nada mais>,
+   "subject": "<o assunto desta página: o exame, o documento, a seção ou o \
+tema tratado nela>",
+   "type": "<tipo em MAIÚSCULAS adequado a este acervo, ou null>",
+   "date": "<AAAA-MM-DD, se a página trouxer uma data, senão null>",
+   "author": "<autor/responsável, se a página disser, senão null>",
+   "detail": "<uma ou duas frases dizendo o que exatamente está nesta \
+página: nomes, números, exames, artigos, temas>",
+   "continues": <true se esta página continua o MESMO assunto da anterior, \
+false se começa um assunto novo>,
+   "has_table": <true ou false>,
+   "has_image": <true ou false>}}
+]}}
+
+Regras:
+- "n" é só o número inteiro da página (1, 2, 3...). NUNCA copie o texto da \
+página para dentro de "n", nem de nenhum campo que não seja "detail".
+- Uma linha para cada página, sempre. Página em branco, ilegível ou sem \
+conteúdo relevante também recebe a sua linha, com "subject" dizendo isso.
+- "detail" é o que será lido para decidir abrir esta página: seja \
+específico, cite o que está escrito ali, e use no máximo duas frases. \
+Evite "continuação do texto" ou "informações diversas".
+- "continues": a página 1 é sempre false. Use true quando a página é \
+continuação direta do mesmo documento, exame ou seção da anterior.
+- Nunca copie a página inteira. O JSON tem de ser curto.
+
+Páginas:
+{text}
+"""
+
+
+def _build_page_prompt(pages: list[WindowPage], config: ProjectConfig | None = None) -> str:
+    """As páginas numeradas de 1 a N.
+
+    O número é o que o modelo devolve para identificar a página, em vez da
+    referência citável. Pedir a referência de volta ("copiada exatamente
+    como aparece") foi medido e falhou por completo: `qwen3.5:4b` copiou o
+    texto INTEIRO da página para dentro do campo `ref`, o JSON estourou
+    antes de fechar e o parser recebeu zero linhas — 0% de tipo e uma peça
+    por página. Um inteiro pequeno não tem como ser confundido com o
+    conteúdo, e o código já sabe qual referência corresponde a cada
+    posição.
+    """
+    blocks = [
+        f"--- Página {numero} ({page.reference}, {page.file_name}) ---\n{page.text}"
+        for numero, page in enumerate(pages, start=1)
+    ]
+    return _PAGE_PROMPT.format(
+        context=_prompt_context(pages, config), count=len(pages), text="\n\n".join(blocks)
+    )
+
+
+def _pages_json(response_text: str) -> list[dict]:
+    """As linhas devolvidas pelo modelo, ou `[]`."""
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict):
+        rows = data.get("pages") or data.get("items")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+# Palavras curtas demais para distinguir um assunto de outro.
+_SUBJECT_NOISE = frozenset({"de", "do", "da", "e", "com", "para", "em", "a", "o", "-", "–", "—"})
+
+
+def _subject_key(subject: object) -> str:
+    """Forma comparável de um assunto: minúsculas, sem pontuação nem
+    palavras vazias. Duas páginas da mesma seção escrita com pontuação
+    diferente têm de casar."""
+    if not isinstance(subject, str):
+        return ""
+    limpo = "".join(c if c.isalnum() or c.isspace() else " " for c in subject.lower())
+    palavras = [p for p in limpo.split() if p not in _SUBJECT_NOISE]
+    return " ".join(palavras)
+
+
+def _same_topic_start(a: str, b: str, palavras: int = 2) -> bool:
+    """Se dois assuntos começam pelas mesmas palavras significativas.
+
+    É o que separa "Instalações elétricas bloco A" de "Instalações elétricas
+    bloco B" (mesmo documento, redação diferente) de "Fundação" e "Cobertura"
+    (documentos diferentes).
+    """
+    return bool(a) and bool(b) and a.split()[:palavras] == b.split()[:palavras]
+
+
+def _group_pages_into_items(
+    pages: list[WindowPage], rows: list[dict], model_engine: str = "local"
+) -> list[ClassifiedItem]:
+    """Junta as linhas por página em peças, agrupando páginas seguidas do
+    mesmo assunto.
+
+    O código faz a aritmética que o modelo erra: casa cada linha com a
+    página pela referência, percorre as páginas NA ORDEM DA JANELA (não na
+    ordem em que o modelo respondeu) e fecha uma peça sempre que o assunto
+    muda. Uma página sobre a qual o modelo não disse nada não é perdida —
+    ela entra como continuação da peça em curso, ou abre uma peça própria
+    com o que se souber dela.
+    """
+    # Casa cada linha com a sua página pelo número (1..N). Quem não trouxer
+    # um "n" utilizável entra pela posição na resposta, que é a ordem
+    # pedida — e uma linha que não casar com página nenhuma é simplesmente
+    # ignorada, nunca some com a página dela.
+    por_indice: dict[int, dict] = {}
+    sem_numero: list[dict] = []
+    for row in rows:
+        numero = row.get("n")
+        if isinstance(numero, str) and numero.strip().isdigit():
+            numero = int(numero.strip())
+        if isinstance(numero, int) and not isinstance(numero, bool) and 1 <= numero <= len(pages):
+            por_indice.setdefault(numero - 1, row)
+        else:
+            sem_numero.append(row)
+
+    for posicao, row in enumerate(sem_numero):
+        por_indice.setdefault(posicao, row)
+
+    itens: list[ClassifiedItem] = []
+    atual: list[tuple[WindowPage, dict]] = []
+
+    def fechar():
+        if not atual:
+            return
+        primeira, dados = atual[0][0], atual[0][1]
+        ultima = atual[-1][0]
+        detalhes = [str(d.get("detail") or d.get("subject") or "").strip() for _p, d in atual]
+        detalhes = [d for d in detalhes if d]
+        # Sem detalhe nenhum vindo do modelo, o texto da própria página
+        # ainda leva a busca ao lugar certo.
+        if not detalhes:
+            bruto = " ".join(" ".join(p.text.split()) for p, _d in atual).strip()
+            detalhes = [bruto[:_FALLBACK_SUMMARY_CHARS]] if bruto else []
+        resumo = " ".join(dict.fromkeys(detalhes))[:_SUMMARY_CHAR_LIMIT] or None
+
+        assunto = str(dados.get("subject") or "").strip()
+        if assunto and resumo and not resumo.lower().startswith(assunto.lower()[:20]):
+            resumo = f"{assunto}: {resumo}"[:_SUMMARY_CHAR_LIMIT]
+
+        # Três casos, não dois. Uma página sobre a qual o modelo não disse
+        # NADA entra no índice pelo agrupamento — essa garantia é o que
+        # impede a perda — mas não pode chegar ao relatório com a mesma
+        # confiança de uma linha que ele respondeu pela metade. Sem isso,
+        # centenas de peças cegas saíam como `medium`, o resumo da etapa 6
+        # fechava em `baixa=0` e a nota de qualidade ficava alta demais.
+        respondida = any(linha for _pagina, linha in atual)
+        if dados.get("type") and dados.get("detail"):
+            confianca = "high"
+        elif respondida:
+            confianca = "medium"
+        else:
+            confianca = "low"
+        itens.append(ClassifiedItem(
+            start_ref=primeira.reference,
+            end_ref=ultima.reference,
+            start_order=page_order(primeira),
+            end_order=page_order(ultima),
+            type=str(dados["type"]).strip() if dados.get("type") else None,
+            date=str(dados["date"]).strip() if dados.get("date") else None,
+            author=str(dados["author"]).strip() if dados.get("author") else None,
+            summary=resumo,
+            has_table=any(bool(d.get("has_table")) or p.has_table for p, d in atual),
+            has_image=any(bool(d.get("has_image")) or bool(p.image_count) for p, d in atual),
+            engine=model_engine,
+            confidence=confianca,
+            files=sorted({p.file_name for p, _d in atual}),
+        ))
+        atual.clear()
+
+    anterior_assunto = None
+    for indice, page in enumerate(pages):
+        dados = por_indice.get(indice, {})
+        assunto = _subject_key(dados.get("subject"))
+
+        # O agrupamento é decidido pelo ASSUNTO, não pelo `continues` que o
+        # modelo devolve. Medido: `qwen3.5:4b` identificou impecavelmente os
+        # oito seções de uma janela (fundação, estrutura, cobertura,
+        # instalações, esquadrias, pintura e outras) e marcou
+        # `continues: true` em todos, porque entendeu "continua o mesmo
+        # relatório" e não "o mesmo assunto". A pergunta era ambígua e a
+        # resposta, previsível: comparar dois rótulos é trabalho de código.
+        #
+        # `continues` continua servindo para o caso em que o assunto muda de
+        # redação sem mudar de documento ("Instalações elétricas, bloco A" /
+        # "Instalações elétricas, bloco B"): aí ele desempata, desde que o começo
+        # do assunto coincida.
+        if not atual or starts_new_document(atual[-1][0], page):
+            # Um arquivo de documento inteiro (HTML, DOCX, TXT…) é sempre
+            # uma peça: duas leis seguidas têm o mesmo "assunto" para o
+            # modelo e seriam juntadas.
+            continua = False
+        elif assunto and anterior_assunto:
+            continua = assunto == anterior_assunto or (
+                bool(dados.get("continues")) and _same_topic_start(assunto, anterior_assunto)
+            )
+        else:
+            # Sem assunto de um dos lados, só o sinal do modelo resta.
+            continua = bool(dados.get("continues"))
+
+        if atual and not continua:
+            fechar()
+        atual.append((page, dados))
+        if assunto:
+            anterior_assunto = assunto
+    fechar()
+    return itens
+
+def _reference_map(pages: list[WindowPage]) -> dict[str, tuple[str, int]]:
+    """Normalized reference -> (original reference in the window, numeric
+    order). Uses `setdefault` so that, in the rare case where two window
+    references collide after normalization, the first one (lower order)
+    wins."""
+    reference_map: dict[str, tuple[str, int]] = {}
+    for page in pages:
+        reference_map.setdefault(
+            _normalize_reference(page.reference), (page.reference, page_order(page))
+        )
+    return reference_map
+
+
+def _reference_rejection_reason(
+    raw: dict, reference_map: dict[str, tuple[str, int]]
+) -> tuple[str, dict] | None:
+    """(i18n key, params) for a raw item rejected because of an unrecognized
+    reference in the window — logging only (`_dict_to_item` is what
+    actually decides whether the item is accepted). Returns `None` when the
+    item was not rejected because of the reference (missing fields, or valid
+    references out of order)."""
+    start_ref = raw.get("ref_start")
+    end_ref = raw.get("ref_end")
+    if not isinstance(start_ref, str) or not isinstance(end_ref, str):
+        return None
+    if _normalize_reference(start_ref) in reference_map and _normalize_reference(end_ref) in reference_map:
+        return None
+
+    expected = ", ".join(sorted({ref for ref, _ in reference_map.values()}))
+    return (
+        "log.local_engine.reference_rejected",
+        {"start": repr(start_ref), "end": repr(end_ref), "expected": expected},
+    )
+
+
+def _dict_to_item(
+    raw: dict, pages: list[WindowPage], reference_map: dict[str, tuple[str, int]] | None = None
+) -> ClassifiedItem | None:
+    """Converts the raw item returned by the model, rejecting a reference
+    that does not actually exist in the window (hallucination) — same spirit
+    as section 7's validation, applied right at the engine's output. The
+    comparison is tolerant of case, spacing and the 'fl.' abbreviation (see
+    `_normalize_reference`) — without this, a model returning 'F. 1'
+    instead of 'f. 1' had the whole item discarded, even though the
+    reference existed."""
+    raw_start_ref = raw.get("ref_start")
+    raw_end_ref = raw.get("ref_end")
+    if not isinstance(raw_start_ref, str) or not isinstance(raw_end_ref, str):
+        return None
+
+    reference_map = reference_map if reference_map is not None else _reference_map(pages)
+    start_key = _normalize_reference(raw_start_ref)
+    end_key = _normalize_reference(raw_end_ref)
+    if start_key not in reference_map or end_key not in reference_map:
+        return None
+
+    start_ref, start_order = reference_map[start_key]
+    end_ref, end_order = reference_map[end_key]
+    if start_order > end_order:
+        return None
+
+    item_pages = [p for p in pages if start_order <= page_order(p) <= end_order]
+    files = list(dict.fromkeys(p.file_name for p in item_pages))
+
+    type_ = raw.get("type")
+    if not isinstance(type_, str):
+        type_ = None
+
+    date_value = raw.get("date")
+    if not (isinstance(date_value, str) and _ISO_DATE_REGEX.match(date_value)):
+        date_value = None
+    else:
+        try:
+            date.fromisoformat(date_value)
+        except ValueError:
+            date_value = None
+
+    author = raw.get("author") if isinstance(raw.get("author"), str) else None
+    summary = raw.get("summary") if isinstance(raw.get("summary"), str) else None
+
+    confidence = raw.get("confidence")
+    if confidence not in ("high", "medium", "low"):
+        confidence = "low"  # engine did not report it properly -> treat with suspicion
+
+    return ClassifiedItem(
+        start_ref=start_ref,
+        end_ref=end_ref,
+        start_order=start_order,
+        end_order=end_order,
+        type=type_,
+        date=date_value,
+        author=author,
+        summary=summary,
+        has_table=bool(raw.get("has_table")) or any(p.has_table for p in item_pages),
+        has_image=bool(raw.get("has_image")) or any(p.image_count > 0 for p in item_pages),
+        engine="local",
+        confidence=confidence,
+        files=files,
+    )
+
+
+@dataclass
+class LocalClassificationResult:
+    windows_processed: int = 0
+    windows_via_rules_fallback: int = 0
+    windows_skipped: int = 0
+    windows_structured: int = 0
+    items_generated: int = 0
+    invalid_items: int = 0
+    high_confidence: int = 0
+    medium_confidence: int = 0
+    low_confidence: int = 0
+    # Fase 36: windows whose context had to grow past the run's initial
+    # value, and windows split in two because they did not fit the ceiling.
+    windows_context_raised: int = 0
+    windows_split_for_size: int = 0
+
+
+def _log_window_notes(
+    conn: sqlite3.Connection,
+    local_engine: "LocalEngine",
+    window_key: str,
+    language: str | None = None,
+    writer=None,
+) -> tuple[int, int]:
+    """Logs (at `info` level) what happened to the last window's context
+    (`LocalEngine.last_window_notes`, fase 36) and returns `(raised,
+    split)` — how many notes of each kind — for the step's summary. Same
+    shape as `_log_rejection_warnings`: the reason travels as a nested
+    key so the event is retranslated on a later read.
+
+    Why it is logged at all: the windows the Ollama cut in a large run
+    left no trace in the project log — the only record was the server's
+    own log, which the user never sees. A window that needed more context
+    than the run started with, or that had to be split, is the fact that
+    explains a slower stretch of the run.
+    """
+    raised = split = 0
+    for note_key, note_params in getattr(local_engine, "last_window_notes", None) or []:
+        if note_key.endswith("window_context_raised"):
+            raised += 1
+        elif note_key.endswith("window_split_for_size"):
+            split += 1
+        params = {"window": window_key, "reason": nested(note_key, **note_params)}
+        if writer is not None:
+            writer.add(lambda c, params=params: record_event(
+                c, "classification", "info", "log.local_engine.window_note",
+                params, language=language, commit=False,
+            ))
+            continue
+        record_event(conn, "classification", "info", "log.local_engine.window_note", params, language=language)
+    return raised, split
+
+
+def _log_rejection_warnings(
+    conn: sqlite3.Connection, local_engine: LocalEngine, window_key: str, language: str | None = None,
+    writer=None,
+) -> None:
+    """Logs (at `aviso` level) every item rejected because of an unrecognized
+    reference in the last call to `local_engine.classify()` — before, that
+    discard was silent: a run with qwen3.5:9b could end with 0 items and
+    no clue in the log.
+
+    `reason` is `nested(warning_key, **warning_params)` (Task 12, Phase
+    14), not pre-translated text — it stays retranslatable along with the
+    rest of the event on a later read (`list_events`), see `nested()`'s
+    docstring in `i18n.py`."""
+    for warning_key, warning_params in local_engine.last_window_warnings:
+        params = {"window": window_key, "reason": nested(warning_key, **warning_params)}
+        if writer is not None:
+            # Joins the window's batch instead of a commit of its own.
+            writer.add(lambda c, params=params: record_event(
+                c, "classification", "warning", "log.local_engine.window_rejection",
+                params, language=language, commit=False,
+            ))
+            continue
+        record_event(
+            conn, "classification", "warning", "log.local_engine.window_rejection",
+            params, language=language,
+        )
+
+
+# Quantos caracteres do texto da página entram no resumo de emergência de
+# uma peça de cobertura. O bastante para alguém reconhecer o que há ali e
+# decidir abrir a página; curto o bastante para o índice continuar sendo um
+# índice, e não uma cópia do acervo.
+_FALLBACK_SUMMARY_CHARS = 300
+
+# Teto do resumo de uma peça. O índice inteiro precisa caber no contexto de
+# um projeto do Claude, e é a soma destes resumos que o ocupa — um resumo
+# sem limite transformaria o índice numa segunda cópia do acervo, que é
+# exatamente o que ele existe para evitar.
+_SUMMARY_CHAR_LIMIT = 600
+
+
+def _uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> list[WindowPage]:
+    """Páginas da janela que nenhuma peça cobre, na ordem em que aparecem."""
+    coberto: set[int] = set()
+    for item in items:
+        for numero in range(item.start_order, item.end_order + 1):
+            coberto.add(numero)
+    faltando = []
+    for page in pages:
+        numero = page_order(page)
+        if numero not in coberto:
+            faltando.append(page)
+    return faltando
+
+
+def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
+    """Peças de cobertura para páginas que o modelo deixou de fora.
+
+    Existe por causa do requisito central deste sistema: o índice é lido
+    para encontrar *em que PDF e em que página* está uma informação, e uma
+    página ausente do índice é informação que ninguém mais encontra. Um
+    prompt pode pedir cobertura total; só o código pode garanti-la.
+
+    Medido no benchmark que motivou isto: sobre um relatório de 31 páginas,
+    três modelos diferentes (`gemma4:e4b`, `qwen3:8b`, `qwen3.5:9b`)
+    devolveram de 0 a 3 peças cobrindo no máximo 9,7% das páginas — todas
+    com confiança "high". Não é um modelo ruim; é o que acontece quando se
+    pede agrupamento sem exigir cobertura.
+
+    Estas peças são deliberadamente honestas sobre o que são: confiança
+    "low", tipo nulo, e um resumo tirado do início da própria página. Elas
+    não fingem uma classificação que não houve — garantem que a página
+    exista no índice, com sua referência e seu arquivo, para que a busca
+    chegue nela.
+
+    Páginas consecutivas são agrupadas numa peça só, para não inchar o
+    índice com uma linha por página quando um bloco inteiro ficou de fora.
+    """
+    if not pages:
+        return []
+
+    blocos: list[list[WindowPage]] = [[pages[0]]]
+    for anterior, page in zip(pages, pages[1:]):
+        if page_order(page) == page_order(anterior) + 1 and not starts_new_document(anterior, page):
+            blocos[-1].append(page)
+        else:
+            blocos.append([page])
+
+    itens: list[ClassifiedItem] = []
+    for bloco in blocos:
+        texto = " ".join(" ".join(p.text.split()) for p in bloco).strip()
+        resumo = texto[:_FALLBACK_SUMMARY_CHARS].rstrip()
+        if len(texto) > _FALLBACK_SUMMARY_CHARS:
+            resumo += "…"
+        itens.append(ClassifiedItem(
+            start_ref=bloco[0].reference,
+            end_ref=bloco[-1].reference,
+            start_order=page_order(bloco[0]),
+            end_order=page_order(bloco[-1]),
+            type=None,
+            date=None,
+            author=None,
+            summary=resumo or None,
+            has_table=any(p.has_table for p in bloco),
+            has_image=any(p.image_count for p in bloco),
+            engine="local",
+            confidence="low",
+            files=sorted({p.file_name for p in bloco}),
+        ))
+    return itens
+
+
+def _log_gpu_plan(
+    conn: sqlite3.Connection, local_engine: LocalEngine, language: str | None = None
+) -> bool:
+    """Records how the GPU is being used for this run. Returns `True` once
+    it has logged, so the caller stops asking.
+
+    The user asked to be able to see that the card is actually being filled
+    before anything spills into RAM — a number that is otherwise invisible:
+    Ollama does not report it, and the Run screen's VRAM gauge shows the
+    result without ever explaining the decision behind it.
+    """
+    plan = local_engine.gpu_plan
+    if plan is None:
+        return False
+
+    # The one message that changes what the user should *do*. Everything
+    # else here is information; this is the case where no setting will
+    # help, because the weights are simply larger than the card — and the
+    # difference is not subtle: on the collection that prompted this work,
+    # a 9.1 GB model on an 8 GB card ran with 17% of itself on the GPU.
+    if plan.get("model_fits_card") is False:
+        record_event(
+            conn, "classification", "warning", "log.local_engine.model_too_big_for_gpu",
+            {
+                "model": plan.get("model", ""),
+                "model_mb": plan.get("model_mb", 0),
+                "vram_mb": plan.get("vram_total_mb", 0),
+            },
+            language=language,
+        )
+
+    if plan.get("layers_on_gpu") is None:
+        record_event(
+            conn, "classification", "info", "log.local_engine.gpu_plan_unavailable",
+            {"model": plan.get("model", ""), "context": plan.get("context_tokens", 0)},
+            language=language,
+        )
+        return True
+
+    record_event(
+        conn, "classification", "info", "log.local_engine.gpu_plan",
+        {
+            "model": plan.get("model", ""),
+            "layers": plan.get("layers_on_gpu", 0),
+            "layers_total": plan.get("layers_total", 0),
+            "free_vram": plan.get("free_vram_mb") or 0,
+            "context": plan.get("context_tokens", 0),
+            "ceiling": plan.get("context_ceiling", 0),
+        },
+        language=language,
+    )
+    return True
+
+
+def _log_backend(conn: sqlite3.Connection, language: str | None = None) -> None:
+    """Records which backend the server is on (fase 36) — once per run,
+    after the first window, because the scheduler's "parallel requests"
+    warning is only written when the model loads. Read-only over the
+    server logs (`ollama_backend.read_backend`); nothing found means an
+    event saying so, never an exception."""
+    try:
+        info = ollama_backend.read_backend()
+    except Exception:
+        info = None
+    if info is None:
+        record_event(conn, "classification", "info", "log.local_engine.backend_unknown", language=language)
+        return
+
+    if info.parallel_pinned_family:
+        note = nested("log.local_engine.backend_parallel_pinned", family=info.parallel_pinned_family)
+    else:
+        note = nested("log.local_engine.backend_no_note")
+    if ollama_backend.prefers_flash_attention_off(info):
+        tuning = nested("log.local_engine.backend_flash_attention_off")
+    else:
+        tuning = nested("log.local_engine.backend_tuning_default")
+    record_event(
+        conn, "classification", "info", "log.local_engine.backend",
+        {"device": info.device, "library": info.library, "total": info.total, "note": note, "tuning": tuning},
+        language=language,
+    )
+    # "AMD driver is too old" with the card on Vulkan means two different
+    # things. RX 5000/6000: Ollama's ROCm needs the driver's `amdhip64_7.dll`,
+    # which AMD does not ship for them on Windows (measured here: only
+    # `amdhip64_6.dll`, in the October 2026 driver) — nothing the user does today
+    # reaches ROCm, Vulkan is the path. Any other AMD card (RX 7000, W7000):
+    # the same line, but a current Adrenalin with HIP 7 does bring ROCm —
+    # telling that user "no update changes this" would be false and would
+    # contradict the installer (revisão da fase 36).
+    if info.amd_driver_old and info.library.lower() == "vulkan":
+        if ollama_backend.prefers_flash_attention_off(info):
+            key = "log.local_engine.backend_amd_no_hip7"
+        else:
+            key = "log.local_engine.backend_amd_driver_old"
+        record_event(conn, "classification", "warning", key, {"device": info.device}, language=language)
+
+
+MODEL_RETRY_SECONDS = 60.0
+def _classify_in_parts(engine: "LocalEngine", pages: list[WindowPage]) -> list[ClassifiedItem]:
+    """The window in halves, and each half in halves again, until the page
+    the model cannot read is alone. That page gets no item from the
+    model; the coverage guarantee in `classify_pending` indexes it by file
+    name. Connection errors are not caught here: an outage in the middle is
+    handled by the caller like any other."""
+    if not pages:
+        return []
+    try:
+        return engine.classify(pages)
+    except ModelAnswerError:
+        if len(pages) == 1:
+            return []
+        middle = len(pages) // 2
+        return _classify_in_parts(engine, pages[:middle]) + _classify_in_parts(engine, pages[middle:])
+
+
+MODEL_MAX_OUTAGES = 10
+WINDOW_MAX_ATTEMPTS = 3
+FALLBACK_FIELD = "fallback"
+
+
+def _has_dedicated_gpu() -> bool:
+    """A graphics card Ollama runs on (NVIDIA through `nvidia-smi`, or an
+    AMD card reported by Windows). Integrated graphics do not count."""
+    from . import hardware
+
+    if hardware._detect_nvidia_gpu() is not None:
+        return True
+    gpu = hardware._detect_wmi_gpu()
+    vendor = (gpu.vendor if gpu else "").lower()
+    return gpu is not None and ("amd" in vendor or "advanced micro" in vendor) and gpu.vram_mb >= 2048
+
+
+def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
+    """Windows the Rules engine classified only because the model
+    was down (their lines carry `"fallback": true`) go back to 'pending',
+    and their lines leave `raw_items.jsonl`. Returns how many.
+
+    The file is rewritten under a temporary name and swapped in, so a crash
+    leaves the old file or the new one, never half of each. A window with
+    any line not marked is left alone."""
+    if not jsonl_path.exists():
+        return 0
+    lines = [line for line in jsonl_path.read_text(encoding="utf-8").split("\n") if line.strip()]
+    marked: set = set()
+    unmarked: set = set()
+    parsed = []
+    for line in lines:
+        try:
+            data = json.loads(line)
+        except ValueError:
+            parsed.append((line, None))
+            continue
+        window_key = data.get("window")
+        parsed.append((line, window_key))
+        (marked if data.get(FALLBACK_FIELD) else unmarked).add(window_key)
+    to_requeue = marked - unmarked
+    if not to_requeue:
+        return 0
+    kept = [line for line, window_key in parsed if window_key not in to_requeue]
+    temporary = jsonl_path.with_name(jsonl_path.name + ".requeue.tmp")
+    temporary.write_text("".join(line + "\n" for line in kept), encoding="utf-8")
+    keys = sorted(to_requeue)
+    for start in range(0, len(keys), 500):
+        chunk = keys[start:start + 500]
+        conn.execute(
+            f"UPDATE window SET status = 'pending' WHERE key IN ({','.join('?' * len(chunk))})", chunk
+        )
+    temporary.replace(jsonl_path)
+    conn.commit()
+    return len(to_requeue)
+
+
+def classify_pending(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    local_engine: LocalEngine | None = None,
+    should_stop=None,
+    language: str | None = None,
+) -> LocalClassificationResult:
+    """Classifies every `pending` window with the `local` engine.
+
+    With a graphics card, a model that stops responding is waited
+    for (and restarted) and the run carries on from the same window; the
+    Rules engine is never used. Without one, the window falls back to the
+    `rules` engine, marked so the next run gives it back to the model."""
+    result = LocalClassificationResult()
+
+    if local_engine is None:
+        local_engine = LocalEngine(
+            model=model_to_use(conn, config), num_gpu=_num_gpu_for(config.processing_mode),
+            config=config,
+        )
+
+    rules_fallback_engine = RulesEngine(load_rules())
+    # 1.5.12, explicit request: with a graphics card the model is the only
+    # engine. Losing it means waiting for it to come back and carrying on
+    # from the same window, never the Rules engine (one slow window once
+    # sent thousands of windows to Rules in a few minutes, with no word in
+    # the log). Without a card the old fallback stays, now marked so the
+    # next run gives those windows back to the model.
+    model_required = config.processing_mode != "cpu" and _has_dedicated_gpu()
+    ollama_available = local_engine.is_available()
+
+    if not ollama_available:
+        ollama_available = _try_restart_ollama(conn, local_engine, language=language)
+
+    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    if ollama_available or model_required:
+        # What the Rules engine stood in for last time goes back to the model.
+        requeued = requeue_fallback_windows(conn, jsonl_path)
+        if requeued:
+            record_event(
+                conn, "classification", "info", "log.local_engine.fallback_requeued",
+                {"windows": requeued}, language=language,
+            )
+    model_retry_at = 0.0 if model_required else time.monotonic() + MODEL_RETRY_SECONDS
+    outages = 0
+    stopped = False
+    pending_windows = conn.execute("SELECT * FROM window WHERE status = 'pending' ORDER BY id").fetchall()
+    gpu_plan_logged = False
+    backend_logged = False
+
+    def wait_until(moment: float) -> bool:
+        """Sleeps until `moment`; `False` if asked to stop meanwhile."""
+        while time.monotonic() < moment:
+            if should_stop is not None and should_stop():
+                return False
+            time.sleep(min(1.0, max(0.0, moment - time.monotonic())))
+        return True
+
+    loader = WindowPageLoader(conn)  # One read of each group's order
+    # The window's events and its "done" go in one batch
+    # (`BatchWriter`) instead of 2–4 commits per window, each costing
+    # seconds on a Drive-synced database and locking the screens out. The
+    # items are flushed to `raw_items.jsonl` before the window is queued.
+    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
+    with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
+        try:
+            for window in pending_windows:
+                if stopped or (should_stop is not None and should_stop()):
+                    break
+
+                pages = load_window_pages(conn, window, loader)
+                # Planalto acts are read from their own structure
+                # (`planalto.py`); only the other pages go to the model. A
+                # window made only of acts never waits for the model.
+                structured_items, model_pages = planalto.split(pages)
+                result.windows_structured += 1 if structured_items else 0
+
+                items = None if model_pages else []
+                via_fallback = False
+                failures_here = 0
+                while items is None:
+                    if not ollama_available and (
+                        model_required or (outages < MODEL_MAX_OUTAGES and time.monotonic() >= model_retry_at)
+                    ):
+                        if not wait_until(model_retry_at):
+                            stopped = True
+                            break
+                        writer.flush()  # the events below commit on their own
+                        ollama_available = local_engine.is_available() or _try_restart_ollama(
+                            conn, local_engine, language=language
+                        )
+                        if ollama_available:
+                            if outages:
+                                record_event(conn, "classification", "info",
+                                             "log.local_engine.model_resumed", language=language)
+                        else:
+                            outages += 1
+                            model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
+                            if model_required:
+                                if outages == 1 or outages % 10 == 0:
+                                    record_event(
+                                        conn, "classification", "warning", "log.local_engine.model_waiting",
+                                        {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages},
+                                        language=language,
+                                    )
+                                continue
+                            if outages >= MODEL_MAX_OUTAGES:
+                                record_event(
+                                    conn, "classification", "warning", "log.local_engine.model_given_up",
+                                    {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
+                                     "max": MODEL_MAX_OUTAGES},
+                                    language=language,
+                                )
+
+                    if ollama_available:
+                        try:
+                            items = local_engine.classify(model_pages)
+                            outages = 0
+                            if not gpu_plan_logged:
+                                # Commits on its own: the batch goes first, so a
+                                # later replay never writes these ops twice.
+                                writer.flush()
+                                gpu_plan_logged = _log_gpu_plan(conn, local_engine, language=language)
+                            if not backend_logged:
+                                writer.flush()
+                                _log_backend(conn, language=language)
+                                backend_logged = True
+                            _log_rejection_warnings(
+                                conn, local_engine, window["key"], language=language, writer=writer
+                            )
+                            raised, split = _log_window_notes(
+                                conn, local_engine, window["key"], language=language, writer=writer
+                            )
+                            result.windows_context_raised += raised
+                            result.windows_split_for_size += split
+                            break
+                        except ModelAnswerError as exc:
+                            writer.flush()  # these events commit on their own
+                            record_event(
+                                conn, "classification", "warning", "log.local_engine.window_split",
+                                {"window": window["key"], "error": str(exc)}, language=language,
+                            )
+                            items = _classify_in_parts(local_engine, model_pages)
+                            break
+                        except OllamaConnectionError as exc:
+                            writer.flush()  # these events commit on their own
+                            failures_here += 1
+                            record_event(
+                                conn, "classification", "warning", "log.local_engine.connection_lost",
+                                {"error": str(exc)}, language=language,
+                            )
+                            if failures_here >= WINDOW_MAX_ATTEMPTS:
+                                # The model answers other windows but not this
+                                # one: it stays pending for the next run instead
+                                # of holding up the rest.
+                                record_event(
+                                    conn, "classification", "error", "log.local_engine.window_skipped",
+                                    {"window": window["key"], "attempts": failures_here},
+                                    language=language,
+                                )
+                                result.windows_skipped += 1
+                                break
+                            # A server that still answers is busy, not dead:
+                            # the same window is sent again with no restart.
+                            if local_engine.is_available():
+                                continue
+                            ollama_available = False
+                            model_retry_at = 0.0 if model_required else time.monotonic()
+                            if not model_required:
+                                ollama_available = _try_restart_ollama(conn, local_engine, language=language)
+                                if ollama_available:
+                                    continue
+                                outages += 1
+                                model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
+                                record_event(
+                                    conn, "classification", "warning",
+                                    "log.local_engine.model_paused" if outages < MODEL_MAX_OUTAGES
+                                    else "log.local_engine.model_given_up",
+                                    {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
+                                     "max": MODEL_MAX_OUTAGES},
+                                    language=language,
+                                )
+                            continue
+
+                    if not model_required:
+                        items = rules_fallback_engine.classify(model_pages)
+                        result.windows_via_rules_fallback += 1
+                        via_fallback = True
+
+                if items is None:
+                    continue  # stopped, or skipped: the window stays pending
+                items = structured_items + items
+
+                def escrever(item: ClassifiedItem) -> bool:
+                    """Valida e grava a peça. `False` quando ela foi recusada."""
+                    item_dict = item_to_dict(item, window["key"], window["group_key"])
+                    if via_fallback:
+                        # So the next run gives it back to the model.
+                        item_dict[FALLBACK_FIELD] = True
+                    errors = validate_item(item_dict)
+                    if errors:
+                        result.invalid_items += 1
+                        params = {"engine": item.engine, "window": window["key"], "errors": "; ".join(errors)}
+                        writer.add(lambda c, params=params: record_event(
+                            c, "classification", "error", "log.local_engine.invalid_item",
+                            params, language=language, commit=False,
+                        ))
+                        return False
+
+                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
+                    result.items_generated += 1
+                    if item.confidence == "high":
+                        result.high_confidence += 1
+                    elif item.confidence == "medium":
+                        result.medium_confidence += 1
+                    else:
+                        result.low_confidence += 1
+                    return True
+
+                gravadas = [item for item in items if escrever(item)]
+
+                # Garantia de cobertura (requisito central: nada pode faltar do
+                # índice). Feita aqui, e não dentro de `classify`, para valer
+                # também quando a janela falhou e caiu no motor de regras.
+                #
+                # Depois da validação, e não antes: uma peça recusada não pode
+                # levar as páginas dela junto. Cada peça recusada por causa
+                # da data era uma faixa de páginas
+                # que sumiam do índice sem deixar rastro, porque a cobertura
+                # já tinha sido calculada contando com elas.
+                faltando = _uncovered_pages(pages, gravadas)
+                if faltando:
+                    params = {"window": window["key"], "pages": len(faltando)}
+                    writer.add(lambda c, params=params: record_event(
+                        c, "classification", "warning", "log.local_engine.coverage_filled",
+                        params, language=language, commit=False,
+                    ))
+                    for item in _coverage_items(faltando):
+                        escrever(item)
+
+                jsonl_file.flush()
+                writer.add(lambda c, window_id=window["id"]: c.execute(
+                    "UPDATE window SET status = 'done' WHERE id = ?", (window_id,)
+                ))
+                result.windows_processed += 1
+            writer.flush()
+        except BaseException:
+            jsonl_file.flush()
+            try:
+                writer.flush()
+            except Exception:
+                writer.discard()
+            raise
+
+    if result.windows_context_raised or result.windows_split_for_size:
+        # Fase 36: the context story of the step, once — the per-window
+        # notes say which, this says how many and against which ceiling.
+        record_event(
+            conn, "classification", "info", "log.local_engine.context_summary",
+            {
+                "raised": result.windows_context_raised, "split": result.windows_split_for_size,
+                "ceiling": int(getattr(local_engine, "context_ceiling", 0) or 0),
+            },
+            language=language,
+        )
+
+    record_event(
+        conn,
+        "classification",
+        "info",
+        "log.local_engine.summary",
+        {
+            "windows": result.windows_processed, "fallback": result.windows_via_rules_fallback,
+            "items": result.items_generated, "high": result.high_confidence,
+            "medium": result.medium_confidence, "low": result.low_confidence,
+            "invalid": result.invalid_items,
+        },
+        language=language,
+    )
+
+    return result

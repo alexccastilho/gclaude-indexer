@@ -1,0 +1,35 @@
+name: GClaude Indexer CodeQL config
+
+# The tests build fake servers, fake files and hostile inputs on purpose
+# (path traversal, oversized uploads, broken HTML): scanning them would
+# report the attacks the suite throws at the program, not flaws in it.
+# The demo collection is generated sample data.
+paths-ignore:
+  - tests
+  - demo/acervo
+  - graphify-out
+
+# Maintainability rules left out on purpose, each one checked against the
+# code before excluding it:
+# - empty-except: every bare `except ...: pass` here is a best-effort
+#   step (a sensor, a cleanup, an optional file) with the reason in a
+#   comment next to it.
+# - cyclic-import: the imports inside functions that break the cycles are
+#   deliberate.
+# - import-deprecated-module: flags our own `sets` module (collection
+#   sets), mistaken for Python 2's `sets`.
+# - implicit-string-concatenation-in-list: long PowerShell commands and
+#   report text split over lines on purpose.
+# - unused-global-variable, ineffectual-statement, import-and-import-from:
+#   module state written through `global`, `...` bodies of Protocol
+#   methods and `import x` next to `from x import y`.
+query-filters:
+  - exclude:
+      id:
+        - py/empty-except
+        - py/cyclic-import
+        - py/import-deprecated-module
+        - py/implicit-string-concatenation-in-list
+        - py/unused-global-variable
+        - py/ineffectual-statement
+        - py/import-and-import-from

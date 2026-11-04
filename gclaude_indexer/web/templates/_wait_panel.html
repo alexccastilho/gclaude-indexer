@@ -1,0 +1,311 @@
+{% import "_macros.html" as m %}
+{# One waiting panel for every long operation, in place of the bar
+   of phase 32 (its yellow did not hold up in the dark themes). The server
+   is the source of truth: every screen asks `/activity` what is running,
+   so a reload, a theme change or a second tab show the same panel, with
+   the real elapsed time and a Stop button that reaches the server.
+   On a screen of the project that is busy the panel covers the page (the
+   person asked for the screen to say "wait"); on any other screen it is a
+   small card in the corner, and the rest of the system stays usable. #}
+<div class="wait-overlay" id="wait-overlay" hidden>
+  <div class="wait-card" role="dialog" aria-modal="true" aria-labelledby="wait-title" aria-describedby="wait-hint">
+    <div class="wait-spinner" aria-hidden="true"></div>
+    <p class="wait-project" id="wait-project"></p>
+    <h2 class="wait-title" id="wait-title"></h2>
+    <p class="wait-clock" id="wait-clock"></p>
+    <p class="wait-hint" id="wait-hint"></p>
+    <div class="wait-actions">
+      <button type="button" class="button-danger" id="wait-stop" hidden>{{ m.icon('pause') }} {{ t('activity.stop') }}</button>
+      <a class="button" id="wait-open" hidden href="#">{{ t('activity.open') }}</a>
+      <button type="button" class="button-primary" id="wait-ok" hidden>{{ t('activity.ok') }}</button>
+    </div>
+  </div>
+</div>
+{# The live region is separate from the visible text on purpose: the clock
+   repaints every second, and a live region around it made screen readers
+   read "0:01, 0:02, 0:03" for the whole operation. This one changes only
+   at the start, at each full minute and at the end. #}
+<span id="activity-announce" class="visually-hidden" role="status" aria-live="polite"></span>
+<script>
+(function () {
+  var T = {
+    running: {{ t('activity.running') | tojson }},
+    minutes: {{ t('activity.minutes') | tojson }},
+    finished: {{ t('activity.finished') | tojson }},
+    loading: {{ t('activity.loading') | tojson }},
+    loadingHint: {{ t('activity.loading_hint') | tojson }},
+    hint: {{ t('activity.hint') | tojson }},
+    stopping: {{ t('activity.stopping') | tojson }},
+    stoppedTitle: {{ t('activity.stopped_title') | tojson }},
+    failedTitle: {{ t('activity.failed_title') | tojson }},
+    doneTitle: {{ t('activity.done_title') | tojson }},
+    elapsed: {{ ((t('run.elapsed')[:1] | upper) ~ t('run.elapsed')[1:]) | tojson }}
+  };
+  var overlay = document.getElementById("wait-overlay");
+  var title = document.getElementById("wait-title");
+  var project = document.getElementById("wait-project");
+  var clockText = document.getElementById("wait-clock");
+  var hint = document.getElementById("wait-hint");
+  var stopButton = document.getElementById("wait-stop");
+  var openLink = document.getElementById("wait-open");
+  var okButton = document.getElementById("wait-ok");
+  var announce = document.getElementById("activity-announce");
+
+  var TRACK_KEY = "gclaude.tracked_operation";
+  var pageProject = (function () {
+    var match = /^\/projects\/(\d+)(\/|$)/.exec(window.location.pathname);
+    return match ? Number(match[1]) : null;
+  })();
+  var timer = null;
+  var startedAt = 0;
+  var shownOperation = null;
+  var announcedMinute = -1;
+  var loadingTimer = null;
+  var announcedEnd = null;
+
+  function say(message) {
+    announce.textContent = "";
+    announce.textContent = message;
+  }
+  function clock(ms) {
+    var total = Math.max(0, Math.floor(ms / 1000));
+    var hours = Math.floor(total / 3600);
+    var minutes = Math.floor((total % 3600) / 60);
+    var seconds = total % 60;
+    var mm = (hours && minutes < 10 ? "0" : "") + minutes;
+    return (hours ? hours + ":" : "") + mm + ":" + (seconds < 10 ? "0" : "") + seconds;
+  }
+  function tracked() {
+    try { return Number(sessionStorage.getItem(TRACK_KEY)) || null; } catch (e) { return null; }
+  }
+  function track(id) {
+    try {
+      if (id) sessionStorage.setItem(TRACK_KEY, String(id)); else sessionStorage.removeItem(TRACK_KEY);
+    } catch (e) { /* private mode: this tab just does not remember */ }
+  }
+  // `?op=<id>` comes from the request that started the operation: the
+  // operation may end before this page's first question to the server.
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    if (params.has("op")) {
+      track(Number(params.get("op")));
+      params.delete("op");
+      var query = params.toString();
+      history.replaceState(null, "", window.location.pathname + (query ? "?" + query : "") + window.location.hash);
+    }
+  })();
+
+  function tick() {
+    var elapsed = Date.now() - startedAt;
+    clockText.textContent = T.elapsed + ": " + clock(elapsed);
+    var minute = Math.floor(elapsed / 60000);
+    if (shownOperation && minute > announcedMinute) {
+      announcedMinute = minute;
+      if (minute > 0) say(T.minutes.replace("{operation}", shownOperation).replace("{minutes}", String(minute)));
+    }
+  }
+  function startClock(elapsedSeconds) {
+    startedAt = Date.now() - elapsedSeconds * 1000;
+    if (timer) clearInterval(timer);
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+  function stopClock() {
+    if (timer) clearInterval(timer);
+    timer = null;
+  }
+  function panel(mode) {
+    // `blocking`: covers the page; `corner`: a card that leaves it usable.
+    overlay.hidden = false;
+    overlay.classList.toggle("wait-corner", mode === "corner");
+    document.documentElement.classList.toggle("wait-blocking", mode !== "corner");
+  }
+  function close() {
+    stopClock();
+    overlay.hidden = true;
+    document.documentElement.classList.remove("wait-blocking");
+    shownOperation = null;
+  }
+
+  function showRunning(op, blocking) {
+    var label = op.operation;
+    if (shownOperation !== label) {
+      announcedMinute = Math.floor(op.elapsed_s / 60);
+      say(T.running.replace("{operation}", label));
+    }
+    shownOperation = label;
+    title.textContent = T.running.replace("{operation}", label);
+    project.textContent = op.project_name;
+    hint.textContent = op.stopping ? T.stopping : T.hint;
+    stopButton.hidden = false;
+    stopButton.disabled = !!op.stopping;
+    stopButton.setAttribute("data-project", String(op.project_id));
+    okButton.hidden = true;
+    openLink.hidden = blocking;
+    openLink.href = "/projects/" + op.project_id + "/run";
+    overlay.classList.remove("wait-ended");
+    if (!timer) startClock(op.elapsed_s);
+    panel(blocking ? "blocking" : "corner");
+  }
+
+  function showEnded(op, blocking) {
+    stopClock();
+    var titles = { done: T.doneTitle, stopped: T.stoppedTitle, error: T.failedTitle };
+    title.textContent = (titles[op.status] || T.doneTitle).replace("{operation}", op.operation);
+    project.textContent = op.project_name;
+    clockText.textContent = T.elapsed + ": " + clock(op.elapsed_s * 1000);
+    hint.textContent = op.message || "";
+    stopButton.hidden = true;
+    overlay.classList.add("wait-ended");
+    // Announced once per operation: this runs again on every poll while
+    // the card is on screen.
+    if (announcedEnd !== op.id) { announcedEnd = op.id; say(T.finished.replace("{operation}", op.operation)); }
+    okButton.hidden = false;
+    openLink.hidden = blocking;
+    openLink.href = op.next_url;
+    okButton.onclick = function () {
+      track(null);
+      if (blocking) window.location.assign(op.next_url); else close();
+    };
+    panel(blocking ? "blocking" : "corner");
+  }
+
+  function ask() {
+    fetch("/activity", { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var ops = data.operations || [];
+        var mine = tracked();
+        var running = ops.filter(function (op) { return op.status === "running"; });
+        var here = running.filter(function (op) { return op.project_id === pageProject; })[0];
+        var shown = here || running[0];
+        if (shown) {
+          track(shown.id);
+          showRunning(shown, !!here);
+          setTimeout(ask, 1500);
+          return;
+        }
+        var ended = mine ? ops.filter(function (op) { return op.id === mine; })[0] : null;
+        if (ended) {
+          var blocking = ended.project_id === pageProject;
+          if (ended.status === "done" && blocking) {
+            track(null);
+            window.location.assign(ended.next_url);
+            return;
+          }
+          showEnded(ended, blocking);
+        } else if (loadingTimer === null) {
+          track(null);
+          close();
+        }
+        setTimeout(ask, 5000);
+      })
+      .catch(function () { setTimeout(ask, 5000); });
+  }
+
+  stopButton.addEventListener("click", function () {
+    var id = stopButton.getAttribute("data-project");
+    stopButton.disabled = true;
+    hint.textContent = T.stopping;
+    fetch("/projects/" + id + "/operation/stop", { method: "POST", credentials: "same-origin" })
+      .catch(function () { stopButton.disabled = false; });
+  });
+
+  // A slow page (opening a large project, a screen that counts many rows)
+  // keeps the old one on screen with no sign of life. After a short
+  // moment the panel says so, with a clock; the next page replaces it.
+  function showLoading(label) {
+    if (loadingTimer !== null) return;
+    loadingTimer = setTimeout(function () {
+      if (shownOperation) return;
+      title.textContent = label || T.loading;
+      project.textContent = "";
+      hint.textContent = T.loadingHint;
+      stopButton.hidden = true; okButton.hidden = true; openLink.hidden = true;
+      overlay.classList.remove("wait-ended");
+      startClock(0);
+      panel("blocking");
+    }, label ? 0 : 350);
+  }
+  document.addEventListener("click", function (event) {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    var link = event.target.closest ? event.target.closest("a[href]") : null;
+    if (!link || link.target || link.hasAttribute("download") || link.hasAttribute("data-download")) return;
+    if (link.id === "wait-open") return;
+    var href = link.getAttribute("href");
+    if (!href || href.charAt(0) === "#" || link.origin !== window.location.origin) return;
+    if (link.pathname === window.location.pathname && link.hash) return;
+    showLoading(null);
+  });
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+    if (form.hasAttribute("data-no-wait") || form.target) return;
+    var label = form.getAttribute("data-activity");
+    showLoading(label ? T.running.replace("{operation}", label) : null);
+  });
+  // Back/forward cache: a restored page must not keep a panel from before.
+  window.addEventListener("pageshow", function (event) {
+    if (event.persisted) {
+      if (loadingTimer !== null) clearTimeout(loadingTimer);
+      loadingTimer = null;
+      close();
+      ask();
+    }
+  });
+
+  // Download links: a plain GET of a file never replaces the page, so the
+  // panel would never go away. The click becomes a fetch, the panel runs
+  // while the ZIP is built and transferred, and the file is saved at the end.
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest ? event.target.closest("a[data-activity][data-download]") : null;
+    if (!link || event.defaultPrevented) return;
+    event.preventDefault();
+    var label = link.getAttribute("data-activity") || (link.textContent || "").trim();
+    title.textContent = T.running.replace("{operation}", label);
+    project.textContent = ""; hint.textContent = T.loadingHint;
+    stopButton.hidden = true; okButton.hidden = true; openLink.hidden = true;
+    shownOperation = label;
+    say(title.textContent);
+    startClock(0);
+    panel("blocking");
+    fetch(link.href, { credentials: "same-origin" }).then(function (response) {
+      if (!response.ok) throw new Error(String(response.status));
+      var disposition = response.headers.get("Content-Disposition") || "";
+      var match = /filename\*=UTF-8''([^;]+)/.exec(disposition) || /filename="?([^";]+)"?/.exec(disposition);
+      var name = match ? decodeURIComponent(match[1]) : "download";
+      return response.blob().then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
+    }).then(function () { say(T.finished.replace("{operation}", label)); close(); }, function () {
+      close();
+      window.location.href = link.href; // let the browser do it the plain way
+    });
+  });
+
+  // Theme and layout change in place, with no reload: nothing on screen
+  // is lost, the panel included. The language needs the page again (every
+  // text changes), and the panel comes back from the server after it.
+  document.querySelectorAll("select[data-preference]").forEach(function (select) {
+    select.addEventListener("change", function () {
+      var form = select.form;
+      var kind = select.getAttribute("data-preference");
+      // The language changes every text, and the workspace layout has a
+      // frame of its own (1.10.0): both need the page drawn again.
+      if (kind === "language" || kind === "layout") { form.submit(); return; }
+      fetch(form.action, { method: "POST", credentials: "same-origin", body: new FormData(form), headers: { "X-Preference-Fetch": "1" } })
+        .then(function (r) {
+          if (!r.ok) throw new Error(String(r.status));
+          document.documentElement.setAttribute("data-" + kind, select.value);
+        })
+        .catch(function () { form.submit(); });
+    });
+  });
+
+  ask();
+})();
+</script>

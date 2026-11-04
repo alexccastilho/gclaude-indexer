@@ -1,0 +1,194 @@
+{% import "_macros.html" as m %}
+{% set ws = current_layout == 'workspace' %}
+{% set path = request.url.path %}
+<!doctype html>
+<html lang="{{ current_language }}" data-theme="{{ current_theme }}" data-layout="{{ current_layout }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ t('app.name') }}{% endblock %}</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
+<script src="/static/htmx.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/layouts.css">
+<link rel="stylesheet" href="/static/motion.css">
+<link rel="stylesheet" href="/static/polish.css">
+{% if ws %}<link rel="stylesheet" href="/static/workspace.css">{% endif %}
+<noscript><style>.notice-bar[hidden] { display: flex; }</style></noscript>
+</head>
+<body>
+<a class="skip-link" href="#content">{{ t('nav.skip_to_content') }}</a>
+{% include "_icons.html" %}
+{% macro preference_forms() %}
+    <form method="post" data-no-wait action="/preferences/language" class="preference-form">
+      <select name="language" data-preference="language" aria-label="idioma / language / idioma">
+        {% for codigo, name in available_languages.items() %}
+        <option value="{{ codigo }}" {% if codigo == current_language %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <form method="post" data-no-wait action="/preferences/theme" class="preference-form">
+      <select name="theme" data-preference="theme" aria-label="{{ t('theme.label') }}">
+        {% for theme in available_themes %}
+        <option value="{{ theme }}" {% if theme == current_theme %}selected{% endif %}>{{ t('theme.' + theme) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <form method="post" data-no-wait action="/preferences/layout" class="preference-form">
+      <select name="layout" data-preference="layout" aria-label="{{ t('layout.label') }}">
+        {% for layout in available_layouts %}
+        <option value="{{ layout }}" {% if layout == current_layout %}selected{% endif %}>{{ t('layout.' + layout) }}</option>
+        {% endfor %}
+      </select>
+    </form>
+{% endmacro %}
+{% if ws %}
+{# The workspace layout. A side bar with the main screens and every
+   project, a bar on top with where you are, tabs for the screens of a
+   project and a command palette (Ctrl+K). The page content below is the
+   same as in every other layout. #}
+<div class="ws-app">
+  <aside class="ws-side">
+    <a href="/projects" class="ws-brand">
+      <img src="/static/logo.png" alt="" class="ws-logo">
+      <span>{{ t('app.name') }}</span>
+    </a>
+    <button type="button" class="ws-search" id="ws-palette-open" aria-haspopup="dialog" aria-controls="ws-palette">
+      {{ m.icon('search') }}<span>{{ t('ws.palette_open') }}</span><kbd>Ctrl K</kbd>
+    </button>
+    <nav class="ws-nav" aria-label="{{ t('ws.main_nav') }}">
+      <a class="ws-item" href="/projects"{% if path == '/projects' %} aria-current="page"{% endif %}>{{ m.icon('folder') }}<span>{{ t('nav.projects') }}</span><span class="ws-count">{{ ws_projects | length }}</span></a>
+      <a class="ws-item" href="/projects/new"{% if path.startswith('/projects/new') or path.startswith('/projects/open') %} aria-current="page"{% endif %}>{{ m.icon('plus') }}<span>{{ t('nav.new_project') }}</span></a>
+      <a class="ws-item" href="/sets"{% if path.startswith('/sets') %} aria-current="page"{% endif %}>{{ m.icon('layers') }}<span>{{ t('nav.sets') }}</span></a>
+      <a class="ws-item" href="/help"{% if path.startswith('/help') %} aria-current="page"{% endif %}>{{ m.icon('book') }}<span>{{ t('nav.manual') }}</span></a>
+    </nav>
+    {% if ws_projects %}
+    <p class="ws-sec" id="ws-projects-title">{{ t('ws.recent_projects') }}</p>
+    <nav class="ws-projects" aria-labelledby="ws-projects-title">
+      {% for item in ws_projects %}
+      <a class="ws-item ws-project" href="/projects/{{ item.id }}/run"{% if ws_project_id == item.id %} aria-current="page"{% endif %} title="{{ item.name }}">
+        <span class="ws-avatar" aria-hidden="true">{{ item.initials }}</span>
+        <span class="ws-name">{{ item.name }}</span>
+        {% if item.status %}<span class="ws-dot ws-dot-{{ item.status }}" role="img" aria-label="{{ t('ws.status.' + item.status) }}" title="{{ t('ws.status.' + item.status) }}"></span>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+    <div class="ws-foot">
+      <a class="ws-item" href="/about"{% if path.startswith('/about') %} aria-current="page"{% endif %}>{{ m.icon('info') }}<span>{{ t('nav.about') }}</span></a>
+      <details class="ws-prefs">
+        <summary class="ws-item">{{ m.icon('gear') }}<span>{{ t('ws.preferences') }}</span></summary>
+        <div class="ws-prefs-body">{{ preference_forms() }}</div>
+      </details>
+    </div>
+  </aside>
+  <div class="ws-main">
+    <header class="ws-top">
+      <nav class="ws-crumbs" aria-label="breadcrumb">
+        {% if project is defined and project and project.id is defined %}
+        <a href="/projects">{{ t('nav.projects') }}</a><span aria-hidden="true">/</span><b>{{ project.name }}</b>
+        {% else %}
+        <b>{{ self.title() | replace(' · ' ~ t('app.name'), '') }}</b>
+        {% endif %}
+      </nav>
+      <div class="ws-top-actions">{% block help_button %}{% endblock %}</div>
+    </header>
+{% else %}
+<header class="header">
+  <div class="brand-group">
+    <a href="/projects" class="brand">
+      <img src="/static/logo.png" alt="{{ t('app.name') }}" class="logo">
+      {{ t('app.name') }}
+    </a>
+    <nav class="nav-main">
+      <a href="/projects" class="nav-link"{% if path == '/projects' or (path.startswith('/projects/') and not path.startswith('/projects/new')) %} aria-current="page"{% endif %}>{{ m.icon('folder') }} {{ t('nav.projects') }}</a>
+      <a href="/projects/new" class="nav-link"{% if path.startswith('/projects/new') %} aria-current="page"{% endif %}>{{ m.icon('plus') }} {{ t('nav.new_project') }}</a>
+      <a href="/sets" class="nav-link"{% if path.startswith('/sets') %} aria-current="page"{% endif %}>{{ m.icon('folder') }} {{ t('nav.sets') }}</a>
+      <a href="/help" class="nav-link"{% if path.startswith('/help') %} aria-current="page"{% endif %}>{{ m.icon('book') }} {{ t('nav.manual') }}</a>
+    </nav>
+  </div>
+  <div class="preferences">
+    {{ self.help_button() }}
+    <a href="/about" class="header-button">{{ m.icon('info') }} {{ t('nav.about') }}</a>
+    {{ preference_forms() }}
+  </div>
+</header>
+{% endif %}
+{% include "_wait_panel.html" %}
+<div class="notice-bar" id="machine-switch-notice" hidden>
+  <span>{{ t('notice.machine_switch') }}</span>
+  <button type="button" id="close-machine-switch-notice" class="notice-close"
+          aria-label="{{ t('notice.dismiss') }}" title="{{ t('notice.dismiss') }}">×</button>
+</div>
+<script>
+(function () {
+  // localStorage, not a cookie: this is a per-browser display preference,
+  // it does not need to go to the server on every request. Starts `hidden`
+  // and only appears if it hasn't been dismissed — this way whoever already
+  // dismissed it never sees the banner flash between the HTML load and this
+  // script running.
+  var STORAGE_KEY = "gclaude.machine_switch_notice_dismissed";
+  var notice = document.getElementById("machine-switch-notice");
+  var closeButton = document.getElementById("close-machine-switch-notice");
+  var dismissed = false;
+  try { dismissed = localStorage.getItem(STORAGE_KEY) === "1"; } catch (error) { dismissed = false; }
+  if (!dismissed) notice.hidden = false;
+  closeButton.addEventListener("click", function () {
+    notice.hidden = true;
+    try { localStorage.setItem(STORAGE_KEY, "1"); } catch (error) { /* private mode: just doesn't remember */ }
+  });
+})();
+</script>
+{% if source_is_stale %}
+{# O código em disco mudou depois que este servidor subiu. Python carrega os
+   módulos uma vez, na partida: o que roda aqui continua sendo o de antes da
+   alteração, até o sistema ser reaberto. #}
+<div class="stale-banner" role="alert">
+  {{ m.icon('warning') }}
+  <div>
+    <strong>{{ t('stale.title') }}</strong>
+    <p>{{ t('stale.body') }}</p>
+  </div>
+</div>
+{% endif %}
+{% if ws and project is defined and project and project.id is defined %}
+{% set tabs = [
+  ('run', '/projects/%d/run' % project.id),
+  ('result', '/projects/%d/result' % project.id),
+  ('search', '/projects/%d/search' % project.id),
+  ('update', '/projects/%d/update' % project.id),
+  ('instructions', '/projects/%d/instructions' % project.id),
+] %}
+{% if tabs | selectattr(1, 'equalto', path) | list %}
+<nav class="ws-tabs" aria-label="{{ t('ws.project_tabs') }}">
+  {% for key, url in tabs %}
+  <a href="{{ url }}"{% if path == url %} aria-current="page"{% endif %}>{{ t('ws.tab.' + key) }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+{% endif %}
+<main class="content" id="content">
+{% block content %}{% endblock %}
+</main>
+{% if ws %}
+  </div>
+</div>
+{% include "_palette.html" %}
+{% endif %}
+{% block help_modal %}{% endblock %}
+{% if project is defined and project and project.id is defined %}
+<script>
+/* A screen of the project open in the browser keeps its lock
+   (`lock.py`). With every tab closed the server keeps running, without a
+   window; this is how it learns nobody is using the project any more and
+   frees it for another computer a few minutes later. */
+(function () {
+  var url = "/projects/{{ project.id }}/alive";
+  setInterval(function () {
+    fetch(url, { method: "POST", credentials: "same-origin" }).catch(function () {});
+  }, 60000);
+})();
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,40 @@
+{# The command palette of the workspace layout (Ctrl+K). Every screen,
+   every project's screens and the preferences, found by typing a few
+   letters of any word, accents optional. Only navigation and preferences:
+   anything that starts work still goes through its own screen and button,
+   where the person sees what it will do. #}
+{% set entries = [
+  {'group': t('ws.palette_go'), 'label': t('nav.projects'), 'url': '/projects'},
+  {'group': t('ws.palette_go'), 'label': t('nav.new_project'), 'url': '/projects/new'},
+  {'group': t('ws.palette_go'), 'label': t('nav.sets'), 'url': '/sets'},
+  {'group': t('ws.palette_go'), 'label': t('nav.manual'), 'url': '/help'},
+  {'group': t('ws.palette_go'), 'label': t('nav.about'), 'url': '/about'},
+] %}
+{% for item in ws_projects %}
+  {% for key, suffix in [('run', 'run'), ('result', 'result'), ('search', 'search'), ('update', 'update'), ('instructions', 'instructions')] %}
+    {% set _ = entries.append({'group': t('ws.palette_projects'), 'label': t('ws.tab.' + key) ~ ' · ' ~ item.name, 'url': '/projects/%d/%s' % (item.id, suffix)}) %}
+  {% endfor %}
+{% endfor %}
+{% for theme in available_themes %}
+  {% set _ = entries.append({'group': t('ws.palette_preferences'), 'label': t('ws.theme_prefix') ~ ': ' ~ t('theme.' + theme), 'pref': 'theme', 'value': theme, 'current': theme == current_theme}) %}
+{% endfor %}
+{% for layout in available_layouts %}
+  {% set _ = entries.append({'group': t('ws.palette_preferences'), 'label': t('ws.layout_prefix') ~ ': ' ~ t('layout.' + layout), 'pref': 'layout', 'value': layout, 'current': layout == current_layout}) %}
+{% endfor %}
+{% for codigo, name in available_languages.items() %}
+  {% set _ = entries.append({'group': t('ws.palette_preferences'), 'label': t('ws.language_prefix') ~ ': ' ~ name, 'pref': 'language', 'value': codigo, 'current': codigo == current_language}) %}
+{% endfor %}
+<div class="ws-scrim" id="ws-palette-scrim" hidden></div>
+<div class="ws-palette" id="ws-palette" role="dialog" aria-modal="true" aria-label="{{ t('ws.palette_label') }}" hidden>
+  <div class="ws-palette-field">
+    {{ m.icon('search') }}
+    <input type="text" id="ws-palette-input" role="combobox" aria-expanded="true" aria-controls="ws-palette-list"
+           aria-autocomplete="list" autocomplete="off" spellcheck="false"
+           placeholder="{{ t('ws.palette_placeholder') }}" aria-label="{{ t('ws.palette_label') }}">
+  </div>
+  <ul class="ws-palette-list" id="ws-palette-list" role="listbox" aria-label="{{ t('ws.palette_label') }}"></ul>
+  <p class="ws-palette-empty" id="ws-palette-empty" hidden>{{ t('ws.palette_empty') }}</p>
+  <p class="ws-palette-hint">{{ t('ws.palette_hint') }}</p>
+</div>
+<script type="application/json" id="ws-palette-data">{{ entries | tojson }}</script>
+<script src="/static/workspace.js" defer></script>

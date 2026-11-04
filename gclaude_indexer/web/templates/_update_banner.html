@@ -1,0 +1,9 @@
+<div class="notice">
+  {{ t('update.banner',
+        new=plan.new | length,
+        changed=plan.changed | length,
+        removed=plan.removed | length) }}
+  <a href="/projects/{{ project.id }}/update" class="button-primary">
+    {{ t('update.title') }}
+  </a>
+</div>

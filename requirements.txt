@@ -1,0 +1,53 @@
+# Interface
+fastapi==0.162.0
+# Fixado à parte: a FastAPI 0.115 prendia o Starlette abaixo de 0.39, faixa
+# com CVE-2024-47874 (DoS em multipart) e CVE-2025-62727 (Range em
+# StaticFiles, corrigido na 0.49.1). 1.5.6: 1.3.1, que corrige o roubo de
+# credencial NTLM por caminho UNC no StaticFiles do Windows, o limite de
+# formulário ignorado e a validação do Host (alertas do Dependabot); exigiu
+# a FastAPI 0.162, a primeira série que aceita o Starlette 1.x.
+starlette==1.3.1
+uvicorn==0.32.0
+jinja2==3.1.6
+python-multipart==0.0.31
+
+# PDF
+pymupdf==1.24.11
+
+# OCR
+ocrmypdf==16.5.0
+pytesseract==0.3.13
+# pikepdf >= 10 removeu Pdf.check(), usado internamente pelo ocrmypdf 16.5.0
+# (AttributeError ao finalizar o PDF com OCR). Fixado em 9.x até o ocrmypdf
+# atualizar.
+pikepdf==9.11.0
+
+# Detecção de codificação de arquivos de texto/HTML sem declaração
+# (`text_decoding.py`). Já vinha pelo pdfminer.six; fixado porque agora é
+# dependência direta.
+charset-normalizer==3.5.1
+
+# Documentos
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
+extract-msg==0.54.1
+
+# Imagens
+# 1.5.6: 13.0.0 corrige os 41 alertas do Dependabot contra a 12.x (estouros
+# de buffer ao decodificar JPEG/TIFF/FlashPix, injeção de argumento na
+# chamada ao Ghostscript, laços infinitos em PDF/GIF). O programa abre
+# imagens de terceiros para OCR, então isso não é teórico.
+pillow==13.0.0
+
+# Monitoramento de recursos (CPU/RAM na tela de Execução)
+psutil==6.0.0
+
+# Ponte .NET para ler sensores de temperatura/potência via LibreHardwareMonitor
+# (nenhuma API nativa do Windows expõe esses dados). Degradação explícita em
+# `sensores.py` quando a DLL, o .NET ou o privilégio de admin faltarem.
+pythonnet==3.0.5
+
+# Testes
+pytest==9.0.3
+httpx==0.27.2
