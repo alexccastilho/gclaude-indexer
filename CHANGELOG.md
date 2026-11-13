@@ -9,6 +9,19 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.10.4] - 2026-11-13
+
+### Fixed
+
+- A document that is always read as a single page (HTML, text, Office
+  files, images) and changed in place no longer sends the rest of its group
+  back through extraction and classification. Only the windows holding its
+  page are discarded; the documents after it keep their sheet numbers. In
+  1.10.3, a few acts changed in a large legislation folder renumbered every
+  later document of the group and discarded every later window. PDFs, and
+  documents added to or removed from the middle of a group, still follow
+  the previous rule, because they really shift the pages after them.
+
 ## [1.10.3] - 2026-11-13
 
 ### Fixed

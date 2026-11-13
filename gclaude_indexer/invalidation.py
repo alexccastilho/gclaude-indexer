@@ -504,7 +504,12 @@ def _apply(
             # Always a slice, never an index: `first_affected_window` may
             # equal `len(spans)`, which means nothing is discarded — the
             # commonest happy path, an append whose last window was full.
-            for start, end in spans[group.first_affected_window:]:
+            # 1.10.4: an in-place change names its windows one by one.
+            if group.affected_windows is not None:
+                selected = [spans[i] for i in group.affected_windows if i < len(spans)]
+            else:
+                selected = spans[group.first_affected_window:]
+            for start, end in selected:
                 key = window_key(base_name, start, end)
                 result.windows_deleted += conn.execute(
                     "DELETE FROM window WHERE key = ?", (key,)
