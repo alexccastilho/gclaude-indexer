@@ -47,7 +47,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import is_extension_allowed
+from .file_types import category_of_extension, is_extension_allowed
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -237,6 +237,11 @@ class GroupInvalidation:
     windows_kept: int
     files_to_renumber: tuple[str, ...]
     discard_whole_group: bool = False
+    # 1.10.4: the positions (in the derived layout) of the only windows to
+    # discard, when the change happened in place and nothing after it
+    # moved (see `_in_place_windows`). `None`: every window from
+    # `first_affected_window` on, the rule for anything that shifts pages.
+    affected_windows: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -380,6 +385,49 @@ def _divergence_page(
         page_offset += page_count or 0
 
     return page_offset
+
+
+def _always_one_page(relative_path: str) -> bool:
+    """Extraction gives exactly one page to every file that is not a PDF
+    (`extraction._extract_file_pages`): its text, whatever its length."""
+    return category_of_extension(Path(relative_path).suffix) != "pdf"
+
+
+def _in_place_windows(
+    stored: list[tuple[str, int]],
+    intended: list[str],
+    changed_paths: set[str],
+    old_spans: list[tuple[int, int]],
+) -> tuple[int, ...] | None:
+    """The windows holding the changed pages, when nothing else moves.
+
+    A change shifts the pages after it only if the group gains or loses a
+    file, or a changed file may come back with a different page count. A
+    one-page document changed in place — an HTML act, a text file — keeps
+    every later page where it was, so every later sheet number and window
+    stays right. 1.10.3 discarded them all anyway: in a legislation folder
+    of a hundred thousand acts, a few acts changed by the site sent most of
+    the folder back through extraction and every later window back to the
+    classification.
+
+    `None` when the change is not in place, and the caller falls back to
+    "everything from the divergence on".
+    """
+    if intended != [path for path, _ in stored]:
+        return None
+    offsets: list[int] = []
+    page_offset = 0
+    for relative_path, page_count in stored:
+        if relative_path in changed_paths:
+            if page_count != 1 or not _always_one_page(relative_path):
+                return None
+            offsets.append(page_offset)
+        page_offset += page_count
+    return tuple(
+        index
+        for index, (start, end) in enumerate(old_spans)
+        if any(start <= offset < end for offset in offsets)
+    )
 
 
 def _files_to_renumber(
@@ -732,6 +780,20 @@ def build_update_plan(
             kept = 0
         else:
             discard_whole_group = False
+            in_place = _in_place_windows(stored, intended, changed_paths, old_spans)
+            if in_place is not None:
+                groups.append(
+                    GroupInvalidation(
+                        group_key=group_key,
+                        first_divergent_page=divergent_page,
+                        first_affected_window=in_place[0] if in_place else len(old_spans),
+                        windows_discarded=len(in_place),
+                        windows_kept=len(old_spans) - len(in_place),
+                        files_to_renumber=(),
+                        affected_windows=in_place,
+                    )
+                )
+                continue
             affected = first_affected_window(
                 old_spans, divergent_page, config.pages_per_window
             )

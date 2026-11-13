@@ -15,6 +15,20 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [1.10.4] - 2026-11-13
+
+### Corrigido
+
+- Um documento que é sempre lido como uma página só (HTML, texto, arquivos
+  do Office, imagens) e foi alterado no lugar não manda mais o resto do
+  grupo de volta para a leitura e a classificação. Só as janelas que
+  contêm a página dele são descartadas; os documentos seguintes mantêm a
+  numeração de folhas. Na 1.10.3, alguns atos alterados numa pasta grande
+  de legislação renumeravam todos os documentos seguintes do grupo e
+  descartavam todas as janelas seguintes. PDFs, e documentos que entram ou
+  saem do meio de um grupo, continuam seguindo a regra anterior, porque
+  eles de fato deslocam as páginas seguintes.
+
 ## [1.10.3] - 2026-11-13
 
 ### Corrigido

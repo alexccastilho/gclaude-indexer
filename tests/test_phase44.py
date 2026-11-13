@@ -136,6 +136,62 @@ def test_documento_removido_continua_pedindo_confirmacao(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
 
 
+def _projeto_janelas_pequenas(tmp_path, nomes):
+    origem, config, conn = _projeto(tmp_path)
+    from dataclasses import replace
+
+    config = replace(config, pages_per_window=2, overlap=0)
+    for nome in nomes:
+        _gravar(origem / "pasta" / nome, f"Conteúdo original de {nome}.")
+    _executar(conn, config, ate="windows")
+    conn.execute("UPDATE window SET status = 'done'")
+    conn.commit()
+    return origem, config, conn
+
+
+def test_documento_de_uma_pagina_alterado_nao_renumera_o_resto_do_grupo(tmp_path):
+    """1.10.4: an HTML or text document is always one page. Changing it
+    in place shifts nothing after it, so only the windows holding its
+    page go back to the model. 1.10.3 renumbered every later file of the
+    group and discarded every later window — on a large legislation
+    folder, a hundred thousand files read again for a few changed acts."""
+    nomes = [f"{n:02d}.txt" for n in range(1, 9)]  # 8 pages, 4 windows of 2
+    origem, config, conn = _projeto_janelas_pequenas(tmp_path, nomes)
+    janelas_antes = {row[0] for row in conn.execute("SELECT key FROM window")}
+    assert len(janelas_antes) == 4
+
+    _gravar(origem / "pasta" / "03.txt", "Conteúdo novo do terceiro.", deslocamento=10)
+    _etapa("scan", conn, config)
+
+    # Only the window of pages 3–4 left; the others are still classified.
+    restantes = {row[0] for row in conn.execute("SELECT key FROM window WHERE status = 'done'")}
+    assert len(restantes) == 3
+    assert len(janelas_antes - restantes) == 1
+    # Nobody after it lost its pages.
+    estados = dict(conn.execute("SELECT name, status FROM file").fetchall())
+    assert estados.pop("03.txt") == "discovered"
+    assert set(estados.values()) == {"extracted"}
+
+    _executar(conn, config, ate="windows")
+    assert _texto(conn, "03.txt") == [("Conteúdo novo do terceiro.",)]
+    assert conn.execute("SELECT COUNT(*) FROM window").fetchone()[0] == 4
+    assert conn.execute("SELECT COUNT(*) FROM window WHERE status = 'pending'").fetchone()[0] == 1
+
+
+def test_documento_novo_no_meio_do_grupo_continua_renumerando(tmp_path):
+    nomes = ["01.txt", "02.txt", "04.txt", "05.txt"]
+    origem, config, conn = _projeto_janelas_pequenas(tmp_path, nomes)
+
+    _gravar(origem / "pasta" / "03.txt", "Documento que entrou no meio.")
+    _gravar(origem / "pasta" / "01.txt", "Primeiro alterado.", deslocamento=10)
+    _etapa("scan", conn, config)
+
+    # A new file shifts everything after it: the old rule still applies.
+    assert conn.execute("SELECT COUNT(*) FROM window WHERE status = 'done'").fetchone()[0] == 0
+    estados = dict(conn.execute("SELECT name, status FROM file").fetchall())
+    assert estados["04.txt"] != "extracted" and estados["05.txt"] != "extracted"
+
+
 def test_primeira_execucao_nao_registra_atualizacao(tmp_path):
     origem, config, conn = _projeto(tmp_path)
     _gravar(origem / "pasta" / "a.txt", "Resolução inicial.")
