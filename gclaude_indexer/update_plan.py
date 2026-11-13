@@ -85,26 +85,62 @@ def _fingerprint(entries: list[tuple[str, int, float]]) -> str:
     return digest.hexdigest()
 
 
+def stale_page_paths(conn: sqlite3.Connection) -> set[str]:
+    """Files still waiting to be read that already have pages.
+
+    No ordinary path leaves that state: extraction writes the pages and
+    `status = 'extracted'` in the same operation, and every reset in the
+    update, the OCR retry and the renumbering deletes the pages first.
+    1.10.2's scan did not — a document changed between two runs of the
+    Execution screen went back to 'discovered' with its old pages, and the
+    next extraction stopped on `UNIQUE constraint failed: page.file_id,
+    page.number`. Such a file is "changed" for the update even though its
+    hash already matches the folder: what the index holds for it is stale.
+
+    Cheap on a large project: only the few files not yet extracted are
+    looked at, each by the `(file_id, number)` index.
+    """
+    return {
+        row[0]
+        for row in conn.execute(
+            "SELECT file.relative_path FROM file"
+            " WHERE file.status NOT IN ('extracted', 'duplicate')"
+            " AND EXISTS (SELECT 1 FROM page WHERE page.file_id = file.id)"
+        )
+    }
+
+
 def detect_changes(
-    conn: sqlite3.Connection, config: ProjectConfig, should_stop=None
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    should_stop=None,
+    include_removed: bool = True,
+    listed=None,
 ) -> tuple[list[FileChange], int, str]:
     """New, changed and removed files; how many are unchanged; and the
     folder's fingerprint.
 
     Raises `SourceFolderUnavailable` when the source folder is missing, or
     empty while the index is not.
+
+    `include_removed=False` reports no removal at all — the Execution
+    screen's scan applies what changed by itself, but deleting a document
+    from the index stays a decision the person confirms on the update
+    screen. `listed`: the walk the caller already made
+    (`scanning.walk_source_stats`), so the folder is not walked twice.
     """
     source_dir = Path(config.source_folder)
     if not source_dir.is_dir():
         raise SourceFolderUnavailable(str(source_dir))
 
-    output_dir = Path(config.output_folder).resolve()
-    try:
-        listed = walk_source_stats(source_dir.resolve(), output_dir, should_stop=should_stop)
-    except SourceFolderStalled:
-        # A folder that never answered is a folder we cannot see,
-        # and an unseen folder must never read as "its files were removed".
-        raise SourceFolderUnavailable(str(source_dir)) from None
+    if listed is None:
+        output_dir = Path(config.output_folder).resolve()
+        try:
+            listed = walk_source_stats(source_dir.resolve(), output_dir, should_stop=should_stop)
+        except SourceFolderStalled:
+            # A folder that never answered is a folder we cannot see,
+            # and an unseen folder must never read as "its files were removed".
+            raise SourceFolderUnavailable(str(source_dir)) from None
     # A walk cut short by Stop is a partial folder: it must never be read as
     # "the rest was removed".
     checkpoint(should_stop)
@@ -113,6 +149,7 @@ def detect_changes(
         row["relative_path"]: row
         for row in conn.execute("SELECT relative_path, size, sha256, mtime, ocr_failed FROM file")
     }
+    stale = stale_page_paths(conn)
 
     if not listed and known:
         raise SourceFolderUnavailable(str(source_dir))
@@ -142,7 +179,9 @@ def detect_changes(
         # back once the project has windows, pointing here. Treating it as
         # changed is what discards its group's windows correctly and sends
         # it back through OCR.
-        if row["ocr_failed"]:
+        # 1.10.3: the same for a file left with stale pages (see
+        # `stale_page_paths`).
+        if row["ocr_failed"] or relative_path in stale:
             changes.append(FileChange(relative_path, "changed", path.name, size))
             continue
 
@@ -157,10 +196,11 @@ def detect_changes(
 
         changes.append(FileChange(relative_path, "changed", path.name, size))
 
-    for relative_path in sorted(set(known) - seen):
-        changes.append(
-            FileChange(relative_path, "removed", Path(relative_path).name, 0)
-        )
+    if include_removed:
+        for relative_path in sorted(set(known) - seen):
+            changes.append(
+                FileChange(relative_path, "removed", Path(relative_path).name, 0)
+            )
 
     return changes, unchanged, _fingerprint(entries)
 
@@ -607,6 +647,8 @@ def build_update_plan(
     language: str | None = None,
     record_warnings: bool = True,
     should_stop=None,
+    include_removed: bool = True,
+    listed=None,
 ) -> UpdatePlan:
     """The whole plan: what changed, and what invalidating it would cost.
 
@@ -618,8 +660,12 @@ def build_update_plan(
     mode the read-only GET routes use, so that opening a screen can never
     modify the project. The plan returned is identical either way; only
     the log entry is suppressed.
+
+    `include_removed` and `listed`: see `detect_changes`.
     """
-    changes, unchanged, fingerprint = detect_changes(conn, config, should_stop=should_stop)
+    changes, unchanged, fingerprint = detect_changes(
+        conn, config, should_stop=should_stop, include_removed=include_removed, listed=listed,
+    )
 
     by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": []}
     for change in changes:

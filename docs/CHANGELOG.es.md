@@ -15,6 +15,23 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [1.10.3] - 2026-11-13
+
+### Corregido
+
+- La lectura de las páginas se detenía con `UNIQUE constraint failed:
+  page.file_id, page.number` cuando un documento cambiaba en la carpeta de
+  origen y los pasos se ejecutaban desde la pantalla Ejecución sin pasar
+  antes por "Actualizar". El escaneo devolvía el documento a la cola, pero
+  conservaba sus páginas, fragmentos de búsqueda y ventanas antiguos. Ahora
+  el paso de escaneo aplica a los documentos nuevos y modificados la misma
+  limpieza del botón "Actualizar". Los documentos eliminados siguen
+  saliendo del índice solo después de que usted lo confirma en la pantalla
+  de actualización.
+- Un proyecto que ya quedó en ese estado se repara solo en el próximo
+  "Ejecutar todo hasta la clasificación" o "Continuar": los documentos afectados se leen de nuevo,
+  con el contenido nuevo. No hace falta hacer nada a mano.
+
 ## [1.10.2] - 2026-11-04
 
 ### Cambiado

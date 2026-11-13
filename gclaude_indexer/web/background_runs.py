@@ -30,7 +30,9 @@ from pathlib import Path
 from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
 from ..i18n import DEFAULT_LANGUAGE, translate
-from ..run_control import StopSignal
+from ..run_control import OperationCancelled, StopSignal
+from ..invalidation import apply_pending_changes
+from ..update_plan import SourceFolderUnavailable, stale_page_paths
 from ..conversion import convert, requeue_ocr_failures
 from ..extraction import extract_pages
 from ..windows_prep import prepare_windows
@@ -43,18 +45,40 @@ from .eta import ProgressEstimator
 
 STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
 
+
+def _apply_pending_changes(conn, config, should_stop, language, listed=None) -> None:
+    """1.10.3: what changed in the folder is invalidated before the scan
+    records it (see `invalidation.apply_pending_changes`). An unreachable
+    folder or a pause leaves the index as it was: the scan right after
+    finds the same folder, or stops at once."""
+    try:
+        apply_pending_changes(conn, config, language=language, should_stop=should_stop, listed=listed)
+    except (SourceFolderUnavailable, OperationCancelled):
+        pass
+
+
+def _scan_step(conn, config, should_stop, language, files=None, on_progress=None):
+    _apply_pending_changes(conn, config, should_stop, language, listed=files)
+    return scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
+
+
+def _extraction_step(conn, config, should_stop, language):
+    # "Continue" starts the chain here, past the scan: a database 1.10.2
+    # left with stale pages would stop on them again. Repaired files go
+    # back to 'discovered' and are read again by the next run.
+    if stale_page_paths(conn):
+        _apply_pending_changes(conn, config, should_stop, language)
+    return extract_pages(conn, config, should_stop=should_stop, language=language)
+
+
 # `files`: only the scan takes it — the walk the task already made while
 # counting (see `TaskManager.start_step`).
 _STEP_FUNCTIONS = {
-    "scan": lambda conn, config, should_stop, language, files=None, on_progress=None: scan(
-        conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress
-    ),
+    "scan": _scan_step,
     "conversion": lambda conn, config, should_stop, language: convert(
         conn, config, should_stop=should_stop, language=language
     ),
-    "extraction": lambda conn, config, should_stop, language: extract_pages(
-        conn, config, should_stop=should_stop, language=language
-    ),
+    "extraction": _extraction_step,
     "windows": lambda conn, config, should_stop, language: prepare_windows(
         conn, config, should_stop=should_stop, language=language
     ),

@@ -409,6 +409,62 @@ def apply_update_plan(
     if current.fingerprint != plan.fingerprint:
         raise PlanExpired(plan.fingerprint)
 
+    return _apply(conn, config, current, language)
+
+
+def apply_pending_changes(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    language: str | None = None,
+    should_stop=None,
+    listed=None,
+) -> InvalidationResult | None:
+    """The update the Execution screen's run applies by itself (1.10.3).
+
+    The scan sends a changed document back to 'discovered' and nothing
+    more. Run from the Execution screen without "Update" first, that left
+    the document's old pages, search passages and windows in place, and
+    the next extraction stopped on `UNIQUE constraint failed: page.file_id,
+    page.number`. So the run applies the same invalidation the "Update"
+    button applies, just before the scan, to what is new or changed.
+
+    Never to what was removed (`include_removed=False`): a document that
+    vanished from the folder — a Drive that blinked, a disconnected disk —
+    leaves the index only when the person confirms it on the update
+    screen. Nor is there a fingerprint to check: nobody was shown a plan.
+
+    Also repairs a database 1.10.2 already left in that state: a file
+    waiting to be read with pages of its own is "changed" for the plan
+    (`update_plan.stale_page_paths`).
+
+    Returns `None` when there is nothing to invalidate. A project that has
+    never run is left alone — everything in it is new, and no group has
+    pages yet.
+    """
+    if conn.execute("SELECT 1 FROM file LIMIT 1").fetchone() is None:
+        return None
+    current = build_update_plan(
+        conn, config, language=language, should_stop=should_stop,
+        include_removed=False, listed=listed,
+    )
+    # Only a changed file or a touched group has anything to discard. A
+    # document new to a group of its own needs no invalidation, and an
+    # "update applied" line on every run that found one would only be noise.
+    if not (current.changed or current.groups):
+        return None
+    checkpoint(should_stop)
+    return _apply(conn, config, current, language)
+
+
+def _apply(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    current: UpdatePlan,
+    language: str | None,
+) -> InvalidationResult:
+    """Invalidates what `current` describes, in one transaction; the files
+    and log lines after the commit. `current` must have been built from the
+    database as it stands now (see `apply_update_plan`)."""
     result = InvalidationResult()
     output_dir = Path(config.output_folder)
     windows_dir = output_dir / "windows"
