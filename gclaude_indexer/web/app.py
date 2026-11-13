@@ -106,7 +106,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "1.10.2"
+SYSTEM_VERSION = "1.10.3"
 
 # Fase 32: the one thing that lets a page ask for the elevated sensor
 # helper. New on every server start, never written to disk, embedded only

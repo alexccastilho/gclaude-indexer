@@ -15,6 +15,22 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [1.10.3] - 2026-11-13
+
+### Corrigido
+
+- A leitura das páginas parava com `UNIQUE constraint failed:
+  page.file_id, page.number` quando um documento mudava na pasta de origem
+  e as etapas eram rodadas pela tela Execução sem passar antes por
+  "Atualizar". A varredura devolvia o documento para a fila, mas mantinha
+  as páginas, os trechos da busca e as janelas antigos. Agora a etapa de
+  varredura aplica aos documentos novos e alterados a mesma limpeza do
+  botão "Atualizar". Documentos removidos continuam saindo do índice só
+  depois que você confirma na tela de atualização.
+- Um projeto que já ficou nesse estado se conserta sozinho no próximo
+  "Rodar tudo até a classificação" ou "Continuar": os documentos afetados são lidos de novo,
+  com o conteúdo novo. Não é preciso fazer nada à mão.
+
 ## [1.10.2] - 2026-11-04
 
 ### Alterado

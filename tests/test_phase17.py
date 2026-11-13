@@ -1002,11 +1002,11 @@ def test_arquivo_que_some_entre_as_duas_caminhadas_nao_e_apagado(tmp_path, monke
     # enquanto `build_update_plan` resolve a sua no módulo `update_plan`.
     deteccao_real = modulo_plano.detect_changes
 
-    def some_antes_da_segunda_caminhada(conn_interna, config_interna, should_stop=None):
+    def some_antes_da_segunda_caminhada(conn_interna, config_interna, **kwargs):
         caminho = origem / "pisca.pdf"
         if caminho.exists():
             caminho.unlink()
-        return deteccao_real(conn_interna, config_interna, should_stop=should_stop)
+        return deteccao_real(conn_interna, config_interna, **kwargs)
 
     monkeypatch.setattr(
         modulo_plano, "detect_changes", some_antes_da_segunda_caminhada

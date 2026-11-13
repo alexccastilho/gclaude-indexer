@@ -9,6 +9,21 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [1.10.3] - 2026-11-13
+
+### Fixed
+
+- Reading the pages stopped with `UNIQUE constraint failed: page.file_id,
+  page.number` when a document changed in the source folder and the steps
+  were run from the Execution screen without "Update" first. The scan sent
+  the document back to the queue but kept its old pages, search passages
+  and windows. The scan step now applies the same invalidation as the
+  "Update" button to new and changed documents. Removed documents still
+  leave the index only after you confirm it on the update screen.
+- A project already left in that state is repaired by itself on the next
+  "Run everything up to classification" or "Resume": the affected documents are read again
+  with their new content. Nothing has to be done by hand.
+
 ## [1.10.2] - 2026-11-04
 
 ### Changed
