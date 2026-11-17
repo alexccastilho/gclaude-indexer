@@ -47,7 +47,9 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, name_decision
+from .file_types import (
+    MESSAGE_PAGE_CATEGORIES, REASON_COMPONENT_UNAVAILABLE, category_of_extension, is_extension_allowed, name_decision,
+)
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -147,9 +149,13 @@ def detect_changes(
 
     known = {
         row["relative_path"]: row
-        for row in conn.execute("SELECT relative_path, size, sha256, mtime, ocr_failed, status FROM file")
+        for row in conn.execute(
+            "SELECT relative_path, size, sha256, mtime, ocr_failed, status, error, extension FROM file"
+        )
     }
     stale = stale_page_paths(conn)
+    # Uma resposta por extensão: a de mídia olha três componentes no disco.
+    ready_by_extension: dict[str, bool] = {}
 
     # Linhas de um 1.x antigo cujo caminho está sob uma pasta que a
     # varredura agora pula (saída de outro projeto, Conjunto): arquivo
@@ -181,6 +187,28 @@ def detect_changes(
         if row is None:
             changes.append(FileChange(relative_path, "new", path.name, size))
             continue
+
+        # Revisão final da 2.0.0 (I1): arquivo à espera de um componente
+        # (LibreOffice, ffmpeg/whisper) que ainda não está nesta máquina não
+        # tem página no índice nem nada a refazer. Apontá-lo como alterado
+        # descartava as janelas do grupo a partir dele em toda execução, e o
+        # aviso de "Atualizar" nunca sumia. Com o componente presente, cai na
+        # regra abaixo (`ocr_failed`) e entra junto com as janelas do grupo.
+        if (
+            row["status"] == "skipped"
+            and row["error"] == REASON_COMPONENT_UNAVAILABLE
+            and relative_path not in stale
+        ):
+            extension = row["extension"] or ""
+            if extension not in ready_by_extension:
+                # Local: a conversão traz o PyMuPDF e o resto da cadeia, e
+                # só um arquivo nesta situação precisa dela aqui.
+                from .conversion import component_ready
+
+                ready_by_extension[extension] = component_ready(extension)
+            if not ready_by_extension[extension]:
+                unchanged += 1
+                continue
 
         # Fase 34: a file whose OCR failed is "changed" for the update even
         # with the same bytes — its pages are blank in the index, and the

@@ -225,6 +225,16 @@ def _executable(name: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def tools_present() -> bool:
+    """Se `prepare(download=False)` acharia as ferramentas agora: ffmpeg,
+    whisper.cpp e algum modelo instalado. Sem rede e sem medir a máquina —
+    o plano de atualização pergunta isso a cada arquivo de mídia que ficou
+    esperando os componentes (`update_plan.detect_changes`)."""
+    if _executable(COMPONENT_FFMPEG) is None or _executable(COMPONENT_WHISPER) is None:
+        return False
+    return any(components.path_of(component) is not None for component in MODEL_COMPONENTS.values())
+
+
 def prepare(download: bool = True) -> tuple[Toolset | None, list[str]]:
     """Os três componentes (baixando o que falta): `(ferramentas, [])` ou
     `(None, nomes do que faltou)`. Nunca levanta; só o modelo escolhido é
