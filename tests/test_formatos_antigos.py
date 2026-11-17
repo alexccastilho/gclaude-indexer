@@ -195,13 +195,18 @@ def test_pdf_do_libreoffice_sem_texto_passa_pelo_ocr(tmp_path, simulador, monkey
     monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
     chamado = []
 
-    def _ocr(origem_pdf, destino, idioma, jobs=1, pages=None):
+    def _ocr(origem_pdf, destino, idioma, jobs=1, pages=None, rotate=False):
         chamado.append(pages)
         Path(destino).write_bytes(Path(origem_pdf).read_bytes())
 
     monkeypatch.setattr(conversion, "_run_ocrmypdf", _ocr)
     # O simulador desenha um quadrado, sem texto, para a página "precisar" de OCR.
     monkeypatch.setattr(conversion, "_pdf_pages_needing_ocr", lambda _p: ([1], 1))
+    # 2.0.0: os formatos que viram PDF na conversão leem páginas e amostra do
+    # texto nativo de uma vez (`ocr_detection.scan_pdf`).
+    from gclaude_indexer import ocr_detection
+
+    monkeypatch.setattr(ocr_detection, "scan_pdf", lambda _p, _minimo: ([1], 1, ""))
 
     scan(conn, config)
     resultado = convert(conn, config)

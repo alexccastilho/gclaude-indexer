@@ -38,7 +38,7 @@ import fitz  # PyMuPDF
 from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
 from .conversion import converted_artifact_path
-from .language_detect import CJK_SCRIPTS, dominant_script
+from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
 from .db import BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
@@ -83,7 +83,9 @@ def capped_text(text: str, limit: int) -> str:
     ideogramas encheriam a janela do classificador sozinhos. Função só do
     texto: extrair de novo dá o mesmo corte."""
     head = text[:limit]
-    if limit > CJK_CHARS_PER_PAGE and dominant_script(head) in CJK_SCRIPTS:
+    # `has_unspaced` (regex, em C) antes da contagem por caractere, em
+    # Python: página sem nenhum caractere CJK nem é contada.
+    if limit > CJK_CHARS_PER_PAGE and has_unspaced(head) and dominant_script(head) in CJK_SCRIPTS:
         return head[:CJK_CHARS_PER_PAGE]
     return head
 

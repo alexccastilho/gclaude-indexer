@@ -248,6 +248,78 @@ def test_amostra_de_han_pelo_ocr_nao_decide_entre_simplificado_e_tradicional():
     )
 
 
+def test_deteccao_no_trabalhador_so_pela_escrita_e_o_idioma_decidido_no_principal(monkeypatch):
+    from gclaude_indexer.conversion import _detect_in_worker, _resolve_language
+
+    def _sem_modelo():
+        raise AssertionError("o processo do conjunto não carrega o py3langid")
+
+    monkeypatch.setattr(language_detect, "_model", _sem_modelo)
+    usaveis = ["por", "eng", "jpn", "rus", "script/Cyrillic"]
+    notas: dict = {}
+    # Japonês sai da própria escrita.
+    assert _detect_in_worker(JAPONES * 5, "por", False, usaveis, notas) == ("jpn", False)
+    assert notas["language_sample"].startswith(JAPONES)
+    # Cirílico num plano latino: o modelo da escrita.
+    assert _detect_in_worker(RUSSO * 3, "por", False, usaveis, {}) == ("script/Cyrillic", False)
+    # Alemão num plano latino: lido agora com o plano (mesma escrita).
+    notas = {}
+    assert _detect_in_worker(ALEMAO * 3, "por", False, usaveis, notas) == ("por", False)
+    monkeypatch.undo()
+
+    # No processo principal: alemão lido com português → refazer com o alemão.
+    info = {"language_sample": notas["language_sample"], "ocr_used": "por", "ocr_applied": True}
+    assert _resolve_language(info) == (("deu", "de"), True)
+    # Lido com o idioma certo: nada a refazer.
+    assert _resolve_language({**info, "ocr_used": "deu+eng"}) == (("deu", "de"), False)
+    # Sem OCR feito: só grava o idioma.
+    assert _resolve_language({**info, "ocr_applied": False}) == (("deu", "de"), False)
+
+
+def test_formato_que_vira_pdf_na_conversao_e_relido_no_idioma_do_texto(tmp_path, monkeypatch):
+    """Um `.epub` (paginados) só vira PDF no trabalhador: lá sai só a escrita
+    (latina: lido com o idioma do projeto); o idioma exato é decidido no
+    processo principal, que grava o alemão e manda refazer."""
+    from gclaude_indexer import light_formats
+
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _pdf(tmp_path / "livro.pdf", [ALEMAO * 3, None])
+    conteudo = (tmp_path / "livro.pdf").read_bytes()
+    (origem / "buch.epub").write_bytes(b"epub de teste")
+    scan(conn, config)
+    monkeypatch.setattr(light_formats, "convert_to_pdf_bytes", lambda _caminho: conteudo)
+    monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
+    ocr = _OcrFalso()
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", ocr)
+
+    assert convert(conn, config, language="pt-BR").failed == 0
+    assert [(c["paginas"], c["idiomas"]) for c in ocr.chamadas] == [([2], config.ocr_language)]
+    linha = _linha(conn, "buch.epub")
+    assert (linha["ocr_lang"], linha["language"], linha["ocr_failed"]) == ("deu", "de", 1)
+
+    # A conversão seguinte refaz com o alemão gravado.
+    assert convert(conn, config, language="pt-BR").failed == 0
+    assert ocr.chamadas[-1]["idiomas"] == "deu"
+    assert _linha(conn, "buch.epub")["ocr_failed"] == 0
+
+
+def test_pdf_todo_nativo_nao_pede_idioma_de_ocr(tmp_path, monkeypatch):
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _pdf(origem / "nativo.pdf", [ALEMAO * 3, ALEMAO * 3])
+    scan(conn, config)
+    pedidos = []
+    monkeypatch.setattr(ocr_languages, "ensure", lambda lang, _exe, download=True: pedidos.append(lang) or [])
+
+    def _sem_reserva(*_a, **_k):
+        raise AssertionError("PDF sem página a ler não precisa de plano de OCR")
+
+    monkeypatch.setattr(conversion, "_fallback_plan", _sem_reserva)
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", _OcrFalso())
+
+    assert convert(conn, config, language="pt-BR").failed == 0
+    assert all("deu" not in pedido for pedido in pedidos), pedidos
+
+
 def test_imagem_de_lado_e_endireitada_e_lida_no_idioma_da_amostra(tmp_path, monkeypatch):
     origem, _saida, config, conn = _projeto(tmp_path)
     Image.new("RGB", (300, 100), "white").save(origem / "foto.png")
@@ -276,7 +348,7 @@ def test_pouco_texto_vale_o_idioma_do_grupo(tmp_path, monkeypatch):
     scan(conn, config)
     monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
     pedidos = []
-    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang: pedidos.append(lang) or "")
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang, rotate=0: pedidos.append(lang) or "")
 
     convert(conn, config, language="pt-BR")
 
@@ -345,7 +417,7 @@ def test_download_recusado_pelo_hash_nao_usa_o_arquivo_e_refaz_depois(tmp_path, 
     _manifesto(monkeypatch, escrita, rus)
     _servidor(monkeypatch, {"script/Cyrillic": b"cirilico", "tessdata/rus": adulterado})
     pedidos = []
-    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang: pedidos.append(lang) or "текст")
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang, rotate=0: pedidos.append(lang) or "текст")
 
     assert convert(conn, config, language="pt-BR").failed == 0
 
@@ -438,6 +510,16 @@ def test_janela_sem_texto_nao_ganha_linha_de_idioma():
     assert "Idioma do texto" not in _build_prompt(_paginas("", "f. 3"))
 
 
+def test_janela_em_portugues_fica_com_o_prompt_de_sempre():
+    from gclaude_indexer.engine_local import _build_prompt
+
+    portugues = (
+        "O contrato de prestação de serviços foi assinado hoje pelas duas partes e entra em vigor "
+        "imediatamente. O pagamento será feito no fim de cada mês, mediante nota fiscal. "
+    )
+    assert "Idioma do texto" not in _build_prompt(_paginas(portugues * 3))
+
+
 def test_agrupamento_por_assunto_em_escrita_sem_espaco():
     from gclaude_indexer.engine_local import _same_topic_start, _subject_key
 
@@ -456,6 +538,13 @@ def test_datas_numericas_e_iso_em_qualquer_idioma_nas_regras():
     assert motor._find_date("２０２３年５月１２日") == "2023-05-12"
     assert motor._find_date("2024년 3월 1일") == "2024-03-01"
     assert motor._find_date("protocolo 12345-12-1234") is None
+    # Numeração única do CNJ: nada de "2023-08-26" saído do meio do número.
+    assert motor._find_date("Processo n. 0001234-56.2023.8.26.0100") is None
+    assert motor._find_date("Processo 1234-56.2023.8.26.0100") is None
+    assert motor._find_date("2023-05/12") is None  # separadores misturados
+    assert motor._find_date("ref 2023-05-12-7") is None
+    assert motor._find_date("id 1234-12-05-2023") is None
+    assert motor._find_date("em 2023.05.12.") == "2023-05-12"  # ponto final não atrapalha
 
 
 # --- busca ------------------------------------------------------------------------
@@ -522,11 +611,29 @@ def test_projeto_antigo_recebe_os_trechos_na_tabela_trigram_uma_vez(tmp_path):
     conn.execute("DELETE FROM fulltext_trigram")
     conn.execute("UPDATE fulltext_trigram_state SET backfilled = 0")
     conn.commit()
-    assert fulltext.search(conn, "学校")[1] == 0
+    # Todo indexado, sem passar por `index_pending`: a tabela trigram vazia
+    # não é consultada; a busca cai para substring na `fulltext` e acha.
+    hits, total = fulltext.search(conn, "学校")
+    assert total == 1 and hits[0].file_id == 1
+    assert fulltext.search(conn, "公共服务")[1] == 1
 
     assert fulltext.backfill_trigram(conn) == 1
     assert fulltext.search(conn, "学校")[1] == 1
     assert fulltext.backfill_trigram(conn) == 0  # uma vez só
+    conn.close()
+
+
+def test_remover_arquivo_indexado_sem_faixa_tira_tambem_os_trechos_trigram(tmp_path):
+    from gclaude_indexer import fulltext
+
+    conn = _banco_com_trechos(tmp_path, {1: [CHINES], 2: [CHINES]})
+    # Como um arquivo indexado antes da 1.5.9: sem a faixa de rowids.
+    conn.execute("UPDATE fulltext_file SET first_rowid = NULL, last_rowid = NULL WHERE file_id = 1")
+    conn.commit()
+    fulltext.remove_file(conn, 1)
+    restantes = {linha[0] for linha in conn.execute("SELECT rowid FROM fulltext_trigram")}
+    assert restantes == {linha[0] for linha in conn.execute("SELECT rowid FROM fulltext WHERE file_id = 2")}
+    assert {h.file_id for h in fulltext.search(conn, "学校")[0]} == {2}
     conn.close()
 
 

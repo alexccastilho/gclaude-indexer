@@ -488,33 +488,38 @@ def _row_plan(config: ProjectConfig, row: dict | None) -> tuple[str, bool]:
     return config.ocr_language or "", False
 
 
-def _detect_in_worker(
-    row: dict, source_pdf: Path, plan: str, short: bool, notes: dict,
-) -> tuple[str, bool]:
+def _detect_in_worker(native: str, plan: str, short: bool, usable, notes: dict) -> tuple[str, bool]:
     """Os formatos que só viram PDF na conversão (paginados, assinados,
     antigos) não passam pela detecção anterior ao OCR: o texto nativo do PDF
-    convertido diz o idioma aqui. O idioma que não está nesta máquina não é
-    baixado aqui (um processo do conjunto não baixa): o arquivo é lido com o
-    plano que veio, fica marcado e a próxima conversão baixa o que ele pediu
-    (`file.ocr_lang`)."""
-    try:
-        native = ocr_detection.scan_pdf(source_pdf, MIN_AVG_CHARS_PER_PAGE)[2]
-    except Exception:
-        return plan, short
+    convertido diz aqui a escrita. Só a escrita: o `py3langid` (~100 MB por
+    processo) não é carregado num processo do conjunto. Chinês, japonês e
+    coreano saem da própria escrita; as demais seguem o plano quando ele lê a
+    escrita, ou o modelo da escrita quando não lê. O idioma exato é decidido
+    no processo principal, pela amostra (`_resolve_language`), que manda o
+    arquivo refazer se o OCR leu com outro idioma. O que não está nesta
+    máquina não é baixado aqui: o arquivo fica marcado e a próxima conversão
+    baixa o que ele pediu (`file.ocr_lang`)."""
     if not ocr_detection.native_is_enough(native):
         return plan, short
-    found = language_detect.detect_languages(native)
-    if not found:
+    script = language_detect.dominant_script(native)
+    if script is None:
         return plan, short
-    wanted = "+".join(language_detect.tesseract_languages(found, native))
-    notes["ocr_lang"] = wanted
-    notes["language"] = ",".join(found)
-    usable = row.get("ocr_usable")
+    notes["language_sample"] = native[:_GROUP_SAMPLE_CHARS]
+    if script in language_detect.CJK_SCRIPTS:
+        code = language_detect.east_asian_language(native)
+        wanted = "+".join(language_detect.tesseract_languages([code], native)) if code else ""
+    elif any(language_detect.model_script(model) == script for model in ocr_detection.plan_models(plan)):
+        return plan, short
+    else:
+        wanted = language_detect.script_model(script) or ""
+    if not wanted:
+        return plan, short
     if usable is None:  # sem saber o que o Tesseract tem: como antes, tenta
         return wanted, False
     restricted, missing = ocr_detection.restrict_plan(wanted, set(usable))
     if restricted:
         return restricted, missing
+    notes["ocr_lang"] = wanted
     return plan, True
 
 
@@ -533,14 +538,24 @@ def _ocr_pdf_pages(
     notes = notes if notes is not None else {}
     ocr_failed = False
     ocr_applied = False
+    native = ""
+    detect = row is not None and bool(row.get("ocr_detect"))
     if row is not None and row.get("ocr_pages") is not None and row.get("page_count"):
         ocr_pages, page_count = list(row["ocr_pages"]), int(row["page_count"])
+    elif detect:
+        # Uma leitura só: as páginas sem texto e a amostra do texto nativo.
+        try:
+            ocr_pages, page_count, native = ocr_detection.scan_pdf(source_pdf, MIN_AVG_CHARS_PER_PAGE)
+        except Exception as exc:
+            raise ConversionError(f"PDF ilegível ou corrompido: {exc}") from exc
+        if page_count == 0:
+            raise ConversionError("PDF sem páginas")
     else:
         ocr_pages, page_count = _pdf_pages_needing_ocr(source_pdf)
     needs_ocr = bool(ocr_pages)
     plan, short = _row_plan(config, row)
-    if needs_ocr and row is not None and row.get("ocr_detect"):
-        plan, short = _detect_in_worker(row, source_pdf, plan, short, notes)
+    if needs_ocr and detect:
+        plan, short = _detect_in_worker(native, plan, short, row.get("ocr_usable"), notes)
     rotate = bool(row is not None and row.get("ocr_rotate"))
 
     wanted_pages = set(ocr_pages)
@@ -576,10 +591,7 @@ def _ocr_pdf_pages(
                 if not last:
                     temporaries.append(target)
                 try:
-                    # `rotate` só quando há o que pedir: quem troca `_run_ocrmypdf`
-                    # (os testes) não precisa conhecer o argumento.
-                    extra = {"rotate": True} if rotate else {}
-                    _run_ocrmypdf(current, target, languages, jobs=ocrmypdf_jobs, pages=pages, **extra)
+                    _run_ocrmypdf(current, target, languages, jobs=ocrmypdf_jobs, pages=pages, rotate=rotate)
                 except OcrError as exc:
                     # A file with native text used to skip OCR altogether; one
                     # failed scanned page must not cost the rest of it. Read the
@@ -605,6 +617,9 @@ def _ocr_pdf_pages(
                 temporary.unlink(missing_ok=True)
         if done:
             ocr_applied = True
+            notes["ocr_used"] = "+".join(dict.fromkeys(
+                model for _pages, languages in runs[:done] for model in languages.split("+")
+            ))
             used = ", ".join(languages for _pages, languages in runs[:done])
             if partial:
                 events.append((
@@ -892,10 +907,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         languages = "+".join(ocr_detection.plan_models(plan))
         rotate = int(row.get("image_rotate") or 0)
         if languages:
-            if rotate:
-                text = _extract_text_image(source_path, languages, rotate=rotate)
-            else:
-                text = _extract_text_image(source_path, languages)
+            text = _extract_text_image(source_path, languages, rotate=rotate)
             ocr_applied = True
             ocr_failed = short
             events.append((
@@ -955,10 +967,34 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
 
 
 def _language_update(notes: dict) -> dict:
-    """O idioma achado na conversão, para `_apply_result` gravar."""
+    """O idioma achado na conversão, para `_apply_result` gravar (e a
+    amostra, para o processo principal decidir o idioma: `_resolve_language`)."""
+    update: dict = {}
     if notes.get("ocr_lang") or notes.get("language"):
-        return {"language_update": (notes.get("ocr_lang"), notes.get("language"))}
-    return {}
+        update["language_update"] = (notes.get("ocr_lang"), notes.get("language"))
+    if notes.get("language_sample"):
+        update["language_sample"] = notes["language_sample"]
+        update["ocr_used"] = notes.get("ocr_used") or ""
+    return update
+
+
+def _resolve_language(info: dict) -> tuple[tuple[str | None, str | None] | None, bool]:
+    """`(language_update, refazer)`. Para os formatos que detectam no
+    trabalhador (`_detect_in_worker`), o idioma da amostra é decidido aqui,
+    no processo principal; se o OCR foi feito sem o modelo desse idioma, o
+    plano certo fica em `file.ocr_lang` e `ocr_failed` traz o arquivo de
+    volta na próxima conversão."""
+    update = info.get("language_update")
+    sample = info.get("language_sample")
+    if not sample:
+        return update, False
+    found = language_detect.detect_languages(sample)
+    if not found:
+        return update, False
+    wanted = language_detect.tesseract_languages(found, sample)
+    used = set(ocr_detection.plan_models(info.get("ocr_used")))
+    redo = bool(info.get("ocr_applied")) and bool(wanted) and not set(wanted) <= used
+    return ("+".join(wanted) or None, ",".join(found)), redo
 
 
 def _store_signatures(conn, signatures) -> None:
@@ -991,14 +1027,19 @@ def _store_signatures(conn, signatures) -> None:
 
 
 def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, language: str | None = None) -> None:
+    # Fora da operação do gravador: a primeira detecção carrega o modelo.
+    language_update, redo = _resolve_language(info)
+
     def op(conn) -> None:
         conn.execute(info["sql"], info["params"])
-        if info.get("language_update"):
-            ocr_lang, detected = info["language_update"]
+        if language_update:
+            ocr_lang, detected = language_update
             conn.execute(
                 "UPDATE file SET ocr_lang = COALESCE(?, ocr_lang), language = COALESCE(?, language) WHERE id = ?",
                 (ocr_lang, detected, info["id"]),
             )
+        if redo:
+            conn.execute("UPDATE file SET ocr_failed = 1 WHERE id = ?", (info["id"],))
         _store_signatures(conn, info.get("signatures", ()))
         for step, level, key, params in info["events"]:
             record_event(conn, step, level, key, params, language=language, commit=False)
@@ -1880,7 +1921,10 @@ def _prepare_ocr(conn, config: ProjectConfig, heavy, legacy, should_stop, langua
         item = dict(row)
         info = plans.get(item["id"], {})
         category = category_of_extension("." + item["extension"])
-        plan = item.get("ocr_lang") or info.get("plan") or _fallback_plan(conn, config, item, cache)
+        if info.get("ocr_pages") == [] and not item.get("ocr_lang"):
+            plan = None  # todo nativo: sem OCR, nada a baixar para ele
+        else:
+            plan = item.get("ocr_lang") or info.get("plan") or _fallback_plan(conn, config, item, cache)
         item.update(
             ocr_plan=plan, ocr_short=bool(info.get("unavailable")), image_rotate=info.get("rotate", 0),
             ocr_detect=category in _DETECT_IN_WORKER_CATEGORIES and not item.get("ocr_lang"),

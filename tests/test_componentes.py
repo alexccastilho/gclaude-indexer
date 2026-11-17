@@ -356,7 +356,7 @@ def test_com_parte_dos_idiomas_le_com_o_que_tem_e_refaz_depois(tmp_path, monkeyp
     scan(conn, config)
     _sem_idioma(monkeypatch, ["eng"])
     pedidos = []
-    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang: pedidos.append(lang) or "texto")
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang, rotate=0: pedidos.append(lang) or "texto")
 
     resultado = convert(conn, config, language="pt-BR")
 
@@ -382,7 +382,7 @@ def test_sem_saber_a_pasta_do_tesseract_o_ocr_segue_como_antes(tmp_path, monkeyp
     _sem_idioma(monkeypatch, [])
     monkeypatch.setattr(ocr_languages, "active_folder", lambda _exe: None)
     pedidos = []
-    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang: pedidos.append(lang) or "texto")
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang, rotate=0: pedidos.append(lang) or "texto")
 
     convert(conn, config, language="pt-BR")
 

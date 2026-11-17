@@ -65,8 +65,8 @@
     {"regex": "\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})\\b", "groups": ["day", "month", "year"]},
     {"regex": "\\b(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})\\b", "groups": ["day", "month", "year"]},
     {"regex": "\\b(\\d{1,2})[º°]?\\s+de\\s+([A-Za-zçÇãÃéÉíÍóÓôÔ]+)\\s+de\\s+(\\d{4})\\b", "groups": ["day", "month_name", "year"]},
-    {"regex": "(?<!\\d)(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})(?!\\d)", "groups": ["year", "month", "day"]},
-    {"regex": "(?<!\\d)(\\d{1,2})-(\\d{1,2})-(\\d{4})(?!\\d)", "groups": ["day", "month", "year"]},
+    {"regex": "(?<!\\d)(?<!\\d[-./])(\\d{4})([-/.])(\\d{1,2})\\2(\\d{1,2})(?![-./]?\\d)", "groups": ["year", "separator", "month", "day"]},
+    {"regex": "(?<!\\d)(?<!\\d[-./])(\\d{1,2})-(\\d{1,2})-(\\d{4})(?![-./]?\\d)", "groups": ["day", "month", "year"]},
     {"regex": "(\\d{4})\\s*[年년]\\s*(\\d{1,2})\\s*[月월]\\s*(\\d{1,2})\\s*[日일]", "groups": ["year", "month", "day"]}
   ],
 

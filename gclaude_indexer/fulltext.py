@@ -272,6 +272,13 @@ def remove_file(conn: sqlite3.Connection, file_id: int) -> None:
         return
     first, last = found[0], found[1]
     if first is None or last is None:
+        if trigram_available(conn):
+            # Indexado antes das faixas (1.5.9): os rowids vêm da `fulltext`,
+            # antes de apagá-la.
+            conn.execute(
+                "DELETE FROM fulltext_trigram WHERE rowid IN (SELECT rowid FROM fulltext WHERE file_id = ?)",
+                (file_id,),
+            )
         conn.execute("DELETE FROM fulltext WHERE file_id = ?", (file_id,))
     elif last >= first:
         conn.execute("DELETE FROM fulltext WHERE rowid BETWEEN ? AND ?", (first, last))
@@ -305,7 +312,7 @@ def _store_passages(conn: sqlite3.Connection, row, passages) -> int:
         nonlocal count
         for p in passages:
             rowid = first + count
-            if with_trigram and language_detect.is_unspaced(p.text):
+            if with_trigram and _unspaced(p.text):
                 unspaced.append((rowid, trigram_text(p.text)))
             yield (rowid, p.text, row["id"], p.locator, p.line)
             count += 1
@@ -320,6 +327,13 @@ def _store_passages(conn: sqlite3.Connection, row, passages) -> int:
     return count
 
 
+def _unspaced(text: str) -> bool:
+    """`is_unspaced` (que conta escrita caractere a caractere, em Python)
+    só depois do filtro em C: o texto sem nenhum caractere dessas escritas,
+    a imensa maioria, nem chega a ser contado."""
+    return language_detect.has_unspaced(text) and language_detect.is_unspaced(text)
+
+
 def trigram_text(text: str) -> str:
     """O texto de um trecho como vai para a `fulltext_trigram`: sem o espaço
     que o OCR põe entre ideogramas ("东京 都" → "东京都")."""
@@ -329,6 +343,15 @@ def trigram_text(text: str) -> str:
 # Filtro grosso, em C, do `backfill_trigram`: trecho com algum caractere de
 # escrita sem espaço (tailandesa, laosiana, birmanesa, khmer, kana, han, hangul).
 _UNSPACED_GLOB = "*[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]*"
+
+
+def _trigram_ready(conn: sqlite3.Connection) -> bool:
+    """Se a `fulltext_trigram` existe e já tem todos os trechos: num projeto
+    anterior à 2.0.0 todo indexado, ela fica vazia até `backfill_trigram`."""
+    if not trigram_available(conn):
+        return False
+    state = conn.execute("SELECT backfilled FROM fulltext_trigram_state WHERE id = 1").fetchone()
+    return state is None or bool(state[0])
 
 
 def backfill_trigram(conn: sqlite3.Connection) -> int:
@@ -344,7 +367,7 @@ def backfill_trigram(conn: sqlite3.Connection) -> int:
     batch = []
     try:
         for rowid, text in conn.execute("SELECT rowid, text FROM fulltext WHERE text GLOB ?", (_UNSPACED_GLOB,)):
-            if language_detect.is_unspaced(text):
+            if _unspaced(text):
                 batch.append((rowid, trigram_text(text)))
         conn.execute("DELETE FROM fulltext_trigram")
         conn.executemany("INSERT INTO fulltext_trigram (rowid, text) VALUES (?, ?)", batch)
@@ -546,7 +569,7 @@ def _search_unspaced(conn: sqlite3.Connection, text: str, limit: int, offset: in
     if query:
         parts.append("SELECT rowid AS id, rank AS score FROM fulltext WHERE fulltext MATCH ?")
         params.append(query)
-    if trigram_available(conn):
+    if _trigram_ready(conn):
         where: list[str] = []
         if long_terms:
             where.append("fulltext_trigram MATCH ?")
@@ -557,7 +580,9 @@ def _search_unspaced(conn: sqlite3.Connection, text: str, limit: int, offset: in
         score = "rank" if long_terms else "0"
         parts.append(f"SELECT rowid AS id, {score} AS score FROM fulltext_trigram WHERE " + " AND ".join(where))
     else:
-        # Sem o tokenizador `trigram`: substring na tabela principal (lê tudo).
+        # Sem o tokenizador `trigram`, ou num projeto antigo cuja tabela
+        # ainda não recebeu os trechos (`backfill_trigram` roda na próxima
+        # indexação): substring na tabela principal (lê tudo).
         parts.append("SELECT rowid AS id, 0 AS score FROM fulltext WHERE " + " AND ".join(_LIKE for _ in terms))
         params.extend(_like_pattern(term) for term in terms)
     union = " UNION ALL ".join(parts)

@@ -230,6 +230,12 @@ def _east_asian(counts: Counter) -> str | None:
     return None
 
 
+def east_asian_language(text: str) -> str | None:
+    """"ja", "ko" ou "zh" pela escrita, sem o modelo do `py3langid` (que um
+    processo do conjunto não carrega)."""
+    return _east_asian(script_counts(text))
+
+
 def _chunk_language(chunk: str, counts: Counter) -> str | None:
     script = counts.most_common(1)[0][0]
     if script in ("han", "kana", "hangul"):
