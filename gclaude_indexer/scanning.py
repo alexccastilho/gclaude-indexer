@@ -823,8 +823,9 @@ def _record_scanned_file(
             if _holds_old_data(writer.conn, relative_path):
                 from .invalidation import discard_changed_file  # importa este módulo
 
-                writer.flush()
-                discard_changed_file(writer.conn, config, relative_path, name, size, language)
+                writer.run_own_transaction(
+                    lambda c: discard_changed_file(c, config, relative_path, name, size, language)
+                )
 
         if placeholder:
             # Lido enfim: é um arquivo novo, não um alterado.
