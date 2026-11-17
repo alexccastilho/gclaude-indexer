@@ -410,7 +410,19 @@ def apply_update_plan(
     if current.fingerprint != plan.fingerprint:
         raise PlanExpired(plan.fingerprint)
 
+    _warn_unverified(conn, current, language)
     return _apply(conn, config, current, language)
+
+
+def _warn_unverified(conn: sqlite3.Connection, plan: UpdatePlan, language: str | None) -> None:
+    """O aviso dos arquivos não conferidos, uma vez por aplicação: aqui, e
+    não em `build_update_plan`, que cada abertura da tela também chama."""
+    if plan.unverified:
+        record_event(
+            conn, "update", "warning", "log.update.unverified",
+            {"count": len(plan.unverified), "names": ", ".join(plan.unverified[:20])},
+            language=language,
+        )
 
 
 def apply_pending_changes(
@@ -453,12 +465,8 @@ def apply_pending_changes(
     )
     # Uma vez por execução (revisão, achado 6): só a da etapa de varredura
     # avisa; a da extração passa `warn_unverified=False`.
-    if warn_unverified and current.unverified:
-        record_event(
-            conn, "update", "warning", "log.update.unverified",
-            {"count": len(current.unverified), "names": ", ".join(current.unverified[:20])},
-            language=language,
-        )
+    if warn_unverified:
+        _warn_unverified(conn, current, language)
     # Only a changed file or a touched group has anything to discard. A
     # document new to a group of its own needs no invalidation, and an
     # "update applied" line on every run that found one would only be noise.

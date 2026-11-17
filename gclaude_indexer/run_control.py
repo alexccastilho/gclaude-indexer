@@ -30,6 +30,10 @@ class StopSignal:
     by the interface's "Pause" button, checked by the step's loop."""
 
     _event: threading.Event = field(default_factory=threading.Event)
+    # Estado de uma execução, compartilhado pelas etapas da mesma cadeia
+    # ("Executar tudo" usa um sinal só para todas): por exemplo, se a
+    # varredura já avisou dos arquivos não conferidos.
+    run_state: dict = field(default_factory=dict)
 
     def request_stop(self) -> None:
         self._event.set()

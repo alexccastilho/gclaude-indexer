@@ -61,8 +61,11 @@ def _apply_pending_changes(conn, config, should_stop, language, listed=None, war
         pass
 
 
-def _scan_step(conn, config, should_stop, language, files=None, on_progress=None):
+def _scan_step(conn, config, should_stop, language, files=None, on_progress=None, run_state=None):
     _apply_pending_changes(conn, config, should_stop, language, listed=files)
+    if run_state is not None:
+        # O aviso dos não conferidos desta execução já saiu (ou não havia).
+        run_state["unverified_warned"] = True
     result = scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
     if should_stop is None or not should_stop():
         # 2.0.0: janela, sobreposição, caracteres por página e idioma do OCR
@@ -73,13 +76,15 @@ def _scan_step(conn, config, should_stop, language, files=None, on_progress=None
     return result
 
 
-def _extraction_step(conn, config, should_stop, language):
+def _extraction_step(conn, config, should_stop, language, run_state=None):
     # "Continue" starts the chain here, past the scan: a database 1.10.2
     # left with stale pages would stop on them again. Repaired files go
     # back to 'discovered' and are read again by the next run.
     if stale_page_paths(conn):
-        # O aviso dos não conferidos já saiu na varredura desta execução.
-        _apply_pending_changes(conn, config, should_stop, language, warn_unverified=False)
+        # O aviso dos não conferidos só sai aqui quando a execução começou
+        # pela extração; a varredura da mesma cadeia já o deu.
+        warned = bool(run_state and run_state.get("unverified_warned"))
+        _apply_pending_changes(conn, config, should_stop, language, warn_unverified=not warned)
     return extract_pages(conn, config, should_stop=should_stop, language=language)
 
 
@@ -519,6 +524,8 @@ class TaskManager:
                             task.scanned, task.scanned_bytes = files_done, bytes_done
 
                         extra = {"files": files, "on_progress": scanned}
+                    if step in ("scan", "extraction"):
+                        extra["run_state"] = task.stop_signal.run_state
                     _STEP_FUNCTIONS[step](work_conn, current_config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
