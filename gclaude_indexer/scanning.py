@@ -810,10 +810,14 @@ def _record_scanned_file(
             # descarta aqui, pela mesma rotina, antes de devolvê-lo à fila.
             # Sem isso a extração parava em UNIQUE(page.file_id, page.number),
             # ou as páginas novas caíam por baixo de janelas já classificadas.
-            writer.flush()  # `_apply` abre a própria transação
+            # A consulta enxerga as escritas ainda não confirmadas desta
+            # conexão; o commit só é pago quando há o que descartar (`_apply`
+            # abre a própria transação). No fluxo normal o documento chega
+            # aqui já `discovered` e sem páginas, e nada é confirmado antes.
             if _holds_old_data(writer.conn, relative_path):
                 from .invalidation import discard_changed_file  # importa este módulo
 
+                writer.flush()
                 discard_changed_file(writer.conn, config, relative_path, name, size, language)
 
         def op(c) -> None:
