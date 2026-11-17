@@ -47,7 +47,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import category_of_extension, is_extension_allowed, name_decision
+from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, name_decision
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -425,7 +425,9 @@ def _always_one_page(relative_path: str) -> bool:
     exceptions are the formats with pages of their own: PDF, the paged ones
     (EPUB, XPS…), a signed file (it may hold a PDF) and the mailbox (a page
     per message)."""
-    return category_of_extension(Path(relative_path).suffix) not in ("pdf", "paginados", "legados", "assinados", "mbox")
+    return category_of_extension(Path(relative_path).suffix) not in (
+        "pdf", "paginados", "legados", "assinados", *MESSAGE_PAGE_CATEGORIES,
+    )
 
 
 def _in_place_windows(

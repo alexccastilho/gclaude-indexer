@@ -46,7 +46,7 @@ from .worker_pool import (
 )
 from .parallelism import workers_for
 from . import light_formats
-from .file_types import PAGED_CATEGORIES, category_of_extension
+from .file_types import MESSAGE_PAGE_CATEGORIES, PAGED_CATEGORIES, category_of_extension
 from .fulltext import index_pending
 from .paths import natural_sort_key
 
@@ -139,7 +139,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
 
     if category == "imagens":
         return [(text, 1, False)]
-    if category == "mbox":
+    if category in MESSAGE_PAGE_CATEGORIES:
         # Cada mensagem é uma página.
         parts = intermediate.read_text(encoding="utf-8").split(light_formats.MBOX_PAGE_SEPARATOR)
         return [(part[:limit], 0, False) for part in parts]

@@ -54,6 +54,9 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     "email": {".eml", ".msg"},
     # Cada mensagem da caixa é uma página, como o `.eml` é um documento.
     "mbox": {".mbox"},
+    # Arquivos do Outlook: cada mensagem é uma página (e cada anexo com texto
+    # também). Lidos em fluxo, por uma fila própria da conversão.
+    "outlook": {".pst", ".ost"},
     "cad": {".dxf"},
     # ICP-Brasil: o conteúdo envelopado é indexado pelo tipo real e o
     # signatário vai para `file_signature`.
@@ -149,6 +152,10 @@ REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 # Categorias com páginas reais (o limite de caracteres por página do projeto
 # vale para elas, e o documento pode continuar no arquivo seguinte).
 PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")
+
+# Uma página por mensagem (separadas por `light_formats.MBOX_PAGE_SEPARATOR`
+# no texto intermediário): a caixa `.mbox` e os arquivos do Outlook.
+MESSAGE_PAGE_CATEGORIES: tuple[str, ...] = ("mbox", "outlook")
 
 
 def valid_categories() -> set[str]:
@@ -316,7 +323,7 @@ CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = {
     "documentos": ("pdf", "docx", "xlsx", "pptx", "opendocument", "rtf", "paginados", "legados"),
     "imagens": ("imagens",),
     "text_data": ("text", "legendas", "web_dados"),
-    "mensagens": ("email", "mbox"),
+    "mensagens": ("email", "mbox", "outlook"),
     "tecnicos": ("cad", "assinados"),
 }
 

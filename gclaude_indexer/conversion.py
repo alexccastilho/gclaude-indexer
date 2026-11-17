@@ -31,7 +31,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import legacy_office, light_formats, no_window, tools, workdir
+from . import legacy_office, light_formats, no_window, outlook, tools, workdir
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -42,7 +42,9 @@ from .worker_pool import (
 )
 from .parallelism import _physical_cores, io_workers_for, workers_for
 from .file_types import (
-    REASON_BINARY, REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, category_of_extension, looks_binary,
+    ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
+    REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
+    category_of_extension, looks_binary,
 )
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
@@ -55,6 +57,8 @@ _BINARY_SNIFF_BYTES = 8192
 # do PDF; os formatos antigos (LibreOffice) também, depois de virarem PDF.
 OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados", "legados"})
 LEGACY_CATEGORY = "legados"
+# Arquivos do Outlook: fila própria, lida em fluxo neste processo (`_convert_outlook`).
+OUTLOOK_CATEGORY = "outlook"
 # Extensões que já existiam antes da 2.0.0: o texto intermediário delas
 # continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
 # Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
@@ -1121,6 +1125,171 @@ def _convert_heavy(conn, config: ProjectConfig, heavy, should_stop, result, lang
         _convert_in_parallel(conn, config, heavy, workers, ocrmypdf_jobs, should_stop, result, language=language)
 
 
+# --- Outlook (`.pst`, `.ost`) ---------------------------------------------------------
+
+
+def _pdf_native_text(data: bytes) -> str:
+    """O texto nativo de um PDF (sem OCR: um anexo escaneado não entra)."""
+    document = fitz.open(stream=data, filetype="pdf")
+    try:
+        return "\n".join(page.get_text() for page in document)
+    finally:
+        document.close()
+
+
+def _renamed_for(path: Path, accepted: set[str], canonical: str) -> Path:
+    """O anexo com a extensão que o extrator do tipo real espera, quando a
+    que veio no nome não é uma delas (o tipo real manda, não o nome)."""
+    if path.suffix.lower() in accepted:
+        return path
+    target = path.with_name(path.stem + canonical)
+    path.replace(target)
+    return target
+
+
+def _attachment_text(path: Path, config: ProjectConfig) -> str | None:
+    """O texto de um anexo gravado em `path`, pelo extrator do tipo real dele
+    (pelos bytes, não pelo nome). `None` quando o tipo não é lido: compactado
+    (continua ignorado, como no inventário), binário, executável, chave, ou
+    imagem sem idioma de OCR."""
+    extension = path.suffix.lower()
+    if (
+        extension in ARCHIVE_EXTENSIONS or extension in ALWAYS_BLOCKED_EXTENSIONS
+        or extension in SECRET_EXTENSIONS or extension in GOOGLE_DOC_EXTENSIONS
+        or extension in EXTENSION_CATEGORIES["outlook"] or extension in EXTENSION_CATEGORIES["mbox"]
+        or extension in EXTENSION_CATEGORIES["midia"]
+    ):
+        return None
+    data = path.read_bytes()
+    kind = light_formats.sniff_content_type(data)
+    if kind == "pdf":
+        return _pdf_native_text(data)
+    if kind == "docx":
+        return _extract_text_docx(_renamed_for(path, EXTENSION_CATEGORIES["docx"], ".docx"))
+    if kind == "xlsx":
+        return _extract_text_xlsx(_renamed_for(path, EXTENSION_CATEGORIES["xlsx"] - {".xls"}, ".xlsx"))
+    if kind == "pptx":
+        return _extract_text_pptx(_renamed_for(path, EXTENSION_CATEGORIES["pptx"], ".pptx"))
+    if kind == "odf":
+        return light_formats.extract_text_opendocument(_renamed_for(path, {".odt", ".ods", ".odp", ".odg"}, ".odt"))
+    if kind == "epub":
+        return _pdf_native_text(light_formats.convert_to_pdf_bytes(_renamed_for(path, {".epub"}, ".epub")))
+    if kind == "rtf":
+        return light_formats.extract_text_rtf(path)
+    if kind == "image":
+        if not config.ocr_language:
+            return None
+        return _extract_text_image(path, config.ocr_language)
+    if kind == "xls":
+        # O contêiner OLE2 antigo: o nome diz se é planilha, mensagem ou
+        # documento do Office antigo (este só se o LibreOffice já está aí).
+        if extension in (".xls", ".xlt"):
+            return light_formats.extract_text_xls(path, data)
+        if extension == ".msg":
+            return _extract_text_msg(path)
+        if extension in EXTENSION_CATEGORIES[LEGACY_CATEGORY]:
+            soffice = legacy_office.soffice_path()
+            if soffice is not None:
+                return _pdf_native_text(legacy_office.convert_to_pdf_bytes(path, soffice))
+        return None
+    if kind == "text":
+        if extension == ".eml":
+            return _extract_text_eml(path)
+        if extension in (".srt", ".vtt"):
+            return light_formats.extract_text_subtitles(path)
+        if extension == ".dxf":
+            return light_formats.extract_text_dxf(path)
+        if extension.lstrip(".") in _HTML_EXTENSIONS | _MHTML_EXTENSIONS | {"xml", "json"}:
+            return _extract_text_web(path, extension.lstrip("."))
+        return decode_bytes(data)[0]
+    return None
+
+
+def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | None:
+    """Converte um `.pst`/`.ost`; `None` quando Parar foi pedido (o arquivo
+    continua `discovered` e a conversão seguinte retoma da mensagem em que
+    parou). Roda neste processo: a leitura em fluxo e a retomada dependem de
+    um único dono do arquivo parcial."""
+    name = row["name"]
+    relative_path = row["relative_path"]
+    extension = row["extension"].lower()
+    output_dir = Path(config.output_folder)
+    source_path = Path(config.source_folder) / relative_path
+    destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
+    attachments_root = workdir.work_folder(output_dir) / "converted" / relative_path / "anexos"
+    events: list[tuple[str, str, str, dict]] = []
+    skipped_attachments = 0
+
+    def on_note(kind: str, params: dict) -> None:
+        nonlocal skipped_attachments
+        if kind == "attachment_too_large":
+            skipped_attachments += 1
+
+    try:
+        result = outlook.convert_pst(
+            source_path, destination, attachments_root, lambda path: _attachment_text(path, config),
+            should_stop=should_stop, on_note=on_note,
+        )
+    except outlook.Interrupted:
+        return None
+    except outlook.ReaderUnavailable:
+        return {
+            "id": row["id"], "name": name, "events": [], "ocr_applied": False, "unavailable": True,
+            "sql": (
+                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
+                " ocr_failed = 0 WHERE id = ?"
+            ),
+            "params": (REASON_UNSUPPORTED, row["id"]),
+        }
+    if result.truncated:
+        events.append((
+            "conversion", "warning", "log.conversion.outlook_truncated",
+            {"name": name, "limit": outlook.MAX_MESSAGES},
+        ))
+    if skipped_attachments:
+        events.append((
+            "conversion", "warning", "log.conversion.outlook_attachments_skipped",
+            {"name": name, "count": skipped_attachments},
+        ))
+    return {
+        "id": row["id"], "name": name, "events": events, "ocr_applied": False,
+        "sql": "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0 WHERE id = ?",
+        "params": (result.pages, row["id"]),
+    }
+
+
+def _convert_outlook(conn, config: ProjectConfig, rows, should_stop, result, language) -> None:
+    """Um arquivo do Outlook por vez, neste processo, sem prazo por arquivo
+    (um `.pst` de dezenas de gigabytes leva o tempo que levar; Parar vale a
+    cada mensagem). Sem a biblioteca de leitura os arquivos ficam ignorados
+    com o motivo `unsupported` e o log diz uma vez."""
+    writer = BatchWriter(conn)
+    unavailable = 0
+    try:
+        for row in rows:
+            if should_stop is not None and should_stop():
+                break
+            try:
+                info = _process_outlook(config, dict(row), should_stop)
+            except Exception as exc:
+                _record_failure(writer, result, row, str(exc) or exc.__class__.__name__, language=language)
+                continue
+            if info is None:
+                break
+            if info.get("unavailable"):
+                unavailable += 1
+            _apply_result(writer, result, info, language=language)
+        if unavailable:
+            writer.add(_record_event_op(
+                "conversion", "warning", "log.conversion.outlook_unavailable", {"count": unavailable}, language,
+            ))
+    finally:
+        try:
+            writer.flush()
+        except Exception:
+            writer.discard()
+
+
 def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, language) -> None:
     """`.doc`, `.ppt`, `.wpd`… pelo LibreOffice, um por vez, neste processo.
 
@@ -1178,11 +1347,15 @@ def convert(
     # last and run alone for minutes after every other file was done;
     # started first, it runs alongside the rest.
     heavy.sort(key=lambda row: row["size"] or 0, reverse=True)
-    light = [row for row in rows if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES]
+    outlook_rows = [row for row in rows if category_of_extension("." + row["extension"]) == OUTLOOK_CATEGORY]
+    light = [
+        row for row in rows
+        if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES | {OUTLOOK_CATEGORY}
+    ]
 
     heavy_config = config
     ocr_shortfall = False
-    if heavy or legacy:
+    if heavy or legacy or outlook_rows:
         # The OCR language is installed here if the installer could
         # not (no administrator rights needed), before the OCR workers are
         # started — they inherit this process's `TESSDATA_PREFIX`.
@@ -1220,6 +1393,9 @@ def convert(
 
     if legacy and not (should_stop is not None and should_stop()):
         _convert_legacy(conn, heavy_config, legacy, should_stop, result, language)
+
+    if outlook_rows and not (should_stop is not None and should_stop()):
+        _convert_outlook(conn, heavy_config, outlook_rows, should_stop, result, language)
 
     if ocr_shortfall:
         # Read with only part of the languages: good enough for now,

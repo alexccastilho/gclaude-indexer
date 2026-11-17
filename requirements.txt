@@ -49,6 +49,9 @@ pillow==13.0.0
 # - asn1crypto 1.5.1: MIT (assinaturas ICP-Brasil, `.p7s`/`.p7m`).
 # - striprtf 0.0.35: BSD-3-Clause (`.rtf`).
 # - xlrd 2.0.2: BSD-3-Clause (`.xls`).
+# - libpff-python 20261030: LGPL-3.0-ou-posterior (`.pst`/`.ost` do Outlook); roda em fluxo,
+#   o programa só lê. Roda de cp312 win_amd64 pronta (sem compilar); sem ela o arquivo fica
+#   ignorado como "unsupported".
 # - ezdxf 1.4.5: MIT (`.dxf`); traz numpy (BSD-3-Clause), fonttools (MIT),
 #   pyparsing (MIT) e typing_extensions (PSF).
 pillow-heif==1.8.1
@@ -56,6 +59,7 @@ asn1crypto==1.5.1
 striprtf==0.0.35
 xlrd==2.0.2
 ezdxf==1.4.5
+libpff-python==20261030
 
 # Monitoramento de recursos (CPU/RAM na tela de Execução)
 psutil==6.0.0
