@@ -12,7 +12,7 @@ between the form and the engines from phases 5 and 8. `automatic` picks `local` 
 otherwise `rules`.
 
 NOTE: `config.classification_engine` now speaks the same English vocabulary
-as `classification.VALID_ENGINES` — "rules", "local", "claude_code" — plus
+as `classification.VALID_ENGINES` — "rules", "local" — plus
 the "automatic" sentinel, which is resolved right here and never itself
 written to `item.engine`. Both `config.py`'s `CLASSIFICATION_ENGINES` and
 this module used to keep the old Portuguese literals ("automatico"/"regras")
@@ -46,9 +46,7 @@ def resolve_effective_engine(
 def run_classification(
     conn: sqlite3.Connection, config: ProjectConfig, should_stop=None, language: str | None = None
 ) -> tuple[str, object]:
-    """Runs step 6 for the synchronous engines (`rules`/`local`). `claude_code` does not go through here — it is
-    handled separately by the interface (asynchronous execution). Returns
-    `(motor_usado, resultado)`."""
+    """Runs step 6 (`rules`/`local`). Returns `(motor_usado, resultado)`."""
     effective_engine = resolve_effective_engine(conn, config, language=language)
 
     if effective_engine == "local":

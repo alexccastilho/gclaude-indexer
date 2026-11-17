@@ -36,7 +36,9 @@ from .i18n import translate, DEFAULT_LANGUAGE
 
 COLLECTION_TYPES = {"processo", "biblioteca"}
 GROUP_MODES = {"subfolder", "name_pattern", "all_together"}
-CLASSIFICATION_ENGINES = {"automatic", "rules", "local", "claude_code"}
+# "claude_code" (manual) saiu na 2.0.0: `project.load_project` converte um
+# projeto salvo com ele para "automatic" antes de validar.
+CLASSIFICATION_ENGINES = {"automatic", "rules", "local"}
 # Explicit user request: an option to force CPU/RAM even with a GPU
 # available, in addition to the automatic default (uses the GPU to the
 # max, overflows to RAM). Only affects the 'local' engine — see

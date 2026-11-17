@@ -22,16 +22,3 @@
 </div>
 {% endif %}
 
-{% if show_claude_code %}
-<div class="claude-code-box">
-  <h3>{{ t('run.claude_code_title') }}</h3>
-  <p>{{ t('run.claude_code_instruction') }}</p>
-  <input type="text" readonly value="{{ claude_code_command }}" onclick="this.select()" class="copyable">
-  <button hx-post="/projects/{{ project.id }}/claude-code/recheck" hx-target="#steps" hx-swap="innerHTML">
-    {{ m.icon('refresh') }} {{ t('run.claude_code_recheck') }}
-  </button>
-  {% if claude_code_status %}
-  <p class="help">{{ t('run.claude_code_windows_status', done=claude_code_status.windows_done, pending=claude_code_status.windows_pending) }}</p>
-  {% endif %}
-</div>
-{% endif %}

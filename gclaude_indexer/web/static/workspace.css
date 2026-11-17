@@ -297,7 +297,6 @@ html[data-layout="workspace"] .card,
 html[data-layout="workspace"] .progress-box,
 html[data-layout="workspace"] .quality-box,
 html[data-layout="workspace"] .comparison-box,
-html[data-layout="workspace"] .claude-code-box,
 html[data-layout="workspace"] .cleanup-box,
 html[data-layout="workspace"] .resource-box {
   border: 1px solid var(--color-border);

@@ -555,7 +555,7 @@ def test_geracao_escreve_o_buscar_bat_e_a_exclusao_o_conhece(tmp_path):
 
 
 def test_claude_md_ensina_a_buscar_nos_tres_idiomas(tmp_path):
-    from gclaude_indexer.windows_prep import generate_claude_md
+    from gclaude_indexer.artifacts import generate_claude_md
 
     for idioma in ("pt", "en", "es"):
         texto = generate_claude_md(_config(tmp_path), idioma).read_text(encoding="utf-8")

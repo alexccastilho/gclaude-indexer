@@ -20,6 +20,7 @@ from pathlib import Path
 from .config import ProjectConfig, load_config, config_to_json
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .events import record_event
+from .windows_prep import mark_answered_windows
 
 DB_NAME = "project.db"
 
@@ -239,7 +240,30 @@ def load_project(
             {"engine": "openrouter", "replacement": "rules"},
         )
 
+    # 2.0.0: o motor "Claude Code (manual)" foi removido. Um projeto salvo
+    # com ele abre e passa a `automatic`. Antes, as janelas que o Claude Code
+    # já respondeu (têm linha em `raw_items.jsonl`) são marcadas como feitas,
+    # para a classificação automática não refazê-las; o que foi respondido
+    # continua valendo na importação. O aviso sai uma vez só e a configuração
+    # é regravada, senão a conversão se repetiria a cada requisição.
+    claude_code_converted = data.get("classification_engine") == "claude_code"
+    if claude_code_converted:
+        data["classification_engine"] = "automatic"
+
     config = load_config(data)
+
+    if claude_code_converted:
+        try:
+            mark_answered_windows(conn, Path(output_folder))
+            _record_once(
+                conn, "log.project.classification_engine_converted",
+                {"engine": "claude_code", "replacement": "automatic"},
+            )
+            save_project_config(conn, config)
+        except sqlite3.Error:
+            # Banco travado por outro processo: vale só nesta abertura, e a
+            # próxima tenta de novo (tudo acima é idempotente).
+            pass
 
     # A pasta pode ter sido renomeada ou movida (ou o projeto aberto de
     # outro computador, por outra unidade) depois da criação. O que vale é

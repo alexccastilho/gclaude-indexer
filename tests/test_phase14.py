@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from gclaude_indexer.artifacts import (
     INDEX_FILENAME,
     PROJECT_INSTRUCTIONS_FILENAME,
     REVIEW_FILENAME,
     TIMELINE_FILENAME,
     generate_all_artifacts,
+    generate_claude_md,
     generate_index_md,
 )
 from gclaude_indexer.config import load_config
 from gclaude_indexer.db import connect, init_schema
-from gclaude_indexer.engine_claude_code import USER_COMMANDS, command_for_language
 from gclaude_indexer.system_locale import (
     FALLBACK_LANGUAGE,
     _detect_windows_locale,
     _locale_family,
     detect_ui_language,
 )
-from gclaude_indexer.windows_prep import generate_claude_md
 
 
 # --- Tarefa 10: mapeamento de locale do Windows para família de idioma ------
@@ -161,6 +162,7 @@ def test_generate_all_artifacts_mantem_nomes_de_arquivo_fixos_em_ingles(tmp_path
         # Fase 38: o lançador da busca (`buscar.bat`) também tem nome fixo.
         assert {p.name for p in caminhos.values()} == {
             INDEX_FILENAME, TIMELINE_FILENAME, REVIEW_FILENAME, PROJECT_INSTRUCTIONS_FILENAME, "buscar.bat",
+            "CLAUDE.md",
         }
 
     conn.close()
@@ -177,40 +179,46 @@ def _config_simples(tmp_path):
     )
 
 
-def test_claude_md_documenta_as_tres_frases_gatilho_em_qualquer_idioma(tmp_path):
-    """A armadilha real apontada pelo brief: se `CLAUDE.md` só documentasse
-    a frase no idioma corrente, um usuário que gerou o arquivo num idioma e
-    trocou a interface depois (ou só lembra a frase antiga) deixaria de ser
-    reconhecido pelo motor `claude_code` externo — sem erro, sem teste
-    falhando. A decisão tomada foi documentar as três frases como gatilhos
-    válidos em qualquer idioma do arquivo."""
+def test_claude_md_e_so_de_consulta_nos_tres_idiomas(tmp_path):
+    """2.0.0: o `CLAUDE.md` deixou de ser o contrato do motor manual do
+    Claude Code. Só ensina a consultar: ler o índice e usar o `buscar.bat`.
+    Nenhum rastro de janelas, de frase-gatilho nem do contrato JSON."""
     config = _config_simples(tmp_path)
 
     for language in ("pt", "en", "es"):
         conteudo = generate_claude_md(config, language).read_text(encoding="utf-8")
-        for frase in USER_COMMANDS.values():
-            assert frase in conteudo, f"frase {frase!r} ausente do CLAUDE.md em {language!r}"
+        assert "index.md" in conteudo and "timeline.md" in conteudo
+        assert "buscar.bat" in conteudo and "--lexml" in conteudo
+        assert "UNTRUSTED" in conteudo
+        assert "Acervo de teste" in conteudo or "Verificação CLAUDE.md" in conteudo
+        for resto in ("claude_code", "windows/", "raw_items", "order_start", "processe as janelas"):
+            assert resto not in conteudo, f"{resto!r} ainda aparece no CLAUDE.md em {language!r}"
 
 
-def test_claude_md_mantem_vocabulario_de_tipos_e_chaves_json_em_qualquer_idioma(tmp_path):
-    """As chaves JSON do contrato (Tarefa 9e) e o vocabulário de tipos de
-    documento (termos reais do acervo em português) não são prosa — ficam
-    fixos em todo idioma; só a prosa ao redor muda."""
+def test_claude_md_novo_substitui_o_arquivo_inteiro_do_motor_antigo(tmp_path):
     config = _config_simples(tmp_path)
+    caminho = Path(config.output_folder) / "CLAUDE.md"
+    caminho.write_text(
+        "# GClaude Indexer — classificação das janelas (X)\n\nVocê é o motor `claude_code`.\n",
+        encoding="utf-8",
+    )
 
-    for language in ("pt", "en", "es"):
-        conteudo = generate_claude_md(config, language).read_text(encoding="utf-8")
-        assert '"engine": "claude_code"' in conteudo
-        assert '"confidence"' in conteudo
-        assert "order_start" in conteudo and "order_end" in conteudo
-        assert "OFÍCIO" in conteudo and "MEMORANDO" in conteudo
+    conteudo = generate_claude_md(config, "pt").read_text(encoding="utf-8")
+
+    assert "classificação das janelas" not in conteudo
+    assert "motor `claude_code`" not in conteudo
+    assert "buscar.bat" in conteudo
 
 
-def test_command_for_language_cai_para_referencia_em_idioma_desconhecido():
-    """Mesmo raciocínio de `translate()`/`_REFERENCE_LANGUAGE`: um idioma
-    não reconhecido não pode quebrar o botão de copiar comando."""
-    assert command_for_language("xx") == USER_COMMANDS["pt"]
-    assert command_for_language("en") == "process the windows"
+def test_claude_md_preserva_o_texto_do_usuario(tmp_path):
+    config = _config_simples(tmp_path)
+    caminho = Path(config.output_folder) / "CLAUDE.md"
+    caminho.write_text("# Minhas regras\n\nResponda sempre em tópicos.\n", encoding="utf-8")
+
+    conteudo = generate_claude_md(config, "en").read_text(encoding="utf-8")
+
+    assert "Responda sempre em tópicos." in conteudo
+    assert "buscar.bat" in conteudo
 
 
 def test_web_i18n_reexporta_a_mesma_tabela_do_nucleo():
@@ -227,58 +235,6 @@ def test_web_i18n_reexporta_a_mesma_tabela_do_nucleo():
 
 
 # --- defeito de produção encontrado na Tarefa 11 ----------------------------
-
-
-def test_tela_de_execucao_escreve_o_claude_md_do_motor_claude_code(tmp_path, monkeypatch):
-    """Regressão de um defeito que a suíte não pegava: `start_all()` pula a
-    etapa de classificação quando o motor é `claude_code`, e nada mais na
-    aplicação chamava `prepare()` — só os testes. Resultado: o `CLAUDE.md`
-    nunca chegava ao disco, e a tela mandava o usuário digitar o comando
-    num Claude Code que não tinha instrução nenhuma para ler. O motor era
-    inutilizável de ponta a ponta com todos os seus próprios testes verdes.
-
-    Aqui a tela de execução é aberta de verdade, e o que se cobra é o
-    arquivo existir depois disso."""
-    import gclaude_indexer.catalog as catalogo_mod
-    import gclaude_indexer.hardware as hardware_mod
-    from fastapi.testclient import TestClient
-    from gclaude_indexer.catalog import find_project
-    from gclaude_indexer.web.app import app
-    from gclaude_indexer.windows_prep import CLAUDE_MD_FILENAME
-    from pathlib import Path
-
-    monkeypatch.setattr(catalogo_mod, "machine_local_folder", lambda: tmp_path / "local")
-    monkeypatch.setattr(hardware_mod, "machine_local_folder", lambda: tmp_path / "local")
-    cliente = TestClient(app)
-
-    origem = tmp_path / "origem"
-    origem.mkdir()
-    saida = tmp_path / "saida"
-    resposta = cliente.post(
-        "/projects/new",
-        data={
-            "name": "Projeto CLAUDE.md", "subject": "Acervo de teste",
-            "source_folder": str(origem), "output_folder": str(saida),
-            "collection_type": "processo", "group_mode": "subfolder", "group_pattern": "",
-            "extensions": ["pdf"], "pages_per_block": "80", "pages_per_window": "16",
-            "overlap": "2", "chars_per_page": "2000", "ocr_language": "por",
-            "classification_engine": "claude_code", "local_model": "automatic",
-            "role_instructions": "", "extra_rules": "",
-        },
-        follow_redirects=False,
-    )
-    assert resposta.status_code == 303, resposta.text
-    projeto_id = int(resposta.headers["location"].split("/")[2])
-
-    claude_md = Path(find_project(projeto_id).output_folder) / CLAUDE_MD_FILENAME
-    assert not claude_md.exists(), "pré-condição: o arquivo ainda não deve existir"
-
-    assert cliente.get(f"/projects/{projeto_id}/run").status_code == 200
-
-    assert claude_md.exists(), (
-        "a tela de execução do motor `claude_code` não escreveu o CLAUDE.md — "
-        "o usuário veria o comando para digitar sem o arquivo que o instrui"
-    )
 
 
 def test_arquivos_nao_python_nao_citam_modulos_inexistentes():

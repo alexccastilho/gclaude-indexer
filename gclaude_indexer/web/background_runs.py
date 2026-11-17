@@ -609,8 +609,6 @@ class TaskManager:
                 for step in steps:
                     if stop_signal.should_stop():
                         break
-                    if step == "classification" and config.classification_engine == "claude_code":
-                        continue
                     task = self.start_step(
                         project_id, entry_output_folder, config, step, stop_signal=stop_signal, language=language
                     )

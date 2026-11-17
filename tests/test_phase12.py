@@ -346,8 +346,8 @@ def test_formulario_mostra_nome_e_descricao_de_cada_motor(cliente):
     corpo = cliente.get("/projects/new").text
     assert "Automático" in corpo
     assert "Ollama" in corpo  # descrição do motor local diz do que ele depende
-    assert '<option value="claude_code"' in corpo
-    assert ">claude_code<" not in corpo  # o identificador cru não aparece mais
+    assert '<option value="claude_code"' not in corpo  # motor manual removido na 2.0.0
+    assert ">claude_code<" not in corpo  # o identificador cru não aparece
     assert 'class="engine-descriptions"' in corpo
 
 
@@ -358,7 +358,7 @@ def test_formulario_reexibido_apos_erro_tambem_mostra_os_motores(cliente):
     resposta = cliente.post("/projects/new", data={"name": "Sem pasta"})
     assert resposta.status_code == 400
     assert 'class="engine-descriptions"' in resposta.text
-    assert '<option value="claude_code"' in resposta.text
+    assert '<option value="claude_code"' not in resposta.text
     assert ">claude_code<" not in resposta.text
 
 
@@ -559,8 +559,7 @@ def test_aviso_de_troca_de_maquina_tem_botao_de_dispensar(cliente):
 def test_hx_target_sempre_aponta_para_um_id_existente_nos_templates():
     """Static, render-independent version of the coupling check: some
     `hx-target=` fragments only render under a specific runtime condition
-    (`_progress.html`'s pause button needs a step actually running,
-    `_steps.html`'s claude_code recheck needs that engine selected) — a
+    (`_progress.html`'s pause button needs a step actually running) — a
     request-based test can miss them depending on fixture state. This reads
     every template's source directly and proves each `hx-target="#x"` has a
     matching `id="x"` *somewhere* in the template set (ids and their

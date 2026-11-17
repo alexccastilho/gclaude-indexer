@@ -64,10 +64,10 @@ from ..instructions_dedup import apply as dedup_apply, block_pointer, detect as 
 from ..managed_block import BACKUP_SUFFIX, generated_part, replace_user_part, user_part
 from ..deletion import delete_project
 from ..import_items import import_and_consolidate
+from ..windows_prep import cleanup_legacy_window_files
 from ..invalidation import PlanExpired, apply_update_plan
 from ..update_plan import SourceFolderUnavailable, UpdatePlan, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
-from ..engine_claude_code import command_for_language, prepare, sync_progress
 from .. import claude_package, combined_package
 from ..claude_package import generate_claude_project_package
 from ..paths import (
@@ -153,7 +153,7 @@ LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics", "update"}
 # (config.py) is a set and has no stable order — it stays the source of
 # truth for validation, never for presentation. A test guarantees the two
 # sets match.
-CLASSIFICATION_ENGINES_ORDER: tuple[str, ...] = ("automatic", "rules", "local", "claude_code")
+CLASSIFICATION_ENGINES_ORDER: tuple[str, ...] = ("automatic", "rules", "local")
 
 
 def render(request: Request, template_name: str, context: dict | None = None, status_code: int = 200) -> HTMLResponse:
@@ -984,28 +984,12 @@ def run_screen(request: Request, project_id: int):
         stale = _stale_context(_reports_to_regenerate(conn))
         instructions_dedup = _dedup_notice(conn, config)
 
-    claude_code_status = None
-    if config.classification_engine == "claude_code":
-        # The only part of this screen that writes, so it alone takes a
-        # normal connection (the rest above read through the project's
-        # read-only one, 1.9.1).
-        with _open_project(project_id) as (entry, config, conn):
-            # `prepare()` writes `CLAUDE.md` (idempotent) and must run
-            # before the user is told to type the command: `start_all()`
-            # skips the classification step for this engine, so nothing
-            # else in the running application ever wrote that file — the
-            # engine was unusable end to end even though its own tests
-            # passed, because only the tests ever called `prepare()`.
-            prepare(conn, config, language)
-            claude_code_status = sync_progress(conn, config, language)
-
     return render(
         request, "run.html",
         {
             **steps_context,
             "config": config, "eventos": events,
             "known_steps": LOG_KNOWN_STEPS,
-            "claude_code_status": claude_code_status,
             "sensor_token": SENSOR_REQUEST_TOKEN,
             "instructions_dedup": instructions_dedup,
             **stale,
@@ -1580,8 +1564,6 @@ def _steps_context(project_id: int, entry, config: ProjectConfig, conn, language
     return {
         "project": entry,
         "steps": steps,
-        "show_claude_code": config.classification_engine == "claude_code",
-        "claude_code_command": command_for_language(language),
         "show_done_notice": show_finished_notice,
         "qualidade": quality,
     }
@@ -1854,20 +1836,6 @@ def request_sensor_elevation(request: Request):
         _SENSOR_REQUEST_IN_FLIGHT.release()
         raise
     return Response(content='{"outcome": "requested"}', media_type="application/json", status_code=202)
-
-
-@app.post("/projects/{project_id}/claude-code/recheck", response_class=HTMLResponse)
-def recheck_claude_code(request: Request, project_id: int):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    with _open_project(project_id) as (entry, config, conn):
-        claude_code_status = sync_progress(conn, config, language)
-        steps = step_status(conn, lambda key: _step_running(project_id, key))
-
-    return render(
-        request, "_steps.html",
-        {"project": entry, "steps": steps, "show_claude_code": True,
-         "claude_code_command": command_for_language(language), "claude_code_status": claude_code_status},
-    )
 
 
 # Guards "import and generate" against a second click while the first one is
@@ -2144,6 +2112,10 @@ def import_and_generate(request: Request, project_id: int):
         with _open_project(project_id) as (_entry, config, conn):
             import_and_consolidate(conn, config, language=language, should_stop=should_stop)
             generate_all_artifacts(conn, config, language, should_stop=should_stop)
+            # Sobras do motor manual do Claude Code (removido na 2.0.0): aqui,
+            # em segundo plano e com Parar, e não ao abrir o projeto, porque
+            # numa pasta do Drive são milhares de remoções.
+            cleanup_legacy_window_files(config.output_folder, should_stop=should_stop)
 
     result_url = f"/projects/{project_id}/result"
     operation = _start_operation(project_id, "run.import_and_generate", work, result_url)

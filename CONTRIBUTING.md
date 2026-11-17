@@ -14,9 +14,8 @@ The project name mentions Claude, but **Claude Code is optional**, both to use t
 
 - `rules`: deterministic, no external tool required.
 - `local`: uses a local Ollama model.
-- `claude_code`: delegates classification to Claude Code, for users who already have it installed.
 
-The `rules` and `local` engines are enough to run the full pipeline end to end and to work on almost anything in this repository. You only need Claude Code if you are working on `gclaude_indexer/engine_claude_code.py` or `gclaude_indexer/claude_package.py`, and even then the test suite mocks the subprocess call. You do not need Claude Code installed to run the tests.
+The `rules` and `local` engines are enough to run the full pipeline end to end and to work on almost anything in this repository. You only need Claude Code if you are working on `gclaude_indexer/claude_package.py`, and even then the test suite mocks the subprocess call. You do not need Claude Code installed to run the tests.
 
 ## Setting up the environment
 

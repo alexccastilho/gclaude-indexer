@@ -160,8 +160,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.description": "só padrões de texto, sem modelo de linguagem. Instantâneo e sem dependência externa; erra mais em documentos fora do padrão.",
         "engine.local.name": "Modelo local (Ollama)",
         "engine.local.description": "roda qwen3.5:4b (ou qwen3.5:9b com placa de 8 GB ou mais) na sua máquina pelo Ollama, sem conta e sem internet. Exige o Ollama instalado; sem ele, cai nas regras com aviso.",
-        "engine.claude_code.name": "Claude Code (manual)",
-        "engine.claude_code.description": "gera as janelas para você classificar com o Claude Code e rodar um comando à mão. Melhor qualidade, mas não termina sozinho.",
+        "engine.claude_code.name": "Claude Code (versões anteriores)",
         "new_project.local_model": "Modelo local",
         "new_project.help_local_model": 'Modelos instalados no Ollama desta máquina. A escolha é usada de verdade na classificação: deixe em "automático" para usar qwen3.5:4b (placa de até 6 GB) ou qwen3.5:9b (8 GB ou mais), ou escolha outro para comparar a qualidade entre modelos.',
         "new_project.local_model_no_ollama": "O Ollama não está respondendo em 127.0.0.1:11434, então não dá para listar os modelos instalados. A classificação com o motor \"local\" usa o modelo escolhido aqui (padrão {default}), e precisa do Ollama no ar na hora de rodar; parado, o sistema cai no motor de regras com aviso.",
@@ -292,8 +291,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.classification_engine": (
             '"automático" usa o motor "local" (IA rodando nesta máquina) se o hardware permitir, '
             'senão cai para "regras" (determinístico, sem IA). "regras" força sempre o '
-            'determinístico; "local" força sempre a IA local; "claude_code" delega a '
-            "classificação ao Claude Code, rodado manualmente na pasta de saída."
+            'determinístico; "local" força sempre a IA local.'
         ),
         "hint.local_model": (
             "A lista mostra o que está instalado no Ollama desta máquina, sempre consultado em "
@@ -437,11 +435,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.run.p4": (
             "O gráfico de recursos mostra o uso de CPU, RAM e GPU desta máquina em tempo real, "
             "atualizado a cada meio segundo, com o nome do hardware detectado logo abaixo."
-        ),
-        "help.run.p5": (
-            "Com o motor \"claude_code\" selecionado, aparece uma caixa com o comando a colar no Claude Code (rodado manualmente na pasta de saída) e um "
-            'botão "Reverificar" para '
-            "atualizar a situação depois que ele terminar."
         ),
         "help.result.title": "Ajuda: Resultado",
         "help.result.p1": (
@@ -774,10 +767,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.log_copy": "copiar",
         "run.log_copied": "copiado!",
         "run.log_paused": "atualização pausada enquanto você seleciona o texto",
-        "run.claude_code_title": "Motor claude_code",
-        "run.claude_code_instruction": "Na pasta de saída, peça ao Claude Code:",
-        "run.claude_code_recheck": "Reverificar se as janelas acabaram",
-        "run.claude_code_windows_status": "{done} janela(s) feita(s), {pending} pendente(s).",
         "run.finished_notice": "Execução concluída: {items} peça(s), pontuação de qualidade {score}/100.",
         "run.finished_view_result": "Ver resultado",
         "update.title": "Atualizar acervo",
@@ -1397,8 +1386,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.description": "text patterns only, no language model. Instant and dependency-free; less accurate on documents that break the pattern.",
         "engine.local.name": "Local model (Ollama)",
         "engine.local.description": "runs qwen3.5:4b (or qwen3.5:9b with an 8 GB card or larger) on your machine through Ollama, no account and no internet. Requires Ollama installed; without it, falls back to rules with a warning.",
-        "engine.claude_code.name": "Claude Code (manual)",
-        "engine.claude_code.description": "prepares the windows for you to classify with Claude Code and run a command by hand. Best quality, but does not finish on its own.",
+        "engine.claude_code.name": "Claude Code (earlier versions)",
         "new_project.local_model": "Local model",
         "new_project.help_local_model": 'Models installed in Ollama on this machine. Your choice is actually used for classification: leave it as "automatic" to use qwen3.5:4b (cards up to 6 GB) or qwen3.5:9b (8 GB or more), or pick another one to compare quality across models.',
         "new_project.local_model_no_ollama": "Ollama is not responding on 127.0.0.1:11434, so the installed models cannot be listed. Classification with the \"local\" engine uses the model chosen here (default {default}), and needs Ollama running at classification time; if it is down, the system falls back to the rules engine with a warning.",
@@ -1528,8 +1516,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.classification_engine": (
             '"automatic" uses the "local" engine (AI running on this machine) if the hardware '
             'allows, otherwise falls back to "rules" (deterministic, no AI). "rules" always forces '
-            'the deterministic engine; "local" always forces the local AI; "claude_code" delegates '
-            "classification to Claude Code, run manually in the output folder."
+            'the deterministic engine; "local" always forces the local AI.'
         ),
         "hint.local_model": (
             "The list shows what is installed in Ollama on this machine, always queried at "
@@ -1667,10 +1654,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "help.run.p4": (
             "The resource chart shows this machine's CPU, RAM and GPU usage in real time, updated "
             "every half second, with the detected hardware name right below it."
-        ),
-        "help.run.p5": (
-            'With the "claude_code" engine selected, a box appears with the command to paste into Claude Code (run manually in the output folder) and a "Recheck" button to refresh '
-            "status once it's done."
         ),
         "help.result.title": "Help: Result",
         "help.result.p1": (
@@ -1983,10 +1966,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.log_copy": "copy",
         "run.log_copied": "copied!",
         "run.log_paused": "refresh paused while you select text",
-        "run.claude_code_title": "claude_code engine",
-        "run.claude_code_instruction": "In the output folder, tell Claude Code:",
-        "run.claude_code_recheck": "Recheck if the windows are done",
-        "run.claude_code_windows_status": "{done} window(s) done, {pending} pending.",
         "run.finished_notice": "Execution finished: {items} piece(s), quality score {score}/100.",
         "run.finished_view_result": "View result",
         "update.title": "Update collection",
@@ -2601,8 +2580,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.rules.description": "solo patrones de texto, sin modelo de lenguaje. Instantáneo y sin dependencias; falla más en documentos fuera del patrón.",
         "engine.local.name": "Modelo local (Ollama)",
         "engine.local.description": "ejecuta qwen3.5:4b (o qwen3.5:9b con tarjeta de 8 GB o más) en tu máquina con Ollama, sin cuenta y sin internet. Requiere Ollama instalado; sin él, recurre a las reglas con aviso.",
-        "engine.claude_code.name": "Claude Code (manual)",
-        "engine.claude_code.description": "prepara las ventanas para que las clasifiques con Claude Code y ejecutes un comando a mano. Mejor calidad, pero no termina solo.",
+        "engine.claude_code.name": "Claude Code (versiones anteriores)",
         "new_project.local_model": "Modelo local",
         "new_project.help_local_model": 'Modelos instalados en Ollama de esta máquina. La elección se usa de verdad en la clasificación: déjelo en "automático" para usar qwen3.5:4b (tarjeta de hasta 6 GB) o qwen3.5:9b (8 GB o más), o elija otro para comparar la calidad entre modelos.',
         "new_project.local_model_no_ollama": "Ollama no responde en 127.0.0.1:11434, así que no se pueden listar los modelos instalados. La clasificación con el motor \"local\" usa el modelo elegido aquí (por defecto {default}), y necesita que Ollama esté activo al momento de clasificar; si está detenido, el sistema recurre al motor de reglas con aviso.",
@@ -2734,8 +2712,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.classification_engine": (
             '"automático" usa el motor "local" (IA corriendo en esta máquina) si el hardware lo '
             'permite, si no cae en "reglas" (determinístico, sin IA). "reglas" siempre fuerza el '
-            'determinístico; "local" siempre fuerza la IA local; "claude_code" delega la '
-            "clasificación a Claude Code, ejecutado manualmente en la carpeta de salida."
+            'determinístico; "local" siempre fuerza la IA local.'
         ),
         "hint.local_model": (
             "La lista muestra lo instalado en Ollama de esta máquina, siempre consultado en "
@@ -2879,11 +2856,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "El gráfico de recursos muestra el uso de CPU, RAM y GPU de esta máquina en tiempo "
             "real, actualizado cada medio segundo, con el nombre del hardware detectado justo "
             "debajo."
-        ),
-        "help.run.p5": (
-            'Con el motor "claude_code" seleccionado, aparece una caja con el comando para pegar '
-            'en Claude Code (ejecutado manualmente en la carpeta de salida) y un botón '
-            '"Comprobar de nuevo" para actualizar el estado cuando termine.'
         ),
         "help.result.title": "Ayuda: Resultado",
         "help.result.p1": (
@@ -3196,10 +3168,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.log_copy": "copiar",
         "run.log_copied": "¡copiado!",
         "run.log_paused": "actualización en pausa mientras seleccionas el texto",
-        "run.claude_code_title": "Motor claude_code",
-        "run.claude_code_instruction": "En la carpeta de salida, pídale a Claude Code:",
-        "run.claude_code_recheck": "Comprobar de nuevo si las ventanas terminaron",
-        "run.claude_code_windows_status": "{done} ventana(s) hecha(s), {pending} pendiente(s).",
         "run.finished_notice": "Ejecución finalizada: {items} pieza(s), puntuación de calidad {score}/100.",
         "run.finished_view_result": "Ver resultado",
         "update.title": "Actualizar acervo",

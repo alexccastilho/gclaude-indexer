@@ -845,22 +845,6 @@ dialog.modal::backdrop { background: rgba(10, 11, 20, 0.55); }
 .notice-ok { color: var(--color-ok); font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
 .pending-items li { margin-bottom: 0.35rem; }
 
-.claude-code-box {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
-  margin-top: 1rem;
-  box-shadow: var(--shadow-card);
-}
-.copyable {
-  font-family: monospace;
-  width: 100%;
-  margin: 0.4rem 0;
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
 /* No `max-height`/`overflow` here: `.log-box` around it is already the
    scrolling container. Having both scroll made the panel unusable —
    the inner list was what actually moved, while the script (and the
