@@ -159,6 +159,19 @@ la 2.0.0.
   solo dentro del servidor; el formulario ahora las muestra marcadas, y
   "TODOS" queda visible y se comporta como las demás casillas.
 - Redacción del texto de ayuda de "TODOS", en los tres idiomas.
+- Un documento editado después de la última ejecución que aún tenía páginas
+  en el índice podía leerse de nuevo encima de sus páginas antiguas cuando la
+  actualización previa al escaneo no se había ejecutado (carpeta inaccesible
+  por un momento, Detener): el escaneo ahora descarta por sí mismo lo que aún
+  tenía y las ventanas del grupo a partir de él.
+- Un archivo en espera de un componente sigue en espera cuando se edita, sin
+  descartar ventanas mientras falta el componente.
+- Un archivo que la actualización no pudo leer a tiempo (marcador de Drive
+  aún descargándose, archivo bloqueado por otro programa) ya no cuenta como
+  sin cambios: el aviso y la pantalla de actualización lo muestran como **no
+  verificado**, y la siguiente ejecución lo comprueba de nuevo. La lectura
+  tiene plazo, se detiene tras varios archivos bloqueados seguidos y obedece
+  a Detener; un archivo que no se abre ya no detiene el escaneo.
 
 ### Seguridad
 
