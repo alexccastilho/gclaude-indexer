@@ -36,6 +36,7 @@ from .events import record_event
 from .file_types import (
     HEAD_BYTES,
     REASON_NOT_SELECTED,
+    REASON_UNREADABLE,
     index_decision,
     is_extension_allowed,
     is_waiting_component,
@@ -462,6 +463,8 @@ def _scan_files(
         relative_path = path.relative_to(source_dir).as_posix()
         name = path.name
         extension = path.suffix.lower()
+        existing_row = known_paths.get(relative_path)
+        size = None
         try:
             if listed is not None:
                 size, mtime = listed.size, listed.mtime
@@ -469,7 +472,6 @@ def _scan_files(
                 file_stat = call_with_deadline(path.stat, deadline=STAT_DEADLINE_SECONDS)
                 size = file_stat.st_size
                 mtime = file_stat.st_mtime
-            existing_row = known_paths.get(relative_path)
             unchanged = (
                 existing_row is not None
                 and existing_row["size"] == size
@@ -512,6 +514,21 @@ def _scan_files(
                 {"name": name, "error": error.strerror or str(error)},
                 language=language, commit=False,
             ))
+            if existing_row is None and size is not None:
+                # Novo: entra no inventário sem hash e sem data, para a
+                # contagem de arquivos da etapa bater com a pasta (como a
+                # cópia, `duplicate`). Sem data, a próxima varredura o lê de
+                # novo; um indexado que falha fica como estava.
+                extension_no_dot = extension.lstrip(".")
+                writer.add(lambda c, relative_path=relative_path, name=name,
+                           extension_no_dot=extension_no_dot, size=size: _insert_file(
+                    c, relative_path, name, extension_no_dot, size, "", None, None,
+                    "skipped", REASON_UNREADABLE,
+                ))
+                known_paths[relative_path] = {
+                    "relative_path": relative_path, "size": size, "sha256": "", "mtime": None,
+                    "status": "skipped", "error": REASON_UNREADABLE,
+                }
             continue
         consecutive_timeouts = 0
         bytes_done += size
@@ -562,6 +579,15 @@ def _is_waiting_component(row) -> bool:
     Rows the scan itself added to `known_paths` may carry no status."""
     try:
         return row is not None and is_waiting_component(row["status"], row["error"])
+    except (KeyError, IndexError):
+        return False
+
+
+def _is_unreadable_placeholder(row) -> bool:
+    """A linha de um arquivo novo que a varredura não conseguiu ler
+    (`REASON_UNREADABLE`): para tudo o mais, ele ainda é novo."""
+    try:
+        return row is not None and row["status"] == "skipped" and row["error"] == REASON_UNREADABLE
     except (KeyError, IndexError):
         return False
 
@@ -705,7 +731,8 @@ def _record_scanned_file(
             ))
         return
 
-    if existing_row is None and file_hash in known_hashes:
+    placeholder = _is_unreadable_placeholder(existing_row)
+    if (existing_row is None or placeholder) and file_hash in known_hashes:
         # Same content already indexed under another path (copy/duplicate).
         # It enters the table with status = 'duplicate' instead of vanishing:
         # without this row, the progress bar's numerator (COUNT(*) FROM
@@ -716,10 +743,16 @@ def _record_scanned_file(
         # stays out of processing as before, only visible in the
         # inventory.
         extension_no_dot = extension.lstrip(".")
-        writer.add(lambda c: _insert_file(
-            c, relative_path, name, extension_no_dot, size, file_hash,
-            mtime, None, "duplicate"
-        ))
+        if placeholder:
+            writer.add(lambda c: _update_file(
+                c, relative_path, name, extension_no_dot, size, file_hash,
+                mtime, None, "duplicate"
+            ))
+        else:
+            writer.add(lambda c: _insert_file(
+                c, relative_path, name, extension_no_dot, size, file_hash,
+                mtime, None, "duplicate"
+            ))
         result.skipped += 1
         known_hashes.add(file_hash)
         known_paths[relative_path] = {

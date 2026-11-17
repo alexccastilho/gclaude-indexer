@@ -236,9 +236,51 @@ def test_varredura_com_arquivo_que_nao_abre_segue_e_deixa_ele_para_a_proxima(tmp
     assert not conn.in_transaction
     conn.close()
     assert tuple(depois) == tuple(antes)
-    assert "doc09.txt" not in nomes
+    assert "doc09.txt" in nomes  # registrado sem hash, ver o teste seguinte
     assert atualizado == "discovered" and resultado.updated == 1
     assert any("doc02.txt" in m for m in avisos) and any("doc09.txt" in m for m in avisos), avisos
+
+
+def test_arquivo_novo_que_nao_abre_entra_na_conta_e_e_lido_na_proxima(tmp_path, monkeypatch):
+    """Achado 7: o arquivo novo ilegível fica no inventário (a contagem de
+    arquivos da etapa bate com a pasta), sem hash e com um motivo, e a
+    varredura seguinte o lê de novo; o plano o trata como novo, como se a
+    linha não existisse."""
+    origem = _origem_com_arquivos(tmp_path, 3)
+    config = _config(tmp_path, extensions=["text"])
+    conn = connect(tmp_path / "p.db")
+    init_schema(conn)
+    hash_real = varredura_mod.compute_hash
+    estado = {"preso": True}
+
+    def _hash(caminho):
+        if caminho.name == "doc01.txt" and estado["preso"]:
+            raise OSError(22, "Invalid argument")
+        return hash_real(caminho)
+
+    monkeypatch.setattr(varredura_mod, "compute_hash", _hash)
+    for _ in range(2):
+        varredura_mod.scan(conn, config, language="pt")
+        linha = conn.execute(
+            "SELECT status, error, sha256, group_key FROM file WHERE name = 'doc01.txt'"
+        ).fetchone()
+        assert tuple(linha) == ("skipped", "unreadable", "", None)
+        assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == 3
+    # Um aviso por varredura, não mais.
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.file_unreadable'"
+    ).fetchone()[0] == 2
+    mudancas, _inalterados, _ = detect_changes(conn, config)
+    assert [(m.relative_path, m.kind) for m in mudancas] == [("pasta/doc01.txt", "new")]
+
+    estado["preso"] = False
+    varredura_mod.scan(conn, config, language="pt")
+    linha = conn.execute("SELECT status, error, sha256 FROM file WHERE name = 'doc01.txt'").fetchone()
+    assert linha["status"] == "discovered" and linha["error"] is None and linha["sha256"]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.discarded_without_update'"
+    ).fetchone()[0] == 0
+    conn.close()
 
 
 def test_varredura_com_disco_travado_para_com_mensagem(tmp_path, monkeypatch, liberar_presos):
@@ -306,6 +348,8 @@ def test_chaves_novas_nos_tres_idiomas():
         for chave, params in (
             ("log.scan.file_timed_out", {"name": "x", "minutes": 10}),
             ("log.scan.file_unreadable", {"name": "x", "error": "y"}),
+            ("log.scan.discarded_without_update", {"name": "x", "windows": 2}),
+            ("ignored.reason.unreadable", {}),
             ("error.folder_stalled", {"folder": "x"}),
         ):
             texto = translate(idioma, chave, **params)
