@@ -83,7 +83,7 @@ class FileChange:
     mtime: float | None = None
 
 
-def _fingerprint(entries: list[tuple[str, int, float]], unverified=()) -> str:
+def _fingerprint(entries: list[tuple[str, int, float]], changed_paths=()) -> str:
     """Cheap identity of the folder as the plan saw it.
 
     Re-checked before the invalidation writes: applying a plan built from
@@ -93,11 +93,13 @@ def _fingerprint(entries: list[tuple[str, int, float]], unverified=()) -> str:
     digest = hashlib.sha256()
     for relative_path, size, mtime in sorted(entries):
         digest.update(f"{relative_path}|{size}|{mtime:.6f}\n".encode("utf-8"))
-    # Os não conferidos também (revisão, achado 2): um arquivo que a pessoa
-    # viu como "não conferido" e que, na hora de aplicar, foi lido e mudou
-    # faria a aplicação descartar janelas que a tela não mostrou.
-    for relative_path in sorted(unverified):
-        digest.update(f"?{relative_path}\n".encode("utf-8"))
+    # Os alterados também, pelo que a leitura achou (revisão, achado 2): um
+    # arquivo que a pessoa viu como "não conferido" e que, na hora de
+    # aplicar, foi lido e mudou faria a aplicação descartar janelas que a
+    # tela não mostrou. Quais ficaram sem conferir não entra: lido na hora
+    # de aplicar e igual ao do índice, nada do que a pessoa viu mudou.
+    for relative_path in sorted(changed_paths):
+        digest.update(f"~{relative_path}\n".encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -399,7 +401,8 @@ def detect_changes(
                 FileChange(relative_path, "removed", Path(relative_path).name, 0)
             )
 
-    return changes, unchanged, _fingerprint(entries, unverified)
+    changed_paths = [change.relative_path for change in changes if change.kind == "changed"]
+    return changes, unchanged, _fingerprint(entries, changed_paths)
 
 
 @dataclass(frozen=True)
