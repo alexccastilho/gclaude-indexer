@@ -4,6 +4,9 @@
   {
    "name": "libreoffice",
    "url": "https://download.documentfoundation.org/libreoffice/stable/26.2.7/win/x86_64/LibreOffice_26.2.7_Win_x86-64.msi",
+   "fallback_urls": [
+    "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.7.3/win/x86_64/LibreOffice_26.2.7.3_Win_x86-64.msi"
+   ],
    "sha256": "480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59",
    "size": 373121024,
    "license": "MPL-2.0",
