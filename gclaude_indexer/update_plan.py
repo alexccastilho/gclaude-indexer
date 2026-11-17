@@ -78,7 +78,7 @@ class FileChange:
     size: int
 
 
-def _fingerprint(entries: list[tuple[str, int, float]]) -> str:
+def _fingerprint(entries: list[tuple[str, int, float]], unverified=()) -> str:
     """Cheap identity of the folder as the plan saw it.
 
     Re-checked before the invalidation writes: applying a plan built from
@@ -88,6 +88,11 @@ def _fingerprint(entries: list[tuple[str, int, float]]) -> str:
     digest = hashlib.sha256()
     for relative_path, size, mtime in sorted(entries):
         digest.update(f"{relative_path}|{size}|{mtime:.6f}\n".encode("utf-8"))
+    # Os não conferidos também (revisão, achado 2): um arquivo que a pessoa
+    # viu como "não conferido" e que, na hora de aplicar, foi lido e mudou
+    # faria a aplicação descartar janelas que a tela não mostrou.
+    for relative_path in sorted(unverified):
+        digest.update(f"?{relative_path}\n".encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -242,6 +247,8 @@ def detect_changes(
     """
     if reader is None:
         reader = _PlanReader(should_stop)
+    if unverified is None:
+        unverified = []
     source_dir = Path(config.source_folder)
     if not source_dir.is_dir():
         raise SourceFolderUnavailable(str(source_dir))
@@ -364,8 +371,7 @@ def detect_changes(
         # também não é "inalterado": sai à parte, para o aviso.
         file_hash = reader.hash(path, size, mtime)
         if file_hash is None:
-            if unverified is not None:
-                unverified.append(relative_path)
+            unverified.append(relative_path)
             continue
         if file_hash == row["sha256"]:
             unchanged += 1
@@ -382,7 +388,7 @@ def detect_changes(
                 FileChange(relative_path, "removed", Path(relative_path).name, 0)
             )
 
-    return changes, unchanged, _fingerprint(entries)
+    return changes, unchanged, _fingerprint(entries, unverified)
 
 
 @dataclass(frozen=True)
