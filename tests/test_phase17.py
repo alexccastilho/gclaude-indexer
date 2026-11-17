@@ -526,6 +526,24 @@ def test_leitura_tardia_de_arquivo_novo_tambem_vale_para_o_plano_seguinte(tmp_pa
     assert leituras["chamadas"] == ["b.pdf"]
 
 
+def test_quem_aplica_espera_a_leitura_pendente_em_vez_de_desistir(tmp_path, leituras, monkeypatch):
+    """Achado 3: a tela abandonou a leitura pelo prazo curto; quem aplica
+    (prazo inteiro) espera essa mesma leitura terminar, sem começar outra."""
+    from gclaude_indexer import update_plan
+
+    conn, config = _plano_com_varios_mexidos(tmp_path, 1)
+    leituras["espera"] = 1.0
+    tela: list[str] = []
+    detect_changes(conn, config, unverified=tela)
+    assert tela == ["d0.pdf"]
+
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 10.0)
+    aplicar: list[str] = []
+    mudancas, inalterados, _ = detect_changes(conn, config, unverified=aplicar)
+    assert aplicar == [] and mudancas == [] and inalterados == 1
+    assert leituras["chamadas"] == ["d0.pdf"]
+
+
 def test_telas_usam_prazo_curto(tmp_path, leituras, monkeypatch):
     import time
 
