@@ -248,38 +248,63 @@ def test_amostra_de_han_pelo_ocr_nao_decide_entre_simplificado_e_tradicional():
     )
 
 
-def test_deteccao_no_trabalhador_so_pela_escrita_e_o_idioma_decidido_no_principal(monkeypatch):
+def test_deteccao_no_trabalhador_le_ja_no_idioma_do_texto():
     from gclaude_indexer.conversion import _detect_in_worker, _resolve_language
 
-    def _sem_modelo():
-        raise AssertionError("o processo do conjunto não carrega o py3langid")
-
-    monkeypatch.setattr(language_detect, "_model", _sem_modelo)
-    usaveis = ["por", "eng", "jpn", "rus", "script/Cyrillic"]
+    usaveis = ["por", "eng", "deu", "jpn", "chi_sim", "chi_tra", "script/Cyrillic"]
     notas: dict = {}
-    # Japonês sai da própria escrita.
-    assert _detect_in_worker(JAPONES * 5, "por", False, usaveis, notas) == ("jpn", False)
-    assert notas["language_sample"].startswith(JAPONES)
-    # Cirílico num plano latino: o modelo da escrita.
-    assert _detect_in_worker(RUSSO * 3, "por", False, usaveis, {}) == ("script/Cyrillic", False)
-    # Alemão num plano latino: lido agora com o plano (mesma escrita).
+    assert _detect_in_worker(ALEMAO * 3, "por", False, usaveis, notas) == ("deu", False)
+    assert (notas["ocr_lang"], notas["language"]) == ("deu", "de")
+    assert _detect_in_worker(JAPONES * 5, "por", False, usaveis, {}) == ("jpn", False)
+    # Tradicional decidido pela mesma amostra nos dois processos.
     notas = {}
-    assert _detect_in_worker(ALEMAO * 3, "por", False, usaveis, notas) == ("por", False)
-    monkeypatch.undo()
+    assert _detect_in_worker(CHINES_TRADICIONAL * 3, "por", False, usaveis, notas) == ("chi_tra", False)
+    assert _resolve_language({"language_sample": notas["language_sample"], "ocr_used": "chi_tra",
+                              "ocr_applied": True}) == (("chi_tra", "zh"), False)
+    # Russo sem o `rus`: o modelo da escrita lê por ora e o arquivo volta marcado.
+    notas = {}
+    assert _detect_in_worker(RUSSO * 3, "por", False, usaveis, notas) == ("script/Cyrillic", True)
+    assert notas["ocr_lang"] == "rus"
+    # Pouco texto nativo: fica o plano que veio.
+    assert _detect_in_worker("Seite 1", "por", False, usaveis, {}) == ("por", False)
 
-    # No processo principal: alemão lido com português → refazer com o alemão.
-    info = {"language_sample": notas["language_sample"], "ocr_used": "por", "ocr_applied": True}
-    assert _resolve_language(info) == (("deu", "de"), True)
-    # Lido com o idioma certo: nada a refazer.
+
+def test_conferencia_no_principal_so_manda_refazer_o_que_nao_foi_lido_no_idioma():
+    from gclaude_indexer.conversion import _resolve_language
+
+    info = {"language_sample": ALEMAO * 3, "ocr_used": "deu", "ocr_applied": True}
+    assert _resolve_language(info) == (("deu", "de"), False)
     assert _resolve_language({**info, "ocr_used": "deu+eng"}) == (("deu", "de"), False)
-    # Sem OCR feito: só grava o idioma.
-    assert _resolve_language({**info, "ocr_applied": False}) == (("deu", "de"), False)
+    # O modelo da escrita no lugar do idioma (que faltava) conta como lido.
+    assert _resolve_language({**info, "ocr_used": "script/Latin"}) == (("deu", "de"), False)
+    russo = {"language_sample": RUSSO * 3, "ocr_used": "script/Cyrillic", "ocr_applied": True}
+    assert _resolve_language(russo) == (("rus", "ru"), False)
+    # Lido com outro idioma: refazer.
+    assert _resolve_language({**info, "ocr_used": "por"}) == (("deu", "de"), True)
+    assert _resolve_language({**info, "ocr_used": "por", "ocr_applied": False}) == (("deu", "de"), False)
 
 
-def test_formato_que_vira_pdf_na_conversao_e_relido_no_idioma_do_texto(tmp_path, monkeypatch):
-    """Um `.epub` (paginados) só vira PDF no trabalhador: lá sai só a escrita
-    (latina: lido com o idioma do projeto); o idioma exato é decidido no
-    processo principal, que grava o alemão e manda refazer."""
+def _sem_py3langid_nos_trabalhadores(monkeypatch, carregados):
+    """Troca `_process_file` (o que roda no processo do conjunto) por um que
+    anota se o `py3langid` foi pedido lá dentro."""
+    original = conversion._process_file
+    modelo = language_detect._model
+
+    def _no_trabalhador(config, row, jobs):
+        def _anota():
+            carregados.append(row["name"])
+            return modelo()
+
+        with monkeypatch.context() as dentro:
+            dentro.setattr(language_detect, "_model", _anota)
+            return original(config, row, jobs)
+
+    monkeypatch.setattr(conversion, "_process_file", _no_trabalhador)
+
+
+def test_formato_que_vira_pdf_na_conversao_e_lido_no_idioma_do_texto_numa_passada(tmp_path, monkeypatch):
+    """Um `.epub` (paginados) só vira PDF no trabalhador: o idioma sai lá,
+    do texto nativo, e as páginas escaneadas já são lidas em alemão."""
     from gclaude_indexer import light_formats
 
     origem, _saida, config, conn = _projeto(tmp_path)
@@ -291,16 +316,33 @@ def test_formato_que_vira_pdf_na_conversao_e_relido_no_idioma_do_texto(tmp_path,
     monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
     ocr = _OcrFalso()
     monkeypatch.setattr(conversion, "_run_ocrmypdf", ocr)
+    carregados: list = []
+    _sem_py3langid_nos_trabalhadores(monkeypatch, carregados)
 
     assert convert(conn, config, language="pt-BR").failed == 0
-    assert [(c["paginas"], c["idiomas"]) for c in ocr.chamadas] == [([2], config.ocr_language)]
+    assert [(c["paginas"], c["idiomas"]) for c in ocr.chamadas] == [([2], "deu")]
     linha = _linha(conn, "buch.epub")
-    assert (linha["ocr_lang"], linha["language"], linha["ocr_failed"]) == ("deu", "de", 1)
+    assert (linha["ocr_lang"], linha["language"], linha["ocr_failed"]) == ("deu", "de", 0)
+    assert set(carregados) == {"buch.epub"}  # só por este caminho
 
-    # A conversão seguinte refaz com o alemão gravado.
+    # Nada volta à fila.
+    assert ocr_retry_count(conn) == 0
+
+
+def test_pdf_e_imagem_nunca_carregam_o_py3langid_no_trabalhador(tmp_path, monkeypatch):
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _pdf(origem / "vertrag.pdf", [ALEMAO * 3, None])
+    Image.new("RGB", (300, 100), "white").save(origem / "foto.png")
+    scan(conn, config)
+    monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", _OcrFalso())
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang, rotate=0: "")
+    carregados: list = []
+    _sem_py3langid_nos_trabalhadores(monkeypatch, carregados)
+
     assert convert(conn, config, language="pt-BR").failed == 0
-    assert ocr.chamadas[-1]["idiomas"] == "deu"
-    assert _linha(conn, "buch.epub")["ocr_failed"] == 0
+    assert carregados == []
+    assert _linha(conn, "vertrag.pdf")["ocr_lang"] == "deu"  # decidido no processo principal
 
 
 def test_pdf_todo_nativo_nao_pede_idioma_de_ocr(tmp_path, monkeypatch):
