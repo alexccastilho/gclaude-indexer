@@ -563,8 +563,19 @@ def _reread_weak_pdf_pages(
                      "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
                 ))
                 continue
-            current = target
-            done_models.append(f"{model} ({len(pages)})")
+            # O OSD de uma página quase vazia não é confiável: o texto novo só
+            # entra nas páginas em que ficou MAIOR que o que já havia; nas
+            # outras volta a página de antes.
+            merged = destination.with_name(f"{destination.name}.mescla{index}.pdf")
+            temporaries.append(merged)
+            try:
+                kept = _keep_longer_pages(current, target, pages, merged)
+            except Exception:
+                kept = 0
+            if not kept:
+                continue
+            current = merged
+            done_models.append(f"{model} ({kept})")
         if current != destination:
             os.replace(current, destination)
             temporaries.remove(current)
@@ -577,6 +588,28 @@ def _reread_weak_pdf_pages(
             {"name": name, "models": ", ".join(done_models)},
         ))
     return missing, bool(done_models)
+
+
+def _keep_longer_pages(old: Path, new: Path, pages: list[int], output: Path) -> int:
+    """Grava em `output` o PDF `new`, trocando de volta pela página de `old`
+    cada uma de `pages` cujo texto novo não ficou mais longo. Devolve quantas
+    páginas ficaram com o texto novo."""
+    document_old = fitz.open(old)
+    document_new = fitz.open(new)
+    try:
+        kept = 0
+        for number in pages:
+            if len(document_new[number - 1].get_text().strip()) > len(document_old[number - 1].get_text().strip()):
+                kept += 1
+                continue
+            document_new.delete_page(number - 1)
+            document_new.insert_pdf(document_old, from_page=number - 1, to_page=number - 1, start_at=number - 1)
+        if kept:
+            document_new.save(output)
+        return kept
+    finally:
+        document_new.close()
+        document_old.close()
 
 
 def _plan_with_models(plan: str, extra: list[str]) -> str | None:

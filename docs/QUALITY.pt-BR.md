@@ -76,7 +76,7 @@ modelo da escrita; sem Tema, o perfil do acervo entra no contexto; página
 sem resposta (com as vizinhas) e página respondida sem tipo (com o texto
 inteiro, do índice) têm uma segunda tentativa, no máximo uma por página e 15%
 de pedidos a mais por execução; nas regras, a continuação de uma peça aberta
-por marcador deixou de rebaixá-la a `low`. O relatório (`medir_acerto.py`)
+por marcador como `medium` foi medida, mas **não adotada**. O relatório (`medir_acerto.py`)
 agora também divide peças e acerto **por nível de confiança**. Mesma máquina,
 mesmo acervo, mesmos comandos (`--janela` e `--sobreposicao` são opções novas
 de `indexar_pasta.py`).
@@ -84,7 +84,8 @@ de `indexar_pasta.py`).
 | Execução | Peças (índice) | F1 | Tipo | Confiança alta / média / baixa (peças; tipo certo) |
 |---|---|---|---|---|
 | Regras, linha de base (1.10.4) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 2 (100,0 %; 2/2) / 17 (88,2 %; 15/17) |
-| Regras, 2.0.0 | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 19 (89,5 %; 17/19) / 0 |
+| Regras, 2.0.0 (igual à base: a mudança não foi adotada) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 2 (100,0 %; 2/2) / 17 (88,2 %; 15/17) |
+| Regras, continuação em `medium` (medido, não adotado) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 19 (89,5 %; 17/19) / 0 |
 | Local `qwen3.5:9b`, linha de base (1.10.4, janela 16, sobreposição 2) | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, janela 16, sobreposição 2 | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, janela 8, sobreposição 2 (padrão novo) | 64 | 68,6 % | 44,4 % | 59 (44,4 %; 16/36) / 5 (sem peça encontrada) / 0 |
@@ -117,14 +118,15 @@ com a sobreposição 2 que a 2.0.0 já usava para acervos de PDF. A janela 16
 janela (de 33 % a 57 %): é o ponto fraco do modelo neste acervo, não da
 janela.
 
-**Por nível de confiança.** Nas regras, a continuação de uma peça aberta por
-marcador passou a `medium`: as 17 peças que antes eram `low` acertavam o
-tipo em 88,2 %, e as `medium` de agora (19) em 89,5 %, abaixo das `high`
-(100 %), então a ordem alta > média > baixa se mantém e a mudança ficou. A
-base é pequena (2 peças `medium` antes da mudança) e o acervo não tem peça
-sem marcador de abertura, então a `low` das regras ficou vazia: não dá para
-dizer, só com estes números, que `medium` continua acima de `low` onde `low`
-existe. No motor local a confiança não separa nada: 75 % a 92 % das peças saem
+**Por nível de confiança.** Nas regras, testamos deixar a continuação de uma
+peça aberta por marcador em `medium`, em vez de rebaixar a peça inteira a
+`low`. Antes da mudança, as 2 peças `medium` acertavam o tipo em 100 % e as 17
+`low` em 88,2 %; com a mudança, as 19 `medium` ficaram em 89,5 % e a `low`
+ficou vazia. **A mudança não foi adotada**: com 2 peças `medium` contra 17
+`low` e um acervo sem nenhuma peça sem marcador de abertura, a amostra é
+pequena demais para dizer que `medium` acerta mais que `low`, e a regra era só
+mudar se a medição sustentasse (`engine_rules.CONTINUATION_KEEPS_MEDIUM`
+fica `False`). No motor local a confiança não separa nada: 75 % a 92 % das peças saem
 `high` e o tipo certo nelas (44 % a 60 %) é quase o mesmo das `medium`.
 
 **A segunda tentativa não apareceu neste acervo.** Com 6 a 13 janelas, o
@@ -143,8 +145,9 @@ com páginas longas ou escaneadas.
   tem carimbos, páginas tortas, OCR ruim e tipos fora do vocabulário; o
   acerto lá é menor, e não se sabe quanto.
 - **Uma máquina, um modelo, uma rodada.** Outro modelo, outro tamanho de
-  trecho ou outra placa dão números diferentes; o modelo local não é
-  determinístico entre rodadas. Medido: uma segunda rodada em 2 de
+  trecho ou outra placa dão números diferentes; o modelo local pode variar
+  com a versão do Ollama ou do modelo (na mesma máquina e com a mesma entrada,
+  as rodadas de 2.0.0 saíram idênticas, a 0 de temperatura). Medido: uma segunda rodada em 2 de
   novembro, depois de trocar uma palavra nos textos, levou o tipo de 45,7 %
   a 60,0 %, a data de 91,4 % a 88,6 % e o autor de 78,1 % a 84,4 %, com os
   mesmos limites (F1 66,0 %). A tabela mostra a rodada sobre o acervo como

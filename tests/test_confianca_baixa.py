@@ -295,9 +295,14 @@ def test_texto_inteiro_da_pagina_vem_do_indice_de_busca(tmp_path):
 # --- regras --------------------------------------------------------------------
 
 
-def test_regras_continuacao_de_peca_aberta_por_marcador_fica_medium():
+def test_regras_continuacao_de_peca_aberta_por_marcador_fica_medium_se_ligado(monkeypatch):
+    """A medição (docs/QUALITY.md) não sustentou a mudança: o padrão é `low`;
+    o mecanismo continua testado com a chave ligada."""
+    from gclaude_indexer import engine_rules
     from gclaude_indexer.engine_rules import RulesEngine, load_rules
 
+    assert engine_rules.CONTINUATION_KEEPS_MEDIUM is False
+    monkeypatch.setattr(engine_rules, "CONTINUATION_KEEPS_MEDIUM", True)
     motor = RulesEngine(load_rules())
     paginas = [
         _pagina(1, "OFÍCIO Nº 10/2026\nSenhor Prefeito, segue o pedido."),
@@ -367,6 +372,70 @@ def test_imagem_de_ocr_curto_e_lida_de_novo_com_o_modelo_da_escrita(tmp_path, mo
     assert conversion._reread_image(caminho, "xx", "por", 0, ["por"], [], "carta.png") == ("xx", [])
 
 
+def _escrever(origem, saida, paginas, texto):
+    """Falso `ocrmypdf`: copia `origem` e põe `texto` nas `paginas` (a camada de texto nova)."""
+    import fitz
+
+    documento = fitz.open(origem)
+    for numero in paginas:
+        pagina = documento[numero - 1]
+        pagina.insert_text((60, 400), texto, fontsize=6)
+    documento.save(saida)
+    documento.close()
+
+
+def test_releitura_mais_curta_nao_substitui_a_pagina_original(tmp_path, monkeypatch):
+    """O OSD de uma página quase vazia erra a escrita: se a releitura devolve
+    menos texto, a página de antes fica."""
+    import fitz
+
+    from gclaude_indexer import conversion
+
+    origem = tmp_path / "origem.pdf"
+    destino = tmp_path / "convertido.pdf"
+    documento = fitz.open()
+    for _ in range(2):
+        pagina = documento.new_page()
+        pagina.insert_text((60, 100), "sessenta caracteres de texto lido pelo primeiro OCR ok", fontsize=8)
+    documento.save(origem)
+    documento.save(destino)
+    documento.close()
+
+    def ocr_pior(origem_, saida, idiomas, jobs=1, pages=None, rotate=False):
+        # Pagina 1: texto novo MENOR (lixo); página 2: texto novo maior.
+        copia = fitz.open(origem_)
+        for numero in pages:
+            pagina = copia[numero - 1]
+            pagina.add_redact_annot(pagina.rect)
+            pagina.apply_redactions()
+            pagina.insert_text((60, 100), "xx" if numero == 1 else "texto bem mais longo lido de novo, " * 4, fontsize=8)
+        copia.save(saida)
+        copia.close()
+
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", ocr_pior)
+    monkeypatch.setattr(conversion.ocr_detection, "osd_image", lambda image: ("cyrillic", 0))
+    eventos: list = []
+    # `weak` exige menos de 100 caracteres: as duas páginas têm ~55.
+    faltam, leu = conversion._reread_weak_pdf_pages(
+        "origem.pdf", origem, destino, [1, 2], ["por"], ["por", "script/Cyrillic"], 1, False, eventos, {}
+    )
+    resultado = fitz.open(destino)
+    textos = [resultado[i].get_text().strip() for i in range(2)]
+    resultado.close()
+    assert textos[0].startswith("sessenta caracteres")  # a original sobreviveu
+    assert textos[1].startswith("texto bem mais longo")  # a mais longa entrou
+    assert leu is True and "(1)" in eventos[-1][3]["models"]
+
+    # Se nenhuma página melhora, nada muda e nada é registrado.
+    monkeypatch.setattr(conversion, "_run_ocrmypdf", lambda o, s, i, jobs=1, pages=None, rotate=False: _escrever(o, s, pages, ""))
+    antes = destino.read_bytes()
+    eventos.clear()
+    conversion._reread_weak_pdf_pages(
+        "origem.pdf", origem, destino, [1, 2], ["por"], ["por", "script/Cyrillic"], 1, False, eventos, {}
+    )
+    assert destino.read_bytes() == antes and eventos == []
+
+
 def test_pdf_de_paginas_fracas_e_relido_so_nelas_e_uma_vez_por_modelo(tmp_path, monkeypatch):
     import shutil
 
@@ -388,7 +457,7 @@ def test_pdf_de_paginas_fracas_e_relido_so_nelas_e_uma_vez_por_modelo(tmp_path, 
 
     def falso_ocrmypdf(origem_, saida, idiomas, jobs=1, pages=None, rotate=False):
         chamadas.append((idiomas, pages))
-        shutil.copy(origem_, saida)
+        _escrever(origem_, saida, pages, "texto lido de novo " * 10)
 
     monkeypatch.setattr(conversion, "_run_ocrmypdf", falso_ocrmypdf)
     escritas = {1: "cyrillic", 2: "cyrillic", 3: "latin"}
