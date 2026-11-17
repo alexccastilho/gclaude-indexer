@@ -224,6 +224,12 @@ def _has_private_key_marker(head: bytes) -> bool:
     return start != -1 and _SECRET_MARKER_END in head[start:]
 
 
+def has_private_key_marker(content: bytes) -> bool:
+    """Whether `content` holds a PEM private key (the scan only looks at the
+    start of a file; text taken out of a container is checked whole)."""
+    return _has_private_key_marker(content)
+
+
 def _extension(name: str) -> str:
     """Same extension the scan stores (`Path.suffix`, lower case), except
     that a bare dotfile such as `.env` counts as being its own extension."""

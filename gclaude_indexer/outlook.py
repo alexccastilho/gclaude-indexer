@@ -43,6 +43,8 @@ from .light_formats import MBOX_PAGE_SEPARATOR
 MAX_MESSAGES = 200_000
 MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
+# Teto do texto que vai para o intermediário (um anexo pequeno pode virar muito texto).
+MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ATTACHMENTS_PER_MESSAGE = 200
 MAX_PAGE_CHARS = 2_000_000
 MAX_FOLDER_DEPTH = 64
@@ -253,7 +255,6 @@ def sanitize_attachment_name(name: str, fallback: str = "anexo") -> str:
     # Só o último componente: o nome nunca leva caminho (`..\..\x.exe`, `a/b.txt`).
     base = re.split(r"[\\/]", str(name or ""))[-1]
     base = _BAD_CHARS.sub("_", base).strip().rstrip(". ")
-    base = base.lstrip(".")
     if not base or set(base) <= {"_", "."}:
         base = fallback
     stem, dot, extension = base.rpartition(".")
@@ -301,9 +302,10 @@ def _clean(text: str) -> str:
     return text.replace("\x0c", " ")[:MAX_PAGE_CHARS]
 
 
-def _read_progress(progress: Path, partial: Path, source: Path) -> tuple[int, int]:
-    """(mensagens já escritas, bytes do parcial) se o progresso vale para este
-    arquivo de origem (mesmo tamanho e data) e o parcial tem aqueles bytes."""
+def _read_progress(progress: Path, partial: Path, source: Path) -> dict | None:
+    """O progresso gravado (mensagens já escritas, bytes e páginas do parcial,
+    bytes de anexos já extraídos) se vale para este arquivo de origem (mesmo
+    tamanho e data) e o parcial tem aqueles bytes; senão `None`."""
     try:
         data = json.loads(progress.read_text(encoding="utf-8"))
         stat = source.stat()
@@ -311,19 +313,22 @@ def _read_progress(progress: Path, partial: Path, source: Path) -> tuple[int, in
             data["size"] == stat.st_size and data["mtime_ns"] == stat.st_mtime_ns
             and partial.stat().st_size >= data["bytes"]
         ):
-            return int(data["messages"]), int(data["bytes"])
+            return {
+                "messages": int(data["messages"]), "bytes": int(data["bytes"]),
+                "pages": int(data.get("pages", data["messages"])), "extracted": int(data.get("extracted", 0)),
+            }
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    return 0, 0
+    return None
 
 
-def _write_progress(progress: Path, source: Path, messages: int, size: int, pages: int) -> None:
+def _write_progress(progress: Path, source: Path, messages: int, size: int, pages: int, extracted: int) -> None:
     stat = source.stat()
     temporary = progress.with_name(progress.name + ".tmp")
     temporary.write_text(
         json.dumps({
             "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "messages": messages, "bytes": size,
-            "pages": pages,
+            "pages": pages, "extracted": extracted,
         }),
         encoding="utf-8",
     )
@@ -334,13 +339,16 @@ def _write_progress(progress: Path, source: Path, messages: int, size: int, page
 class PstResult:
     pages: int
     messages: int
-    truncated: bool = False
+    # Por que a leitura parou antes do fim: "messages", "output" ou `None`.
+    truncated: str | None = None
 
 
-# `attachment_text(path)` devolve o texto de um anexo já gravado em disco,
-# pelo extrator do tipo real dele, ou `None` quando o tipo não é lido (é
-# compactado, binário, imagem sem OCR…).
-AttachmentText = Callable[[Path], "str | None"]
+# `attachment_text(path, original_name)` devolve o texto de um anexo já
+# gravado em disco, pelo extrator do tipo real dele, ou `None` quando o tipo
+# não é lido (compactado, binário, chave, imagem sem OCR…). `original_name`
+# é o nome como veio no arquivo (sem caminho), antes do saneamento: é o que
+# as mesmas regras da varredura (`.env`, `id_rsa`…) precisam ver.
+AttachmentText = Callable[[Path, str], "str | None"]
 
 
 def convert_pst(
@@ -363,23 +371,17 @@ def convert_pst(
     partial = destination.with_name(destination.name + PARTIAL_SUFFIX)
     progress = destination.with_name(destination.name + PROGRESS_SUFFIX)
 
-    skip, size = _read_progress(progress, partial, source)
-    pages = 0
-    if skip:
-        try:
-            pages = int(json.loads(progress.read_text(encoding="utf-8")).get("pages", skip))
-        except (OSError, ValueError):
-            skip, size = 0, 0
+    saved = _read_progress(progress, partial, source) or {"messages": 0, "bytes": 0, "pages": 0, "extracted": 0}
+    skip, size, pages = saved["messages"], saved["bytes"], saved["pages"]
+    # O teto de anexos é do arquivo, não da execução: vale também na retomada.
+    extracted = saved["extracted"]
     reader = reader_factory(source)
-    extracted = 0
-    truncated = False
+    truncated = None
     written = skip
     try:
         with open(partial, "ab") as handle:
             handle.truncate(size)
             handle.seek(size)
-            if not skip:
-                pages = 0
 
             def emit(text: str) -> None:
                 nonlocal size, pages
@@ -390,21 +392,24 @@ def convert_pst(
 
             def save() -> None:
                 handle.flush()
-                _write_progress(progress, source, written, size, pages)
+                _write_progress(progress, source, written, size, pages, extracted)
 
             for index, message in enumerate(reader.messages()):
                 if index >= MAX_MESSAGES:
-                    truncated = True
+                    truncated = "messages"
                     break
                 if index < skip:
                     continue
+                if size >= MAX_OUTPUT_BYTES:
+                    truncated = "output"
+                    break
                 if should_stop is not None and should_stop():
                     save()
                     raise Interrupted()
                 emit(f"{_header(message)}\n\n{message_body(message)}")
                 extracted += _attachments(
                     message, attachments_root / str(index + 1), attachment_text, emit,
-                    MAX_EXTRACTED_BYTES - extracted, on_note,
+                    MAX_EXTRACTED_BYTES - extracted, on_note, lambda: size >= MAX_OUTPUT_BYTES,
                 )
                 written = index + 1
                 if written % PROGRESS_EVERY == 0:
@@ -433,6 +438,7 @@ def _attachments(
     emit: Callable[[str], None],
     budget: int,
     on_note: Callable[[str, dict], None] | None,
+    output_full: Callable[[], bool] = lambda: False,
 ) -> int:
     """Grava cada anexo na pasta da mensagem, lê pelo extrator do tipo real e
     acrescenta uma página com o texto; devolve os bytes gravados."""
@@ -443,7 +449,10 @@ def _attachments(
     except Exception:
         return 0
     for number, attachment in enumerate(attachments, start=1):
-        label = sanitize_attachment_name(getattr(attachment, "name", ""), f"anexo-{number}")
+        if output_full():
+            break
+        raw_name = re.split(r"[\\/]", str(getattr(attachment, "name", "") or ""))[-1]
+        label = sanitize_attachment_name(raw_name, f"anexo-{number}")
         if label.lower() in taken:
             label = f"{number}-{label}"
         taken.add(label.lower())
@@ -465,11 +474,15 @@ def _attachments(
         target.write_bytes(data)
         used += len(data)
         try:
-            text = attachment_text(target)
+            text = attachment_text(target, raw_name)
         except Exception:
             text = None
         finally:
-            target.unlink(missing_ok=True)
+            # O extrator pode ter renomeado o arquivo (tipo real diferente da
+            # extensão): a pasta da mensagem inteira vai embora, não só o alvo.
+            shutil.rmtree(folder, ignore_errors=True)
         if text and text.strip():
-            emit(f"Anexo: {label} (mensagem: {message.subject})\n\n{text}")
+            # O texto também tem teto: um anexo pequeno pode virar muito texto.
+            emit(f"Anexo: {label} (mensagem: {message.subject})\n\n{text[:MAX_PAGE_CHARS]}")
+    shutil.rmtree(folder, ignore_errors=True)
     return used

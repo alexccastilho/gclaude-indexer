@@ -44,7 +44,7 @@ from .parallelism import _physical_cores, io_workers_for, workers_for
 from .file_types import (
     ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
     REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
-    category_of_extension, looks_binary,
+    HEAD_BYTES, category_of_extension, has_private_key_marker, index_decision, looks_binary,
 )
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
@@ -1147,11 +1147,31 @@ def _renamed_for(path: Path, accepted: set[str], canonical: str) -> Path:
     return target
 
 
-def _attachment_text(path: Path, config: ProjectConfig) -> str | None:
+def _attachment_text(path: Path, config: ProjectConfig, original_name: str | None = None) -> str | None:
     """O texto de um anexo gravado em `path`, pelo extrator do tipo real dele
     (pelos bytes, não pelo nome). `None` quando o tipo não é lido: compactado
     (continua ignorado, como no inventário), binário, executável, chave, ou
-    imagem sem idioma de OCR."""
+    imagem sem idioma de OCR.
+
+    Vale a mesma regra da varredura (`index_decision`): o nome original do
+    anexo (`.env`, `id_rsa`, `.pfx`…) e o começo do conteúdo (chave privada)
+    barram o anexo; e o texto extraído passa de novo pela checagem da chave
+    privada, porque um contêiner (DOCX, PDF) a esconde dos primeiros bytes."""
+    name = original_name or path.name
+    head = path.read_bytes()[:HEAD_BYTES] if path.stat().st_size else b""
+    # `binary` não barra aqui: um anexo de extensão estranha mas conteúdo de PDF
+    # ou DOCX vale pelo tipo real, e o que é binário de verdade o farejador
+    # (`sniff_content_type`) recusa logo abaixo.
+    reason = index_decision(name, head, config.extensions)
+    if reason is not None and reason != REASON_BINARY:
+        return None
+    text = _extract_attachment_text(path, config)
+    if text and has_private_key_marker(text.encode("utf-8", errors="ignore")):
+        return None
+    return text
+
+
+def _extract_attachment_text(path: Path, config: ProjectConfig) -> str | None:
     extension = path.suffix.lower()
     if (
         extension in ARCHIVE_EXTENSIONS or extension in ALWAYS_BLOCKED_EXTENSIONS
@@ -1227,7 +1247,7 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
 
     try:
         result = outlook.convert_pst(
-            source_path, destination, attachments_root, lambda path: _attachment_text(path, config),
+            source_path, destination, attachments_root, lambda path, name: _attachment_text(path, config, name),
             should_stop=should_stop, on_note=on_note,
         )
     except outlook.Interrupted:
@@ -1241,10 +1261,15 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
             ),
             "params": (REASON_UNSUPPORTED, row["id"]),
         }
-    if result.truncated:
+    if result.truncated == "messages":
         events.append((
             "conversion", "warning", "log.conversion.outlook_truncated",
             {"name": name, "limit": outlook.MAX_MESSAGES},
+        ))
+    elif result.truncated == "output":
+        events.append((
+            "conversion", "warning", "log.conversion.outlook_output_limit",
+            {"name": name, "limit_mb": outlook.MAX_OUTPUT_BYTES // (1024 * 1024)},
         ))
     if skipped_attachments:
         events.append((

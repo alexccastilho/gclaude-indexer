@@ -408,3 +408,130 @@ def test_rotulos_nos_tres_idiomas():
         ):
             assert translate(idioma, chave) != chave
     assert MBOX_PAGE_SEPARATOR  # o mesmo separador da caixa .mbox
+
+
+# --- rodada de correções 1 ------------------------------------------------------------------------
+
+
+def test_anexo_com_tipo_diferente_da_extensao_nao_deixa_nada_em_disco_entre_mensagens(tmp_path):
+    from gclaude_indexer.conversion import _attachment_text
+
+    config = load_config({"name": "x", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "o")})
+    raiz = tmp_path / "anexos"
+    sobras: list = []
+    leituras: list = []
+
+    def extrair(caminho, nome):
+        texto = _attachment_text(caminho, config, nome)
+        return texto
+
+    class Espiao(PstMessage):
+        pass
+
+    mensagens = [
+        PstMessage(subject="Um", plain="a", attachments=[Anexo("planilha.dat", _docx("texto escondido"), leituras)]),
+        PstMessage(subject="Dois", plain="b"),
+    ]
+
+    class Leitor(LeitorSimulado):
+        def messages(self):
+            yield mensagens[0]
+            # Ao pedir a segunda mensagem, a primeira já tem que ter ido embora.
+            sobras.extend(p for p in raiz.rglob("*") if p.is_file())
+            yield mensagens[1]
+
+    destino = tmp_path / "saida.txt"
+    (tmp_path / "x.pst").write_bytes(b"1")
+    resultado = outlook.convert_pst(
+        tmp_path / "x.pst", destino, raiz, extrair, reader_factory=lambda _p: Leitor([]),
+    )
+    assert resultado.pages == 3
+    assert "texto escondido" in destino.read_text(encoding="utf-8")
+    assert sobras == []
+
+
+def test_teto_de_anexos_vale_tambem_na_retomada(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Teto.pst").write_bytes(b"!BDN")
+    monkeypatch.setattr(outlook, "MAX_EXTRACTED_BYTES", 150)
+    leituras: list = []
+    _com_leitor(monkeypatch, [
+        PstMessage(subject=f"M{n}", plain="c", attachments=[Anexo(f"a{n}.txt", (f"anexo{n} " * 12).encode()[:100], leituras)])
+        for n in (1, 2)
+    ])
+    scan(conn, config)
+    convert(conn, config, should_stop=lambda: len(leituras) >= 1)
+    assert _arquivo(conn, "Teto.pst")["status"] == "discovered" and leituras == ["a1.txt"]
+    leituras.clear()
+    convert(conn, config)
+    extract_pages(conn, config)
+    # Os 100 bytes da primeira execução contam: o segundo anexo estoura os 150.
+    assert leituras == []
+    texto = "".join(_paginas(conn, "Teto.pst"))
+    assert "anexo1" in texto and "anexo2" not in texto
+    conn.close()
+
+
+def test_teto_do_texto_escrito_corta_e_avisa(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Texto.pst").write_bytes(b"!BDN")
+    monkeypatch.setattr(outlook, "MAX_OUTPUT_BYTES", 400)
+    leituras: list = []
+    # Um anexo pequeno que vira muito texto (compressível) não fura o teto.
+    _com_leitor(monkeypatch, [
+        PstMessage(subject=f"M{n}", plain="corpo " * 20, attachments=[Anexo("g.txt", b"y" * 5000, leituras)])
+        for n in range(20)
+    ])
+    scan(conn, config)
+    convert(conn, config, language="pt-BR")
+    extract_pages(conn, config)
+    paginas = _paginas(conn, "Texto.pst")
+    assert 0 < len(paginas) < 40
+    avisos = [r["message"] for r in conn.execute("SELECT message FROM event WHERE level = 'warning'")]
+    assert any("passou do limite de" in a and "MB" in a for a in avisos), avisos
+    conn.close()
+
+
+_CHAVE = b"-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA PRIVATE KEY-----\n"
+
+
+def test_anexos_de_segredo_nunca_chegam_ao_texto(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Segredos.pst").write_bytes(b"!BDN")
+    leituras: list = []
+    _com_leitor(monkeypatch, [PstMessage(subject="Segredos", plain="corpo", attachments=[
+        Anexo(".env", b"SENHA_DO_BANCO=hunter2\n", leituras),
+        Anexo("id_rsa", b"conteudo de chave ssh qualquer", leituras),
+        Anexo("id_rsa.txt", b"chave ssh renomeada", leituras),
+        Anexo("notas.txt", b"previa\n" + _CHAVE, leituras),
+        Anexo("escondida.docx", _docx(_CHAVE.decode()), leituras),
+        Anexo("cofre.pfx", b"pfx-secreto" * 10, leituras),
+        Anexo("normal.txt", b"anexo comum sem segredo", leituras),
+    ])])
+    scan(conn, config)
+    convert(conn, config)
+    extract_pages(conn, config)
+    texto = "\n".join(_paginas(conn, "Segredos.pst"))
+    for proibido in ("hunter2", "ssh qualquer", "ssh renomeada", "PRIVATE KEY", "MIIBOg", "pfx-secreto"):
+        assert proibido not in texto, proibido
+    assert "anexo comum sem segredo" in texto
+    conn.close()
+
+
+def test_nome_com_ponto_inicial_nao_perde_o_ponto_para_a_checagem():
+    # `.env` chega à checagem com o nome original (o saneamento não o altera
+    # para algo que a regra da varredura não reconheça).
+    from gclaude_indexer.file_types import index_decision
+
+    assert index_decision(".env", b"X=1", ["all"]) == "secret"
+    assert sanitize_attachment_name(".env").endswith(".env")
+
+
+def test_iter_pages_junta_separador_cortado_entre_pedaços(tmp_path):
+    from gclaude_indexer.light_formats import iter_pages
+
+    caminho = tmp_path / "caixa.txt"
+    paginas = ["um", "dois\ncom linhas", "", "quatro"]
+    caminho.write_text(MBOX_PAGE_SEPARATOR.join(paginas), encoding="utf-8")
+    for pedaco in (1, 2, 3, 4, 7, 1000):
+        assert list(iter_pages(caminho, pedaco)) == paginas, pedaco
