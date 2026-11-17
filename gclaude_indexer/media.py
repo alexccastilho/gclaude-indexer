@@ -653,7 +653,7 @@ def _transcribe_wav(
         total = reader.getnframes()
         duration = total / SAMPLE_RATE
         remaining = max(0.0, (total - offset) / SAMPLE_RATE)
-        estimate = estimate_seconds(remaining, tools.model, tools.vulkan)
+        estimate = estimate_seconds(remaining, tools.model_name, tools.vulkan)
         if on_estimate is not None:
             try:
                 on_estimate({
@@ -675,7 +675,7 @@ def _transcribe_wav(
         projected = estimate
         measured = False
         chunk_timeout = max(
-            PROCESS_TIMEOUT_MIN_S, PROCESS_TIMEOUT_FACTOR * estimate_seconds(CHUNK_SECONDS, tools.model, tools.vulkan)
+            PROCESS_TIMEOUT_MIN_S, PROCESS_TIMEOUT_FACTOR * estimate_seconds(CHUNK_SECONDS, tools.model_name, tools.vulkan)
         )
         threads = _threads()
         chunk_wav, out_base = work / "trecho.wav", work / "trecho"
