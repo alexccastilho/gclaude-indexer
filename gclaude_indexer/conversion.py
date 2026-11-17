@@ -1022,7 +1022,11 @@ def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
     has_windows = conn.execute("SELECT 1 FROM window LIMIT 1").fetchone() is not None
     rows = conn.execute(
         "SELECT id, name, status FROM file WHERE ocr_failed = 1"
-        " AND status IN ('converted', 'extracted', 'failed', 'skipped') ORDER BY relative_path"
+        " AND (status IN ('converted', 'extracted', 'failed')"
+        # Um `skipped` só volta à fila se foi a falta do componente que o
+        # deixou assim; o que a varredura recusou (segredo, binário,
+        # compactado…) nunca é reaberto por aqui.
+        f" OR (status = 'skipped' AND error = '{REASON_COMPONENT_UNAVAILABLE}')) ORDER BY relative_path"
     ).fetchall()
     requeue = [row for row in rows if not (row["status"] == "extracted" and has_windows)]
     held_back = [row["name"] for row in rows if row["status"] == "extracted" and has_windows]

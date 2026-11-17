@@ -45,7 +45,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -59,7 +62,9 @@ from .paths import machine_local_folder, resolve_within
 
 MANIFEST_FOLDER = Path(__file__).resolve().parent / "manifests"
 MANIFEST_FORMAT = 1
-KINDS = ("file", "zip")
+KINDS = ("file", "zip", "msi")
+# Kinds that end up as a folder with the marker inside.
+FOLDER_KINDS = ("zip", "msi")
 
 STATUS_PRESENT = "present"  # already on disk, nothing done
 STATUS_INSTALLED = "installed"  # downloaded and verified now
@@ -91,6 +96,10 @@ class Component:
     # Only for `zip`: ceilings on the extraction (0 = the defaults above).
     max_extracted: int = 0
     max_members: int = 0
+    # Only for folders: a file (relative, `/`) that must exist in the
+    # extracted tree, or the extraction is refused (a wrong package, a
+    # half-done administrative install).
+    check: str = ""
 
     @property
     def extracted_limit(self) -> int:
@@ -133,7 +142,10 @@ def _parse_entry(entry: dict) -> Component:
         target=str(entry["target"]),
         max_extracted=int(entry.get("max_extracted", 0)),
         max_members=int(entry.get("max_members", 0)),
+        check=str(entry.get("check", "")),
     )
+    if component.check:
+        _check_target(component.check)
     if component.max_extracted < 0 or component.max_members < 0:
         raise ValueError(f"{component.name}: limite de extração inválido")
     parsed = urlparse(component.url)
@@ -195,7 +207,7 @@ def is_installed(component: Component) -> bool:
         target = target_path(component)
     except ValueError:
         return False
-    if component.kind == "zip":
+    if component.kind in FOLDER_KINDS:
         return (target / ZIP_MARKER_NAME).is_file()
     return target.is_file()
 
@@ -297,6 +309,7 @@ def _extract(component: Component, archive_path: Path, target: Path) -> None:
                 if not destination.is_relative_to(root):
                     raise ValueError(f"caminho inseguro no ZIP: {member.filename!r}")
             archive.extractall(staging, members=members)
+        _verify_tree(component, staging)
         (staging / ZIP_MARKER_NAME).write_text(
             json.dumps({"name": component.name, "sha256": component.sha256}), encoding="utf-8"
         )
@@ -306,6 +319,102 @@ def _extract(component: Component, archive_path: Path, target: Path) -> None:
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
+
+
+def _is_link(path: Path) -> bool:
+    """A symlink or a junction (a reparse point on Windows): neither is
+    something an extracted package may contain."""
+    try:
+        if path.is_symlink():
+            return True
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+        return bool(attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+    except OSError:
+        return True
+
+
+def _verify_tree(component: Component, root: Path) -> None:
+    """After an extraction that this module did not do member by member (the
+    administrative install of an MSI): no link that could point outside the
+    destination, no more members or bytes than the manifest allows, and the
+    file the manifest says must be there. Raises on any problem."""
+    base = root.resolve()
+    members = 0
+    total = 0
+    for current, folders, files in os.walk(root):
+        for name in folders + files:
+            path = Path(current) / name
+            if _is_link(path) or not path.resolve().is_relative_to(base):
+                raise ValueError(f"{component.name}: link ou caminho fora do destino em {name!r}")
+            members += 1
+            if members > component.members_limit:
+                raise ValueError(f"{component.name}: membros demais")
+            if path.is_file():
+                total += path.stat().st_size
+                if total > component.extracted_limit:
+                    raise ValueError(f"{component.name}: extraído passa do limite do manifesto")
+    if component.check and not (root / component.check).is_file():
+        raise ValueError(f"{component.name}: {component.check} não existe no pacote extraído")
+
+
+_MSIEXEC_TIMEOUT_S = 15 * 60
+
+
+def _run_msiexec(command_line: str, timeout: float) -> int:
+    """The only place that starts `msiexec` (the suite replaces it). The
+    command line is one string, quoted by hand: `TARGETDIR="C: b"` is
+    what msiexec understands, and the private folder sits under a user
+    name that may have spaces. No shell: `CreateProcess` gets it directly."""
+    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    process = subprocess.Popen(command_line, shell=False, **kwargs)
+    try:
+        return process.wait(timeout=timeout)
+    except BaseException:
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                shell=False, capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+        process.kill()
+        raise
+
+
+def _extract_msi(component: Component, msi_path: Path, target: Path) -> None:
+    """Administrative install (`msiexec /a`) of the MSI into a sibling
+    folder, which unpacks the files without installing anything: no
+    registry, no elevation, nothing outside the folder."""
+    staging = target.parent / (target.name + ".extracting")
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    # `msiexec` refuses a package that does not end in `.msi`.
+    package = target.parent / (target.name + ".msi")
+    os.replace(msi_path, package)
+    try:
+        system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "msiexec.exe"
+        command_line = f'"{system}" /a "{package}" /qn TARGETDIR="{staging}"'
+        code = _run_msiexec(command_line, _MSIEXEC_TIMEOUT_S)
+        package.unlink(missing_ok=True)
+        if code != 0:
+            raise ValueError(f"{component.name}: msiexec terminou com {code}")
+        # The admin install leaves a copy of the MSI beside the files.
+        for leftover in staging.glob("*.msi"):
+            leftover.unlink()
+        _verify_tree(component, staging)
+        (staging / ZIP_MARKER_NAME).write_text(
+            json.dumps({"name": component.name, "sha256": component.sha256}), encoding="utf-8"
+        )
+        if target.exists():
+            shutil.rmtree(target)
+        staging.replace(target)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        package.unlink(missing_ok=True)
 
 
 def _install(component: Component) -> None:
@@ -318,6 +427,8 @@ def _install(component: Component) -> None:
         _download_to(component, partial)
         if component.kind == "zip":
             _extract(component, partial, target)
+        elif component.kind == "msi":
+            _extract_msi(component, partial, target)
         else:
             partial.replace(target)
     finally:
@@ -410,7 +521,7 @@ def remove(name: str) -> bool:
             target = target_path(component)
             if not target.resolve().is_relative_to(private_root().resolve()):
                 return False
-            if component.kind == "zip":
+            if component.kind in FOLDER_KINDS:
                 shutil.rmtree(target)
             else:
                 target.unlink()

@@ -147,10 +147,11 @@ def _update_file(
         """
         UPDATE file
         SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?,
-            status = ?, error = ?, page_count = NULL, needs_ocr = 0
+            status = ?, error = ?, page_count = NULL, needs_ocr = 0,
+            ocr_failed = CASE WHEN ? = 'skipped' THEN 0 ELSE ocr_failed END
         WHERE relative_path = ?
         """,
-        (name, extension, size, file_hash, mtime, group_key, status, error, relative_path),
+        (name, extension, size, file_hash, mtime, group_key, status, error, status, relative_path),
     )
 
 
