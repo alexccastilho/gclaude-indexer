@@ -131,6 +131,7 @@ def detect_changes(
     should_stop=None,
     include_removed: bool = True,
     listed=None,
+    unverified: list[str] | None = None,
 ) -> tuple[list[FileChange], int, str]:
     """New, changed and removed files; how many are unchanged; and the
     folder's fingerprint.
@@ -143,6 +144,12 @@ def detect_changes(
     from the index stays a decision the person confirms on the update
     screen. `listed`: the walk the caller already made
     (`scanning.walk_source_stats`), so the folder is not walked twice.
+
+    `unverified`: recebe o caminho de cada arquivo cujo tamanho ou data
+    mudou mas que não pôde ser lido a tempo (`_hash_or_none`). Ele não é
+    alterado (um soluço do Drive não descarta janelas) nem inalterado: não
+    entra na contagem de inalterados, e nada é gravado, então a próxima
+    execução o confere de novo.
     """
     source_dir = Path(config.source_folder)
     if not source_dir.is_dir():
@@ -261,11 +268,16 @@ def detect_changes(
             continue
 
         # Size or time moved. Only now is reading the bytes worth it.
-        # Ilegível conta como inalterado, como na varredura, que deixa o
+        # Ilegível fica fora dos alterados, como na varredura, que deixa o
         # arquivo intocado e o olha de novo na próxima vez: chamá-lo de
-        # alterado apagaria as páginas de um documento que ninguém leu.
+        # alterado apagaria as páginas de um documento que ninguém leu. Mas
+        # também não é "inalterado": sai à parte, para o aviso.
         file_hash = _hash_or_none(path, size)
-        if file_hash is None or file_hash == row["sha256"]:
+        if file_hash is None:
+            if unverified is not None:
+                unverified.append(relative_path)
+            continue
+        if file_hash == row["sha256"]:
             unchanged += 1
             continue
 
@@ -333,6 +345,10 @@ class UpdatePlan:
     # Linhas que já estavam no índice sob uma pasta gerada. Não pedem
     # confirmação nem contam como `is_empty`: saem na próxima varredura.
     generated: tuple[FileChange, ...] = ()
+    # Tamanho ou data mudaram, mas o arquivo não pôde ser lido a tempo (ver
+    # `detect_changes`). Nem alterados nem inalterados; conferidos de novo
+    # na próxima execução.
+    unverified: tuple[str, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -804,9 +820,17 @@ def build_update_plan(
 
     `include_removed` and `listed`: see `detect_changes`.
     """
+    unverified: list[str] = []
     changes, unchanged, fingerprint = detect_changes(
         conn, config, should_stop=should_stop, include_removed=include_removed, listed=listed,
+        unverified=unverified,
     )
+    if unverified and record_warnings:
+        record_event(
+            conn, "update", "warning", "log.update.unverified",
+            {"count": len(unverified), "names": ", ".join(unverified[:20])},
+            language=language,
+        )
 
     by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": [], "generated": []}
     for change in changes:
@@ -919,4 +943,5 @@ def build_update_plan(
         unchanged_count=unchanged,
         fingerprint=fingerprint,
         generated=tuple(by_kind["generated"]),
+        unverified=tuple(unverified),
     )
