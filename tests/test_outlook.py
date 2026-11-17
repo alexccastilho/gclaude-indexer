@@ -535,3 +535,115 @@ def test_iter_pages_junta_separador_cortado_entre_pedaços(tmp_path):
     caminho.write_text(MBOX_PAGE_SEPARATOR.join(paginas), encoding="utf-8")
     for pedaco in (1, 2, 3, 4, 7, 1000):
         assert list(iter_pages(caminho, pedaco)) == paginas, pedaco
+
+
+# --- rodada de correções 2 ------------------------------------------------------------------------
+
+
+def test_nomes_disfarcados_de_segredo_sao_recusados_e_o_normal_passa(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Disfarces.pst").write_bytes(b"!BDN")
+    leituras: list = []
+    _com_leitor(monkeypatch, [PstMessage(subject="Disfarces", plain="corpo", attachments=[
+        Anexo(".env ", b"SENHA_A=alfa1\n", leituras),
+        Anexo("id_rsa.", b"chave ssh beta2", leituras),
+        Anexo("chave.pem. ", b"pem gama3", leituras),
+        Anexo("segredo.env", b"SENHA_D=delta4\n", leituras),
+        Anexo(".env\x00.txt", b"SENHA_E=epsilon5\n", leituras),
+        Anexo("relatorio.txt", b"relatorio comum liberado", leituras),
+    ])])
+    scan(conn, config)
+    convert(conn, config)
+    extract_pages(conn, config)
+    texto = "\n".join(_paginas(conn, "Disfarces.pst"))
+    for proibido in ("alfa1", "beta2", "gama3", "delta4"):
+        assert proibido not in texto, proibido
+    assert "relatorio comum liberado" in texto
+    conn.close()
+
+
+def test_extensao_de_segredo_de_arquivo_com_ponto_inicial_e_reconhecida(tmp_path):
+    from gclaude_indexer.conversion import _attachment_text
+
+    config = load_config({"name": "x", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "o")})
+    alvo = tmp_path / ".env"
+    alvo.write_bytes(b"A=1\n")
+    assert _attachment_text(alvo, config, "qualquer.txt") is None
+    ok = tmp_path / "relatorio.txt"
+    ok.write_bytes(b"texto liberado")
+    assert _attachment_text(ok, config, "relatorio.txt") == "texto liberado"
+
+
+def _caixa_grande(tmp_path, paginas=60):
+    from gclaude_indexer.light_formats import MBOX_PAGE_SEPARATOR
+
+    caminho = tmp_path / "grande.txt"
+    caminho.write_text(
+        MBOX_PAGE_SEPARATOR.join(f"Assunto: M{n}\n\ncorpo numero {n}" for n in range(paginas)), encoding="utf-8",
+    )
+    return caminho
+
+
+def test_extracao_de_caixa_de_mensagens_e_preguicosa(tmp_path, monkeypatch):
+    from gclaude_indexer import extraction, light_formats
+
+    puxadas = []
+    original = light_formats.iter_pages
+
+    def espiao(caminho, *a, **k):
+        for pagina in original(caminho, *a, **k):
+            puxadas.append(1)
+            yield pagina
+
+    monkeypatch.setattr(light_formats, "iter_pages", espiao)
+    paginas = extraction.MessagePages(_caixa_grande(tmp_path), 4000)
+    assert puxadas == []  # nada lido ao criar (nem ao cruzar o pool)
+    iterador = iter(paginas)
+    primeiras = [next(iterador) for _ in range(3)]
+    assert len(puxadas) == 3 and primeiras[0][0].startswith("Assunto: M0")
+    assert len(list(paginas)) == 60  # pode ser percorrido de novo
+
+
+def test_indexacao_de_caixa_de_mensagens_e_preguicosa_e_em_lotes(tmp_path, monkeypatch):
+    from gclaude_indexer import fulltext, light_formats
+
+    puxadas = []
+    original = light_formats.iter_pages
+
+    def espiao(caminho, *a, **k):
+        for pagina in original(caminho, *a, **k):
+            puxadas.append(1)
+            yield pagina
+
+    monkeypatch.setattr(light_formats, "iter_pages", espiao)
+    trechos = fulltext.MessagePassages(_caixa_grande(tmp_path), {})
+    assert puxadas == []
+    iterador = iter(trechos)
+    primeiro = next(iterador)
+    # Um trecho por vez: só a primeira página foi lida, não o arquivo.
+    assert len(puxadas) == 1 and primeiro.locator.startswith("p. 1")
+
+    # E o armazenamento consome sem montar lista: a cada inserção, no máximo
+    # uma página à frente do que já foi gravado.
+    (tmp_path / "p").mkdir()
+    origem, saida, config, conn = _projeto(tmp_path / "p")
+    (origem / "L.pst").write_bytes(b"!BDN")
+    scan(conn, config)
+    linha = conn.execute("SELECT * FROM file").fetchone()
+    puxadas.clear()
+    maximo = []
+
+    class Medidor:
+        def __iter__(self_inner):
+            for passagem in trechos:
+                maximo.append(len(puxadas))
+                yield passagem
+
+    conn.execute("BEGIN IMMEDIATE")
+    gravados = fulltext._store_passages(conn, linha, Medidor())
+    conn.commit()
+    assert gravados == 60 and max(maximo) <= 60 and maximo == list(range(1, 61))
+    assert conn.execute("SELECT COUNT(*) FROM fulltext").fetchone()[0] == 60
+    intervalo = conn.execute("SELECT first_rowid, last_rowid FROM fulltext_file").fetchone()
+    assert intervalo[1] - intervalo[0] == 59
+    conn.close()

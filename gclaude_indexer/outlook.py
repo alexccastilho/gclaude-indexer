@@ -245,6 +245,7 @@ def open_reader(path: Path) -> PstReader:
 _RESERVED_NAMES = frozenset(
     {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
 )
+_BAD_CONTROL = re.compile(r"[\x00-\x1f]")
 _BAD_CHARS = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
 
 
@@ -452,6 +453,10 @@ def _attachments(
         if output_full():
             break
         raw_name = re.split(r"[\\/]", str(getattr(attachment, "name", "") or ""))[-1]
+        # O mesmo tratamento do nome gravado em disco (sem controles, sem
+        # espaço nem ponto no fim): `.env `, `id_rsa.` e `chave.pem. ` não
+        # podem enganar a regra de segredos por diferença de leitura.
+        raw_name = _BAD_CONTROL.sub("", raw_name).strip().rstrip(". ")
         label = sanitize_attachment_name(raw_name, f"anexo-{number}")
         if label.lower() in taken:
             label = f"{number}-{label}"

@@ -230,6 +230,12 @@ def has_private_key_marker(content: bytes) -> bool:
     return _has_private_key_marker(content)
 
 
+def file_extension(name: str) -> str:
+    """The extension the scan would store for `name` (dotfiles such as `.env`
+    included)."""
+    return _extension(name)
+
+
 def _extension(name: str) -> str:
     """Same extension the scan stores (`Path.suffix`, lower case), except
     that a bare dotfile such as `.env` counts as being its own extension."""

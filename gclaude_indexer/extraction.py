@@ -106,7 +106,27 @@ def _docx_has_table(path: Path) -> bool:
     return len(light_formats.open_docx(path).tables) > 0
 
 
-def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool]]:
+class MessagePages:
+    """As páginas de um intermediário de caixa de mensagens (`.mbox`, `.pst`),
+    lidas só quando iteradas e cortadas no limite de cada página.
+
+    É o que a extração devolve no lugar de uma lista: um `.pst` rende
+    milhares de páginas, e a lista cresceria com ele (e atravessaria o
+    `pickle` do pool). Só o caminho e o limite viajam; quem grava no banco
+    (o processo principal) percorre o arquivo em pedaços e insere página a
+    página, então a memória não depende do tamanho do arquivo. Pode ser
+    percorrido mais de uma vez (a gravação é refeita se o banco travar)."""
+
+    def __init__(self, path: Path, limit: int) -> None:
+        self.path = path
+        self.limit = limit
+
+    def __iter__(self):
+        for part in light_formats.iter_pages(self.path):
+            yield (part[: self.limit], 0, False)
+
+
+def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, bool]] | MessagePages":
     # Truncate here, in the worker, not only in `_write_pages`: on the
     # parallel path the return value crosses `pickle` to the main process,
     # and without truncating first the **full** text of every page stayed in
@@ -139,7 +159,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
         # Cada mensagem é uma página. Lido em pedaços e cortado página a
         # página: o intermediário (um `.pst` rende gigabytes) nunca é
         # carregado nem partido inteiro.
-        return [(part[:limit], 0, False) for part in light_formats.iter_pages(intermediate)]
+        return MessagePages(intermediate, limit)
 
     text = intermediate.read_text(encoding="utf-8")[:limit]
 
@@ -155,7 +175,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
     return [(text, 0, False)]  # pptx, texto, email
 
 
-def _write_pages(conn, config: ProjectConfig, row, pages: list[tuple[str, int, bool]], start_sheet: int) -> int:
+def _write_pages(conn, config: ProjectConfig, row, pages, start_sheet: int) -> int:
     limit = chars_limit_for(category_of_extension("." + row["extension"]), config)
     library = config.collection_type == "biblioteca"
     sheet = start_sheet
@@ -262,14 +282,19 @@ def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_s
     sheet. The sheet is computed here, not read back from the database, so
     a batch replayed after a locked database numbers exactly as before."""
 
+    # Uma lista sabe o tamanho; as páginas de uma caixa de mensagens
+    # (`MessagePages`) só se sabe contando enquanto são gravadas. A operação
+    # roda na hora (`BatchWriter.add`), então a contagem está pronta ao voltar.
+    written = [0]
+
     def op(conn) -> None:
-        _write_pages(conn, config, row, pages, start_sheet)
+        written[0] = _write_pages(conn, config, row, pages, start_sheet) - start_sheet
         conn.execute("UPDATE file SET status = 'extracted' WHERE id = ?", (row["id"],))
 
     writer.add(op)
     result.files_processed += 1
-    result.pages_written += len(pages)
-    return start_sheet + len(pages)
+    result.pages_written += written[0]
+    return start_sheet + written[0]
 
 
 def _extract_in_parallel(
