@@ -124,7 +124,9 @@ _SECRET_NAME_PREFIXES = ("id_rsa", "id_ed25519")
 # conteúdo de um segredo) fica de fora.
 HEAD_BYTES = 8192
 _SECRET_MARKER_BEGIN = b"-----BEGIN"
-_SECRET_MARKER_END = b"PRIVATE KEY-----"
+# PEM (`RSA`, `EC`, `OPENSSH`, PKCS#8…) e PGP, cuja chave privada termina em
+# `PRIVATE KEY BLOCK-----` e escapava do primeiro marcador.
+_SECRET_MARKERS_END = (b"PRIVATE KEY-----", b"PRIVATE KEY BLOCK-----")
 _BINARY_CONTROL_RATIO = 0.30
 
 # Formato que nenhum conversor deste programa lê de verdade: o `.pages` da
@@ -221,7 +223,7 @@ def looks_binary(head: bytes) -> bool:
 
 def _has_private_key_marker(head: bytes) -> bool:
     start = head.find(_SECRET_MARKER_BEGIN)
-    return start != -1 and _SECRET_MARKER_END in head[start:]
+    return start != -1 and any(marker in head[start:] for marker in _SECRET_MARKERS_END)
 
 
 def has_private_key_marker(content: bytes) -> bool:
