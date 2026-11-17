@@ -508,7 +508,7 @@ def _scan_files(
             # arquivo preso por outro programa, apagado no meio): o mesmo
             # tratamento do arquivo que não respondeu. Nada é gravado sobre
             # ele, então a próxima varredura o confere de novo; o plano de
-            # atualização faz o mesmo (`update_plan._hash_or_none`).
+            # atualização faz o mesmo (`update_plan._PlanReader`).
             writer.add(lambda c, name=name, error=error: record_event(
                 c, "scan", "warning", "log.scan.file_unreadable",
                 {"name": name, "error": error.strerror or str(error)},

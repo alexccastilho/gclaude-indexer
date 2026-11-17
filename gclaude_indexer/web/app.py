@@ -66,7 +66,7 @@ from ..deletion import delete_project
 from ..import_items import import_and_consolidate
 from ..windows_prep import cleanup_legacy_window_files
 from ..invalidation import PlanExpired, apply_update_plan
-from ..update_plan import SourceFolderUnavailable, UpdatePlan, build_update_plan
+from ..update_plan import SCREEN_READ_DEADLINE_SECONDS, SourceFolderUnavailable, UpdatePlan, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
 from .. import claude_package, combined_package, relocation
 from ..claude_package import generate_claude_project_package
@@ -1259,7 +1259,9 @@ def update_banner(request: Request, project_id: int):
         if conn.execute("SELECT 1 FROM file LIMIT 1").fetchone() is None:
             return HTMLResponse("")
         try:
-            plan = build_update_plan(conn, config, record_warnings=False)
+            plan = build_update_plan(
+                conn, config, record_warnings=False, read_deadline=SCREEN_READ_DEADLINE_SECONDS,
+            )
         except SourceFolderUnavailable:
             return HTMLResponse("")
         if plan.is_empty:
@@ -1513,7 +1515,9 @@ def update_screen(request: Request, project_id: int):
     """
     with _open_project(project_id) as (entry, config, conn):
         try:
-            plan = build_update_plan(conn, config, record_warnings=False)
+            plan = build_update_plan(
+                conn, config, record_warnings=False, read_deadline=SCREEN_READ_DEADLINE_SECONDS,
+            )
         except SourceFolderUnavailable:
             return render(
                 request, "update_project.html",
