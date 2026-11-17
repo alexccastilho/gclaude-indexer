@@ -191,10 +191,13 @@ def test_varredura_com_arquivo_preso_segue_e_deixa_ele_para_a_proxima(tmp_path, 
     assert time.monotonic() - inicio < 15
 
     nomes = {l["name"] for l in conn.execute("SELECT name FROM file")}
+    preso = conn.execute("SELECT status, error, sha256 FROM file WHERE name = 'doc03.txt'").fetchone()
     avisos = conn.execute("SELECT message FROM event WHERE message_key = 'log.scan.file_timed_out'").fetchall()
     assert not conn.in_transaction
     conn.close()
-    assert "doc03.txt" not in nomes and len(nomes) == 9
+    # Achado 5: como o que lança OSError, o novo que estoura o prazo entra
+    # sem hash nem data (a contagem bate com a pasta) e é lido na próxima.
+    assert len(nomes) == 10 and tuple(preso) == ("skipped", "unreadable", "")
     assert resultado.total_found == 10
     assert avisos and "doc03.txt" in avisos[0]["message"]
 
@@ -274,9 +277,14 @@ def test_arquivo_novo_que_nao_abre_entra_na_conta_e_e_lido_na_proxima(tmp_path, 
     assert [(m.relative_path, m.kind) for m in mudancas] == [("pasta/doc01.txt", "new")]
 
     estado["preso"] = False
-    varredura_mod.scan(conn, config, language="pt")
+    resultado = varredura_mod.scan(conn, config, language="pt")
     linha = conn.execute("SELECT status, error, sha256 FROM file WHERE name = 'doc01.txt'").fetchone()
     assert linha["status"] == "discovered" and linha["error"] is None and linha["sha256"]
+    # Lido enfim, ele é novo, não "alterado" (achado 6).
+    assert resultado.discovered == 1 and resultado.updated == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.content_changed'"
+    ).fetchone()[0] == 0
     assert conn.execute(
         "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.discarded_without_update'"
     ).fetchone()[0] == 0
@@ -292,7 +300,9 @@ def test_varredura_com_disco_travado_para_com_mensagem(tmp_path, monkeypatch, li
     init_schema(conn)
     with pytest.raises(StepStalledError, match="Google Drive"):
         varredura_mod.scan(conn, _config(tmp_path, extensions=["text"]), language="pt")
-    assert conn.execute("SELECT COUNT(*) FROM file").fetchone()[0] == 0
+    # Só as linhas sem hash dos que travaram antes do corte: nenhum lido.
+    linhas = conn.execute("SELECT status, error, sha256 FROM file").fetchall()
+    assert linhas and all(tuple(l) == ("skipped", "unreadable", "") for l in linhas)
     assert not conn.in_transaction
     conn.close()
 
