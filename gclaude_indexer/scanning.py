@@ -498,6 +498,18 @@ def _scan_files(
                     translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=name)
                 ) from None
             continue
+        except OSError as error:
+            # Lido e recusado (placeholder do Drive só na nuvem sem rede,
+            # arquivo preso por outro programa, apagado no meio): o mesmo
+            # tratamento do arquivo que não respondeu. Nada é gravado sobre
+            # ele, então a próxima varredura o confere de novo; o plano de
+            # atualização faz o mesmo (`update_plan._hash_or_none`).
+            writer.add(lambda c, name=name, error=error: record_event(
+                c, "scan", "warning", "log.scan.file_unreadable",
+                {"name": name, "error": error.strerror or str(error)},
+                language=language, commit=False,
+            ))
+            continue
         consecutive_timeouts = 0
         bytes_done += size
 
