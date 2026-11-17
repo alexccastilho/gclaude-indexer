@@ -395,6 +395,11 @@ def test_varredura_sem_a_atualizacao_antes_mantem_o_arquivo_em_espera(tmp_path, 
     # Continua em espera: não é "atualizado" (não volta à fila), mas o log
     # diz que o conteúdo mudou, como para qualquer documento.
     assert varredura.updated == 0 and varredura.waiting_updated == 1
+    # E o resumo da varredura fecha a conta com ele.
+    resumo = conn.execute(
+        "SELECT message FROM event WHERE message_key LIKE 'log.scan.summary%' ORDER BY id DESC LIMIT 1"
+    ).fetchone()[0]
+    assert "1 alterado(s) à espera de componente" in resumo, resumo
     assert conn.execute(
         "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.content_changed'"
         " AND message LIKE '%a_antigo.doc%'"
