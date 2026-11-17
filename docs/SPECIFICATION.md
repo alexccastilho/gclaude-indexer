@@ -1085,7 +1085,7 @@ The system is complete through version 2.0.0 (output folder outside the
 source, automatic settings, no slicing, the removal of the `claude_code`
 engine and of review mode, new formats and optional components, per-document
 language, local transcription, Glass and Apple themes), with the full test
-suite passing (1776 tests as of this document). Phase-by-phase
+suite passing (1783 tests as of this document). Phase-by-phase
 detail, including every user-requested deviation from this specification
 and why, lives in [CHANGELOG.md](../CHANGELOG.md) — this section
 intentionally does not duplicate that history.
