@@ -750,15 +750,13 @@ def _intended_membership(
     # no window layout accounted for. Renaming a file to a name that
     # sorts earlier shifted every sheet number after it, silently.
 
-    def _hash(relative_path: str) -> str | None:
-        try:
-            return compute_hash(source_dir / relative_path)
-        except OSError:
-            # Unreadable or already gone between the walk and this read.
-            # Leaving it out only means the group is not invalidated for
-            # it: the safe direction, and the same one a file that
-            # appears after the plan was built already takes.
-            return None
+    def _hash(relative_path: str, size: int) -> str | None:
+        # Unreadable, already gone between the walk and this read, or never
+        # answering in time (`_hash_or_none`, the scan's deadline). Leaving
+        # it out only means the group is not invalidated for it: the safe
+        # direction, and the same one a file that appears after the plan
+        # was built already takes.
+        return _hash_or_none(source_dir / relative_path, size)
 
     for change in new_files:
         # Same name-level decision the scan makes before hashing (archive,
@@ -781,10 +779,10 @@ def _intended_membership(
         else:
             known = hashes_by_size.setdefault(size, set())
             for earlier in unhashed_by_size.pop(size, []):
-                earlier_hash = _hash(earlier)
+                earlier_hash = _hash(earlier, size)
                 if earlier_hash is not None:
                     known.add(earlier_hash)
-            file_hash = _hash(change.relative_path)
+            file_hash = _hash(change.relative_path, size)
             if file_hash is None:
                 continue
             if file_hash in known:
