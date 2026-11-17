@@ -190,10 +190,14 @@ def detect_changes(
 
         # Revisão final da 2.0.0 (I1): arquivo à espera de um componente
         # (LibreOffice, ffmpeg/whisper) que ainda não está nesta máquina não
-        # tem página no índice nem nada a refazer. Apontá-lo como alterado
-        # descartava as janelas do grupo a partir dele em toda execução, e o
-        # aviso de "Atualizar" nunca sumia. Com o componente presente, cai na
-        # regra abaixo (`ocr_failed`) e entra junto com as janelas do grupo.
+        # tem página no índice nem nada a refazer — nem se foi editado
+        # enquanto esperava: continua com zero páginas e o grupo sai
+        # idêntico. Apontá-lo como alterado descartava as janelas do grupo a
+        # partir dele em toda execução, e o aviso de "Atualizar" nunca sumia.
+        # Nada é lido: a varredura grava os bytes novos e o mantém em espera
+        # (`scanning._record_scanned_file`). Com o componente presente, cai
+        # na regra abaixo (`ocr_failed`), também sem leitura, e entra junto
+        # com as janelas do grupo.
         if (
             row["status"] == "skipped"
             and row["error"] == REASON_COMPONENT_UNAVAILABLE
@@ -206,15 +210,7 @@ def detect_changes(
                 from .conversion import component_ready
 
                 ready_by_extension[extension] = component_ready(extension)
-            # Só com os mesmos bytes (tamanho e data, ou o hash, como no fim
-            # desta função). Editado enquanto esperava, ele é alterado: a
-            # varredura o devolveria à fila sem invalidar nada, e se a
-            # conversão obtivesse o componente na mesma execução, as páginas
-            # novas cairiam no meio do grupo por cima das janelas antigas.
-            if not ready_by_extension[extension] and (
-                (row["size"] == size and row["mtime"] == mtime)
-                or (row["sha256"] and compute_hash(path) == row["sha256"])
-            ):
+            if not ready_by_extension[extension]:
                 unchanged += 1
                 continue
 
