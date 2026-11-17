@@ -36,6 +36,9 @@ AVAILABLE_THEMES: tuple[str, ...] = (
     "light", "dark", "sepia", "high_contrast",
     # 1.4: themes with more depth and motion (see `motion.css`).
     "aurora", "toga", "graphite", "ocean",
+    # 2.0.0: glass and an iOS/macOS look, each as a light/dark pair like
+    # Studio. Appended at the end so the older positions stay put.
+    "glass", "glass_dark", "apple", "apple_dark",
 )
 THEME_COOKIE_NAME = "theme"
 

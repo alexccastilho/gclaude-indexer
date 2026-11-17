@@ -1,0 +1,337 @@
+/* GClaude Indexer, 2.0.0: o que os temas Vidro e Apple têm além das cores.
+
+   As cores (tokens --color-*) ficam em style.css, junto com as dos outros
+   temas. Aqui mora o resto: o fundo em gradiente e as superfícies de vidro
+   (backdrop-filter), a tipografia do sistema e os controles no estilo
+   iOS/macOS. Carregada por último em todas as telas, com seletores que
+   começam por html[data-theme=...]: empata em especificidade com os
+   layouts (html[data-layout=...]) e vence por vir depois, e não toca em
+   nenhum outro tema.
+
+   Acessibilidade, de propósito:
+   - sem backdrop-filter no navegador, ou com "transparência reduzida"
+     pedida pelo sistema, as superfícies ficam opacas (blocos no fim);
+   - com "mais contraste" pedido, bordas firmes e superfícies sólidas;
+   - nenhuma animação nova: o movimento continua todo em motion.css, que
+     já desliga tudo com prefers-reduced-motion;
+   - o contraste dos pares de texto é conferido em
+     tests/test_temas_vidro_apple.py com a fórmula da WCAG.
+   Nada é baixado: sem fontes nem imagens externas (o programa roda
+   offline). */
+
+/* ==========================================================================
+   Vidro
+   ========================================================================== */
+
+html[data-theme="glass"] {
+  --glass-blur: blur(18px) saturate(160%);
+  --glass-blur-strong: blur(26px) saturate(180%);
+  /* Realce especular: um brilho que desce do alto da superfície. */
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0) 46%);
+  /* Borda clara e fina, a luz pegando na quina do vidro. */
+  --glass-rim: rgba(255, 255, 255, 0.72);
+  --glass-side: rgba(255, 255, 255, 0.4);
+  /* Opaca o bastante para o texto fraco da barra continuar legível quando
+     o log (sempre escuro) passa por baixo dela. */
+  --glass-top: rgba(244, 247, 252, 0.85);
+  --glass-field: rgba(255, 255, 255, 0.72);
+  /* Contorno dos campos: 3:1 contra a superfície (WCAG 1.4.11). */
+  --glass-control-border: rgba(15, 23, 42, 0.5);
+  /* Fundo opaco para quando o vidro não pode ser vidro. */
+  --glass-solid: #f8faff;
+  --glass-solid-alt: #edf1f8;
+  --glass-backdrop:
+    radial-gradient(60vmax 50vmax at 6% 0%, #d6e2fa, transparent 65%),
+    radial-gradient(55vmax 45vmax at 100% 16%, #e6dcf7, transparent 62%),
+    radial-gradient(60vmax 50vmax at 72% 100%, #d5efe7, transparent 65%),
+    linear-gradient(160deg, #f4f6fb, #eef2f9 50%, #f1eef9);
+}
+html[data-theme="glass_dark"] {
+  --glass-blur: blur(18px) saturate(150%);
+  --glass-blur-strong: blur(26px) saturate(170%);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 46%);
+  --glass-rim: rgba(255, 255, 255, 0.14);
+  --glass-side: rgba(10, 15, 30, 0.45);
+  --glass-top: rgba(10, 15, 30, 0.5);
+  --glass-field: rgba(255, 255, 255, 0.06);
+  --glass-control-border: rgba(238, 242, 251, 0.42);
+  --glass-solid: #161d31;
+  --glass-solid-alt: #1f2740;
+  --glass-backdrop:
+    radial-gradient(60vmax 50vmax at 6% 0%, #1b2550, transparent 65%),
+    radial-gradient(55vmax 45vmax at 100% 16%, #271a45, transparent 62%),
+    radial-gradient(60vmax 50vmax at 72% 100%, #12333a, transparent 65%),
+    linear-gradient(160deg, #0b1122, #0a0f1e 50%, #0d0b1f);
+}
+
+/* Fundo: gradiente suave e fixo, para o vidro ter o que desfocar. Fixo,
+   não repinta ao rolar. */
+html:is([data-theme="glass"], [data-theme="glass_dark"]) body {
+  background-color: var(--color-bg);
+  background-image: var(--glass-backdrop);
+  background-attachment: fixed;
+}
+
+/* Superfícies de vidro. */
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(
+  .card, .table, .install-diagnostics, .resource-box, .progress-box,
+  .quality-box, .comparison-box, .cleanup-box, .artifact, .claude-package,
+  .manual-toc, .wait-card, dialog.modal, .ws-palette
+) {
+  background: var(--glass-sheen), var(--color-surface);
+  border: 1px solid var(--glass-rim);
+  box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(.wait-card, dialog.modal, .ws-palette) {
+  /* Flutuam sobre um véu (escuro na paleta e na ajuda), não sobre o
+     gradiente: quase opacos, para o texto fraco não afundar no véu. */
+  background: var(--glass-sheen), color-mix(in srgb, var(--glass-solid) 92%, transparent);
+  box-shadow: var(--shadow-floating);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+/* A tabela já é vidro: as células não somam outra camada clara por cima. */
+html:is([data-theme="glass"], [data-theme="glass_dark"]) .table th { background: var(--color-surface-alt); }
+
+/* Barras: cabeçalho, barra lateral e barra do alto, com o conteúdo
+   passando por baixo. */
+html:is([data-theme="glass"], [data-theme="glass_dark"]) .header {
+  border-bottom: 1px solid var(--glass-rim);
+  box-shadow: 0 8px 30px -18px rgba(15, 23, 42, 0.35);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+html[data-theme="glass"][data-layout="workspace"] .ws-side,
+html[data-theme="glass_dark"][data-layout="workspace"] .ws-side {
+  background: var(--glass-side);
+  border-right-color: var(--glass-rim);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+html[data-theme="glass"][data-layout="workspace"] .ws-top,
+html[data-theme="glass_dark"][data-layout="workspace"] .ws-top {
+  background: var(--glass-top);
+  border-bottom-color: var(--glass-rim);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+}
+html[data-theme="glass"][data-layout="workspace"] .ws-tabs,
+html[data-theme="glass_dark"][data-layout="workspace"] .ws-tabs { border-bottom-color: var(--glass-rim); }
+
+/* Controles: botões translúcidos com o mesmo brilho; campos com contorno
+   que se enxerga. :where() mantém a especificidade baixa, para os botões
+   com estilo próprio (layouts, barra do alto) continuarem mandando. */
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)) {
+  background: var(--glass-sheen), var(--color-surface);
+  border-color: var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-rim), 0 4px 14px -8px rgba(15, 23, 42, 0.3);
+}
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)):hover {
+  background: var(--glass-sheen), var(--color-button-hover);
+  border-color: var(--color-accent);
+}
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select, .ws-prefs-body select) {
+  background: var(--glass-field);
+  border-color: var(--glass-control-border);
+}
+html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select):focus {
+  border-color: var(--color-accent);
+}
+
+/* Cabeçalho claro (só no Vidro claro): os textos e controles do cabeçalho
+   foram escritos para um fundo escuro (branco translúcido), então seguem a
+   cor de texto do tema aqui. */
+html[data-theme="glass"] .nav-link,
+html[data-theme="apple"] .nav-link { color: color-mix(in srgb, var(--color-header-text) 84%, transparent); }
+html[data-theme="glass"] .nav-link:hover,
+html[data-theme="apple"] .nav-link:hover { color: var(--color-header-text); background: color-mix(in srgb, var(--color-header-text) 7%, transparent); }
+html[data-theme="glass"] .nav-link[aria-current="page"],
+html[data-theme="apple"] .nav-link[aria-current="page"] { color: var(--color-header-text); background: color-mix(in srgb, var(--color-header-text) 9%, transparent); }
+html[data-theme="glass"] :is(.header-button, .preference-form select),
+html[data-theme="apple"] :is(.header-button, .preference-form select) {
+  background: color-mix(in srgb, var(--color-header-text) 4%, transparent);
+  border-color: color-mix(in srgb, var(--color-header-text) 45%, transparent);
+  color: var(--color-header-text);
+}
+html[data-theme="glass"] :is(.header-button, .preference-form select):hover,
+html[data-theme="apple"] :is(.header-button, .preference-form select):hover { background: color-mix(in srgb, var(--color-header-text) 9%, transparent); }
+
+/* ==========================================================================
+   Apple
+   ========================================================================== */
+
+html:is([data-theme="apple"], [data-theme="apple_dark"]) {
+  /* Fonte do sistema: SF no Mac, Segoe UI Variable/Segoe UI no Windows.
+     Nenhuma fonte embutida. */
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --radius: 14px;
+  --radius-small: 10px;
+  /* Contorno dos campos: 3:1 contra a superfície (WCAG 1.4.11). */
+  --apple-control-border: #8e8e93;
+  --apple-material: blur(20px) saturate(180%);
+  accent-color: var(--color-accent);
+}
+html[data-theme="apple_dark"] { --apple-control-border: #7c7c80; }
+
+/* ==========================================================================
+   Comum aos quatro
+   ========================================================================== */
+
+/* O orçamento do pacote (tela Resultado) usa estes três nomes com recuo
+   para cores claras fixas; sem eles, um tema escuro mostraria texto claro
+   sobre caixa creme. Aqui apontam para as cores de aviso e erro do tema. */
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"]) {
+  --color-warning-weak: var(--color-warning-bg);
+  --color-danger-weak: var(--color-error-bg);
+  --color-danger: var(--color-error);
+}
+/* O título das seções da barra lateral é texto fraco com opacidade a mais:
+   abaixo de 4,5:1 nestes temas, então fica sem ela. */
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"])[data-layout="workspace"] .ws-sec { opacity: 1; }
+
+html:is([data-theme="apple"], [data-theme="apple_dark"]) body {
+  font-family: var(--font-text);
+  /* As variantes de desenho do Inter (layout Área de trabalho) não existem
+     na fonte do sistema. */
+  font-feature-settings: normal;
+  background: var(--color-bg);
+  background-image: none;
+}
+/* Tracking por tamanho: títulos grandes apertados, corpo neutro. */
+html:is([data-theme="apple"], [data-theme="apple_dark"]) h1 { font-weight: 700; letter-spacing: -0.024em; line-height: 1.15; }
+html:is([data-theme="apple"], [data-theme="apple_dark"]) h2 { font-weight: 600; letter-spacing: -0.012em; }
+
+/* Material translúcido no cabeçalho e na barra do alto. */
+html:is([data-theme="apple"], [data-theme="apple_dark"]) .header {
+  background: var(--color-header-bg);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none;
+  -webkit-backdrop-filter: var(--apple-material);
+  backdrop-filter: var(--apple-material);
+}
+html[data-theme="apple"][data-layout="workspace"] .ws-top,
+html[data-theme="apple_dark"][data-layout="workspace"] .ws-top {
+  /* Opaca o bastante para o caminho no alto continuar legível quando o
+     log (sempre escuro) passa por baixo. */
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  -webkit-backdrop-filter: var(--apple-material);
+  backdrop-filter: var(--apple-material);
+}
+html[data-theme="apple"][data-layout="workspace"] .ws-crumbs a { color: #545458; }
+/* Seleção da barra lateral como no macOS: um preenchimento arredondado,
+   sem o traço lateral. */
+html[data-theme="apple"][data-layout="workspace"] .ws-item[aria-current="page"],
+html[data-theme="apple_dark"][data-layout="workspace"] .ws-item[aria-current="page"] {
+  background: color-mix(in srgb, var(--color-text) 9%, transparent);
+  box-shadow: none;
+}
+
+/* Listas agrupadas: blocos brancos sem borda sobre o cinza do sistema,
+   separadores finos entre as linhas, cantos grandes. */
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(
+  .card, .table, .install-diagnostics, .resource-box, .progress-box,
+  .quality-box, .comparison-box, .cleanup-box, .artifact, .claude-package, .manual-toc
+) {
+  border-color: transparent;
+  box-shadow: var(--shadow-card);
+}
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(.table, .install-diagnostics) th {
+  background: var(--color-surface);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+html:is([data-theme="apple"], [data-theme="apple_dark"]) .ws-palette,
+html:is([data-theme="apple"], [data-theme="apple_dark"]) dialog.modal { border-radius: 16px; }
+
+/* Botões em cápsula, como no iOS; campos arredondados com contorno visível
+   e o anel de foco do macOS. */
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :where(.button, button, input[type="submit"]) {
+  border-radius: 980px;
+  font-weight: 500;
+}
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :where(.button-primary) { font-weight: 600; }
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select) {
+  border-color: var(--apple-control-border);
+  border-radius: var(--radius-small);
+}
+html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select):focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+html:is([data-theme="apple"], [data-theme="apple_dark"]) .badge { font-weight: 600; letter-spacing: 0.01em; }
+
+/* Cantos contínuos (superelipse), onde o navegador já sabe desenhar. */
+@supports (corner-shape: squircle) {
+  html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(
+    .card, .table, .install-diagnostics, .resource-box, .progress-box,
+    .quality-box, .comparison-box, .cleanup-box, .artifact, .claude-package,
+    .manual-toc, dialog.modal, .ws-palette
+  ) {
+    corner-shape: squircle;
+    border-radius: 22px;
+  }
+}
+
+/* ==========================================================================
+   Quando o vidro não pode ser vidro
+   ========================================================================== */
+
+/* Navegador sem backdrop-filter: superfícies opacas, senão o texto ficaria
+   sobre o gradiente sem desfoque nenhum. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+    --color-surface: var(--glass-solid);
+    --color-surface-alt: var(--glass-solid-alt);
+    --color-header-bg: var(--glass-solid);
+    --color-header-bg-alt: var(--glass-solid);
+    --glass-side: var(--glass-solid-alt);
+    --glass-top: var(--glass-solid);
+  }
+  html[data-theme="apple"] { --color-header-bg: #f6f6f8; }
+  html[data-theme="apple_dark"] { --color-header-bg: #1d1d1f; }
+  html[data-theme="apple"][data-layout="workspace"] .ws-top,
+  html[data-theme="apple_dark"][data-layout="workspace"] .ws-top { background: var(--color-bg); }
+}
+
+/* Transparência reduzida pedida pelo sistema: o mesmo fundo opaco e sem
+   desfoque, com o gradiente do Vidro trocado pela cor lisa. */
+@media (prefers-reduced-transparency: reduce) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+    --color-surface: var(--glass-solid);
+    --color-surface-alt: var(--glass-solid-alt);
+    --color-header-bg: var(--glass-solid);
+    --color-header-bg-alt: var(--glass-solid);
+    --glass-side: var(--glass-solid-alt);
+    --glass-top: var(--glass-solid);
+    --glass-field: var(--glass-solid);
+    --glass-sheen: none;
+  }
+  html:is([data-theme="glass"], [data-theme="glass_dark"]) body { background-image: none; }
+  html[data-theme="apple"] { --color-header-bg: #f6f6f8; }
+  html[data-theme="apple_dark"] { --color-header-bg: #1d1d1f; }
+  html[data-theme="apple"][data-layout="workspace"] .ws-top,
+  html[data-theme="apple_dark"][data-layout="workspace"] .ws-top { background: var(--color-bg); }
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"]) * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* Mais contraste pedido pelo sistema: superfícies sólidas e bordas firmes. */
+@media (prefers-contrast: more) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+    --color-surface: var(--glass-solid);
+    --color-surface-alt: var(--glass-solid-alt);
+    --glass-rim: color-mix(in srgb, var(--color-text) 55%, transparent);
+    --glass-sheen: none;
+  }
+  html:is([data-theme="apple"], [data-theme="apple_dark"]) :is(
+    .card, .table, .install-diagnostics, .resource-box, .progress-box,
+    .quality-box, .comparison-box, .cleanup-box, .artifact, .claude-package, .manual-toc
+  ) {
+    border-color: var(--apple-control-border);
+  }
+}

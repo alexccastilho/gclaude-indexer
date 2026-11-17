@@ -144,6 +144,166 @@ html[data-theme="studio_dark"] {
   color-scheme: dark;
 }
 
+/* 2.0.0, Vidro: superfícies translúcidas sobre um fundo de gradiente suave
+   (o vidro em si, o desfoque e o brilho moram em themes.css). As cores de
+   texto foram escolhidas contra a superfície composta sobre o ponto mais
+   escuro do gradiente, para o contraste não depender de onde o cartão
+   cai na tela. */
+html[data-theme="glass"] {
+  --color-text: #0f172a;
+  --color-text-weak: #475467;
+  --color-bg: #eef2f9;
+  --color-surface: rgba(255, 255, 255, 0.62);
+  --color-surface-alt: rgba(255, 255, 255, 0.55);
+  --color-border: rgba(15, 23, 42, 0.12);
+  --color-accent: #1b4fbf;
+  --color-accent-strong: #163f9c;
+  --color-accent-weak: rgba(27, 79, 191, 0.1);
+  --color-accent-text: #ffffff;
+  --color-error: #b42318;
+  --color-error-bg: rgba(253, 228, 226, 0.85);
+  --color-ok: #107040;
+  --color-ok-bg: rgba(221, 244, 231, 0.85);
+  --color-warning: #a3480a;
+  --color-warning-bg: rgba(253, 236, 210, 0.85);
+  --color-warning-text: #7a3505;
+  --color-warning-border: rgba(214, 140, 60, 0.45);
+  --color-button-hover: rgba(255, 255, 255, 0.85);
+  --color-grid: rgba(15, 23, 42, 0.08);
+  --color-log-bg: #0f1424;
+  --color-log-text: #e2e8f5;
+  --color-log-time: #8a96ad;
+  --color-log-step: #8ab4ff;
+  --color-preview-bg: #f4f6fb;
+  --color-header-bg: rgba(255, 255, 255, 0.82);
+  --color-header-bg-alt: rgba(255, 255, 255, 0.78);
+  --color-header-text: #0f172a;
+  --color-cpu: #107040;
+  --color-ram: #1b4fbf;
+  --color-gpu: #a3480a;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 10px 30px -14px rgba(30, 41, 90, 0.28);
+  --shadow-floating: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 24px 60px -20px rgba(30, 41, 90, 0.4);
+}
+
+/* 2.0.0, Vidro escuro: o mesmo vidro à noite, fundo azul-noite. */
+html[data-theme="glass_dark"] {
+  --color-text: #eef2fb;
+  --color-text-weak: #aab4c8;
+  --color-bg: #0a0f1e;
+  --color-surface: rgba(24, 32, 54, 0.6);
+  --color-surface-alt: rgba(255, 255, 255, 0.07);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-accent: #8ab4ff;
+  --color-accent-strong: #b0ccff;
+  --color-accent-weak: rgba(138, 180, 255, 0.16);
+  --color-accent-text: #0a1330;
+  --color-error: #ff9b94;
+  --color-error-bg: rgba(255, 138, 128, 0.14);
+  --color-ok: #5dd39e;
+  --color-ok-bg: rgba(93, 211, 158, 0.14);
+  --color-warning: #f5c25b;
+  --color-warning-bg: rgba(245, 194, 91, 0.14);
+  --color-warning-text: #f5c25b;
+  --color-warning-border: rgba(245, 194, 91, 0.38);
+  --color-button-hover: rgba(255, 255, 255, 0.1);
+  --color-grid: rgba(255, 255, 255, 0.08);
+  --color-log-bg: #060912;
+  --color-log-text: #dbe3f3;
+  --color-log-time: #7f8aa3;
+  --color-log-step: #8ab4ff;
+  --color-preview-bg: #151c30;
+  --color-header-bg: rgba(12, 17, 34, 0.6);
+  --color-header-bg-alt: rgba(24, 32, 54, 0.55);
+  --color-header-text: #eef2fb;
+  --color-cpu: #5dd39e;
+  --color-ram: #8ab4ff;
+  --color-gpu: #ff9b94;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 36px -14px rgba(0, 0, 0, 0.7);
+  --shadow-floating: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 26px 64px -20px rgba(0, 0, 0, 0.85);
+  color-scheme: dark;
+}
+
+/* 2.0.0, Apple: cinzas do sistema e azul de destaque no estilo iOS/macOS.
+   Os tons são as variantes acessíveis da paleta do sistema: o azul #007aff
+   puro dá 4,0:1 sobre branco, abaixo do AA para texto, então o destaque é
+   o azul de link #0066cc; verde, laranja e vermelho idem. */
+html[data-theme="apple"] {
+  --color-text: #1d1d1f;
+  --color-text-weak: #68686d;
+  --color-bg: #f2f2f7;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f2f2f7;
+  --color-border: #d8d8dc;
+  --color-accent: #0066cc;
+  --color-accent-strong: #004f9e;
+  --color-accent-weak: #e5f0fb;
+  --color-accent-text: #ffffff;
+  --color-error: #d70015;
+  --color-error-bg: #fdeced;
+  --color-ok: #1f7a36;
+  --color-ok-bg: #e8f6ec;
+  --color-warning: #b25000;
+  --color-warning-bg: #fff4e5;
+  --color-warning-text: #8a3d00;
+  --color-warning-border: #f3cf9f;
+  --color-button-hover: #e8e8ed;
+  --color-grid: #e5e5ea;
+  --color-log-bg: #1c1c1e;
+  --color-log-text: #f5f5f7;
+  --color-log-time: #98989d;
+  --color-log-step: #64d2ff;
+  --color-preview-bg: #f2f2f7;
+  --color-header-bg: rgba(246, 246, 248, 0.85);
+  --color-header-bg-alt: rgba(246, 246, 248, 0.85);
+  --color-header-text: #1d1d1f;
+  --color-cpu: #1f7a36;
+  --color-ram: #0066cc;
+  --color-gpu: #b25000;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px -6px rgba(0, 0, 0, 0.08);
+  --shadow-floating: 0 18px 48px -16px rgba(0, 0, 0, 0.22);
+}
+
+/* 2.0.0, Apple escuro: fundo preto do modo escuro do iOS, superfícies em
+   cinza elevado. Texto escuro no botão primário: nenhum azul é claro o
+   bastante para ser lido sobre #1c1c1e e escuro o bastante para levar
+   texto branco ao mesmo tempo (as duas exigências de 4,5:1 se excluem). */
+html[data-theme="apple_dark"] {
+  --color-text: #f5f5f7;
+  --color-text-weak: #a1a1a6;
+  --color-bg: #000000;
+  --color-surface: #1c1c1e;
+  --color-surface-alt: #2c2c2e;
+  --color-border: #38383a;
+  --color-accent: #409cff;
+  --color-accent-strong: #70b5ff;
+  --color-accent-weak: #0d2a4a;
+  --color-accent-text: #001a33;
+  --color-error: #ff6961;
+  --color-error-bg: #3b1716;
+  --color-ok: #30d158;
+  --color-ok-bg: #0f2e18;
+  --color-warning: #ffb340;
+  --color-warning-bg: #3a2a10;
+  --color-warning-text: #ffc56b;
+  --color-warning-border: #6b4e1d;
+  --color-button-hover: #2c2c2e;
+  --color-grid: #2c2c2e;
+  --color-log-bg: #000000;
+  --color-log-text: #f5f5f7;
+  --color-log-time: #98989d;
+  --color-log-step: #64d2ff;
+  --color-preview-bg: #2c2c2e;
+  --color-header-bg: rgba(29, 29, 31, 0.78);
+  --color-header-bg-alt: rgba(29, 29, 31, 0.78);
+  --color-header-text: #f5f5f7;
+  --color-cpu: #30d158;
+  --color-ram: #409cff;
+  --color-gpu: #ff9f0a;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px -8px rgba(0, 0, 0, 0.6);
+  --shadow-floating: 0 22px 56px -18px rgba(0, 0, 0, 0.85);
+  color-scheme: dark;
+}
+
 /* Sepia: light and warm, for long collection reading sessions. */
 html[data-theme="sepia"] {
   --color-text: #3a2f24;
