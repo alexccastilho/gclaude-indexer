@@ -19,11 +19,10 @@ warns before letting it continue.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import machine_local_folder
+from .paths import machine_local_folder, write_text_atomic
 
 REGISTRY_FILE_NAME = "sincronizacao.json"
 PROJECT_DB_NAME = "project.db"
@@ -96,15 +95,11 @@ def mark_synced(output_folder) -> None:
 def rename_key(old_folder, new_folder) -> None:
     """A pasta de saída mudou de lugar (`relocation.py`): a data conhecida
     passa para a chave nova, para o aviso de sincronização incompleta
-    continuar valendo. Gravação por temporário e `os.replace`."""
+    continuar valendo. Gravação atômica (`paths.write_text_atomic`)."""
     registry = _read_registry()
     old_key, new_key = _key(old_folder), _key(new_folder)
     if old_key not in registry or old_key == new_key:
         return
     value = registry.pop(old_key)
     registry.setdefault(new_key, value)
-    path = _registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temporary, path)
+    write_text_atomic(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=2))

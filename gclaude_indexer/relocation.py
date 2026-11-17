@@ -58,6 +58,7 @@ from . import paths, sync, workdir
 from .catalog import relocate_project as relocate_catalog_entry
 from .deletion import GENERATED_FILES, SHARED_FILES
 from .managed_block import BACKUP_SUFFIX, without_managed_block
+from .events import LOG_FILE_NAME
 from .windows_prep import LEGACY_WINDOW_FILE
 
 JOURNAL_FILE_NAME = "relocation.json"
@@ -117,14 +118,27 @@ def output_inside_source(source_folder: str, output_folder: str) -> bool:
         if not source_folder or not output_folder:
             return False
         source = Path(source_folder).resolve()
-        output = Path(output_folder).resolve()
-        return paths.is_inside_folder(output, source)
+        # O caminho como foi gravado também conta, sem resolver: uma saída
+        # que é junção dentro da origem está dentro dela (e `build_plan`
+        # recusa movê-la, porque links nunca são seguidos).
+        written = Path(os.path.normpath(os.path.abspath(output_folder)))
+        return paths.is_inside_folder(written, source) or paths.is_inside_folder(
+            Path(output_folder).resolve(), source
+        )
     except (OSError, ValueError, RuntimeError):
         return False
 
 
 def _key(folder) -> str:
-    return os.path.normcase(os.path.normpath(os.path.abspath(str(folder))))
+    """Chave de uma pasta no diário, no adiamento e na marca de "em mudança".
+    Resolvida (nome curto 8.3, junção no caminho, `..`): o catálogo pode ter
+    gravado uma grafia e o plano, outra, e as duas têm de achar o mesmo
+    diário. `strict=False`: a pasta pode não existir (já mudou de lugar)."""
+    try:
+        resolved = Path(os.path.abspath(str(folder))).resolve(strict=False)
+    except (OSError, RuntimeError):
+        resolved = Path(os.path.abspath(str(folder)))
+    return os.path.normcase(os.path.normpath(str(resolved)))
 
 
 # --- adiamento (por máquina) -------------------------------------------------
@@ -142,15 +156,7 @@ def _read_json(path: Path, default):
 
 
 def _write_json_atomic(path: Path, data) -> None:
-    """Grava num temporário ao lado e troca com `os.replace`: uma queda no
-    meio deixa o arquivo antigo inteiro, nunca um pela metade."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    with open(temporary, "w", encoding="utf-8") as file:
-        file.write(json.dumps(data, ensure_ascii=False, indent=2))
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(temporary, path)
+    paths.write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def is_postponed(output_folder) -> bool:
@@ -205,6 +211,8 @@ class RelocationPlan:
     # Quantos itens do usuário ficam onde estão.
     kept: int = 0
     total_bytes: int = 0
+    # As pastas entre os levados, para a tela listá-las como pastas.
+    carried_folders: list[str] = field(default_factory=list)
 
 
 def _is_link(path: Path) -> bool:
@@ -265,6 +273,73 @@ def _instruction_is_ours(path: Path) -> bool:
     return not without_managed_block(text).strip()
 
 
+def _source_paths(old: Path) -> tuple[set[str], set[str]]:
+    """Os caminhos relativos dos documentos do projeto (minúsculos, com
+    `/`), e os mesmos sem a extensão. Lidos só para leitura: o banco não é
+    alterado nem criado."""
+    db_path = old / paths.PROJECT_DB_NAME
+    try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True, timeout=10)
+    except sqlite3.Error:
+        return set(), set()
+    try:
+        rows = conn.execute("SELECT relative_path FROM file").fetchall()
+    except sqlite3.Error:
+        rows = []
+    finally:
+        conn.close()
+    full = {str(row[0]).replace("\\", "/").lower() for row in rows}
+    stems = {Path(path).with_suffix("").as_posix() for path in full}
+    return full, stems
+
+
+def _is_intermediate(relative: str, full: set[str], stems: set[str]) -> bool:
+    """`<documento>.pdf`, `.<ext>.pdf`, `.txt`, `.<ext>.txt` ou `.raw.pdf` de
+    um documento do projeto (`workdir.legacy_path`), ou qualquer arquivo numa
+    pasta com o nome inteiro de um documento (anexos e trechos de mídia)."""
+    path = Path(relative.lower())
+    if any(parent.as_posix() in full for parent in path.parents):
+        return True
+    if path.suffix not in (".pdf", ".txt"):
+        return False
+    candidate = path
+    for _ in range(3):
+        candidate = candidate.with_suffix("")
+        if candidate.as_posix() in stems or candidate.as_posix() in full:
+            return True
+        if not candidate.suffix:
+            break
+    return False
+
+
+def _folder_is_ours(old: Path, folder: Path) -> bool:
+    """`logs/` só com `execucao.log`; `converted/` só com intermediários de
+    documentos que este projeto conhece (`file.relative_path`). Uma pasta
+    vazia é nossa. Link em qualquer nível recusa a mudança (nunca é
+    seguido)."""
+    if _is_link(folder):
+        raise RelocationError("relocation.error.link", path=str(folder))
+    name = os.path.normcase(folder.name)
+    if name == os.path.normcase("logs"):
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if _is_link(Path(entry.path)):
+                    raise RelocationError("relocation.error.link", path=entry.path)
+                if entry.is_dir(follow_symlinks=False) or entry.name.lower() != LOG_FILE_NAME:
+                    return False
+        return True
+    full, stems = _source_paths(old)
+    for current, folders, files in os.walk(folder):
+        for child in folders + files:
+            if _is_link(Path(current) / child):
+                raise RelocationError("relocation.error.link", path=str(Path(current) / child))
+        for file_name in files:
+            relative = (Path(current) / file_name).relative_to(folder).as_posix()
+            if not _is_intermediate(relative, full, stems):
+                return False
+    return True
+
+
 def _tree_size_without_links(path: Path) -> int:
     """Tamanho de um arquivo ou pasta. Levanta `RelocationError` se achar
     um link ou junção em qualquer nível."""
@@ -307,6 +382,11 @@ def _is_free(path: Path) -> bool:
 def build_plan(source_folder: str, output_folder: str, destination: str | None = None) -> RelocationPlan:
     """O que a mudança faria, sem tocar em nada. Levanta `RelocationError`
     quando ela não pode ser feita (destino ocupado, link, origem na raiz)."""
+    # Antes de resolver: `resolve` seguiria uma junção na própria pasta de
+    # saída e o plano passaria a mover o que ela aponta.
+    written = Path(output_folder)
+    if (written.exists() or written.is_symlink()) and _is_link(written):
+        raise RelocationError("relocation.error.link", path=str(output_folder))
     source = Path(source_folder).resolve()
     old = Path(output_folder).resolve()
     if destination is None:
@@ -329,10 +409,18 @@ def build_plan(source_folder: str, output_folder: str, destination: str | None =
     instructions_mixed: list[str] = []
     dropped: list[str] = []
     kept = 0
+    carried_folders: list[str] = []
     with os.scandir(old) as entries:
         listed = sorted(entries, key=lambda e: e.name.lower())
     for entry in listed:
         kind = _classify(entry)
+        if kind == "carry" and entry.is_dir(follow_symlinks=False):
+            # Uma pasta `logs` ou `converted` só vai se provadamente for
+            # nossa; senão é do usuário e fica onde está.
+            if _folder_is_ours(old, Path(entry.path)):
+                carried_folders.append(entry.name)
+            else:
+                kind = "user"
         if kind == "user":
             kept += 1
         elif kind == "carry":
@@ -376,7 +464,7 @@ def build_plan(source_folder: str, output_folder: str, destination: str | None =
     return RelocationPlan(
         source=str(source), old=str(old), new=str(new), mode=mode, same_volume=same_volume,
         carried=carried, copied_instructions=instructions_mixed, dropped=dropped,
-        kept=kept, total_bytes=total,
+        kept=kept, total_bytes=total, carried_folders=carried_folders,
     )
 
 
@@ -642,6 +730,12 @@ def _move_all(journal: dict, should_stop) -> None:
             raise RelocationError("relocation.error.collision", path=str(target))
         if _is_link(source):
             raise RelocationError("relocation.error.link", path=str(source))
+        # Anotado antes de começar, e só depois de conferir que o destino
+        # está livre: o desfazer (agora ou na retomada após uma queda) só
+        # mexe no destino de um item começado. Um arquivo que apareceu lá
+        # sem ter sido nós nunca é apagado.
+        op["started"] = True
+        _write_journal(journal)
         if op["action"] == "move":
             os.rename(source, target)
         else:
@@ -651,9 +745,10 @@ def _move_all(journal: dict, should_stop) -> None:
 def _undo(journal: dict) -> None:
     """Desfaz, na ordem inversa, o que `_move_all` chegou a fazer. Decide
     item a item pelo disco: o que está no destino e falta na origem volta;
-    uma cópia cujo original segue no lugar é apagada (o destino estava
-    vazio no começo, então o que há nele da lista é nosso). Nunca
-    sobrescreve: se os dois lados existem num `move`, nada é tocado."""
+    uma cópia cujo original segue no lugar é apagada. Só itens anotados como
+    começados (`started`) são considerados: o que está no destino de um item
+    que nunca começou não é nosso (colisão) e fica. Nunca sobrescreve: se os
+    dois lados existem num `move`, nada é tocado."""
     old, new = Path(journal["old"]), Path(journal["new"])
     if journal["mode"] == "rename" and journal["same_volume"]:
         if new.exists() and not old.exists():
@@ -661,6 +756,8 @@ def _undo(journal: dict) -> None:
         _drop_journal(journal)
         return
     for op in reversed(journal["ops"]):
+        if not op.get("started"):
+            continue
         source, target = old / op["name"], new / op["name"]
         if not (target.exists() or target.is_symlink()):
             continue
@@ -715,8 +812,9 @@ def _finish(journal: dict, on_finalize) -> None:
     _remove_own_stray_lock(old)
     if journal["mode"] == "rename" and not journal["same_volume"]:
         _remove_if_empty(old)
-    elif journal["mode"] == "items" and old.exists():
+    elif journal["mode"] == "items" and old.exists() and _key(old) != _key(journal.get("source", "")):
         # A pasta antiga só sai se ficou vazia; os arquivos do usuário ficam.
+        # Nunca a própria origem: mesmo vazia, a pasta é do usuário.
         _remove_if_empty(old)
 
     _rewrite_project_paths(new)
@@ -855,7 +953,10 @@ def recover(output_folder, on_finalize=None) -> bool:
             # sem ter devolvido nada. Fica para quando as pastas voltarem.
             if not old.exists() and not new.exists():
                 return False
-            if journal.get("mode") == "items" and not old.exists():
+            # Antes da confirmação, a pasta antiga tem de estar lá (é para
+            # onde tudo volta). Depois, ela pode ter saído por ter ficado
+            # vazia: o que importa é o banco no destino, conferido abaixo.
+            if journal.get("mode") == "items" and not old.exists() and journal.get("phase") != "committed":
                 return False
             if journal.get("phase") == "moving" and _all_moved(journal):
                 journal["phase"] = "committed"

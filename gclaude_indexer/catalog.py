@@ -44,7 +44,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import settings
-from .paths import machine_local_folder
+from .paths import machine_local_folder, write_text_atomic
 
 CATALOG_FILE_NAME = "projects.json"
 
@@ -333,15 +333,8 @@ def adopt_local_projects() -> int:
 
 
 def _write_atomic(path: Path, entries: list[CatalogEntry]) -> None:
-    """Grava num temporário ao lado e troca com `os.replace`: uma queda no
-    meio deixa o catálogo antigo inteiro, nunca um arquivo pela metade."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(
-        json.dumps([asdict(entry) for entry in entries], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
+    """Temporário com `fsync` e `os.replace` (`paths.write_text_atomic`)."""
+    write_text_atomic(path, json.dumps([asdict(entry) for entry in entries], ensure_ascii=False, indent=2))
 
 
 def relocate_project(old_folder: str, new_folder: str) -> int:
