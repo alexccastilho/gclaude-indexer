@@ -447,8 +447,15 @@ class UpdatePlan:
     unverified: tuple[str, ...] = ()
 
     @property
+    def has_changes(self) -> bool:
+        """Há o que aplicar."""
+        return bool(self.new or self.changed or self.removed)
+
+    @property
     def is_empty(self) -> bool:
-        return not (self.new or self.changed or self.removed)
+        """Nada a mostrar: nem o que aplicar, nem arquivos que não puderam ser
+        conferidos (estes também acendem o aviso da tela de execução)."""
+        return not (self.has_changes or self.unverified)
 
     @classmethod
     def witness(cls, fingerprint: str) -> "UpdatePlan":
@@ -926,12 +933,10 @@ def build_update_plan(
         conn, config, should_stop=should_stop, include_removed=include_removed, listed=listed,
         unverified=unverified, reader=reader,
     )
-    if unverified and record_warnings:
-        record_event(
-            conn, "update", "warning", "log.update.unverified",
-            {"count": len(unverified), "names": ", ".join(unverified[:20])},
-            language=language,
-        )
+    # O aviso dos não conferidos não sai daqui: cada abertura da tela, o
+    # botão Atualizar e a extração montam um plano, e o log o repetia duas ou
+    # três vezes por clique. Quem o registra, uma vez por execução, é a
+    # atualização automática da etapa de varredura (`apply_pending_changes`).
     return plan_from_changes(
         conn, config, changes, unchanged, fingerprint, language=language,
         record_warnings=record_warnings, unverified=tuple(unverified), reader=reader,

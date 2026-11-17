@@ -774,6 +774,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "update.confirm": "Atualizar",
         "update.cancel": "Voltar sem atualizar",
         "update.nothing_changed": "A pasta de origem está igual ao índice. Nada a fazer.",
+        "update.unverified": "Arquivos que não puderam ser conferidos agora",
+        "update.unverified_explained": "O tamanho ou a data destes arquivos mudou, mas eles não puderam ser lidos a tempo (o Google Drive pode estar sem rede ou demorando para baixá-los). Nada é descartado por causa deles: serão conferidos de novo na próxima execução ou quando esta tela for aberta outra vez.",
+        "update.banner_unverified": "{count} arquivo(s) mudaram, mas não puderam ser conferidos agora.",
         "update.source_unavailable": (
             "A pasta de origem não pode ser lida. Verifique se a unidade está conectada"
             " e se a pasta não foi movida. Nada foi alterado."
@@ -2024,6 +2027,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "update.confirm": "Update",
         "update.cancel": "Back without updating",
         "update.nothing_changed": "The source folder matches the index. Nothing to do.",
+        "update.unverified": "Files that could not be checked right now",
+        "update.unverified_explained": "The size or date of these files changed, but they could not be read in time (Google Drive may be offline or slow to download them). Nothing is discarded because of them: they will be checked again on the next run or when this screen is opened again.",
+        "update.banner_unverified": "{count} file(s) changed, but could not be checked right now.",
         "update.source_unavailable": (
             "The source folder cannot be read. Check that the drive is connected and"
             " the folder has not been moved. Nothing was changed."
@@ -3278,6 +3284,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "update.confirm": "Actualizar",
         "update.cancel": "Volver sin actualizar",
         "update.nothing_changed": "La carpeta de origen coincide con el índice. Nada que hacer.",
+        "update.unverified": "Archivos que no se pudieron revisar ahora",
+        "update.unverified_explained": "El tamaño o la fecha de estos archivos cambió, pero no se pudieron leer a tiempo (Google Drive puede estar sin red o tardando en descargarlos). No se descarta nada por ellos: se revisarán de nuevo en la próxima ejecución o cuando se vuelva a abrir esta pantalla.",
+        "update.banner_unverified": "{count} archivo(s) cambiaron, pero no se pudieron revisar ahora.",
         "update.source_unavailable": (
             "No se puede leer la carpeta de origen. Verifique que la unidad esté conectada"
             " y que la carpeta no se haya movido. No se cambió nada."

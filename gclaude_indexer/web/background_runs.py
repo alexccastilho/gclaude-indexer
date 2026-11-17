@@ -47,13 +47,16 @@ from .eta import ProgressEstimator
 STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
 
 
-def _apply_pending_changes(conn, config, should_stop, language, listed=None) -> None:
+def _apply_pending_changes(conn, config, should_stop, language, listed=None, warn_unverified=True) -> None:
     """1.10.3: what changed in the folder is invalidated before the scan
     records it (see `invalidation.apply_pending_changes`). An unreachable
     folder or a pause leaves the index as it was: the scan right after
     finds the same folder, or stops at once."""
     try:
-        apply_pending_changes(conn, config, language=language, should_stop=should_stop, listed=listed)
+        apply_pending_changes(
+            conn, config, language=language, should_stop=should_stop, listed=listed,
+            warn_unverified=warn_unverified,
+        )
     except (SourceFolderUnavailable, OperationCancelled):
         pass
 
@@ -75,7 +78,8 @@ def _extraction_step(conn, config, should_stop, language):
     # left with stale pages would stop on them again. Repaired files go
     # back to 'discovered' and are read again by the next run.
     if stale_page_paths(conn):
-        _apply_pending_changes(conn, config, should_stop, language)
+        # O aviso dos não conferidos já saiu na varredura desta execução.
+        _apply_pending_changes(conn, config, should_stop, language, warn_unverified=False)
     return extract_pages(conn, config, should_stop=should_stop, language=language)
 
 

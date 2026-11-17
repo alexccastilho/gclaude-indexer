@@ -9,9 +9,16 @@
 
 {% if error %}
   <p class="error">{{ t(error) }}</p>
-{% elif plan.is_empty %}
-  <p>{{ t('update.nothing_changed') }}</p>
 {% else %}
+  {% if not plan.has_changes and not plan.unverified %}
+  <p>{{ t('update.nothing_changed') }}</p>
+  {% endif %}
+  {% if plan.unverified %}
+  <h2>{{ t('update.unverified') }} ({{ plan.unverified | length }})</h2>
+  <p class="help">{{ t('update.unverified_explained') }}</p>
+  <ul>{% for path in plan.unverified %}<li><code>{{ path }}</code></li>{% endfor %}</ul>
+  {% endif %}
+  {% if plan.has_changes %}
   <h2>{{ t('update.new') }} ({{ plan.new | length }})</h2>
   <ul>{% for change in plan.new %}<li><code>{{ change.relative_path }}</code></li>{% endfor %}</ul>
 
@@ -45,5 +52,6 @@
     <textarea id="current_instructions" name="current_instructions" rows="12">{{ current_instructions }}</textarea>
     <button type="submit" class="button-primary">{{ t('update.confirm') }}</button>
   </form>
+  {% endif %}
 {% endif %}
 {% endblock %}

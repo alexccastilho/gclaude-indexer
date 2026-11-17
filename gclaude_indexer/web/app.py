@@ -1264,7 +1264,7 @@ def update_banner(request: Request, project_id: int):
             )
         except SourceFolderUnavailable:
             return HTMLResponse("")
-        if plan.is_empty:
+        if plan.is_empty:  # com não conferidos, não está vazio: o aviso aparece
             return HTMLResponse("")
         return render(
             request, "_update_banner.html",

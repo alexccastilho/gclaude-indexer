@@ -293,9 +293,14 @@ def test_arquivo_que_nao_abre_nao_derruba_o_plano(tmp_path, monkeypatch):
 
 
 def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
+    """Achados 5 e 6: o plano mostra o não conferido (e deixa de estar
+    "vazio", para o aviso aparecer), mas o log o registra uma vez por
+    execução, na atualização automática da etapa de varredura — não a cada
+    plano montado (a tela, o botão Atualizar e a extração montam outros)."""
     from gclaude_indexer import update_plan
-    from gclaude_indexer.events import list_events
+    from gclaude_indexer.invalidation import apply_pending_changes, apply_update_plan
 
+    update_plan._forget_reads()
     conn, config = _plano_com_data_mexida(tmp_path)
 
     def _sem_rede(_caminho):
@@ -303,19 +308,39 @@ def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
 
     monkeypatch.setattr(update_plan, "compute_hash", _sem_rede)
 
-    # A tela só olhando: nada é gravado, mas o plano diz quem ficou sem conferir.
-    plano = update_plan.build_update_plan(conn, config, record_warnings=False)
-    assert plano.is_empty and plano.unchanged_count == 0
-    assert plano.unverified == ("a.pdf",)
-    assert list_events(conn, language="pt-BR") == []
+    def _avisos():
+        return [r[0] for r in conn.execute(
+            "SELECT message FROM event WHERE message_key = 'log.update.unverified'"
+        )]
 
-    plano = update_plan.build_update_plan(conn, config, language="pt-BR")
-    assert plano.unverified == ("a.pdf",)
-    mensagens = [e["message"] for e in list_events(conn, language="pt-BR")]
-    assert any("a.pdf" in m and "conferid" in m for m in mensagens), mensagens
+    plano = update_plan.build_update_plan(conn, config, record_warnings=False)
+    assert plano.unverified == ("a.pdf",) and plano.unchanged_count == 0
+    assert not plano.is_empty and not plano.has_changes
+
+    update_plan.build_update_plan(conn, config, language="pt-BR")
+    apply_update_plan(conn, config, update_plan.UpdatePlan.witness(plano.fingerprint), "pt-BR")
+    apply_pending_changes(conn, config, language="pt-BR", warn_unverified=False)
+    assert _avisos() == []
+
+    apply_pending_changes(conn, config, language="pt-BR")
+    avisos = _avisos()
+    assert len(avisos) == 1 and "a.pdf" in avisos[0], avisos
     # Nada gravado no arquivo: a próxima execução o confere de novo.
     linha = conn.execute("SELECT mtime FROM file WHERE relative_path = 'a.pdf'").fetchone()
     assert linha["mtime"] == 1.0
+
+
+def test_a_extracao_nao_repete_o_aviso_da_varredura(monkeypatch):
+    from gclaude_indexer.web import background_runs
+
+    chamadas = []
+    monkeypatch.setattr(background_runs, "stale_page_paths", lambda _conn: {"x"})
+    monkeypatch.setattr(
+        background_runs, "apply_pending_changes", lambda *a, **k: chamadas.append(k),
+    )
+    monkeypatch.setattr(background_runs, "extract_pages", lambda *a, **k: None)
+    background_runs._extraction_step(None, None, None, "pt-BR")
+    assert chamadas and chamadas[0].get("warn_unverified") is False
 
 
 def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
@@ -2886,3 +2911,33 @@ def test_documento_renomeado_nao_e_duplicata_de_si_mesmo(tmp_path):
     # documentos reivindicando a mesma faixa, e nenhum buraco.
     todas = [folha for _, folhas in documentos for folha in folhas]
     assert todas == list(range(1, len(todas) + 1)), documentos
+
+
+def test_nao_conferidos_aparecem_no_aviso_e_na_tela(tmp_path, monkeypatch):
+    """Achado 5: só com arquivos não conferidos, o aviso aparece (com texto
+    próprio) e a tela os lista, sem o botão de aplicar — não há o que
+    aplicar."""
+    import os
+
+    from gclaude_indexer import update_plan
+
+    update_plan._forget_reads()
+    cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
+    conn.execute("UPDATE file SET status = 'extracted' WHERE relative_path = 'a.pdf'")
+    conn.commit()
+    caminho = tmp_path / "origem" / "a.pdf"
+    os.utime(caminho, (caminho.stat().st_atime, caminho.stat().st_mtime + 60))
+
+    def _sem_rede(_caminho):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(update_plan, "compute_hash", _sem_rede)
+    cliente.cookies.set("language", "pt-BR")
+
+    aviso = cliente.get(f"/projects/{projeto_id}/update/banner").text
+    assert "não pud" in aviso and "1" in aviso, aviso
+
+    tela = cliente.get(f"/projects/{projeto_id}/update").text
+    assert "a.pdf" in tela and "conferid" in tela
+    assert 'name="fingerprint"' not in tela
+    update_plan._forget_reads()

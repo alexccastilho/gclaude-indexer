@@ -419,6 +419,7 @@ def apply_pending_changes(
     language: str | None = None,
     should_stop=None,
     listed=None,
+    warn_unverified: bool = True,
 ) -> InvalidationResult | None:
     """The update the Execution screen's run applies by itself (1.10.3).
 
@@ -448,6 +449,14 @@ def apply_pending_changes(
         conn, config, language=language, should_stop=should_stop,
         include_removed=False, listed=listed,
     )
+    # Uma vez por execução (revisão, achado 6): só a da etapa de varredura
+    # avisa; a da extração passa `warn_unverified=False`.
+    if warn_unverified and current.unverified:
+        record_event(
+            conn, "update", "warning", "log.update.unverified",
+            {"count": len(current.unverified), "names": ", ".join(current.unverified[:20])},
+            language=language,
+        )
     # Only a changed file or a touched group has anything to discard. A
     # document new to a group of its own needs no invalidation, and an
     # "update applied" line on every run that found one would only be noise.
