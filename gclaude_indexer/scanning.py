@@ -492,8 +492,9 @@ def _scan_files(
                         compute_hash, path, deadline=deadline_for_size(size),
                     )
         except CallTimedOut as timeout:
-            # Left out of this scan, untouched in the inventory: the next
-            # scan looks at it again. Several in a row with nothing in
+            # Left out of this scan: an indexed file stays untouched, a new
+            # one gets a row without hash (`_record_unread_new_file`), and
+            # the next scan looks at it again. Several in a row with nothing in
             # between is the drive, not the file — stop instead of walking
             # the whole collection one deadline at a time.
             consecutive_timeouts += 1
@@ -502,6 +503,7 @@ def _scan_files(
                 c, "scan", "warning", "log.scan.file_timed_out", {"name": name, "minutes": minutes},
                 language=language, commit=False,
             ))
+            _record_unread_new_file(writer, relative_path, name, extension, size, existing_row, known_paths)
             if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
                 raise StepStalledError(
                     translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=name)
@@ -518,21 +520,7 @@ def _scan_files(
                 {"name": name, "error": error.strerror or str(error)},
                 language=language, commit=False,
             ))
-            if existing_row is None and size is not None:
-                # Novo: entra no inventário sem hash e sem data, para a
-                # contagem de arquivos da etapa bater com a pasta (como a
-                # cópia, `duplicate`). Sem data, a próxima varredura o lê de
-                # novo; um indexado que falha fica como estava.
-                extension_no_dot = extension.lstrip(".")
-                writer.add(lambda c, relative_path=relative_path, name=name,
-                           extension_no_dot=extension_no_dot, size=size: _insert_file(
-                    c, relative_path, name, extension_no_dot, size, "", None, None,
-                    "skipped", REASON_UNREADABLE,
-                ))
-                known_paths[relative_path] = {
-                    "relative_path": relative_path, "size": size, "sha256": "", "mtime": None,
-                    "status": "skipped", "error": REASON_UNREADABLE,
-                }
+            _record_unread_new_file(writer, relative_path, name, extension, size, existing_row, known_paths)
             continue
         consecutive_timeouts = 0
         bytes_done += size
@@ -585,6 +573,27 @@ def _is_waiting_component(row) -> bool:
         return row is not None and is_waiting_component(row["status"], row["error"])
     except (KeyError, IndexError):
         return False
+
+
+def _record_unread_new_file(
+    writer: BatchWriter, relative_path: str, name: str, extension: str, size: int | None,
+    existing_row, known_paths,
+) -> None:
+    """Arquivo novo que a varredura não conseguiu ler (OSError ou prazo):
+    entra no inventário sem hash e sem data (`REASON_UNREADABLE`), para a
+    contagem de arquivos da etapa bater com a pasta, como a cópia
+    (`duplicate`). Sem data, a próxima varredura o lê de novo. Um arquivo já
+    no inventário fica como estava; sem o tamanho (o `stat` falhou), nada."""
+    if existing_row is not None or size is None:
+        return
+    extension_no_dot = extension.lstrip(".")
+    writer.add(lambda c: _insert_file(
+        c, relative_path, name, extension_no_dot, size, "", None, None, "skipped", REASON_UNREADABLE,
+    ))
+    known_paths[relative_path] = {
+        "relative_path": relative_path, "size": size, "sha256": "", "mtime": None,
+        "status": "skipped", "error": REASON_UNREADABLE,
+    }
 
 
 def _is_unreadable_placeholder(row) -> bool:
@@ -817,17 +826,27 @@ def _record_scanned_file(
                 writer.flush()
                 discard_changed_file(writer.conn, config, relative_path, name, size, language)
 
-        def op(c) -> None:
-            _update_file(
-                c, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, group_key, status
-            )
-            record_event(
-                c, "scan", "warning", "log.scan.content_changed", {"name": name},
-                language=language, commit=False,
-            )
+        if placeholder:
+            # Lido enfim: é um arquivo novo, não um alterado.
+            def op(c) -> None:
+                _update_file(
+                    c, relative_path, name, extension_no_dot, size, file_hash,
+                    mtime, group_key, status
+                )
 
-        result.updated += 1
+            result.discovered += 1
+        else:
+            def op(c) -> None:
+                _update_file(
+                    c, relative_path, name, extension_no_dot, size, file_hash,
+                    mtime, group_key, status
+                )
+                record_event(
+                    c, "scan", "warning", "log.scan.content_changed", {"name": name},
+                    language=language, commit=False,
+                )
+
+            result.updated += 1
 
     # Committed within a second (`BatchWriter`), not only at the end:
     # the Execution screen's progress bar reads from a separate
