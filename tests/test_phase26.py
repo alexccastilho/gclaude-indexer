@@ -199,6 +199,48 @@ def test_varredura_com_arquivo_preso_segue_e_deixa_ele_para_a_proxima(tmp_path, 
     assert avisos and "doc03.txt" in avisos[0]["message"]
 
 
+def test_varredura_com_arquivo_que_nao_abre_segue_e_deixa_ele_para_a_proxima(tmp_path, monkeypatch):
+    """Placeholder do Drive só na nuvem, sem rede: a leitura lança OSError.
+    Como o arquivo preso: aviso no log, nada gravado sobre ele (a próxima
+    varredura o confere de novo), e os demais seguem."""
+    origem = _origem_com_arquivos(tmp_path, 5)
+    config = _config(tmp_path, extensions=["text"])
+    conn = connect(tmp_path / "p.db")
+    init_schema(conn)
+    varredura_mod.scan(conn, config)
+    antes = conn.execute(
+        "SELECT size, sha256, mtime FROM file WHERE name = 'doc02.txt'"
+    ).fetchone()
+
+    (origem / "pasta" / "doc02.txt").write_text("conteudo novo e maior", encoding="utf-8")
+    (origem / "pasta" / "doc09.txt").write_text("novo", encoding="utf-8")
+    hash_real = varredura_mod.compute_hash
+
+    def _hash(caminho):
+        if caminho.name in ("doc02.txt", "doc09.txt"):
+            raise OSError(22, "Invalid argument")
+        return hash_real(caminho)
+
+    monkeypatch.setattr(varredura_mod, "compute_hash", _hash)
+    (origem / "pasta" / "doc04.txt").write_text("outro conteudo", encoding="utf-8")
+    resultado = varredura_mod.scan(conn, config, language="pt")
+
+    depois = conn.execute(
+        "SELECT size, sha256, mtime FROM file WHERE name = 'doc02.txt'"
+    ).fetchone()
+    nomes = {l["name"] for l in conn.execute("SELECT name FROM file")}
+    avisos = [l["message"] for l in conn.execute(
+        "SELECT message FROM event WHERE message_key = 'log.scan.file_unreadable'"
+    )]
+    atualizado = conn.execute("SELECT status FROM file WHERE name = 'doc04.txt'").fetchone()["status"]
+    assert not conn.in_transaction
+    conn.close()
+    assert tuple(depois) == tuple(antes)
+    assert "doc09.txt" not in nomes
+    assert atualizado == "discovered" and resultado.updated == 1
+    assert any("doc02.txt" in m for m in avisos) and any("doc09.txt" in m for m in avisos), avisos
+
+
 def test_varredura_com_disco_travado_para_com_mensagem(tmp_path, monkeypatch, liberar_presos):
     _origem_com_arquivos(tmp_path, 10)
     monkeypatch.setattr(varredura_mod, "compute_hash", lambda caminho: liberar_presos.wait())
@@ -263,6 +305,7 @@ def test_chaves_novas_nos_tres_idiomas():
     for idioma in ("pt", "en", "es"):
         for chave, params in (
             ("log.scan.file_timed_out", {"name": "x", "minutes": 10}),
+            ("log.scan.file_unreadable", {"name": "x", "error": "y"}),
             ("error.folder_stalled", {"folder": "x"}),
         ):
             texto = translate(idioma, chave, **params)
