@@ -45,7 +45,8 @@ from .parallelism import _physical_cores, io_workers_for, workers_for
 from .file_types import (
     ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
     REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
-    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, looks_binary,
+    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, is_waiting_component,
+    looks_binary,
 )
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
@@ -1466,11 +1467,7 @@ def _waiting_component(row, windowed: set[str]) -> bool:
     continua em espera: a varredura grava só os bytes novos
     (`scanning._record_scanned_file`), para que nada o tire daqui sem
     passar pelo plano."""
-    return (
-        row["status"] == "skipped"
-        and row["error"] == REASON_COMPONENT_UNAVAILABLE
-        and row["group_key"] in windowed
-    )
+    return is_waiting_component(row["status"], row["error"]) and row["group_key"] in windowed
 
 
 def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:

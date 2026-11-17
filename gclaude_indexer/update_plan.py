@@ -48,7 +48,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, REASON_COMPONENT_UNAVAILABLE, category_of_extension, is_extension_allowed, name_decision,
+    MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, is_waiting_component, name_decision,
 )
 from .paths import natural_sort_key
 from .run_control import checkpoint
@@ -218,11 +218,7 @@ def detect_changes(
         # (`scanning._record_scanned_file`). Com o componente presente, cai
         # na regra abaixo (`ocr_failed`), também sem leitura, e entra junto
         # com as janelas do grupo.
-        if (
-            row["status"] == "skipped"
-            and row["error"] == REASON_COMPONENT_UNAVAILABLE
-            and relative_path not in stale
-        ):
+        if is_waiting_component(row["status"], row["error"]) and relative_path not in stale:
             extension = row["extension"] or ""
             if extension not in ready_by_extension:
                 # Local: a conversão traz o PyMuPDF e o resto da cadeia, e
