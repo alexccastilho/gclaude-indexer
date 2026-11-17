@@ -20,10 +20,21 @@ from .text_decoding import _BOMS
 
 EXTENSION_CATEGORIES: dict[str, set[str]] = {
     "pdf": {".pdf"},
-    "docx": {".docx"},
-    "xlsx": {".xlsx"},
-    "pptx": {".pptx"},
-    "imagens": {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp"},
+    # 2.0.0: as variantes com macro e modelo abrem pelas mesmas bibliotecas;
+    # a macro nunca é executada (só o texto é lido). `.xls` é o formato
+    # binário antigo do Excel, lido por `xlrd`.
+    "docx": {".docx", ".docm", ".dotx", ".dotm"},
+    "xlsx": {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"},
+    "pptx": {".pptx", ".pptm", ".ppsx", ".potx", ".potm"},
+    "opendocument": {".odt", ".ods", ".odp", ".odg", ".fodt", ".fods", ".fodp"},
+    "rtf": {".rtf"},
+    # Têm páginas de verdade: o PyMuPDF os converte para um PDF intermediário
+    # e o resto do caminho (texto nativo, OCR de página sem texto) é o do PDF.
+    "paginados": {".xps", ".oxps", ".epub", ".mobi", ".fb2", ".svg", ".cbz"},
+    "imagens": {
+        ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp",
+        ".jp2", ".j2k", ".jpx", ".jfif", ".jpe", ".heic", ".heif",
+    },
     # Every text-like format goes through `text_decoding`, which works out
     # the encoding. "web_dados" also goes through `html_text`: HTML and its
     # derivatives (XHTML, server-side includes, MHTML saved by a browser, an
@@ -31,8 +42,15 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     # kept as `~~`; other XML and JSON stay literal — their tags are field
     # names that carry meaning.
     "text": {".txt", ".md", ".log", ".csv"},
+    "legendas": {".srt", ".vtt"},
     "web_dados": {".html", ".htm", ".xhtml", ".xht", ".shtml", ".mht", ".mhtml", ".xml", ".json"},
     "email": {".eml", ".msg"},
+    # Cada mensagem da caixa é uma página, como o `.eml` é um documento.
+    "mbox": {".mbox"},
+    "cad": {".dxf"},
+    # ICP-Brasil: o conteúdo envelopado é indexado pelo tipo real e o
+    # signatário vai para `file_signature`.
+    "assinados": {".p7s", ".p7m"},
     # Opt-in: "all" não inclui. A chave é dado (como "imagens"), o rótulo é
     # traduzido no formulário. Ainda sem transcritor, o arquivo entra no
     # inventário mas não produz texto.
@@ -108,6 +126,14 @@ REASON_MEDIA = "media_not_selected"
 REASON_SECRET = "secret"
 REASON_BINARY = "binary"
 REASON_NOT_SELECTED = "extension_not_selected"
+# Gravado pela conversão (não pela varredura): um `.p7s` destacado não tem
+# conteúdo próprio, a assinatura vai para o arquivo irmão.
+REASON_SIGNATURE_DETACHED = "signature_detached"
+
+
+# Categorias com páginas reais (o limite de caracteres por página do projeto
+# vale para elas, e o documento pode continuar no arquivo seguinte).
+PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados")
 
 
 def valid_categories() -> set[str]:
@@ -247,12 +273,12 @@ def needs_head(name: str, categories: list[str] | None = None) -> bool:
 
 def is_whole_document_file(file_name: str) -> bool:
     """Whether a file always becomes exactly one page holding the whole
-    document — everything except PDF and images, which have real pages and
-    whose documents may continue into the next file. An extension with no
+    document — everything except PDF, images and the paged formats, which
+    have real pages and whose documents may continue into the next file. An extension with no
     category (the "all" rule) is read as one block of text, so it counts."""
     dot = file_name.rfind(".")
     category = category_of_extension(file_name[dot:]) if dot > 0 else None
-    return category not in ("pdf", "imagens")
+    return category not in PAGED_CATEGORIES
 
 
 def category_of_extension(extension_with_dot: str) -> str | None:
@@ -270,10 +296,11 @@ def category_of_extension(extension_with_dot: str) -> str | None:
 # is similar to what. Does not change any scan rule — `EXTENSION_CATEGORIES`
 # remains the source of truth.
 CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = {
-    "documentos": ("pdf", "docx", "xlsx", "pptx"),
+    "documentos": ("pdf", "docx", "xlsx", "pptx", "opendocument", "rtf", "paginados"),
     "imagens": ("imagens",),
-    "text_data": ("text", "web_dados"),
-    "mensagens": ("email",),
+    "text_data": ("text", "legendas", "web_dados"),
+    "mensagens": ("email", "mbox"),
+    "tecnicos": ("cad", "assinados"),
 }
 
 

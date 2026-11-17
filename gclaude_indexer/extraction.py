@@ -45,7 +45,8 @@ from .worker_pool import (
     deadline_for_size,
 )
 from .parallelism import workers_for
-from .file_types import category_of_extension
+from . import light_formats
+from .file_types import PAGED_CATEGORIES, category_of_extension
 from .fulltext import index_pending
 from .paths import natural_sort_key
 
@@ -58,12 +59,17 @@ ERROR_MESSAGE_CHAR_LIMIT = 500
 # estes têm um teto fixo, que ainda traz título, data e ementa para a
 # classificação (o texto completo vai para a busca de qualquer jeito).
 WHOLE_DOCUMENT_CHARS = 4000
-_PAGED_CATEGORIES = ("pdf", "imagens")
+_PAGED_CATEGORIES = PAGED_CATEGORIES
 
 
 def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
     """Quantos caracteres de cada página entram em `page.text`: o limite do
-    projeto para PDF e imagem, `WHOLE_DOCUMENT_CHARS` para o resto."""
+    projeto para PDF, imagem e formatos paginados (XPS, EPUB…),
+    `WHOLE_DOCUMENT_CHARS` para o resto. Um `.p7m` pode ser uma coisa ou a
+    outra (depende do que está dentro): `_extract_file_pages` aplica o limite
+    exato; aqui, onde só se sabe a extensão, vale o maior."""
+    if category == "assinados":
+        return max(config.chars_per_page, WHOLE_DOCUMENT_CHARS)
     return config.chars_per_page if category in _PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
 
 
@@ -97,9 +103,7 @@ def _read_pdf_pages(pdf_path: Path, limit: int) -> list[tuple[str, int, bool]]:
 
 
 def _docx_has_table(path: Path) -> bool:
-    from docx import Document
-
-    return len(Document(path).tables) > 0
+    return len(light_formats.open_docx(path).tables) > 0
 
 
 def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool]]:
@@ -111,7 +115,6 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
     # Phase 13 final review). The sequential path never had this problem
     # (one file at a time), but truncates here too, at no extra cost.
     category = category_of_extension("." + row["extension"])
-    limit = chars_limit_for(category, config)
     relative_path = row["relative_path"]
 
     # The intermediate lives on the machine that converted the file
@@ -123,7 +126,12 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
     if intermediate is not None and not intermediate.exists():
         raise IntermediateMissing(relative_path)
 
-    if category == "pdf":
+    if category == "assinados":
+        # O que veio dentro decide: PDF (páginas de verdade) ou texto.
+        category = "pdf" if intermediate.suffix.lower() == ".pdf" else "text"
+    limit = chars_limit_for(category, config)
+
+    if category in ("pdf", "paginados"):
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative_path
         return _read_pdf_pages(pdf_path, limit)
 
@@ -131,7 +139,13 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
 
     if category == "imagens":
         return [(text, 1, False)]
-    if category == "xlsx":
+    if category == "mbox":
+        # Cada mensagem é uma página.
+        parts = intermediate.read_text(encoding="utf-8").split(light_formats.MBOX_PAGE_SEPARATOR)
+        return [(part[:limit], 0, False) for part in parts]
+    if category == "xlsx" or (
+        category == "opendocument" and light_formats.odf_has_table(Path(row["relative_path"]))
+    ):
         return [(text, 0, True)]
     if category == "docx":
         has_table = _docx_has_table(Path(config.source_folder) / relative_path)
