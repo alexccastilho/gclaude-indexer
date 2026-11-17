@@ -27,8 +27,12 @@ How a download is made safe:
 - it is cut off as soon as it passes the manifest size (a server that sends
   more than promised never fills the disk);
 - a ZIP has every member checked before anything is extracted (no absolute
-  path, drive letter or `..`), is extracted into a sibling folder and only
-  then renamed over the destination;
+  path, drive letter or `..`), has its member count and its total
+  uncompressed size capped (`max_members`, `max_extracted`: a small archive
+  that swells into the whole disk is refused), is extracted into a sibling
+  folder and only then renamed over the destination;
+- a redirect to anything but HTTPS is refused (the pinned URL is HTTPS, a
+  mirror that bounces to plain HTTP would put the download in the clear);
 - one lock per component: two conversions asking for the same language at
   once download it once, and a large download never holds up a small one.
 
@@ -43,6 +47,7 @@ import hashlib
 import json
 import shutil
 import threading
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -64,6 +69,12 @@ STATUS_UNAVAILABLE = "unavailable"  # no network, bad hash, unknown name…
 # extraction never looks installed.
 ZIP_MARKER_NAME = ".gclaude-component.json"
 
+# A ZIP component that does not state its own ceilings may swell to this many
+# times its size and hold this many members. LibreOffice, the largest, is
+# well inside both; an entry that needs more says so in the manifest.
+DEFAULT_EXTRACTED_FACTOR = 8
+DEFAULT_MAX_MEMBERS = 20_000
+
 _DOWNLOAD_TIMEOUT_S = 120
 _BLOCK = 1 << 20
 
@@ -77,6 +88,17 @@ class Component:
     license: str
     kind: str
     target: str
+    # Only for `zip`: ceilings on the extraction (0 = the defaults above).
+    max_extracted: int = 0
+    max_members: int = 0
+
+    @property
+    def extracted_limit(self) -> int:
+        return self.max_extracted or self.size * DEFAULT_EXTRACTED_FACTOR
+
+    @property
+    def members_limit(self) -> int:
+        return self.max_members or DEFAULT_MAX_MEMBERS
 
 
 @dataclass(frozen=True)
@@ -109,7 +131,11 @@ def _parse_entry(entry: dict) -> Component:
         license=str(entry["license"]),
         kind=str(entry["kind"]),
         target=str(entry["target"]),
+        max_extracted=int(entry.get("max_extracted", 0)),
+        max_members=int(entry.get("max_members", 0)),
     )
+    if component.max_extracted < 0 or component.max_members < 0:
+        raise ValueError(f"{component.name}: limite de extração inválido")
     parsed = urlparse(component.url)
     if parsed.scheme != "https" or not parsed.netloc:
         raise ValueError(f"{component.name}: só HTTPS é aceito ({component.url!r})")
@@ -194,10 +220,24 @@ def _lock_for(name: str) -> threading.Lock:
         return _locks.setdefault(name, threading.Lock())
 
 
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """A mirror may redirect, but never to anything that is not HTTPS: the
+    manifest pins an HTTPS URL, and the hash would only catch the damage
+    after the whole file went through the clear."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlparse(newurl).scheme != "https":
+            raise urllib.error.URLError(f"redirecionamento para fora do HTTPS recusado: {newurl!r}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_HttpsOnlyRedirects())
+
+
 def _open_url(url: str):
     """The only place this module touches the network (the test suite
     replaces it)."""
-    return urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S)
+    return _opener.open(url, timeout=_DOWNLOAD_TIMEOUT_S)
 
 
 def _download_to(component: Component, partial: Path) -> None:
@@ -221,10 +261,16 @@ def _download_to(component: Component, partial: Path) -> None:
         raise ValueError(f"{component.name}: SHA-256 não confere")
 
 
-def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+def _safe_members(archive: zipfile.ZipFile, component: Component | None = None) -> list[zipfile.ZipInfo]:
     """Refuses the whole archive if any member would land outside the
-    destination (zip slip) — checked before anything is written."""
+    destination (zip slip), or if it holds more members or swells to more
+    bytes than the component allows — checked before anything is written."""
     members = archive.infolist()
+    if component is not None:
+        if len(members) > component.members_limit:
+            raise ValueError(f"{component.name}: ZIP com membros demais ({len(members)})")
+        if sum(member.file_size for member in members) > component.extracted_limit:
+            raise ValueError(f"{component.name}: ZIP descomprimido passa do limite do manifesto")
     for member in members:
         name = member.filename
         if (
@@ -244,7 +290,7 @@ def _extract(component: Component, archive_path: Path, target: Path) -> None:
     staging.mkdir(parents=True)
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            members = _safe_members(archive)
+            members = _safe_members(archive, component)
             root = staging.resolve()
             for member in members:
                 destination = (root / member.filename).resolve()

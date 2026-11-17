@@ -198,7 +198,7 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> li
     if category == "assinados":
         # O que veio dentro decide: PDF (páginas de verdade) ou texto.
         category = "pdf" if intermediate.suffix.lower() == ".pdf" else "text"
-    if category in ("pdf", "paginados"):
+    if category in ("pdf", "paginados", "legados"):
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative
         with _PDF_LOCK:
             return _pdf_passages(pdf_path, references)

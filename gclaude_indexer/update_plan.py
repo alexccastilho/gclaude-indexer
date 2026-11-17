@@ -425,7 +425,7 @@ def _always_one_page(relative_path: str) -> bool:
     exceptions are the formats with pages of their own: PDF, the paged ones
     (EPUB, XPS…), a signed file (it may hold a PDF) and the mailbox (a page
     per message)."""
-    return category_of_extension(Path(relative_path).suffix) not in ("pdf", "paginados", "assinados", "mbox")
+    return category_of_extension(Path(relative_path).suffix) not in ("pdf", "paginados", "legados", "assinados", "mbox")
 
 
 def _in_place_windows(

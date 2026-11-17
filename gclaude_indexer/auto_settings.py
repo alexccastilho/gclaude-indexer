@@ -59,7 +59,7 @@ MAX_CHARS = 4000
 # documentos inteiros e a sobreposição só repete páginas: não há peça partida
 # na borda de duas janelas.
 _MULTI_PAGE_SHARE_FOR_OVERLAP = 0.05
-_MULTI_PAGE_CATEGORIES = ("pdf", "imagens", "paginados")
+_MULTI_PAGE_CATEGORIES = ("pdf", "imagens", "paginados", "legados")
 
 
 @dataclass
