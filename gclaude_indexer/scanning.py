@@ -403,17 +403,20 @@ def scan(
         raise
 
     _record_ignored_summary(conn, result, language)
-    record_event(
-        conn,
-        "scan",
-        "info",
-        "log.scan.summary",
-        {
-            "new": result.discovered, "updated": result.updated,
-            "ignored": result.ignored, "unchanged": result.skipped,
-        },
-        language=language,
-    )
+    summary = {
+        "new": result.discovered, "updated": result.updated,
+        "ignored": result.ignored, "unchanged": result.skipped,
+    }
+    # Os em espera editados só entram quando há algum: uma chave própria, e
+    # não um parâmetro a mais na de sempre, para os eventos antigos (sem ele)
+    # continuarem a se traduzir.
+    if result.waiting_updated:
+        record_event(
+            conn, "scan", "info", "log.scan.summary_waiting",
+            {**summary, "waiting": result.waiting_updated}, language=language,
+        )
+    else:
+        record_event(conn, "scan", "info", "log.scan.summary", summary, language=language)
 
     return result
 
