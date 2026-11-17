@@ -151,10 +151,12 @@ def test_formulario_novo_projeto_tem_os_padroes_da_secao_6(cliente):
     assert '<option value="subfolder" selected' in corpo
     assert '<option value="automatic" selected' in corpo
 
-    # 2.0.0: o padrão é "TODOS"; áudio e vídeo (opt-in) vêm desmarcados.
+    # 2.0.0: o padrão é "TODOS" e cada categoria específica também aparece marcada
+    # (TODOS fica abaixo da dobra); áudio e vídeo (opt-in) vêm desmarcados.
     assert _checkbox_marcado(corpo, "all"), "TODOS deveria vir marcado por padrão"
-    for categoria in ("pdf", "docx", "imagens", "xlsx", "pptx", "text", "email", "midia"):
-        assert not _checkbox_marcado(corpo, categoria), f"{categoria} não deveria vir marcado por padrão"
+    for categoria in ("pdf", "docx", "imagens", "xlsx", "pptx", "text", "email"):
+        assert _checkbox_marcado(corpo, categoria), f"{categoria} deveria vir marcado por padrão"
+    assert not _checkbox_marcado(corpo, "midia"), "áudio/vídeo é opt-in e vem desmarcado"
 
 
 def test_criar_projeto_com_dados_invalidos_reexibe_formulario_com_erros(cliente):

@@ -101,7 +101,7 @@
       {% for item in itens %}
       <label class="checkbox-inline">
         <input type="checkbox" name="extensions" value="{{ item.categoria }}"
-               {% if item.categoria in values.extensions %}checked{% endif %}>
+               {% if category_all in values.extensions or item.categoria in values.extensions %}checked{% endif %}>
         <span class="category-name">{{ t('new_project.category.' + item.categoria) }}</span>
         <span class="extension-category">{{ item.extensoes | join(' ') }}</span>
       </label>
@@ -115,7 +115,7 @@
     </label>
     <p class="help">{{ t('new_project.extensions_help_all') }}</p>
     {# Áudio e vídeo ficam fora do "TODOS" e são opt-in: a caixa é separada e
-       não entra na exclusividade abaixo (marcar uma não desmarca a outra). #}
+       não entra na lógica de "TODOS" abaixo (marcar uma não afeta a outra). #}
     <label class="checkbox-inline category-media">
       <input type="checkbox" name="extensions" value="midia" data-media-category
              {% if 'midia' in values.extensions %}checked{% endif %}>
@@ -125,20 +125,25 @@
     <p class="help">{{ t('new_project.extensions_help_media') }}</p>
     <script>
     (function () {
-      // "all" and the specific categories are mutually exclusive:
-      // `is_extension_allowed` ignores the others when "all" is checked,
-      // so leaving them checked would show a state the scan does not honor.
+      // "all" is only a shortcut for "every specific category", so the form
+      // shows it that way: checking it checks them all, unchecking it clears
+      // them, and unchecking one specific box drops "all" (the boxes still
+      // checked become the explicit selection). Checking the last missing one
+      // re-checks "all". Without this the default ("all") rendered every
+      // category unchecked, and "TODOS" sat below the fold. The server still
+      // collapses "all" + specifics to ["all"] (normalize_categories), so the
+      // submitted values stay equivalent. Media is a separate opt-in: untouched.
       var all = document.querySelector('input[data-all-category]');
       if (!all) return;
       var specific = [].slice.call(
         document.querySelectorAll('input[name="extensions"]:not([data-all-category]):not([data-media-category])')
       );
       all.addEventListener('change', function () {
-        if (all.checked) specific.forEach(function (c) { c.checked = false; });
+        specific.forEach(function (c) { c.checked = all.checked; });
       });
       specific.forEach(function (c) {
         c.addEventListener('change', function () {
-          if (c.checked) all.checked = false;
+          all.checked = specific.every(function (x) { return x.checked; });
         });
       });
     })();

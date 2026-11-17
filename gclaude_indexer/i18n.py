@@ -181,7 +181,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "Desenho CAD (.dxf)",
         "new_project.category.assinados": "Assinados ICP-Brasil (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            'Marcar "TODOS" ignora as outras categorias e varre qualquer extensão, exceto '
+            '"TODOS" já vem marcado com todas as categorias: marcar ou desmarcar um marca ou desmarca todas as demais. '
+            "Com ele marcado, varre qualquer extensão, exceto "
             "executáveis, compactados (.zip, .rar, .7z…), bancos de dados, fontes, chaves e senhas, "
             "atalhos do Google Drive e áudio/vídeo, que ficam listados como ignorados, com o motivo. "
             "Útil para acervos com formatos variados ou pouco previsíveis."
@@ -1448,7 +1449,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "CAD drawing (.dxf)",
         "new_project.category.assinados": "ICP-Brasil signed (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            'Checking "ALL" ignores the other categories and scans any extension except '
+            '"ALL" comes checked with every category: checking or unchecking it checks or unchecks all the others. '
+            "While checked, it scans any extension except "
             "executables, archives (.zip, .rar, .7z…), databases, fonts, keys and passwords, "
             "Google Drive shortcuts and audio/video, which are listed as ignored, with the reason. "
             "Useful for collections with varied or unpredictable formats."
@@ -2683,7 +2685,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "Dibujo CAD (.dxf)",
         "new_project.category.assinados": "Firmados ICP-Brasil (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            'Marcar "TODOS" ignora las demás categorías y escanea cualquier extensión, excepto '
+            '"TODOS" viene marcado con todas las categorías: marcarlo o desmarcarlo marca o desmarca todas las demás. '
+            "Mientras esté marcado, escanea cualquier extensión, excepto "
             "ejecutables, comprimidos (.zip, .rar, .7z…), bases de datos, fuentes, claves y contraseñas, "
             "accesos directos de Google Drive y audio/vídeo, que quedan listados como ignorados, con el motivo. "
             "Útil para colecciones con formatos variados o poco previsibles."
