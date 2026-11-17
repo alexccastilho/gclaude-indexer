@@ -8,7 +8,7 @@ GClaude Indexer reads a folder full of documents on your Windows PC (PDFs, scans
 
 ![GClaude Indexer in use](docs/media/demo-en.gif)
 
-*A short tour of the Workspace layout (2.0.0): the projects in the side bar, the tabs of a project, the command palette (Ctrl+K) taking you to the search, and the dark Studio theme.*
+*A short tour of the Workspace layout (1.10.0): the projects in the side bar, the tabs of a project, the command palette (Ctrl+K) taking you to the search, and the dark Studio theme.*
 
 ## Three people who use it
 
