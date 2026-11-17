@@ -181,8 +181,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "Desenho CAD (.dxf)",
         "new_project.category.assinados": "Assinados ICP-Brasil (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            '"TODOS" já vem marcado com todas as categorias: marcar ou desmarcar um marca ou desmarca todas as demais. '
-            "Com ele marcado, varre qualquer extensão, exceto "
+            '"TODOS" já vem marcado, junto com todas as categorias. Marcar ou desmarcar "TODOS" marca ou desmarca '
+            'todas as categorias de uma vez; desmarcar uma só categoria deixa apenas as caixas que continuam marcadas. '
+            "Com \"TODOS\" marcado, varre qualquer extensão, exceto "
             "executáveis, compactados (.zip, .rar, .7z…), bancos de dados, fontes, chaves e senhas, "
             "atalhos do Google Drive e áudio/vídeo, que ficam listados como ignorados, com o motivo. "
             "Útil para acervos com formatos variados ou pouco previsíveis."
@@ -375,13 +376,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "help.new_project.p3": (
             'A seção "Classificação" decide como as peças do acervo são identificadas: um motor '
-            "determinístico por regras (sem IA), um modelo de IA rodando nesta máquina, ou o "
-            "Claude Code operado manualmente na pasta de saída."
+            "determinístico por regras (sem IA) ou um modelo de IA rodando nesta máquina; o "
+            "\"Automático\" escolhe um dos dois pelo computador."
         ),
         "help.run.title": "Ajuda: Execução",
         "help.run.p1": (
             "O processamento roda em 5 etapas, sempre nesta ordem: varredura da pasta de origem, "
-            "conversão/OCR/fatiamento, extração de texto por página, preparação das janelas de "
+            "conversão/OCR, extração de texto por página, preparação das janelas de "
             "classificação e, por fim, a classificação em si."
         ),
         "help.run.p2": (
@@ -418,7 +419,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.project_label": "Página do projeto",
         "about.description": (
             "Transforma uma pasta de documentos legais/arquivísticos num índice, cronologia e "
-            "instruções prontas para um Claude Project. Funciona offline, processando tudo nesta máquina."
+            "instruções prontas para um Claude Project. Lê e classifica tudo nesta máquina; os componentes "
+            "opcionais (formatos antigos, transcrição de áudio e vídeo, idiomas extras do OCR) precisam de "
+            "um download único e, sem ele, são pulados com o motivo."
         ),
         "about.technology": (
             "Python, FastAPI, SQLite e Ollama (qwen3.5:4b) rodando localmente; nenhum documento "
@@ -531,7 +534,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.column_status": "Situação",
         "run.column_count": "Contagem",
         "step.scan.title": "1. Varredura",
-        "step.conversion.title": "2–3. Conversão, OCR e fatiamento",
+        "step.conversion.title": "2–3. Conversão e OCR",
         "step.extraction.title": "4. Extração por página",
         "step.windows.title": "5. Preparação de janelas",
         "step.classification.title": "6. Classificação",
@@ -1449,8 +1452,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "CAD drawing (.dxf)",
         "new_project.category.assinados": "ICP-Brasil signed (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            '"ALL" comes checked with every category: checking or unchecking it checks or unchecks all the others. '
-            "While checked, it scans any extension except "
+            '"ALL" comes checked, together with every category. Checking or unchecking "ALL" checks or unchecks '
+            'every category at once; unchecking a single category leaves only the boxes that are still checked. '
+            "While \"ALL\" is checked, it scans any extension except "
             "executables, archives (.zip, .rar, .7z…), databases, fonts, keys and passwords, "
             "Google Drive shortcuts and audio/video, which are listed as ignored, with the reason. "
             "Useful for collections with varied or unpredictable formats."
@@ -1635,13 +1639,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "help.new_project.p3": (
             'The "Classification" section decides how the collection\'s pieces are identified: a '
-            "deterministic rules engine (no AI), an AI model running on this machine, or Claude "
-            "Code operated manually in the output folder."
+            "deterministic rules engine (no AI) or an AI model running on this machine; "
+            "\"Automatic\" picks one of the two from the computer."
         ),
         "help.run.title": "Help: Execution",
         "help.run.p1": (
             "Processing runs in 5 steps, always in this order: scanning the source folder, "
-            "conversion/OCR/slicing, per-page text extraction, preparing classification windows, "
+            "conversion/OCR, per-page text extraction, preparing classification windows, "
             "and finally classification itself."
         ),
         "help.run.p2": (
@@ -1679,7 +1683,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.project_label": "Project page",
         "about.description": (
             "Turns a folder of legal/archival documents into an index, chronology and instructions "
-            "ready for a Claude Project. Works offline, processing everything on this machine."
+            "ready for a Claude Project. Reads and classifies everything on this machine; the optional "
+            "components (legacy formats, audio and video transcription, extra OCR languages) need a "
+            "one-time download and, without it, are skipped with the reason."
         ),
         "about.technology": (
             "Python, FastAPI, SQLite and Ollama (qwen3.5:4b) running locally; no document or "
@@ -1776,7 +1782,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.column_status": "Status",
         "run.column_count": "Count",
         "step.scan.title": "1. Scan",
-        "step.conversion.title": "2–3. Conversion, OCR and slicing",
+        "step.conversion.title": "2–3. Conversion and OCR",
         "step.extraction.title": "4. Per-page extraction",
         "step.windows.title": "5. Window preparation",
         "step.classification.title": "6. Classification",
@@ -2685,8 +2691,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.cad": "Dibujo CAD (.dxf)",
         "new_project.category.assinados": "Firmados ICP-Brasil (.p7s, .p7m)",
         "new_project.extensions_help_all": (
-            '"TODOS" viene marcado con todas las categorías: marcarlo o desmarcarlo marca o desmarca todas las demás. '
-            "Mientras esté marcado, escanea cualquier extensión, excepto "
+            '"TODOS" viene marcado, junto con todas las categorías. Marcar o desmarcar "TODOS" marca o desmarca '
+            'todas las categorías a la vez; desmarcar una sola categoría deja solo las casillas que siguen marcadas. '
+            "Mientras \"TODOS\" esté marcado, escanea cualquier extensión, excepto "
             "ejecutables, comprimidos (.zip, .rar, .7z…), bases de datos, fuentes, claves y contraseñas, "
             "accesos directos de Google Drive y audio/vídeo, que quedan listados como ignorados, con el motivo. "
             "Útil para colecciones con formatos variados o poco previsibles."
@@ -2878,13 +2885,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "help.new_project.p3": (
             'La sección "Clasificación" decide cómo se identifican las piezas de la colección: un '
-            "motor determinístico por reglas (sin IA), un modelo de IA corriendo en esta máquina, "
-            "o Claude Code operado manualmente en la carpeta de salida."
+            "motor determinístico por reglas (sin IA) o un modelo de IA corriendo en esta máquina; "
+            "\"Automático\" elige uno de los dos según el equipo."
         ),
         "help.run.title": "Ayuda: Ejecución",
         "help.run.p1": (
             "El procesamiento corre en 5 etapas, siempre en este orden: escaneo de la carpeta de "
-            "origen, conversión/OCR/fraccionamiento, extracción de texto por página, preparación "
+            "origen, conversión/OCR, extracción de texto por página, preparación "
             "de las ventanas de clasificación y, por último, la clasificación en sí."
         ),
         "help.run.p2": (
@@ -2923,7 +2930,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "about.project_label": "Página del proyecto",
         "about.description": (
             "Convierte una carpeta de documentos legales/archivísticos en un índice, cronología e "
-            "instrucciones listas para un Claude Project. Funciona offline, procesando todo en esta máquina."
+            "instrucciones listas para un Claude Project. Lee y clasifica todo en esta máquina; los componentes "
+            "opcionales (formatos antiguos, transcripción de audio y vídeo, idiomas extra del OCR) necesitan "
+            "una descarga única y, sin ella, se omiten con el motivo."
         ),
         "about.technology": (
             "Python, FastAPI, SQLite y Ollama (qwen3.5:4b) corriendo localmente; ningún documento "
@@ -3022,7 +3031,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.column_status": "Estado",
         "run.column_count": "Recuento",
         "step.scan.title": "1. Barrido",
-        "step.conversion.title": "2–3. Conversión, OCR y troceado",
+        "step.conversion.title": "2–3. Conversión y OCR",
         "step.extraction.title": "4. Extracción por página",
         "step.windows.title": "5. Preparación de ventanas",
         "step.classification.title": "6. Clasificación",
