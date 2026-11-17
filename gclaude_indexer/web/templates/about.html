@@ -57,4 +57,46 @@
     </tbody>
   </table>
 </div>
+
+<h2 id="components">{{ t('components.title') }}</h2>
+<p class="help">{{ t('components.help') }}</p>
+{% if componente_removido %}
+<p class="notice-ok" role="status">{{ m.icon('check') }} {{ t('components.removed', name=componente_removido) }}</p>
+{% endif %}
+{% if componente_nao_removido %}
+<p class="notice" role="alert">{{ t('components.remove_failed', name=componente_nao_removido) }}</p>
+{% endif %}
+{% if componentes %}
+<div class="table-scrollable">
+  <table class="components-list">
+    <thead>
+      <tr>
+        <th>{{ t('components.name') }}</th>
+        <th>{{ t('components.size') }}</th>
+        <th>{{ t('components.license') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in componentes %}
+      <tr>
+        <td>{{ item.name }}</td>
+        <td>{{ t('components.size_mb', mb=(item.size / 1048576) | round(1)) }}</td>
+        <td>{{ item.license }}</td>
+        <td class="col-actions">
+          {# Só apaga da pasta privada desta máquina; se o componente fizer
+             falta de novo, é baixado outra vez. Por isso não pede confirmação. #}
+          <form method="post" action="/about/components/remove" style="display:inline">
+            <input type="hidden" name="name" value="{{ item.name }}">
+            <button type="submit" class="button button-small button-danger">{{ m.icon('trash') }} {{ t('components.remove') }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="help">{{ t('components.none') }}</p>
+{% endif %}
 {% endblock %}

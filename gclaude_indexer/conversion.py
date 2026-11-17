@@ -25,7 +25,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from email import policy
 from pathlib import Path
 
@@ -423,7 +423,14 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         ocr_pages, page_count = _pdf_pages_needing_ocr(source_path)
         needs_ocr = bool(ocr_pages)
 
-        if needs_ocr:
+        if needs_ocr and not config.ocr_language:
+            # Task 7: no OCR language could be had (no network, download
+            # refused) — `convert` already warned which one. The native
+            # text is read as it is and `ocr_failed` brings the file back
+            # once the language is there; the file is never failed for it.
+            needs_ocr = False
+            ocr_failed = True
+        elif needs_ocr:
             ocr_destination = _destination_path(output_dir, "converted", relative_path, ".pdf")
             partial = len(ocr_pages) < page_count
             try:
@@ -465,16 +472,25 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
     elif category == "imagens":
-        text = _extract_text_image(source_path, config.ocr_language)
+        if config.ocr_language:
+            text = _extract_text_image(source_path, config.ocr_language)
+            ocr_applied = True
+            events.append((
+                "conversion", "info", "log.conversion.ocr_applied",
+                {"name": name, "ocr_language": config.ocr_language},
+            ))
+        else:
+            # Task 7: same as the scanned PDF above — no text for now,
+            # done again when the OCR language is there.
+            text = ""
+            ocr_failed = True
         destination = _destination_path(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
-        ocr_applied = True
-        events.append((
-            "conversion", "info", "log.conversion.ocr_applied",
-            {"name": name, "ocr_language": config.ocr_language},
-        ))
-        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 1 WHERE id = ?"
-        params = (row["id"],)
+        sql = (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 1,"
+            " ocr_failed = ? WHERE id = ?"
+        )
+        params = (int(ocr_failed), row["id"])
 
     elif category in ("docx", "xlsx", "pptx", "text", "web_dados", "email"):
         extension = row["extension"]
@@ -822,13 +838,30 @@ def convert(
     heavy.sort(key=lambda row: row["size"] or 0, reverse=True)
     light = [row for row in rows if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES]
 
+    heavy_config = config
+    ocr_shortfall = False
     if heavy:
         # The OCR language is installed here if the installer could
         # not (no administrator rights needed), before the OCR workers are
         # started — they inherit this process's `TESSDATA_PREFIX`.
         from . import ocr_languages
 
-        ocr_languages.ensure(config.ocr_language, tools.find("tesseract"))
+        tesseract = tools.find("tesseract")
+        missing = ocr_languages.ensure(config.ocr_language, tesseract)
+        # Task 7: a language that could not be downloaded (no network, a
+        # refused file) never fails a file. The OCR runs with the languages
+        # Tesseract has (none: no OCR), the files that needed it are marked
+        # `ocr_failed` and come back on the next conversion, and the log
+        # says what was missing. Without Tesseract at all nothing changes:
+        # that is an installation problem the About screen reports.
+        if missing and tesseract:
+            ocr_shortfall = True
+            usable = ocr_languages.usable(config.ocr_language, tesseract)
+            heavy_config = replace(config, ocr_language="+".join(usable))
+            record_event(
+                conn, "conversion", "warning", "log.conversion.ocr_language_unavailable",
+                {"languages": ", ".join(missing)}, language=language,
+            )
 
     if light:
         light_workers = io_workers_for(config.parallelism)
@@ -838,7 +871,15 @@ def convert(
             _convert_in_parallel(conn, config, light, light_workers, 1, should_stop, result, language=language)
 
     if heavy and not (should_stop is not None and should_stop()):
-        _convert_heavy(conn, config, heavy, should_stop, result, language)
+        _convert_heavy(conn, heavy_config, heavy, should_stop, result, language)
+        if ocr_shortfall:
+            # Read with only part of the languages: good enough for now,
+            # done again in full once the rest is downloaded.
+            conn.executemany(
+                "UPDATE file SET ocr_failed = 1 WHERE id = ? AND status = 'converted' AND needs_ocr = 1",
+                [(row["id"],) for row in heavy],
+            )
+            conn.commit()
 
     record_event(
         conn,
