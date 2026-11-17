@@ -96,7 +96,10 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
         return "pending" if started else "not_started"
 
     raw = [
-        ("scan", done_or(total_files > 0, total_files > 0), {"total": total_files}),
+        # `ignored` (files left out for being unindexable) only appears when
+        # there are any, and picks the card's other text.
+        ("scan", done_or(total_files > 0, total_files > 0),
+         {"total": total_files, **({"ignored": by_status["skipped"]} if by_status.get("skipped") else {})}),
         ("conversion", done_or(total_files > 0 and discovered == 0, total_files > 0),
          {"converted": converted, "failed": failed, "pending": discovered}),
         ("extraction",

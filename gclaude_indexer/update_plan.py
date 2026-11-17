@@ -47,7 +47,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import category_of_extension, is_extension_allowed
+from .file_types import category_of_extension, is_extension_allowed, name_decision
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -147,7 +147,7 @@ def detect_changes(
 
     known = {
         row["relative_path"]: row
-        for row in conn.execute("SELECT relative_path, size, sha256, mtime, ocr_failed FROM file")
+        for row in conn.execute("SELECT relative_path, size, sha256, mtime, ocr_failed, status FROM file")
     }
     stale = stale_page_paths(conn)
 
@@ -194,7 +194,24 @@ def detect_changes(
             changes.append(FileChange(relative_path, "changed", path.name, size))
             continue
 
+        # 2.0.0: o que hoje não pode ser indexado (compactado, mídia sem
+        # `midia`, segredo, atalho do Google…) mas já está no índice de uma
+        # versão anterior sai como removido, com a confirmação de sempre; a
+        # varredura volta a listá-lo como ignorado. Só pelo nome: nada é lido.
+        if row["status"] not in ("skipped", "duplicate") and name_decision(
+            path.name, config.extensions
+        ) is not None:
+            if include_removed:
+                changes.append(FileChange(relative_path, "removed", path.name, 0))
+            continue
+
         if row["size"] == size and row["mtime"] == mtime:
+            unchanged += 1
+            continue
+
+        # Ignorado não tem hash (nunca foi lido): não há o que recalcular, e
+        # a varredura reavalia o arquivo sozinha.
+        if not row["sha256"]:
             unchanged += 1
             continue
 
@@ -674,6 +691,13 @@ def _intended_membership(
             return None
 
     for change in new_files:
+        # Same name-level decision the scan makes before hashing (archive,
+        # Google shortcut, audio/video not selected, key by name…). What only
+        # the first bytes reveal (a private key inside a `.txt`, binary
+        # content) is not read here, as the plan never reads a new file just
+        # to describe it; at worst a group is treated as changed once more.
+        if name_decision(Path(change.relative_path).name, config.extensions) is not None:
+            continue
         if not is_extension_allowed(
             Path(change.relative_path).suffix.lower(), config.extensions
         ):

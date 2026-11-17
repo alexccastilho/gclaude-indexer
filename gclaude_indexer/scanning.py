@@ -26,14 +26,21 @@ import os
 import re
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
-from .file_types import is_extension_allowed
+from .file_types import (
+    HEAD_BYTES,
+    REASON_NOT_SELECTED,
+    index_decision,
+    is_extension_allowed,
+    name_decision,
+    needs_head,
+)
 from .i18n import DEFAULT_LANGUAGE, translate
 from .paths import holds_generated_output
 from .worker_pool import CallTimedOut, StepStalledError, call_with_deadline, deadline_for_size
@@ -48,6 +55,8 @@ class ScanResult:
     updated: int = 0
     ignored: int = 0
     skipped: int = 0
+    # Ignorados desta execução, por motivo (`file_types.REASON_*`).
+    ignored_by_reason: dict[str, int] = field(default_factory=dict)
 
 
 def compute_hash(path: Path) -> str:
@@ -56,6 +65,13 @@ def compute_hash(path: Path) -> str:
         for chunk in iter(lambda: file.read(HASH_BLOCK_SIZE), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def read_head(path: Path) -> bytes:
+    """Só o começo do arquivo: o bastante para `index_decision` decidir sem
+    baixar um arquivo grande do Drive."""
+    with open(path, "rb") as file:
+        return file.read(HEAD_BYTES)
 
 
 def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig) -> str | None:
@@ -83,8 +99,9 @@ def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig
 
 
 def _list_known_files(conn: sqlite3.Connection) -> tuple[set[str], dict[str, sqlite3.Row]]:
-    rows = conn.execute("SELECT relative_path, size, sha256, mtime FROM file").fetchall()
-    known_hashes = {row["sha256"] for row in rows}
+    rows = conn.execute("SELECT relative_path, size, sha256, mtime, status FROM file").fetchall()
+    # "" é o hash de quem foi ignorado sem ser lido: não identifica conteúdo.
+    known_hashes = {row["sha256"] for row in rows if row["sha256"]}
     by_path = {row["relative_path"]: row for row in rows}
     return known_hashes, by_path
 
@@ -99,14 +116,15 @@ def _insert_file(
     mtime: float,
     group_key: str | None,
     status: str,
+    error: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO file
-            (relative_path, name, extension, size, sha256, mtime, group_key, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (relative_path, name, extension, size, sha256, mtime, group_key, status, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (relative_path, name, extension, size, file_hash, mtime, group_key, status),
+        (relative_path, name, extension, size, file_hash, mtime, group_key, status, error),
     )
     # Back in the folder, so no longer "removed" — otherwise `review.md`
     # would go on listing a document that is right there in the index.
@@ -123,15 +141,16 @@ def _update_file(
     mtime: float,
     group_key: str | None,
     status: str,
+    error: str | None = None,
 ) -> None:
     conn.execute(
         """
         UPDATE file
         SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?,
-            status = ?, error = NULL, page_count = NULL, needs_ocr = 0
+            status = ?, error = ?, page_count = NULL, needs_ocr = 0
         WHERE relative_path = ?
         """,
-        (name, extension, size, file_hash, mtime, group_key, status, relative_path),
+        (name, extension, size, file_hash, mtime, group_key, status, error, relative_path),
     )
 
 
@@ -376,6 +395,7 @@ def scan(
                 writer.discard()
         raise
 
+    _record_ignored_summary(conn, result, language)
     record_event(
         conn,
         "scan",
@@ -389,6 +409,26 @@ def scan(
     )
 
     return result
+
+
+def _record_ignored_summary(conn: sqlite3.Connection, result: ScanResult, language: str | None) -> None:
+    """One event per run with the count by reason (it used to be one warning
+    per file, which buried the log of a large folder). Google shortcuts get
+    their own, because the fix is something the person has to do."""
+    if not result.ignored_by_reason:
+        return
+    lang = language or DEFAULT_LANGUAGE
+    detail = "; ".join(
+        f"{translate(lang, 'ignored.reason.' + reason)}: {count}"
+        for reason, count in sorted(result.ignored_by_reason.items(), key=lambda item: (-item[1], item[0]))
+    )
+    record_event(
+        conn, "scan", "warning", "log.scan.ignored_summary",
+        {"total": sum(result.ignored_by_reason.values()), "detail": detail}, language=language,
+    )
+    google = result.ignored_by_reason.get("google_doc", 0)
+    if google:
+        record_event(conn, "scan", "warning", "log.scan.google_docs", {"count": google}, language=language)
 
 
 def _scan_files(
@@ -430,9 +470,16 @@ def _scan_files(
                 and existing_row["size"] == size
                 and existing_row["mtime"] == mtime
             )
-            file_hash = None if unchanged else call_with_deadline(
-                compute_hash, path, deadline=deadline_for_size(size),
-            )
+            file_hash = None
+            reason = None
+            if not unchanged:
+                # A decisão vem antes do hash: o que não pode ser indexado
+                # não é lido (nem baixado do Drive, no caso de um vídeo).
+                reason = _ignore_reason(path, name, config)
+                if reason is None:
+                    file_hash = call_with_deadline(
+                        compute_hash, path, deadline=deadline_for_size(size),
+                    )
         except CallTimedOut as timeout:
             # Left out of this scan, untouched in the inventory: the next
             # scan looks at it again. Several in a row with nothing in
@@ -457,6 +504,23 @@ def _scan_files(
             writer.flush_if_due()
             continue
 
+        if reason is not None and _is_indexed_row(existing_row) and name_decision(
+            name, config.extensions
+        ) is not None:
+            # Já indexado por uma versão anterior e agora recusado só pelo
+            # nome: virar `skipped` aqui deixaria páginas e itens órfãos. Quem
+            # tira o arquivo do índice é o plano de atualização, que pede
+            # confirmação e invalida; a varredura o deixa como está.
+            result.skipped += 1
+            continue
+
+        if reason is not None:
+            _record_ignored_file(
+                writer, relative_path, name, extension, size, mtime, reason,
+                existing_row, known_paths, result,
+            )
+            continue
+
         _record_scanned_file(
             writer, config, source_dir, relative_path, name, extension, size, mtime, file_hash,
             existing_row, known_hashes, known_paths, result, language,
@@ -464,6 +528,58 @@ def _scan_files(
 
     if on_progress is not None:
         on_progress(result.total_found, bytes_done)
+
+
+def _is_indexed_row(row) -> bool:
+    """The stored row is a document in the index (not ignored, not a copy).
+    Rows the scan itself added to `known_paths` carry no status: they are
+    ignored files or fresh inserts of this run."""
+    try:
+        return row is not None and row["status"] not in ("skipped", "duplicate")
+    except (KeyError, IndexError):
+        return False
+
+
+def _ignore_reason(path: Path, name: str, config: ProjectConfig) -> str | None:
+    """Why the file must not enter the index, or `None`. By name first (no
+    read at all); only a text-like candidate has its first bytes read, to
+    look for a private key or for binary content in an unknown extension."""
+    reason = name_decision(name, config.extensions)
+    if reason is not None:
+        return reason
+    extension = path.suffix.lower()
+    if not is_extension_allowed(extension, config.extensions):
+        return REASON_NOT_SELECTED
+    if not needs_head(name, config.extensions):
+        return None
+    try:
+        head = call_with_deadline(read_head, path, deadline=STAT_DEADLINE_SECONDS)
+    except OSError:
+        return None  # o hash, logo depois, relata o erro de leitura como sempre
+    return index_decision(name, head, config.extensions)
+
+
+def _record_ignored_file(
+    writer: BatchWriter, relative_path: str, name: str, extension: str, size: int, mtime: float,
+    reason: str, existing_row, known_paths, result: ScanResult,
+) -> None:
+    """The file stays in the inventory as `skipped`, the reason in
+    `file.error`, with an empty hash: it was never read, so it has no
+    content identity (and cannot be "a copy" of anything)."""
+    extension_no_dot = extension.lstrip(".")
+    if existing_row is None:
+        writer.add(lambda c: _insert_file(
+            c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
+        ))
+    else:
+        writer.add(lambda c: _update_file(
+            c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
+        ))
+    result.ignored += 1
+    result.ignored_by_reason[reason] = result.ignored_by_reason.get(reason, 0) + 1
+    known_paths[relative_path] = {
+        "relative_path": relative_path, "size": size, "sha256": "", "mtime": mtime,
+    }
 
 
 def _record_scanned_file(
@@ -526,11 +642,8 @@ def _record_scanned_file(
         }
         return
 
-    allowed = is_extension_allowed(extension, config.extensions)
-    status = "discovered" if allowed else "skipped"
-    group_key = (
-        derive_group_key(relative_path, source_dir, config) if allowed else None
-    )
+    status = "discovered"
+    group_key = derive_group_key(relative_path, source_dir, config)
     extension_no_dot = extension.lstrip(".")
 
     if existing_row is None:
@@ -539,21 +652,8 @@ def _record_scanned_file(
                 c, relative_path, name, extension_no_dot, size, file_hash,
                 mtime, group_key, status
             )
-            if not allowed:
-                record_event(
-                    c,
-                    "scan",
-                    "warning",
-                    "log.scan.extension_not_allowed",
-                    {"name": name, "extension": extension_no_dot},
-                    language=language,
-                    commit=False,
-                )
 
-        if allowed:
-            result.discovered += 1
-        else:
-            result.ignored += 1
+        result.discovered += 1
     else:
         def op(c) -> None:
             _update_file(

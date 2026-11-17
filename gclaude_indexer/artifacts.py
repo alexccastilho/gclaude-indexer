@@ -26,6 +26,7 @@ import posixpath
 import re
 import sqlite3
 import sys
+from collections import Counter
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -824,6 +825,9 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
         for failure in failures:
             lines.append(f"- `{failure['relative_path']}`: {failure['error']}")
 
+    lines += ["", f"## {t('artifact.review.ignored_section')}"]
+    lines += _ignored_files_lines(conn, t)
+
     lines += ["", f"## {t('artifact.review.removed_section')}"]
     if not removals:
         lines.append(t("artifact.review.removed_none"))
@@ -841,6 +845,41 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     path = Path(config.output_folder) / REVIEW_FILENAME
     write_if_changed(path, "\n".join(lines) + "\n")
     return path
+
+
+IGNORED_NAMES_SHOWN = 10
+
+
+def _ignored_files_lines(conn, t) -> list[str]:
+    """The "ignored files" section of `review.md`: by reason (`file.error` of
+    the `skipped` rows) and extension, with the first names. Only names and
+    counts — nothing of the content, least of all of a key or a password."""
+    rows = conn.execute(
+        "SELECT name, extension, error FROM file WHERE status = 'skipped' ORDER BY relative_path"
+    ).fetchall()
+    if not rows:
+        return [t("artifact.review.ignored_none")]
+    by_reason: dict[str, list] = {}
+    for row in rows:
+        # A row from a version before 2.0.0 has no reason: it was left out
+        # because its type was not on the project's list.
+        by_reason.setdefault(row["error"] or "extension_not_selected", []).append(row)
+    lines: list[str] = []
+    for reason, group in sorted(by_reason.items(), key=lambda item: (-len(item[1]), item[0])):
+        label = t(f"ignored.reason.{reason}")
+        lines.append(f"- {t('artifact.review.ignored_reason_line', reason=label, count=len(group))}")
+        extensions = Counter((row["extension"] or "-").lower() for row in group)
+        lines.append("  - " + ", ".join(
+            f".{extension}: {count}" if extension != "-" else f"-: {count}"
+            for extension, count in extensions.most_common()
+        ))
+        shown = ", ".join(f"`{row['name']}`" for row in group[:IGNORED_NAMES_SHOWN])
+        if len(group) > IGNORED_NAMES_SHOWN:
+            shown += f" {t('artifact.review.ignored_more', count=len(group) - IGNORED_NAMES_SHOWN)}"
+        lines.append(f"  - {shown}")
+        if reason == "google_doc":
+            lines.append(f"  - {t('artifact.review.ignored_google_note')}")
+    return lines
 
 
 # --- project_instructions.md ------------------------------------------------

@@ -333,11 +333,19 @@ def test_binario_de_extensao_desconhecida_nao_vira_texto(tmp_path):
     from .test_phase4 import _preparar_projeto
 
     origem, saida, config, conn = _preparar_projeto(tmp_path, extra={"extensions": ["all"]})
-    (origem / "fonte.ttf").write_bytes(b"\x00\x01\x00\x00\x00\x0fOS/2" + bytes(range(256)) * 4)
+    (origem / "fonte.xyz").write_bytes(b"\x00\x00\x00\x00OS/2" + bytes(range(256)) * 4)
     (origem / "notas.cfg").write_text("chave = valor legível", encoding="utf-8")
     scan(conn, config)
+    # 2.0.0: a varredura já recusa o binário pelos primeiros bytes (e uma
+    # fonte .ttf nem chega a ser lida: tipo bloqueado).
+    linha = conn.execute("SELECT status, error FROM file WHERE name = 'fonte.xyz'").fetchone()
+    assert (linha["status"], linha["error"]) == ("skipped", "binary")
+    # Linha deixada como 'discovered' por uma versão anterior: a conversão
+    # ainda não a transforma em texto.
+    conn.execute("UPDATE file SET status = 'discovered', error = NULL WHERE name = 'fonte.xyz'")
+    conn.commit()
     convert(conn, config)
-    binario = converted_artifact_path(config.output_folder, "fonte.ttf", "ttf", False)
+    binario = converted_artifact_path(config.output_folder, "fonte.xyz", "xyz", False)
     texto = converted_artifact_path(config.output_folder, "notas.cfg", "cfg", False)
     assert binario.read_text(encoding="utf-8") == ""
     assert "valor legível" in texto.read_text(encoding="utf-8")

@@ -209,11 +209,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.web_dados": "Web/dados (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "E-mail (.eml, .msg)",
         "new_project.category.all": "TODOS (qualquer arquivo não binário/executável)",
+        "new_project.category.midia": "Áudio e vídeo (transcrição)",
         "new_project.extensions_help_all": (
             'Marcar "TODOS" ignora as outras categorias e varre qualquer extensão, exceto '
-            "executáveis e binários conhecidos (.exe, .dll, .bat, .zip, etc.), útil para acervos "
-            "com formatos variados ou pouco previsíveis."
+            "executáveis, compactados (.zip, .rar, .7z…), bancos de dados, fontes, chaves e senhas, "
+            "atalhos do Google Drive e áudio/vídeo, que ficam listados como ignorados, com o motivo. "
+            "Útil para acervos com formatos variados ou pouco previsíveis."
         ),
+        "new_project.extensions_help_media": (
+            "Áudio e vídeo nunca entram em \"TODOS\": marque esta caixa só se quiser que sejam transcritos."
+        ),
+        "run.ignored": "{count} ignorado(s)",
+        "ignored.reason.system": "arquivo do sistema",
+        "ignored.reason.google_doc": "atalho do Google Drive",
+        "ignored.reason.archive": "compactado",
+        "ignored.reason.blocked_extension": "tipo não indexável (executável, banco de dados, fonte…)",
+        "ignored.reason.media_not_selected": "áudio/vídeo não selecionado",
+        "ignored.reason.secret": "chave ou senha",
+        "ignored.reason.binary": "conteúdo binário",
+        "ignored.reason.extension_not_selected": "tipo fora da lista do projeto",
+        "log.scan.ignored_summary": "{total} arquivo(s) ignorado(s) por não poderem ser indexados: {detail}.",
+        "log.scan.google_docs": "{count} atalho(s) do Google Drive (.gdoc, .gsheet…) foram ignorados: são só um link para a nuvem, não o documento. Para indexar, exporte-os no Google Drive para DOCX, XLSX ou PDF e coloque os arquivos exportados na pasta.",
+        "artifact.review.ignored_section": "Arquivos ignorados",
+        "artifact.review.ignored_none": "Nenhum arquivo ignorado.",
+        "artifact.review.ignored_reason_line": "{reason}: {count}",
+        "artifact.review.ignored_more": "… e mais {count}",
+        "artifact.review.ignored_google_note": "Os atalhos do Google Drive são só um link para a nuvem, não o documento. Para indexá-los, exporte-os para DOCX, XLSX ou PDF.",
         "hint.name": (
             "Nome que identifica este projeto na lista de projetos. Só para você reconhecer, não afeta pastas nem arquivos gerados."
         ),
@@ -251,7 +272,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Quais tipos de arquivo entram na varredura da pasta de origem. Arquivo de extensão "
             'fora da lista marcada é ignorado (fica registrado, mas não processado). Use "TODOS" '
             "para não se preocupar com a lista, dentro do limite de segurança (nunca indexa "
-            "executáveis nem binários conhecidos)."
+            "executáveis, compactados, bancos de dados, chaves nem áudio e vídeo, que têm caixa própria)."
         ),
         "hint.pages_per_block": (
             "PDFs com mais páginas que este número são cortados em blocos menores antes de processar, para evitar travar em arquivos muito grandes. Ex. 80 corta um PDF de 300 "
@@ -576,6 +597,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.update.title": "Atualização",
         "step.diagnostics.title": "Diagnóstico de hardware",
         "step.scan.count": "{total} arquivo(s)",
+        "step.scan.count_ignored": "{total} arquivo(s), {ignored} ignorado(s)",
         "step.conversion.count": "{converted} convertido(s), {failed} falhou(aram), {pending} pendente(s)",
         "step.extraction.count": "{pages} página(s) extraída(s)",
         "step.windows.count": "{windows} janela(s)",
@@ -1434,11 +1456,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.web_dados": "Web/data (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "Email (.eml, .msg)",
         "new_project.category.all": "ALL (any non-binary/executable file)",
+        "new_project.category.midia": "Audio and video (transcription)",
         "new_project.extensions_help_all": (
-            'Checking "ALL" ignores the other categories and scans any extension except known '
-            "executables and binaries (.exe, .dll, .bat, .zip, etc.), useful for collections with "
-            "varied or unpredictable formats."
+            'Checking "ALL" ignores the other categories and scans any extension except '
+            "executables, archives (.zip, .rar, .7z…), databases, fonts, keys and passwords, "
+            "Google Drive shortcuts and audio/video, which are listed as ignored, with the reason. "
+            "Useful for collections with varied or unpredictable formats."
         ),
+        "new_project.extensions_help_media": (
+            "Audio and video are never part of \"ALL\": check this box only if you want them transcribed."
+        ),
+        "run.ignored": "{count} ignored",
+        "ignored.reason.system": "system file",
+        "ignored.reason.google_doc": "Google Drive shortcut",
+        "ignored.reason.archive": "archive",
+        "ignored.reason.blocked_extension": "type that cannot be indexed (executable, database, font…)",
+        "ignored.reason.media_not_selected": "audio/video not selected",
+        "ignored.reason.secret": "key or password",
+        "ignored.reason.binary": "binary content",
+        "ignored.reason.extension_not_selected": "type outside the project's list",
+        "log.scan.ignored_summary": "{total} file(s) ignored because they cannot be indexed: {detail}.",
+        "log.scan.google_docs": "{count} Google Drive shortcut(s) (.gdoc, .gsheet…) were ignored: they are only a link to the cloud, not the document. To index them, export them in Google Drive to DOCX, XLSX or PDF and put the exported files in the folder.",
+        "artifact.review.ignored_section": "Ignored files",
+        "artifact.review.ignored_none": "No files ignored.",
+        "artifact.review.ignored_reason_line": "{reason}: {count}",
+        "artifact.review.ignored_more": "… and {count} more",
+        "artifact.review.ignored_google_note": "Google Drive shortcuts are only a link to the cloud, not the document. To index them, export them to DOCX, XLSX or PDF.",
         "hint.name": (
             "Name that identifies this project in the project list. Just for you to recognize it. It doesn't affect generated folders or files."
         ),
@@ -1474,8 +1517,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.extensions": (
             "Which file types are included when scanning the source folder. A file whose extension "
             'is outside the checked list is skipped (logged, but not processed). Use "ALL" to not '
-            "worry about the list, within the safety limit (never indexes executables or known "
-            "binaries)."
+            "worry about the list, within the safety limit (never indexes executables, archives, "
+            "databases, keys, or audio and video, which have their own box)."
         ),
         "hint.pages_per_block": (
             "PDFs with more pages than this number are cut into smaller blocks before processing, to avoid getting stuck on very large files. E.g. 80 cuts a 300-page PDF into 4 blocks."
@@ -1771,6 +1814,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.update.title": "Update",
         "step.diagnostics.title": "Hardware diagnostics",
         "step.scan.count": "{total} file(s)",
+        "step.scan.count_ignored": "{total} file(s), {ignored} ignored",
         "step.conversion.count": "{converted} converted, {failed} failed, {pending} pending",
         "step.extraction.count": "{pages} page(s) extracted",
         "step.windows.count": "{windows} window(s)",
@@ -2626,10 +2670,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.category.web_dados": "Web/datos (.html, .htm, .mht, .xml, .json…)",
         "new_project.category.email": "Correo (.eml, .msg)",
         "new_project.category.all": "TODOS (cualquier archivo no binario/ejecutable)",
+        "new_project.category.midia": "Audio y vídeo (transcripción)",
         "new_project.extensions_help_all": (
             'Marcar "TODOS" ignora las demás categorías y escanea cualquier extensión, excepto '
-            "ejecutables y binarios conocidos (.exe, .dll, .bat, .zip, etc.), útil para colecciones con formatos variados o poco previsibles."
+            "ejecutables, comprimidos (.zip, .rar, .7z…), bases de datos, fuentes, claves y contraseñas, "
+            "accesos directos de Google Drive y audio/vídeo, que quedan listados como ignorados, con el motivo. "
+            "Útil para colecciones con formatos variados o poco previsibles."
         ),
+        "new_project.extensions_help_media": (
+            "El audio y el vídeo nunca entran en \"TODOS\": marque esta casilla solo si quiere que se transcriban."
+        ),
+        "run.ignored": "{count} ignorado(s)",
+        "ignored.reason.system": "archivo del sistema",
+        "ignored.reason.google_doc": "acceso directo de Google Drive",
+        "ignored.reason.archive": "comprimido",
+        "ignored.reason.blocked_extension": "tipo no indexable (ejecutable, base de datos, fuente…)",
+        "ignored.reason.media_not_selected": "audio/vídeo no seleccionado",
+        "ignored.reason.secret": "clave o contraseña",
+        "ignored.reason.binary": "contenido binario",
+        "ignored.reason.extension_not_selected": "tipo fuera de la lista del proyecto",
+        "log.scan.ignored_summary": "{total} archivo(s) ignorado(s) por no poder indexarse: {detail}.",
+        "log.scan.google_docs": "{count} acceso(s) directo(s) de Google Drive (.gdoc, .gsheet…) se ignoraron: son solo un enlace a la nube, no el documento. Para indexarlos, expórtelos en Google Drive a DOCX, XLSX o PDF y ponga los archivos exportados en la carpeta.",
+        "artifact.review.ignored_section": "Archivos ignorados",
+        "artifact.review.ignored_none": "Ningún archivo ignorado.",
+        "artifact.review.ignored_reason_line": "{reason}: {count}",
+        "artifact.review.ignored_more": "… y {count} más",
+        "artifact.review.ignored_google_note": "Los accesos directos de Google Drive son solo un enlace a la nube, no el documento. Para indexarlos, expórtelos a DOCX, XLSX o PDF.",
         "hint.name": (
             "Nombre que identifica este proyecto en la lista de proyectos. Solo para que usted lo reconozca. No afecta carpetas ni archivos generados."
         ),
@@ -2668,7 +2734,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Qué tipos de archivo entran al escanear la carpeta de origen. Un archivo con "
             "extensión fuera de la lista marcada se omite (queda registrado, pero no se procesa). "
             'Use "TODOS" para no preocuparse por la lista, dentro del límite de seguridad (nunca '
-            "indexa ejecutables ni binarios conocidos)."
+            "indexa ejecutables, comprimidos, bases de datos, claves ni audio y vídeo, que tienen casilla propia)."
         ),
         "hint.pages_per_block": (
             "Los PDF con más páginas que este número se cortan en bloques más pequeños antes de procesar, para evitar atascos en archivos muy grandes. Ej. 80 corta un PDF de 300 páginas "
@@ -2973,6 +3039,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.update.title": "Actualización",
         "step.diagnostics.title": "Diagnóstico de hardware",
         "step.scan.count": "{total} archivo(s)",
+        "step.scan.count_ignored": "{total} archivo(s), {ignored} ignorado(s)",
         "step.conversion.count": "{converted} convertido(s), {failed} fallaron, {pending} pendiente(s)",
         "step.extraction.count": "{pages} página(s) extraída(s)",
         "step.windows.count": "{windows} ventana(s)",

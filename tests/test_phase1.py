@@ -81,7 +81,7 @@ def test_carregar_config_aplica_defaults(tmp_path):
     assert config.pages_per_block == 80
     assert config.pages_per_window == 16
     assert config.overlap == 2
-    assert config.extensions == ["pdf", "docx", "imagens"]
+    assert config.extensions == ["all"]
 
 
 def test_carregar_config_pasta_origem_inexistente():

@@ -8,7 +8,7 @@
     <tr class="step-{{ step.status }}">
       <td>{{ t('step.' + step.chave + '.title') }}</td>
       <td><span class="status status-{{ step.status }}">{{ t('status.' + step.status) }}</span></td>
-      <td>{{ t('step.' + step.chave + '.count', **step.vars) }}</td>
+      <td>{{ t('step.' + step.chave + ('.count_ignored' if step.vars.ignored is defined else '.count'), **step.vars) }}</td>
     </tr>
     {% endfor %}
   </tbody>
