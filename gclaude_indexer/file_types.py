@@ -62,8 +62,7 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     # signatário vai para `file_signature`.
     "assinados": {".p7s", ".p7m"},
     # Opt-in: "all" não inclui. A chave é dado (como "imagens"), o rótulo é
-    # traduzido no formulário. Ainda sem transcritor, o arquivo entra no
-    # inventário mas não produz texto.
+    # traduzido no formulário. Transcrito localmente (`media.py`).
     "midia": {
         ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma",
         ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".3gp",
@@ -154,8 +153,9 @@ REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")
 
 # Uma página por mensagem (separadas por `light_formats.MBOX_PAGE_SEPARATOR`
-# no texto intermediário): a caixa `.mbox` e os arquivos do Outlook.
-MESSAGE_PAGE_CATEGORIES: tuple[str, ...] = ("mbox", "outlook")
+# no texto intermediário): a caixa `.mbox`, os arquivos do Outlook e a
+# transcrição de áudio e vídeo (um trecho de cerca de 5 minutos por página).
+MESSAGE_PAGE_CATEGORIES: tuple[str, ...] = ("mbox", "outlook", "midia")
 
 
 def valid_categories() -> set[str]:
