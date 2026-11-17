@@ -137,7 +137,7 @@ def test_normaliza_todos_mais_categorias_especificas():
     assert normalize_categories(["midia"]) == ["midia"]
 
 
-def test_formulario_novo_traz_todos_marcado_e_midia_desmarcada():
+def test_formulario_novo_traz_tudo_marcado_menos_midia():
     from fastapi.testclient import TestClient
 
     from gclaude_indexer.web.app import app
@@ -147,7 +147,9 @@ def test_formulario_novo_traz_todos_marcado_e_midia_desmarcada():
     corpo = TestClient(app).get("/projects/new").text
     entradas = re.findall(r'<input type="checkbox" name="extensions" value="([^"]+)"([^>]*)>', corpo)
     marcadas = {valor for valor, resto in entradas if "checked" in resto}
-    assert marcadas == {"all"}
+    # Todas as específicas aparecem marcadas junto com TODOS; só a mídia (opt-in) não.
+    assert "all" in marcadas and "pdf" in marcadas
+    assert marcadas == {valor for valor, _ in entradas} - {"midia"}
     assert "midia" in {valor for valor, _ in entradas}
 
 

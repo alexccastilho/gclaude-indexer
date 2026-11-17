@@ -481,6 +481,49 @@ def test_formulario_traz_o_script_de_exclusividade_do_todos(cliente):
     assert 'name="extensions"' in corpo
 
 
+def _caixas_de_extensao(corpo: str) -> dict[str, bool]:
+    """Valor de cada checkbox `extensions` do formulário -> se vem `checked`."""
+    import re
+
+    caixas = {}
+    for tag in re.findall(r'<input[^>]*name="extensions"[^>]*>', corpo):
+        valor = re.search(r'value="([^"]*)"', tag).group(1)
+        caixas[valor] = "checked" in tag
+    return caixas
+
+
+def test_formulario_novo_projeto_vem_com_todas_as_categorias_marcadas_menos_midia(cliente):
+    """O padrão é ["all"]; a tela mostra "TODOS" e cada categoria específica
+    marcadas (antes só "TODOS" ficava marcado, fora da dobra). Mídia é opt-in."""
+    caixas = _caixas_de_extensao(cliente.get("/projects/new").text)
+    assert caixas["midia"] is False
+    assert caixas["all"] is True
+    especificas = {v: c for v, c in caixas.items() if v not in ("all", "midia")}
+    assert "pdf" in especificas and len(especificas) > 5
+    assert all(especificas.values()), [v for v, c in especificas.items() if not c]
+
+
+def test_envio_com_todos_e_especificas_normaliza_para_todos_e_midia_so_se_marcada():
+    from gclaude_indexer.file_types import normalize_categories
+
+    assert normalize_categories(["pdf", "docx", "all"]) == ["all"]
+    assert normalize_categories(["pdf", "all", "midia"]) == ["all", "midia"]
+    assert normalize_categories(["pdf", "docx"]) == ["pdf", "docx"]
+    assert normalize_categories(["pdf", "midia"]) == ["pdf", "midia"]
+
+
+def test_formulario_reexibido_com_so_algumas_categorias_nao_marca_as_outras(cliente, tmp_path):
+    # Envio inválido (pasta de origem inexistente) reexibe o formulário.
+    resposta = cliente.post("/projects/new", data={
+        "name": "x", "source_folder": str(tmp_path / "nao_existe"), "output_folder": str(tmp_path / "s"),
+        "extensions": ["pdf"],
+    })
+    caixas = _caixas_de_extensao(resposta.text)
+    assert "pdf" in caixas, "o formulário deveria ser reexibido"
+    assert caixas["pdf"] is True
+    assert caixas["docx"] is False and caixas["all"] is False
+
+
 # --- Tarefa 6: openrouter removido -------------------------------------------
 
 
