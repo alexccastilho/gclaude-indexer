@@ -566,6 +566,33 @@ def _is_waiting_component(row) -> bool:
         return False
 
 
+def _may_hold_old_data(row) -> bool:
+    """Pré-filtro barato, pela linha lida no começo da varredura: só um
+    documento do índice (não ignorado, não cópia) pode ter dados antigos."""
+    try:
+        return row is not None and row["status"] not in ("skipped", "duplicate")
+    except (KeyError, IndexError):
+        return False
+
+
+def _holds_old_data(conn: sqlite3.Connection, relative_path: str) -> bool:
+    """O índice ainda guarda o que o arquivo era: ele não foi devolvido à
+    fila (`discovered`) pela atualização, ou foi mas ficou com páginas (o
+    estado que a 1.10.2 deixava, `update_plan.stale_page_paths`). Lido do
+    banco agora, não da linha do começo: um descarte anterior nesta mesma
+    varredura pode já ter mexido nele. Um documento que falhou (sem páginas)
+    também conta: quando a leitura der certo, as páginas dele deslocam as
+    janelas que vêm depois."""
+    row = conn.execute(
+        "SELECT status, EXISTS (SELECT 1 FROM page WHERE page.file_id = file.id) AS has_pages"
+        " FROM file WHERE relative_path = ?",
+        (relative_path,),
+    ).fetchone()
+    if row is None or row["status"] in ("skipped", "duplicate"):
+        return False
+    return row["status"] != "discovered" or bool(row["has_pages"])
+
+
 def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
     """Pages, full-text rows and converted intermediate of one file."""
     # Local imports: both modules import this one.
@@ -742,6 +769,20 @@ def _record_scanned_file(
 
         result.discovered += 1
     else:
+        if _may_hold_old_data(existing_row):
+            # A rede da atualização: o documento mudou e o índice ainda tem o
+            # que ele era (páginas, busca, janelas do grupo). Normalmente a
+            # atualização automática antes da varredura já descartou isso;
+            # quando ela não rodou ou não conseguiu ler o arquivo, a varredura
+            # descarta aqui, pela mesma rotina, antes de devolvê-lo à fila.
+            # Sem isso a extração parava em UNIQUE(page.file_id, page.number),
+            # ou as páginas novas caíam por baixo de janelas já classificadas.
+            writer.flush()  # `_apply` abre a própria transação
+            if _holds_old_data(writer.conn, relative_path):
+                from .invalidation import discard_changed_file  # importa este módulo
+
+                discard_changed_file(writer.conn, config, relative_path, name, size, language)
+
         def op(c) -> None:
             _update_file(
                 c, relative_path, name, extension_no_dot, size, file_hash,

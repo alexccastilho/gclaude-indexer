@@ -825,7 +825,29 @@ def build_update_plan(
             {"count": len(unverified), "names": ", ".join(unverified[:20])},
             language=language,
         )
+    return plan_from_changes(
+        conn, config, changes, unchanged, fingerprint, language=language,
+        record_warnings=record_warnings, unverified=tuple(unverified),
+    )
 
+
+def plan_from_changes(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    changes: list[FileChange],
+    unchanged: int,
+    fingerprint: str,
+    language: str | None = None,
+    record_warnings: bool = True,
+    unverified: tuple[str, ...] = (),
+) -> UpdatePlan:
+    """What invalidating `changes` would cost, from the index as it stands.
+
+    The half of `build_update_plan` that neither walks the folder nor reads
+    a byte (a new file of a size already indexed is the one exception, see
+    `_intended_membership`). The scan uses it alone for one changed file
+    whose old data the update did not get to discard
+    (`invalidation.discard_changed_file`)."""
     by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": [], "generated": []}
     for change in changes:
         by_kind[change.kind].append(change)
@@ -937,5 +959,5 @@ def build_update_plan(
         unchanged_count=unchanged,
         fingerprint=fingerprint,
         generated=tuple(by_kind["generated"]),
-        unverified=tuple(unverified),
+        unverified=unverified,
     )
