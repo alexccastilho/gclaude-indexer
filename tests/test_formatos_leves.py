@@ -1096,3 +1096,152 @@ def test_doc_antigo_dentro_do_p7m_e_ignorado_como_binario(tmp_path):
     linha = _arquivo(conn, "velho.doc.p7m")
     assert linha["status"] == "skipped" and linha["error"] == "binary"
     conn.close()
+
+
+# --- tetos contra pacote malicioso (bomba de descompressão, amplificação) -------------------------
+
+
+def _com_tamanho_declarado(dados: bytes, nome: bytes, tamanho: int) -> bytes:
+    """O ZIP com o tamanho descompactado de um membro adulterado no diretório
+    central, como faz uma bomba: o arquivo é pequeno, o declarado é enorme."""
+    posicao = 0
+    while True:
+        posicao = dados.index(b"PK\x01\x02", posicao)
+        comprimento_nome = struct.unpack_from("<H", dados, posicao + 28)[0]
+        if dados[posicao + 46: posicao + 46 + comprimento_nome] == nome:
+            break
+        posicao += 4
+    return dados[: posicao + 24] + struct.pack("<I", tamanho) + dados[posicao + 28:]
+
+
+def test_text_s_com_repeticao_absurda_e_limitado(tmp_path):
+    corpo = (
+        '<office:body><office:text><text:p>a<text:s text:c="100000000"/>b'
+        '<text:s text:c="abc"/>c</text:p></office:text></office:body>'
+    )
+    arquivo = tmp_path / "bomba.odt"
+    arquivo.write_bytes(_odf_zip(corpo, "application/vnd.oasis.opendocument.text"))
+
+    texto = light_formats.extract_text_opendocument(arquivo)
+
+    assert texto == "a" + " " * light_formats._MAX_REPEATED_SPACES + "b c"
+
+
+def test_texto_do_opendocument_tem_teto(tmp_path, monkeypatch):
+    corpo = "<office:body><office:text>" + "<text:p>linha de texto qualquer</text:p>" * 50 + "</office:text></office:body>"
+    arquivo = tmp_path / "grande.odt"
+    arquivo.write_bytes(_odf_zip(corpo, "application/vnd.oasis.opendocument.text"))
+    monkeypatch.setattr(light_formats, "_MAX_TEXT_CHARS", 200)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+
+
+def test_mimetype_que_declara_tamanho_enorme_e_recusado():
+    zip_ok = io.BytesIO()
+    with zipfile.ZipFile(zip_ok, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text", compress_type=zipfile.ZIP_STORED)
+        z.writestr("content.xml", "<x/>")
+    adulterado = _com_tamanho_declarado(zip_ok.getvalue(), b"mimetype", 0x7FFFFFFF)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.sniff_content_type(adulterado)
+
+
+def test_mimetype_grande_de_verdade_tambem_e_recusado():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text" + " " * 5000)
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.sniff_content_type(buffer.getvalue())
+
+
+def test_content_xml_que_declara_tamanho_enorme_e_recusado(tmp_path):
+    arquivo = tmp_path / "bomba.odt"
+    arquivo.write_bytes(_com_tamanho_declarado(
+        _odf_zip(_ODF_CORPO_TEXTO, "application/vnd.oasis.opendocument.text"), b"content.xml", 0x7FFFFFFF,
+    ))
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+
+
+def test_pacote_com_membros_demais_e_recusado(tmp_path, monkeypatch):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text", compress_type=zipfile.ZIP_STORED)
+        z.writestr("content.xml", "<x/>")
+        for numero in range(10):
+            z.writestr(f"extra{numero}.txt", "x")
+    arquivo = tmp_path / "muitos.odt"
+    arquivo.write_bytes(buffer.getvalue())
+    monkeypatch.setattr(light_formats, "_MAX_ZIP_MEMBERS", 5)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.sniff_content_type(buffer.getvalue())
+
+
+def test_pacote_ooxml_acima_do_orcamento_total_e_recusado(tmp_path, monkeypatch):
+    arquivo = tmp_path / "modelo.dotx"
+    arquivo.write_bytes(_com_outro_tipo(
+        _docx_bytes(), _WORD, "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+    ))
+    monkeypatch.setattr(light_formats, "_MAX_ZIP_TOTAL_BYTES", 500)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.open_docx(arquivo)
+
+
+def test_membro_ooxml_acima_do_teto_e_recusado(tmp_path, monkeypatch):
+    arquivo = tmp_path / "modelo.docm"
+    arquivo.write_bytes(_com_outro_tipo(
+        _docx_bytes(), _WORD, "application/vnd.ms-word.document.macroEnabled.main+xml",
+    ))
+    monkeypatch.setattr(light_formats, "_MAX_ZIP_MEMBER_BYTES", 200)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.open_docx(arquivo)
+
+
+def test_compressao_suspeita_e_recusada(monkeypatch):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("content.xml", b"\0" * (3 * 1024 * 1024))  # 3 MB que cabem em ~3 KB
+    monkeypatch.setattr(light_formats, "_MAX_COMPRESSION_RATIO", 100)
+
+    with zipfile.ZipFile(buffer) as archive:
+        with pytest.raises(light_formats.LightFormatError):
+            light_formats._read_member(archive, "content.xml")
+
+
+def test_bomba_vira_erro_do_arquivo_e_o_resto_segue(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path, ["opendocument", "text"])
+    (origem / "bomba.odt").write_bytes(_com_tamanho_declarado(
+        _odf_zip(_ODF_CORPO_TEXTO, "application/vnd.oasis.opendocument.text"), b"content.xml", 0x7FFFFFFF,
+    ))
+    (origem / "nota.txt").write_text("segue valendo", encoding="utf-8")
+    scan(conn, config)
+
+    resultado = convert(conn, config)
+
+    assert resultado.failed == 1 and resultado.converted == 1
+    linha = _arquivo(conn, "bomba.odt")
+    assert linha["status"] == "failed" and "grande demais" in linha["error"]
+    conn.close()
+
+
+def test_p7m_com_zip_bomba_dentro_falha_sem_alocar(tmp_path):
+    origem, saida, config, conn = _projeto(tmp_path, ["assinados"])
+    zip_ok = io.BytesIO()
+    with zipfile.ZipFile(zip_ok, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text", compress_type=zipfile.ZIP_STORED)
+        z.writestr("content.xml", "<x/>")
+    bomba = _com_tamanho_declarado(zip_ok.getvalue(), b"mimetype", 0x7FFFFFFF)
+    (origem / "bomba.odt.p7m").write_bytes(_assinar(bomba))
+    scan(conn, config)
+
+    assert convert(conn, config).failed == 1
+    assert _arquivo(conn, "bomba.odt.p7m")["status"] == "failed"
+    conn.close()
