@@ -71,6 +71,17 @@ def run(source: Path, output: Path, engine: str = "rules", model: str = "automat
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_dir():
         raise SystemExit(f"Pasta de origem não encontrada: {source}")
+
+    # Mesma regra da tela: saída fora da origem, em pasta vazia ou que já é
+    # um projeto. Antes de criar qualquer pasta.
+    from gclaude_indexer.i18n import DEFAULT_LANGUAGE, translate
+    from gclaude_indexer.paths import check_new_project_folders
+
+    problemas = check_new_project_folders(str(source), str(output))
+    if problemas:
+        raise SystemExit("; ".join(
+            translate(DEFAULT_LANGUAGE, erro.key, **erro.params) for erro in problemas
+        ))
     output.mkdir(parents=True, exist_ok=True)
 
     config = load_config({

@@ -16,6 +16,7 @@ validated to prevent escaping it (including via `..`), per section 7.
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 from pathlib import Path
@@ -81,3 +82,159 @@ def natural_sort_key(text: str) -> list[int | str]:
     must agree on what that position is.
     """
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+
+
+# --- Pastas de um projeto novo (2.0.0) ---------------------------------------
+
+# A pasta de saída sugerida é irmã da origem: `<pai>\<nome>-AI`. Ela nunca
+# fica dentro da origem, senão o próprio índice gerado seria lido como
+# documento do acervo na reindexação.
+OUTPUT_FOLDER_SUFFIX = "AI"
+PROJECT_DB_NAME = "project.db"
+_WRITE_PROOF_NAME = ".gclaude-escrita-teste"
+
+
+def _normalize_folder(text: str) -> Path | None:
+    """Caminho absoluto e resolvido, ou `None` se o texto não for absoluto.
+
+    `H:XYZ` (unidade sem barra) é relativo ao diretório corrente daquela
+    unidade e, resolvido, cairia numa pasta qualquer; por isso é recusado
+    em vez de "consertado". O Windows descarta ponto e espaço no fim do
+    último componente ao criar a pasta, então `resolve` sozinho deixaria
+    `Acervo.` e `Acervo` parecerem pastas diferentes."""
+    text = (text or "").strip()
+    if not text or not Path(text).is_absolute():
+        return None
+    path = Path(text).resolve(strict=False)
+    stripped = path.name.rstrip(" .")
+    if stripped and stripped != path.name:
+        path = path.with_name(stripped)
+    return path
+
+
+def _key(path: Path) -> Path:
+    # Maiúsculas/minúsculas não distinguem pastas no Windows.
+    return Path(os.path.normcase(str(path)))
+
+
+def _same_folder(a: Path, b: Path) -> bool:
+    if _key(a) == _key(b):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    """`child` está em `parent` (ou é ele). Compara os caminhos resolvidos e,
+    para pegar junctions, links e nomes curtos 8.3, também cada ancestral
+    existente de `child` com `os.path.samefile`. Unidades diferentes nunca
+    se contêm."""
+    if _key(child).is_relative_to(_key(parent)):
+        return True
+    for ancestor in (child, *child.parents):
+        if ancestor.exists() and parent.exists() and _same_folder(ancestor, parent):
+            return True
+    return False
+
+
+def _is_root(path: Path) -> bool:
+    # Raiz de unidade (`H:\`) ou de compartilhamento UNC (`\\srv\share`):
+    # `anchor` cobre os dois e não existe pasta-irmã de uma raiz.
+    return path == Path(path.anchor)
+
+
+def _is_free(path: Path) -> bool:
+    if not path.exists():
+        return True
+    try:
+        return path.is_dir() and not any(path.iterdir())
+    except OSError:
+        return False
+
+
+def suggest_output_folder(source: str) -> str | None:
+    """`<pai>/<nome>-AI`, ou `-AI-2`, `-AI-3`... se já existir e não estiver
+    vazia. `None` para origem que não é caminho absoluto ou é raiz."""
+    origin = _normalize_folder(source)
+    if origin is None or _is_root(origin):
+        return None
+    base = f"{origin.name}-{OUTPUT_FOLDER_SUFFIX}"
+    candidate = origin.parent / base
+    number = 2
+    while not _is_free(candidate):
+        candidate = origin.parent / f"{base}-{number}"
+        number += 1
+    return str(candidate)
+
+
+def check_new_project_folders(source: str, output: str) -> list:
+    """Regras de pasta da *criação* de um projeto. Fica de fora de
+    `config._validate` de propósito (devolve `ConfigErrorMessage`): aquela roda a cada abertura de projeto,
+    e um projeto criado na 1.10 com a saída dentro da origem tem de seguir
+    abrindo."""
+    origin = _normalize_folder(source)
+    destination = _normalize_folder(output)
+    # Importado aqui, e por nome: este módulo é copiado sozinho para o leitor
+    # de sensores elevado (`sensor_service.HELPER_MODULES`), que não tem
+    # `config`, e o teste dessa lista procura as importações relativas do arquivo.
+    ConfigErrorMessage = importlib.import_module(f"{__package__}.config").ConfigErrorMessage
+
+    errors: list = []
+    if origin is None:
+        errors.append(ConfigErrorMessage("config_error.output_not_absolute", {"path": source}))
+    if destination is None:
+        errors.append(ConfigErrorMessage("config_error.output_not_absolute", {"path": output}))
+    if origin is None or destination is None:
+        return errors
+
+    if _is_root(origin):
+        return [ConfigErrorMessage("config_error.source_is_drive_root", {"path": str(origin)})]
+
+    if _same_folder(destination, origin):
+        return [ConfigErrorMessage("config_error.output_same_as_source", {"path": str(destination)})]
+    if _is_inside(destination, origin):
+        return [ConfigErrorMessage("config_error.output_inside_source", {"path": str(destination)})]
+    if _is_inside(origin, destination):
+        return [ConfigErrorMessage("config_error.source_inside_output", {"path": str(destination)})]
+
+    if destination.exists() and not (destination / PROJECT_DB_NAME).exists():
+        if not destination.is_dir():
+            return [ConfigErrorMessage("config_error.output_not_writable", {"path": str(destination)})]
+        if not _is_free(destination):
+            return [
+                ConfigErrorMessage(
+                    "config_error.output_not_empty",
+                    {"path": str(destination), "suggestion": suggest_output_folder(str(origin)) or ""},
+                )
+            ]
+    return []
+
+
+def ensure_writable_folder(folder: str) -> bool:
+    """Cria a pasta (se faltar) e prova que dá para gravar nela. Devolve se
+    foi *criada agora*, para o chamador desfazer se o resto falhar. Levanta
+    `OSError` (sem permissão, unidade ausente, nome inválido)."""
+    path = Path(folder)
+    created = not path.exists()
+    path.mkdir(parents=True, exist_ok=True)
+    proof = path / _WRITE_PROOF_NAME
+    try:
+        proof.write_text("", encoding="utf-8")
+    except OSError:
+        if created:
+            _remove_if_empty(path)
+        raise
+    try:
+        proof.unlink()
+    except OSError:
+        pass
+    return created
+
+
+def _remove_if_empty(path: Path) -> None:
+    try:
+        path.rmdir()  # só remove pasta vazia
+    except OSError:
+        pass

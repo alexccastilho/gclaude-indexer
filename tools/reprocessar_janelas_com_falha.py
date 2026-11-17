@@ -24,7 +24,8 @@ Uso:
     python reprocessar_janelas_com_falha.py "<pasta>" --aplicar
 
 Sem `--aplicar` ele não escreve nada: lista o que faria e para. A pasta de
-saída é a que termina em `_indexado`, a mesma que contém `project.db`.
+saída é a que contém `project.db` (por padrão, a pasta ao lado da origem com
+`-AI` no final).
 """
 
 from __future__ import annotations
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not banco.exists():
         print(f"ERRO: não achei {banco}", file=sys.stderr)
-        print("A pasta de saída é a que termina em '_indexado'.", file=sys.stderr)
+        print("A pasta de saída é a que contém o project.db (por padrão, termina em '-AI').", file=sys.stderr)
         return 1
 
     conn = sqlite3.connect(banco)

@@ -1,11 +1,25 @@
 {# `required` only on the New project form's own fields. The shared
    catalog folder reuses this same fragment and must stay clearable: an
    empty value there means "go back to the machine-local catalog", and a
-   `required` input would refuse to submit it. #}
+   `required` input would refuse to submit it. A saída (`output_folder`)
+   tem fragmento próprio e não é `required`: em branco vale a sugestão. #}
+{% if field == "output_folder" %}
+{% include "_output_field.html" %}
+{% else %}
 <input type="text" id="{{ field }}" name="{{ form_field_name }}" value="{{ value }}"
-       {% if field == "source_folder" %}oninput="adjustDefaultOutputFolder()"{% endif %}
+       {% if field == "source_folder" %}
+       hx-post="/projects/suggest-output" hx-trigger="input changed delay:500ms"
+       hx-target="#output_folder_group" hx-swap="innerHTML"
+       hx-include="#source_folder, #output_touched"
+       {% endif %}
        {% if field != "shared_catalog_folder" %}required{% endif %}>
 <button type="button"
         hx-post="/select-folder" hx-target="#{{ field }}_group" hx-swap="innerHTML"
         hx-vals='{"field": "{{ field }}"}'
-        hx-include="#{{ field }}">{{ t('new_project.browse') }}</button>
+        hx-include="#{{ field }}{% if field == 'source_folder' %}, #output_touched{% endif %}">{{ t('new_project.browse') }}</button>
+{% if output_suggestion %}
+<div id="output_folder_group" hx-swap-oob="innerHTML">
+  {% with value=output_suggestion, touched="" %}{% include "_output_field.html" %}{% endwith %}
+</div>
+{% endif %}
+{% endif %}
