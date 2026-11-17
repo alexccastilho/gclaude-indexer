@@ -54,6 +54,7 @@ from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
 from .windows_prep import sanitize_group_name, window_key, window_spans
+from .worker_pool import CallTimedOut, call_with_deadline, deadline_for_size
 
 
 class SourceFolderUnavailable(RuntimeError):
@@ -110,6 +111,18 @@ def stale_page_paths(conn: sqlite3.Connection) -> set[str]:
             " AND EXISTS (SELECT 1 FROM page WHERE page.file_id = file.id)"
         )
     }
+
+
+def _hash_or_none(path: Path, size: int) -> str | None:
+    """`compute_hash` com o prazo que a varredura dá à mesma leitura
+    (`scanning._scan_files`). `None` quando o arquivo não pode ser lido a
+    tempo: um placeholder do Drive só na nuvem, numa máquina sem rede, nunca
+    responde ou lança `OSError`. Sem o prazo, ele travava para sempre a
+    varredura da tela de execução e a tela de atualização."""
+    try:
+        return call_with_deadline(compute_hash, path, deadline=deadline_for_size(size))
+    except (OSError, CallTimedOut):
+        return None
 
 
 def detect_changes(
@@ -248,7 +261,11 @@ def detect_changes(
             continue
 
         # Size or time moved. Only now is reading the bytes worth it.
-        if compute_hash(path) == row["sha256"]:
+        # Ilegível conta como inalterado, como na varredura, que deixa o
+        # arquivo intocado e o olha de novo na próxima vez: chamá-lo de
+        # alterado apagaria as páginas de um documento que ninguém leu.
+        file_hash = _hash_or_none(path, size)
+        if file_hash is None or file_hash == row["sha256"]:
             unchanged += 1
             continue
 

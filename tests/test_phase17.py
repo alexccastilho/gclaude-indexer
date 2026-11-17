@@ -258,6 +258,61 @@ def test_mtime_reescrito_pelo_drive_sem_mudar_conteudo_nao_e_alteracao(tmp_path)
     assert inalterados == 1
 
 
+def _plano_com_data_mexida(tmp_path):
+    """Um arquivo indexado cuja data mudou: o plano precisa ler os bytes."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", 1.0)
+    return conn, _config(origem, saida)
+
+
+def test_arquivo_que_nao_abre_nao_derruba_o_plano(tmp_path, monkeypatch):
+    """Placeholder do Drive só na nuvem, sem rede: a leitura lança OSError.
+    O plano segue e conta o arquivo como inalterado, como a varredura, que o
+    deixa intocado e tenta de novo na próxima vez."""
+    from gclaude_indexer import update_plan
+
+    conn, config = _plano_com_data_mexida(tmp_path)
+
+    def _sem_rede(_caminho):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(update_plan, "compute_hash", _sem_rede)
+    mudancas, inalterados, _ = detect_changes(conn, config)
+
+    assert mudancas == []
+    assert inalterados == 1
+
+
+def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
+    """A mesma leitura com o prazo da varredura (`deadline_for_size`): um
+    arquivo que o Drive nunca entrega custa o prazo, não a tela inteira."""
+    import threading
+
+    from gclaude_indexer import update_plan
+
+    conn, config = _plano_com_data_mexida(tmp_path)
+    solta = threading.Event()
+
+    def _travado(_caminho):
+        solta.wait(30)
+        return "nunca"
+
+    monkeypatch.setattr(update_plan, "compute_hash", _travado)
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 0.2)
+    try:
+        mudancas, inalterados, _ = detect_changes(conn, config)
+    finally:
+        solta.set()
+
+    assert mudancas == []
+    assert inalterados == 1
+
+
 def test_novo_alterado_e_removido_sao_detectados(tmp_path):
     origem = tmp_path / "origem"
     origem.mkdir()
