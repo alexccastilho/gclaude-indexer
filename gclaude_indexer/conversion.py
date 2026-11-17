@@ -1440,7 +1440,9 @@ def component_ready(extension: str) -> bool:
     É a mesma pergunta que a conversão faz antes de marcar o arquivo como
     `component_unavailable`; se as duas discordassem, o plano de
     atualização apontaria o arquivo, a conversão o marcaria de novo, e o
-    grupo perderia as janelas em toda execução (revisão final, I1)."""
+    grupo perderia as janelas em toda execução (revisão final, I1). Com a
+    resposta `False`, o plano deixa o arquivo em espera quieto mesmo que
+    ele tenha sido editado, sem ler os bytes (`update_plan.detect_changes`)."""
     category = category_of_extension("." + extension.lstrip("."))
     if category == LEGACY_CATEGORY:
         return legacy_office.soffice_path() is not None
@@ -1460,7 +1462,10 @@ def _waiting_component(row, windowed: set[str]) -> bool:
     novas entrariam no meio do grupo sem que as janelas fossem refeitas.
     Quem o traz de volta é o plano de atualização, que só o aponta quando
     o componente está nesta máquina (`update_plan.detect_changes`) e
-    então refaz as janelas do grupo junto."""
+    então refaz as janelas do grupo junto. Editado enquanto espera, ele
+    continua em espera: a varredura grava só os bytes novos
+    (`scanning._record_scanned_file`), para que nada o tire daqui sem
+    passar pelo plano."""
     return (
         row["status"] == "skipped"
         and row["error"] == REASON_COMPONENT_UNAVAILABLE
