@@ -452,19 +452,6 @@ def test_prompt_local_explica_o_tachado_so_quando_ha_tachado():
         assert "tachado" not in construir(sem)
 
 
-@pytest.mark.parametrize("idioma, palavra", [("pt", "tachado"), ("en", "struck"), ("es", "tachado")])
-def test_claude_md_explica_o_tachado_nos_tres_idiomas(tmp_path, idioma, palavra):
-    from gclaude_indexer.windows_prep import generate_claude_md
-
-    config = load_config({
-        "name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "saida"),
-    })
-    (tmp_path / "saida").mkdir()
-    texto = generate_claude_md(config, idioma).read_text(encoding="utf-8")
-    assert "~~" in texto
-    assert palavra in texto.lower()
-
-
 @pytest.mark.parametrize("idioma", ["pt", "en", "es"])
 def test_instrucoes_do_projeto_explicam_o_tachado_quando_o_acervo_tem(tmp_path, idioma):
     from gclaude_indexer.artifacts import generate_project_instructions_md

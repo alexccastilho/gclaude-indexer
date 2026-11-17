@@ -24,7 +24,7 @@ from gclaude_indexer.events import list_events
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.i18n import translate
 from gclaude_indexer.scanning import scan
-from gclaude_indexer.windows_prep import prepare_windows, write_missing_window_files
+from gclaude_indexer.windows_prep import prepare_windows
 
 from .test_phase4 import _criar_pdf, _preparar_projeto
 
@@ -164,25 +164,12 @@ def _projeto_com_paginas(tmp_path, motor="automatic"):
     return origem, saida, config, conn
 
 
-def test_janelas_sem_arquivos_txt_quando_o_motor_nao_e_o_claude_code(tmp_path):
+def test_janelas_nunca_escrevem_arquivos_txt(tmp_path):
+    """2.0.0: nenhum motor lê `windows/*.txt` (o do Claude Code foi removido)."""
     _, saida, config, conn = _projeto_com_paginas(tmp_path)
     resultado = prepare_windows(conn, config)
     assert resultado.created > 0
-    assert not list((saida / "windows").glob("*.txt"))
-    conn.close()
-
-
-def test_janelas_com_arquivos_txt_para_o_claude_code_e_os_que_faltarem(tmp_path):
-    _, saida, config, conn = _projeto_com_paginas(tmp_path, motor="claude_code")
-    resultado = prepare_windows(conn, config)
-    arquivos = sorted((saida / "windows").glob("*.txt"))
-    assert len(arquivos) == resultado.created
-
-    # Motor trocado depois da etapa: o que faltar é escrito na preparação.
-    arquivos[0].unlink()
-    assert write_missing_window_files(conn, config) == 1
-    assert arquivos[0].is_file()
-    assert write_missing_window_files(conn, config) == 0
+    assert not (saida / "windows").exists() or not list((saida / "windows").glob("*.txt"))
     conn.close()
 
 

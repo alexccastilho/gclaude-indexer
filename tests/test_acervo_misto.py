@@ -16,7 +16,6 @@ Três defeitos presos aqui, todos vistos num acervo de legislação do Planalto
 
 from __future__ import annotations
 
-from dataclasses import replace
 
 import fitz
 
@@ -236,30 +235,3 @@ def test_motor_local_por_pagina_nunca_junta_dois_arquivos_de_documento_inteiro()
     pecas = _group_pages_into_items(paginas, respostas)
     assert [p.files for p in pecas] == [["l1.htm"], ["l2.htm"]]
     assert [p.start_order for p in pecas] == [1, 2]
-
-
-def test_janela_do_claude_code_traz_a_posicao_de_cada_pagina(tmp_path):
-    origem, saida, config, conn = _projeto(tmp_path)
-    for n in (1, 2):
-        (origem / "Leis" / f"l{n}.htm").write_text(_lei(str(n), "1 DE MAIO DE 2010", "Dispõe."), encoding="utf-8")
-    scan(conn, config)
-    convert(conn, config)
-    extract_pages(conn, config)
-    # 1.5.8: os `.txt` das janelas só são escritos para o motor Claude Code.
-    prepare_windows(conn, replace(config, classification_engine="claude_code"))
-
-    janela = next((saida / "windows").glob("*.txt")).read_text(encoding="utf-8")
-    assert "--- p. 1 (l1.htm) [#1] ---" in janela
-    assert "--- p. 1 (l2.htm) [#2] ---" in janela
-    conn.close()
-
-
-def test_claude_md_manda_usar_a_posicao_e_separar_arquivos(tmp_path):
-    from gclaude_indexer.windows_prep import generate_claude_md
-
-    config = load_config({"name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "s")})
-    (tmp_path / "s").mkdir()
-    for idioma in ("pt", "en", "es"):
-        texto = generate_claude_md(config, idioma).read_text(encoding="utf-8")
-        assert "[#" in texto
-        assert ".htm" in texto

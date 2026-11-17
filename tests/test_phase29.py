@@ -228,7 +228,8 @@ def test_preparar_janelas_nao_apaga_arquivo_que_nao_existe(tmp_path, monkeypatch
     conn.close()
 
 
-def test_preparar_janelas_apaga_sobra_que_existe(tmp_path):
+def test_preparar_janelas_nao_mexe_na_pasta_windows(tmp_path):
+    """2.0.0: sobras de `windows/` são limpas por "Importar e gerar" (com Parar), não aqui."""
     _, saida, config, conn = _projeto_com_paginas(tmp_path)
     pasta = saida / "windows"
     pasta.mkdir(parents=True, exist_ok=True)
@@ -238,7 +239,7 @@ def test_preparar_janelas_apaga_sobra_que_existe(tmp_path):
     sobra = pasta / f"{sanitize_group_name(grupo)}_j0001-0003.txt"
     sobra.write_text("texto velho", encoding="utf-8")
     prepare_windows(conn, config)
-    assert not sobra.exists()
+    assert sobra.exists()
     conn.close()
 
 

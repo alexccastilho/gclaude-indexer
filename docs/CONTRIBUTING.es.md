@@ -14,9 +14,8 @@ El nombre del proyecto menciona a Claude, pero **Claude Code es opcional**, tant
 
 - `rules`: determinista, no exige ninguna herramienta externa.
 - `local`: usa un modelo de Ollama que corre localmente.
-- `claude_code`: delega la clasificación a Claude Code, para quien ya lo tiene instalado.
 
-Los motores `rules` y `local` bastan para ejecutar el flujo completo y trabajar en casi todo este repositorio. Solo necesita Claude Code si está tocando `gclaude_indexer/engine_claude_code.py` o `gclaude_indexer/claude_package.py`, y aun así la suite de pruebas simula la llamada al subproceso. No hace falta tener Claude Code instalado para ejecutar las pruebas.
+Los motores `rules` y `local` bastan para ejecutar el flujo completo y trabajar en casi todo este repositorio. Solo necesita Claude Code si está tocando `gclaude_indexer/claude_package.py`, y aun así la suite de pruebas simula la llamada al subproceso. No hace falta tener Claude Code instalado para ejecutar las pruebas.
 
 ## Preparar el entorno
 

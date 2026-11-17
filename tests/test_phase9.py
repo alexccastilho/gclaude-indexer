@@ -230,41 +230,68 @@ def test_log_atualiza_lendo_a_tabela_evento(cliente, tmp_path):
     assert "varredura" in com_eventos.text  # texto traduzido em `log.scan.summary` (chave `pt`)
 
 
-def test_caixa_claude_code_so_aparece_quando_o_motor_e_claude_code(cliente, tmp_path):
-    id_regras = _criar_projeto(cliente, tmp_path, nome="Projeto Regras", classification_engine="rules")
-    id_cc = _criar_projeto(cliente, tmp_path, nome="Projeto ClaudeCode", classification_engine="claude_code")
+def _gravar_motor_antigo(projeto_id: int, motor: str) -> None:
+    """Deixa o projeto salvo com `motor` em `config_json`, como um da 1.x."""
+    import json
+    import sqlite3
+    from pathlib import Path
 
-    tela_regras = cliente.get(f"/projects/{id_regras}/run").text
-    tela_cc = cliente.get(f"/projects/{id_cc}/run").text
+    from gclaude_indexer.catalog import find_project
 
-    assert "processe as janelas" not in tela_regras
-    assert "processe as janelas" in tela_cc
-    assert "Reverificar se as janelas acabaram" in tela_cc
+    banco = Path(find_project(projeto_id).output_folder) / "project.db"
+    conn = sqlite3.connect(banco)
+    dados = json.loads(conn.execute("SELECT config_json FROM project").fetchone()[0])
+    dados["classification_engine"] = motor
+    conn.execute("UPDATE project SET config_json = ?", (json.dumps(dados),))
+    conn.commit()
+    conn.close()
 
 
-def test_reverificar_claude_code_apos_pecas_brutas_manual(cliente, tmp_path):
+def test_projeto_salvo_com_claude_code_abre_e_vira_automatico(cliente, tmp_path):
+    from gclaude_indexer.catalog import find_project
+    from gclaude_indexer.project import load_project
+
+    projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto Antigo", classification_engine="rules")
+    _gravar_motor_antigo(projeto_id, "claude_code")
+
+    tela = cliente.get(f"/projects/{projeto_id}/run")
+
+    assert tela.status_code == 200
+    assert "processe as janelas" not in tela.text
+    assert "Reverificar" not in tela.text
+    config, conn = load_project(find_project(projeto_id).output_folder)
+    assert config.classification_engine == "automatic"
+    avisos = conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.project.classification_engine_converted'"
+    ).fetchone()[0]
+    conn.close()
+    assert avisos == 1  # aviso único, mesmo com várias aberturas
+    # Gravado: a próxima abertura já encontra "automatic" no banco.
+    cliente.get(f"/projects/{projeto_id}/run")
+    config, conn = load_project(find_project(projeto_id).output_folder)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.project.classification_engine_converted'"
+    ).fetchone()[0] == 1
+    conn.close()
+
+
+def test_janelas_ja_respondidas_no_claude_code_nao_sao_refeitas(cliente, tmp_path):
     import json
     from pathlib import Path
 
     from gclaude_indexer.catalog import find_project
     from gclaude_indexer.project import load_project
 
-    projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto CC Sync", classification_engine="claude_code")
-    cliente.post(f"/projects/{projeto_id}/run-next")  # varredura
-    _esperar_etapa_terminar(projeto_id, "scan")
-    cliente.post(f"/projects/{projeto_id}/run-next")  # conversão
-    _esperar_etapa_terminar(projeto_id, "conversion")
-    cliente.post(f"/projects/{projeto_id}/run-next")  # extração
-    _esperar_etapa_terminar(projeto_id, "extraction")
-    cliente.post(f"/projects/{projeto_id}/run-next")  # janelas
-    _esperar_etapa_terminar(projeto_id, "windows")
+    projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto CC Sync", classification_engine="rules")
+    for etapa in ("scan", "conversion", "extraction", "windows"):
+        cliente.post(f"/projects/{projeto_id}/run-next")
+        _esperar_etapa_terminar(projeto_id, etapa)
 
     entry = find_project(projeto_id)
     config, conn = load_project(entry.output_folder)
     chave = conn.execute("SELECT key FROM window").fetchone()["key"]
     agrupador = conn.execute("SELECT group_key FROM window").fetchone()["group_key"]
     conn.close()
-
     peca = {
         "window": chave, "group": agrupador, "ref_start": "f. 1", "ref_end": "f. 1",
         "order_start": 1, "order_end": 1, "type": "OFÍCIO", "date": "2024-01-10", "author": None,
@@ -272,9 +299,18 @@ def test_reverificar_claude_code_apos_pecas_brutas_manual(cliente, tmp_path):
         "confidence": "high", "files": "peca.pdf",
     }
     (Path(entry.output_folder) / "raw_items.jsonl").write_text(json.dumps(peca) + "\n", encoding="utf-8")
+    _gravar_motor_antigo(projeto_id, "claude_code")
 
-    resposta = cliente.post(f"/projects/{projeto_id}/claude-code/recheck")
-    assert "1 feita(s), 0 pendente(s)" in resposta.text
+    config, conn = load_project(entry.output_folder)
+    status = conn.execute("SELECT status FROM window WHERE key = ?", (chave,)).fetchone()["status"]
+    conn.close()
+    assert config.classification_engine == "automatic"
+    assert status == "done"
+
+
+def test_rota_de_reverificar_do_claude_code_nao_existe_mais(cliente, tmp_path):
+    projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto Rota", classification_engine="rules")
+    assert cliente.post(f"/projects/{projeto_id}/claude-code/recheck").status_code in (404, 405)
 
 
 # --- tela: Resultado -----------------------------------------------------
@@ -321,3 +357,94 @@ def test_resultado_antes_de_qualquer_execucao_avisa_artefato_ausente(cliente, tm
     projeto_id = _criar_projeto(cliente, tmp_path)
     resposta = cliente.get(f"/projects/{projeto_id}/result")
     assert "Ainda não gerado" in resposta.text
+
+
+# --- 2.0.0: sobras do motor Claude Code ------------------------------------
+
+
+def test_formulario_recusa_o_motor_claude_code(cliente, tmp_path):
+    origem = tmp_path / "origem_cc"
+    origem.mkdir()
+    resposta = cliente.post(
+        "/projects/new",
+        data={
+            "name": "CC", "subject": "x", "source_folder": str(origem),
+            "output_folder": str(tmp_path / "saida_cc"), "collection_type": "processo",
+            "group_mode": "subfolder", "group_pattern": "", "extensions": ["pdf"],
+            "classification_engine": "claude_code",
+        },
+        follow_redirects=False,
+    )
+    assert resposta.status_code == 400
+
+
+def test_limpeza_das_janelas_so_toca_nomes_no_padrao(tmp_path):
+    from gclaude_indexer.windows_prep import cleanup_legacy_window_files
+
+    janelas = tmp_path / "windows"
+    janelas.mkdir()
+    antigos = ["volume_1_j0001-0016.txt", "volume_1_j0015-0030.txt", "grupo_x_j00001-00016.txt"]
+    ficam = ["notas.txt", "volume_1_j1-16.txt", "volume_1_j0001-0016.txt.bak", "leia.md"]
+    for nome in antigos + ficam:
+        (janelas / nome).write_text("x", encoding="utf-8")
+    (janelas / "pasta_j0001-0002.txt").mkdir()  # diretório com nome no padrão não é arquivo
+
+    assert cleanup_legacy_window_files(tmp_path) == len(antigos)
+
+    assert sorted(p.name for p in janelas.iterdir()) == sorted(ficam + ["pasta_j0001-0002.txt"])
+
+
+def test_limpeza_das_janelas_remove_a_pasta_so_quando_fica_vazia(tmp_path):
+    from gclaude_indexer.windows_prep import cleanup_legacy_window_files
+
+    janelas = tmp_path / "windows"
+    janelas.mkdir()
+    (janelas / "a_j0001-0016.txt").write_text("x", encoding="utf-8")
+    assert cleanup_legacy_window_files(tmp_path) == 1
+    assert not janelas.exists()
+    assert cleanup_legacy_window_files(tmp_path) == 0  # sem pasta, nada a fazer
+
+    janelas.mkdir()
+    (janelas / "a_j0001-0016.txt").write_text("x", encoding="utf-8")
+    (janelas / "meu.docx").write_text("do usuário", encoding="utf-8")
+    assert cleanup_legacy_window_files(tmp_path) == 1
+    assert (janelas / "meu.docx").read_text(encoding="utf-8") == "do usuário"
+
+
+def test_limpeza_das_janelas_respeita_o_parar(tmp_path):
+    from gclaude_indexer.windows_prep import cleanup_legacy_window_files
+
+    janelas = tmp_path / "windows"
+    janelas.mkdir()
+    (janelas / "a_j0001-0016.txt").write_text("x", encoding="utf-8")
+
+    assert cleanup_legacy_window_files(tmp_path, should_stop=lambda: True) == 0
+    assert (janelas / "a_j0001-0016.txt").exists()
+
+
+def test_importar_e_gerar_limpa_as_janelas_antigas_e_escreve_o_claude_md(cliente, tmp_path):
+    from pathlib import Path
+
+    from gclaude_indexer.catalog import find_project
+
+    projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto Limpeza")
+    saida = Path(find_project(projeto_id).output_folder)
+    janelas = saida / "windows"
+    janelas.mkdir()
+    (janelas / "volume_1_j0001-0016.txt").write_text("velho", encoding="utf-8")
+    (saida / "CLAUDE.md").write_text(
+        "# GClaude Indexer — classificação das janelas (X)" + chr(10) + "motor `claude_code`" + chr(10),
+        encoding="utf-8",
+    )
+    for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
+        cliente.post(f"/projects/{projeto_id}/run-next")
+        _esperar_etapa_terminar(projeto_id, etapa)
+
+    cliente.post(f"/projects/{projeto_id}/import-and-generate", follow_redirects=False)
+    fim = time.monotonic() + 30
+    while time.monotonic() < fim and (janelas.exists() or "buscar.bat" not in (saida / "CLAUDE.md").read_text(encoding="utf-8")):
+        time.sleep(0.1)
+
+    assert not janelas.exists()
+    texto = (saida / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "buscar.bat" in texto and "claude_code" not in texto

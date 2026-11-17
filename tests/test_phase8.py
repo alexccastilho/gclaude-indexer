@@ -17,7 +17,6 @@ from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.windows_prep import prepare_windows
-from gclaude_indexer.engine_claude_code import finish, prepare, sync_progress
 from gclaude_indexer.engine_local import LocalEngine, _dict_to_item, _extract_items_json, classify_pending, model_to_use
 from gclaude_indexer.scanning import scan
 
@@ -282,61 +281,49 @@ def test_modelo_para_usar_automatico_e_sempre_o_padrao_fixo(tmp_path):
     conn.close()
 
 
-# --- motor claude_code -----------------------------------------------------
+# --- motor claude_code (removido na 2.0.0): o que sobra dele nos projetos antigos ---
 
 
-def test_preparar_claude_code_garante_arquivo_e_conta_janelas(tmp_path):
-    config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
-
-    status = prepare(conn, config, "pt")
-
-    assert status.command == "processe as janelas"
-    assert status.claude_md_path.exists()
-    assert status.windows_pending == 1
-    assert status.windows_done == 0
-    conn.close()
-
-
-def test_sincronizar_progresso_marca_janela_feita_quando_jsonl_tem_peca(tmp_path):
-    config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
-    chave = conn.execute("SELECT key FROM window").fetchone()["key"]
-
-    from pathlib import Path
-
-    peca = {
+def _peca_do_claude_code(chave: str, data=None) -> dict:
+    return {
         "window": chave, "group": "volume_1", "ref_start": "f. 1", "ref_end": "f. 1",
-        "order_start": 1, "order_end": 1, "type": "OFÍCIO", "date": None, "author": None,
+        "order_start": 1, "order_end": 1, "type": "OFÍCIO", "date": data, "author": None,
         "summary": "resumo", "has_table": False, "has_image": False, "engine": "claude_code",
         "confidence": "high", "files": "peca.pdf",
     }
-    (Path(config.output_folder) / "raw_items.jsonl").write_text(json.dumps(peca) + "\n", encoding="utf-8")
 
-    status = sync_progress(conn, config, "pt")
 
-    assert status.windows_done == 1
-    assert status.windows_pending == 0
+def test_janela_respondida_no_jsonl_e_marcada_como_feita(tmp_path):
+    from pathlib import Path
+
+    from gclaude_indexer.windows_prep import mark_answered_windows
+
+    config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
+    chave = conn.execute("SELECT key FROM window").fetchone()["key"]
+    (Path(config.output_folder) / "raw_items.jsonl").write_text(
+        json.dumps(_peca_do_claude_code(chave)) + "\n", encoding="utf-8"
+    )
+
+    assert mark_answered_windows(conn, config.output_folder) == 1
+
     assert conn.execute("SELECT status FROM window WHERE key = ?", (chave,)).fetchone()["status"] == "done"
+    assert mark_answered_windows(conn, config.output_folder) == 0  # nada mais a marcar
     conn.close()
 
 
-def test_finalizar_claude_code_importa_e_consolida(tmp_path):
-    config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
-    chave = conn.execute("SELECT key FROM window").fetchone()["key"]
-
+def test_peca_antiga_do_claude_code_continua_importando(tmp_path):
     from pathlib import Path
 
-    peca = {
-        "window": chave, "group": "volume_1", "ref_start": "f. 1", "ref_end": "f. 1",
-        "order_start": 1, "order_end": 1, "type": "OFÍCIO", "date": "2024-03-15", "author": None,
-        "summary": "resumo", "has_table": False, "has_image": False, "engine": "claude_code",
-        "confidence": "high", "files": "peca.pdf",
-    }
-    (Path(config.output_folder) / "raw_items.jsonl").write_text(json.dumps(peca) + "\n", encoding="utf-8")
+    from gclaude_indexer.import_items import import_and_consolidate
 
-    resultado = finish(conn, config, "pt")
+    config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
+    chave = conn.execute("SELECT key FROM window").fetchone()["key"]
+    (Path(config.output_folder) / "raw_items.jsonl").write_text(
+        json.dumps(_peca_do_claude_code(chave, "2024-03-15")) + "\n", encoding="utf-8"
+    )
+
+    resultado = import_and_consolidate(conn, config, language="pt")
 
     assert resultado.consolidated_items == 1
-    linha_peca = conn.execute("SELECT * FROM item").fetchone()
-    assert linha_peca["engine"] == "claude_code"
-    assert conn.execute("SELECT status FROM window").fetchone()["status"] == "done"
+    assert conn.execute("SELECT * FROM item").fetchone()["engine"] == "claude_code"
     conn.close()

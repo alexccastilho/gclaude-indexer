@@ -392,21 +392,18 @@ A file of an extension with no extractor (the "all" category) whose first
 8 KB contain a NUL byte is binary (zip, audio, font, drawing): since 1.5.9
 it is kept in the index by name, with no text.
 
-**5. Window preparation.** Groups pages into overlapping windows. Writes one
-`.txt` file per window into `<output>/windows/`, with a header identifying
-the group and the page range, and each page labeled with its own
-`reference`. Since 1.5.8 the files are written only when the configured
-engine is `claude_code`, the one engine that reads them (the others read
-the pages from `project.db`), in parallel, and `engine_claude_code.prepare`
-writes any that are missing when that engine is chosen later. Rows are
+**5. Window preparation.** Groups pages into overlapping windows, one row
+per window in the `window` table. Since 2.0.0 no `windows/*.txt` file is
+written (the manual `claude_code` engine that read them was removed);
+"Import and generate reports" deletes the ones an older version left, only
+names in the `<group>_j<start>-<end>.txt` pattern, and the folder if it is
+left empty. Rows are
 inserted with one commit per group. Classification loads windows through
 `classification.WindowPageLoader`, which keeps each group's page order as
 ids and fetches only the window's pages: reading the whole group per
 window was quadratic (a group can have tens of thousands of pages). `file.group_key`
-is indexed. Since 1.5.9 the step reads the pages without their text unless
-it writes the files, checks existing windows with one query per group,
-and lists the windows folder once instead of an `exists()` or `unlink()`
-per window.
+is indexed. The step reads the pages without their text and checks
+existing windows with one query per group.
 
 **6. Classification.** An isolated step behind a single interface, with
 three interchangeable engines selectable in the form (plus an `automatic`

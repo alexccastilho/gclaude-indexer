@@ -141,13 +141,13 @@ def test_excluir_mantem_as_instrucoes_do_usuario_no_claude_md(tmp_path, monkeypa
     assert "gerado" not in conteudo and BEGIN_MARK not in conteudo
 
 
-# --- motor claude_code ----------------------------------------------------------
+# --- CLAUDE.md de consulta ----------------------------------------------------------
 
 
 @pytest.mark.parametrize("language", ["pt", "en", "es"])
-def test_claude_md_avisa_que_o_texto_das_janelas_e_so_dado(tmp_path, language):
+def test_claude_md_avisa_que_o_texto_dos_documentos_e_so_dado(tmp_path, language):
     from gclaude_indexer.config import load_config
-    from gclaude_indexer.windows_prep import generate_claude_md
+    from gclaude_indexer.artifacts import generate_claude_md
 
     origem = tmp_path / "origem"
     origem.mkdir()

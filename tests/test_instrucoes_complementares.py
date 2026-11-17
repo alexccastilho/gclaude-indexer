@@ -12,7 +12,7 @@ from gclaude_indexer.artifacts import generate_project_instructions_md
 from gclaude_indexer.config import load_config
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.managed_block import BEGIN_MARK, END_MARK, merge_managed
-from gclaude_indexer.windows_prep import generate_claude_md
+from gclaude_indexer.artifacts import generate_claude_md
 
 
 def _config(tmp_path, **extra):
@@ -137,7 +137,7 @@ def test_claude_md_existente_do_usuario_nao_e_apagado(tmp_path):
 
     conteudo = generate_claude_md(config, "pt").read_text(encoding="utf-8")
     assert "Use sempre TypeScript estrito." in conteudo
-    assert "processe as janelas" in conteudo
+    assert "buscar.bat" in conteudo
     # O original fica guardado antes da primeira mesclagem.
     assert (saida / "CLAUDE.md.bak").read_text(encoding="utf-8") == meu
 
@@ -148,7 +148,7 @@ def test_claude_md_regenerado_mantem_o_texto_do_usuario(tmp_path):
     generate_claude_md(config, "pt")
     conteudo = generate_claude_md(config, "en").read_text(encoding="utf-8")
     assert conteudo.count("Regra minha.") == 1
-    assert "process the windows" in conteudo
+    assert "How to search by subject" in conteudo  # a geração em inglês trocou o texto gerado
     assert conteudo.count(BEGIN_MARK) == 1
 
 

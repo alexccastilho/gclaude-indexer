@@ -9,7 +9,8 @@ from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.extraction import extract_pages
-from gclaude_indexer.windows_prep import generate_claude_md, prepare_windows
+from gclaude_indexer.artifacts import generate_claude_md
+from gclaude_indexer.windows_prep import prepare_windows
 from gclaude_indexer.scanning import scan
 
 TEXTO_LONGO = (
@@ -208,9 +209,9 @@ def test_extracao_e_retomavel_sem_duplicar_paginas(tmp_path):
 
 
 def test_preparar_janelas_gera_arquivos_com_sobreposicao(tmp_path):
-    # 1.5.8: os `.txt` das janelas só são escritos para o motor Claude Code.
+    # 2.0.0: as janelas existem só na tabela `window` (sem `.txt`).
     origem, saida, config, conn = _preparar_projeto(
-        tmp_path, extra={"pages_per_window": 3, "overlap": 1, "classification_engine": "claude_code"}
+        tmp_path, extra={"pages_per_window": 3, "overlap": 1}
     )
     (origem / "volume_1").mkdir()
     _criar_pdf(origem / "volume_1" / "peca.pdf", n_paginas=5)
@@ -225,14 +226,7 @@ def test_preparar_janelas_gera_arquivos_com_sobreposicao(tmp_path):
     assert [j["end_ref"] for j in janelas] == ["f. 3", "f. 5"]
     assert all(j["status"] == "pending" for j in janelas)
 
-    arquivos_txt = sorted((saida / "windows").glob("*.txt"))
-    assert len(arquivos_txt) == 2
-
-    conteudo_primeira = arquivos_txt[0].read_text(encoding="utf-8")
-    assert "volume_1" in conteudo_primeira
-    assert "f. 1" in conteudo_primeira
-    assert "f. 3" in conteudo_primeira
-    assert "página 1" in conteudo_primeira  # texto real da página incluído
+    assert not (saida / "windows").exists()  # nenhum motor lê arquivo de janela
 
     conn.close()
 
@@ -259,18 +253,17 @@ def test_preparar_janelas_e_idempotente(tmp_path):
 # --- CLAUDE.md -----------------------------------------------------------
 
 
-def test_gerar_claude_md_contem_loop_e_formato_json(tmp_path):
+def test_gerar_claude_md_e_so_de_consulta(tmp_path):
     origem, saida, config, conn = _preparar_projeto(tmp_path)
 
     caminho = generate_claude_md(config, "pt")
 
     assert caminho == saida / "CLAUDE.md"
     conteudo = caminho.read_text(encoding="utf-8")
-    assert "processe as janelas" in conteudo
-    assert "raw_items.jsonl" in conteudo
-    assert '"engine": "claude_code"' in conteudo
-    assert '"confidence"' in conteudo
-    assert "order_start" in conteudo and "order_end" in conteudo
+    assert "index.md" in conteudo
+    assert "buscar.bat" in conteudo
+    assert "raw_items.jsonl" not in conteudo
+    assert "processe as janelas" not in conteudo
     assert config.subject in conteudo
 
     conn.close()

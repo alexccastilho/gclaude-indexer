@@ -34,6 +34,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .artifacts import (
+    CLAUDE_MD_FILENAME,
     INDEX_FILENAME,
     NORMS_FILENAME,
     PROJECT_INSTRUCTIONS_FILENAME,
@@ -51,7 +52,6 @@ from .managed_block import merge_managed
 from .paths import OUTPUT_MARKER_NAME, is_inside_folder
 from .project import load_project
 from .sets import SetEntry, SetMember
-from .windows_prep import CLAUDE_MD_FILENAME
 
 # Os únicos arquivos gerados que citam outros arquivos gerados: o sumário
 # aponta para `index-<grupo>.md` (e partes) e para `normas-citadas.md`; a
@@ -580,9 +580,8 @@ en su lugar.
 """,
 }
 
-# O `CLAUDE.md` da pasta combinada não é o de `windows_prep`: aquele é o
-# contrato de classificação do motor `claude_code` sobre `windows/`; este
-# diz ao Claude Code onde está cada acervo, com que prefixo, e onde fica o
+# O `CLAUDE.md` da pasta combinada não é o de `artifacts.generate_claude_md`
+# (consulta de um só acervo): este diz ao Claude Code onde está cada acervo, com que prefixo, e onde fica o
 # `buscar.bat` de cada um (a busca por tema continua na pasta de saída de
 # cada projeto, que tem o banco).
 _CLAUDE_MD: dict[str, str] = {
