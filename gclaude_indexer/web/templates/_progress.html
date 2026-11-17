@@ -16,7 +16,7 @@
   {% else %}
   <div class="progress-header">
     <strong>{{ t('step.' + progresso.step + '.title') }}{% if progresso.phase == 'fulltext' %} · {{ t('run.phase_fulltext') }}{% endif %}</strong>
-    <span>{{ progresso.concluidos }} / {{ progresso.total }} ({{ progresso.percentual }}%)</span>
+    <span>{{ progresso.concluidos }} / {{ progresso.total }} ({{ progresso.percentual }}%){% if progresso.ignorados %} · {{ t('run.ignored', count=progresso.ignorados) }}{% endif %}</span>
   </div>
   <div class="progress-bar" role="progressbar" aria-valuenow="{{ progresso.percentual }}" aria-valuemin="0" aria-valuemax="100">
     <div class="progress-bar-fill progress-bar-{{ progresso.status }}" style="width: {{ progresso.percentual }}%"></div>

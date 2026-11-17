@@ -40,7 +40,7 @@ from .worker_pool import (
     deadline_for_size,
 )
 from .parallelism import _physical_cores, io_workers_for, workers_for
-from .file_types import category_of_extension
+from .file_types import category_of_extension, looks_binary
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
@@ -542,17 +542,23 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         params = (row["id"],)
 
     else:
-        # Only reached with the special "all" category selected (explicit
-        # user request: index any non-binary/executable extension, even
-        # without a dedicated extractor). Reads as text, best-effort — never
-        # fails on a binary file with no extractor; worst case it produces a
-        # low-quality result, not an error.
-        data = source_path.read_bytes()
-        # A NUL byte near the start means a binary file (zip, mp3,
-        # font, CAD drawing…), not text in an unknown extension. Read as
-        # text it became a page of control characters that went into the
-        # search and into classification summaries. It stays in the index, by name, with no text.
-        text = "" if b"\x00" in data[:_BINARY_SNIFF_BYTES] else decode_bytes(data)[0]
+        # Extension with no category ("all" rule), or audio/video chosen
+        # through `midia`. Audio and video have no transcriber yet: they stay
+        # in the index by name with no text, and are never read here (a film
+        # on Google Drive would be downloaded whole for nothing).
+        # For the rest, the scan already refused binary content by the first
+        # bytes; the check stays here for rows an older version left as
+        # `discovered`, but only the start is read to decide — the whole
+        # file is read only once it is known to be text.
+        if category == "midia":
+            text = ""
+        else:
+            with open(source_path, "rb") as source_file:
+                head = source_file.read(_BINARY_SNIFF_BYTES)
+            if looks_binary(head):
+                text = ""
+            else:
+                text = decode_bytes(source_path.read_bytes())[0]
         destination = _destination_path(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
         sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"

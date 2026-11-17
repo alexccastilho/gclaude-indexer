@@ -114,6 +114,15 @@
       <span class="category-name">{{ t('new_project.category.' + category_all) }}</span>
     </label>
     <p class="help">{{ t('new_project.extensions_help_all') }}</p>
+    {# Áudio e vídeo ficam fora do "TODOS" e são opt-in: a caixa é separada e
+       não entra na exclusividade abaixo (marcar uma não desmarca a outra). #}
+    <label class="checkbox-inline category-media">
+      <input type="checkbox" name="extensions" value="midia" data-media-category
+             {% if 'midia' in values.extensions %}checked{% endif %}>
+      <span class="category-name">{{ t('new_project.category.midia') }}</span>
+      <span class="extension-category">{{ media_extensions | join(' ') }}</span>
+    </label>
+    <p class="help">{{ t('new_project.extensions_help_media') }}</p>
     <script>
     (function () {
       // "all" and the specific categories are mutually exclusive:
@@ -122,7 +131,7 @@
       var all = document.querySelector('input[data-all-category]');
       if (!all) return;
       var specific = [].slice.call(
-        document.querySelectorAll('input[name="extensions"]:not([data-all-category])')
+        document.querySelectorAll('input[name="extensions"]:not([data-all-category]):not([data-media-category])')
       );
       all.addEventListener('change', function () {
         if (all.checked) specific.forEach(function (c) { c.checked = false; });

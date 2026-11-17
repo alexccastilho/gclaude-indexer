@@ -133,6 +133,8 @@ def _accepted(extension: str, categories: list[str]) -> str | None:
     if not categories or CATEGORY_ALL in categories:
         if extension in ALWAYS_BLOCKED_EXTENSIONS:
             return None
+        if category == "midia" and "midia" not in categories:
+            return None  # "all" nunca cobre áudio e vídeo
         return category or ("text" if CATEGORY_ALL in categories else None)
     return category if category in categories else None
 

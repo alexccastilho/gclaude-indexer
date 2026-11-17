@@ -76,7 +76,7 @@ class ProjectConfig:
     collection_type: str = "processo"
     group_mode: str = "subfolder"
     group_pattern: str = ""
-    extensions: list[str] = field(default_factory=lambda: ["pdf", "docx", "imagens"])
+    extensions: list[str] = field(default_factory=lambda: ["all"])
     pages_per_block: int = 80
     pages_per_window: int = 16
     overlap: int = 2

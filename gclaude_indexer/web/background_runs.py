@@ -160,6 +160,22 @@ def _scan_totals(
     return found, sum(item.size for item in found)
 
 
+def _ignored_count(output_folder) -> int:
+    """Files the scan left out (`status = 'skipped'`), for the "N ignored"
+    next to the scan's progress. A busy or unreadable project answers 0:
+    this is only a figure on a progress line."""
+    try:
+        _config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
+    except Exception:
+        return 0
+    try:
+        return conn.execute("SELECT COUNT(*) FROM file WHERE status = 'skipped'").fetchone()[0]
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
 def _current_count(conn, step: str) -> int:
     if step == "scan":
         return conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
@@ -281,7 +297,9 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
         }
 
     if task.step == "scan":
-        return _progress_dict(task, task.scanned, float(task.scanned_bytes))
+        progress = _progress_dict(task, task.scanned, float(task.scanned_bytes))
+        progress["ignorados"] = _ignored_count(output_folder)
+        return progress
 
     weight_done: float | None = None
     try:

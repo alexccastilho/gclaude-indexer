@@ -94,7 +94,7 @@ from ..fulltext import (
 from ..settings_proposal import propose_for_folder
 from ..staleness import is_stale as source_is_stale, record_loaded_source
 from ..sync import check_sync, mark_synced
-from ..file_types import CATEGORY_ALL, categories_by_family
+from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, categories_by_family, normalize_categories
 from ..lock import LockManager, check_lock
 from .step_state import STEPS, last_known_status, next_pending_step, project_status, step_status
 from .background_runs import compute_progress, task_manager
@@ -530,7 +530,7 @@ def _config_to_form(data: dict | None = None) -> dict:
         field.name: field.default if field.default is not MISSING else ""
         for field in ProjectConfig.__dataclass_fields__.values()
     }
-    base["extensions"] = ["pdf", "docx", "imagens"]
+    base["extensions"] = ["all"]
     if data:
         base.update(data)
     # "automatic" is the dataclass default, not the name of an installed
@@ -628,6 +628,7 @@ def new_project_screen(request: Request):
             "values": _config_to_form(),
             "familias": categories_by_family(),
             "category_all": CATEGORY_ALL,
+            "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
             "engines": CLASSIFICATION_ENGINES_ORDER,
             "local_models": list_installed_models(),
             "default_local_model": recommended_local_model(),
@@ -654,7 +655,10 @@ def _create_new_project_body(request: Request, form):
                 data[field] = int(form[field])
             except ValueError:
                 data[field] = form[field]  # let load_config's validation report it
-    data["extensions"] = form.getlist("extensions")
+    # "TODOS" já cobre as categorias específicas (menos áudio e vídeo,
+    # que só entram marcando `midia`): o servidor garante a regra que o
+    # formulário só garante em JavaScript.
+    data["extensions"] = normalize_categories([str(value) for value in form.getlist("extensions")])
     data["review_low_confidence"] = "review_low_confidence" in form
 
     # Saída em branco (o campo deixou de ser `required`, ou o POST veio sem
@@ -677,6 +681,7 @@ def _create_new_project_body(request: Request, form):
                 "values": values,
                 "familias": categories_by_family(),
                 "category_all": CATEGORY_ALL,
+                "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
                 "default_local_model": recommended_local_model(),
@@ -715,6 +720,7 @@ def _create_new_project_body(request: Request, form):
                 "values": values,
                 "familias": categories_by_family(),
                 "category_all": CATEGORY_ALL,
+                "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
                 "default_local_model": recommended_local_model(),

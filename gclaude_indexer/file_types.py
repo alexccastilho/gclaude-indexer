@@ -14,6 +14,10 @@ the scan (section 5, step 1) to decide what enters the inventory.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from .text_decoding import _BOMS
+
 EXTENSION_CATEGORIES: dict[str, set[str]] = {
     "pdf": {".pdf"},
     "docx": {".docx"},
@@ -29,6 +33,13 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     "text": {".txt", ".md", ".log", ".csv"},
     "web_dados": {".html", ".htm", ".xhtml", ".xht", ".shtml", ".mht", ".mhtml", ".xml", ".json"},
     "email": {".eml", ".msg"},
+    # Opt-in: "all" não inclui. A chave é dado (como "imagens"), o rótulo é
+    # traduzido no formulário. Ainda sem transcritor, o arquivo entra no
+    # inventário mas não produz texto.
+    "midia": {
+        ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma",
+        ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".3gp",
+    },
 }
 
 # Note: category keys above ("imagens", "web_dados") are data values shared
@@ -55,7 +66,48 @@ ALWAYS_BLOCKED_EXTENSIONS: set[str] = {
     ".so", ".dylib", ".iso", ".vhd", ".vhdx", ".drv", ".ocx", ".cpl", ".vbs",
     ".js", ".jar", ".apk", ".deb", ".rpm", ".ps1", ".sh", ".app", ".lnk",
     ".ini",
+    # Imagens de disco, bancos de dados, fontes, CAD binário: nunca são
+    # documento de um acervo e o conteúdo não é texto.
+    ".img", ".dmg", ".vmdk", ".qcow2",
+    ".db", ".sqlite", ".sqlite3", ".mdb", ".accdb", ".dbf",
+    ".ttf", ".otf", ".woff", ".woff2",
+    ".dwg",
+    ".pyc", ".pyd", ".class", ".o", ".obj", ".lib", ".a", ".wasm", ".msix", ".appx",
 }
+
+# Compactados nunca são abertos (decisão do usuário): ficam no inventário
+# como ignorados, com o motivo `archive`.
+ARCHIVE_EXTENSIONS: frozenset[str] = frozenset({
+    ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst",
+    ".cab", ".lz", ".lzma", ".arj", ".z",
+})
+
+# Atalhos do Google Drive para a nuvem: o arquivo local é só um link.
+GOOGLE_DOC_EXTENSIONS: frozenset[str] = frozenset({
+    ".gdoc", ".gsheet", ".gslides", ".gdraw", ".gform", ".gmap", ".gsite", ".gjam",
+})
+
+# Chaves, certificados e cofres de senha: nunca entram no índice.
+SECRET_EXTENSIONS: frozenset[str] = frozenset({
+    ".pem", ".key", ".pfx", ".p12", ".kdbx", ".ppk", ".jks", ".keystore", ".env",
+})
+_SECRET_NAME_PREFIXES = ("id_rsa", "id_ed25519")
+
+# Só os primeiros bytes são lidos para decidir; o resto do arquivo (e todo o
+# conteúdo de um segredo) fica de fora.
+HEAD_BYTES = 8192
+_SECRET_MARKER_BEGIN = b"-----BEGIN"
+_SECRET_MARKER_END = b"PRIVATE KEY-----"
+_BINARY_CONTROL_RATIO = 0.30
+
+REASON_SYSTEM = "system"
+REASON_GOOGLE_DOC = "google_doc"
+REASON_ARCHIVE = "archive"
+REASON_BLOCKED = "blocked_extension"
+REASON_MEDIA = "media_not_selected"
+REASON_SECRET = "secret"
+REASON_BINARY = "binary"
+REASON_NOT_SELECTED = "extension_not_selected"
 
 
 def valid_categories() -> set[str]:
@@ -79,11 +131,118 @@ def is_extension_allowed(extension_with_dot: str, categories: list[str]) -> bool
     """Decides whether an extension enters the scan, given what the project
     configured in "Included extensions". With `CATEGORY_ALL` selected,
     accepts any extension not in `ALWAYS_BLOCKED_EXTENSIONS` (executable/
-    binary); otherwise, only the extensions of the selected categories."""
+    binary) and not audio/video; otherwise, only the extensions of the
+    selected categories. Audio and video enter only through `midia`: "all"
+    never covers them (it would index a film as an empty page)."""
     extension_with_dot = extension_with_dot.lower()
+    if extension_with_dot in extensions_for_categories(categories):
+        return True
     if CATEGORY_ALL in categories:
-        return extension_with_dot not in ALWAYS_BLOCKED_EXTENSIONS
-    return extension_with_dot in extensions_for_categories(categories)
+        return (
+            extension_with_dot not in ALWAYS_BLOCKED_EXTENSIONS
+            and extension_with_dot not in EXTENSION_CATEGORIES["midia"]
+        )
+    return False
+
+
+def normalize_categories(categories: list[str]) -> list[str]:
+    """`all` already covers every specific category except `midia`, so the
+    list kept is `["all"]` (plus `midia` if it was chosen). The form keeps
+    the two exclusive in JS only; this is the guarantee on the server."""
+    if CATEGORY_ALL not in categories:
+        return list(categories)
+    result = [CATEGORY_ALL]
+    if "midia" in categories:
+        result.append("midia")
+    return result
+
+
+def looks_binary(head: bytes) -> bool:
+    """Unknown extension, first bytes only. A BOM of UTF-16/32 means text
+    (those encodings are full of NUL bytes); a NUL without BOM, or more
+    than 30% of control characters, means binary."""
+    if not head:
+        return False
+    if any(head.startswith(bom) for bom, _ in _BOMS):
+        return False
+    if b"\x00" in head:
+        return True
+    controls = sum(1 for byte in head if byte < 32 and byte not in (9, 10, 12, 13, 27))
+    return controls / len(head) > _BINARY_CONTROL_RATIO
+
+
+def _has_private_key_marker(head: bytes) -> bool:
+    start = head.find(_SECRET_MARKER_BEGIN)
+    return start != -1 and _SECRET_MARKER_END in head[start:]
+
+
+def _extension(name: str) -> str:
+    """Same extension the scan stores (`Path.suffix`, lower case), except
+    that a bare dotfile such as `.env` counts as being its own extension."""
+    lower = name.lower()
+    suffix = Path(lower).suffix
+    if not suffix and lower.startswith(".") and lower.count(".") == 1:
+        return lower
+    return suffix
+
+
+def name_decision(name: str, categories: list[str] | None = None) -> str | None:
+    """The part of `index_decision` that needs only the file name, in the
+    same order. `None` means "not decided by the name"."""
+    lower = name.lower()
+    extension = _extension(lower)
+    # Local import: scanning imports this module.
+    from .scanning import is_system_file
+    if is_system_file(Path(name)):
+        return REASON_SYSTEM
+    if extension in GOOGLE_DOC_EXTENSIONS:
+        return REASON_GOOGLE_DOC
+    if extension in ARCHIVE_EXTENSIONS:
+        return REASON_ARCHIVE
+    if extension in ALWAYS_BLOCKED_EXTENSIONS:
+        return REASON_BLOCKED
+    if extension in EXTENSION_CATEGORIES["midia"] and "midia" not in (categories or ()):
+        return REASON_MEDIA
+    if extension in SECRET_EXTENSIONS or lower.startswith(_SECRET_NAME_PREFIXES):
+        return REASON_SECRET
+    return None
+
+
+def index_decision(
+    name: str, head_bytes: bytes | None = None, categories: list[str] | None = None,
+) -> str | None:
+    """Why a file must not be indexed, or `None` if it may be.
+
+    One rule for the scan, the update plan and the conversion. The order is
+    the contract: system file, Google shortcut, archive, blocked extension,
+    audio/video not selected, secret. Only then does the content count, and
+    only the first `HEAD_BYTES`: a secret marker, or — for an extension with
+    no category — binary content. `head_bytes=None` decides by name alone
+    (nothing was read), so a video is never downloaded to be refused.
+    """
+    reason = name_decision(name, categories)
+    if reason is not None:
+        return reason
+    extension = _extension(name)
+    known = category_of_extension(extension) is not None
+    if head_bytes is None:
+        return None
+    head = head_bytes[:HEAD_BYTES]
+    if _has_private_key_marker(head):
+        return REASON_SECRET
+    if not known and looks_binary(head):
+        return REASON_BINARY
+    return None
+
+
+def needs_head(name: str, categories: list[str] | None = None) -> bool:
+    """Whether `index_decision` would need to read the start of the file:
+    only when the name alone did not decide, and the file is a text-like
+    candidate (unknown extension, or a plain text one that might hold a key)."""
+    if name_decision(name, categories) is not None:
+        return False
+    category = category_of_extension(_extension(name))
+    return category is None or category in ("text", "web_dados")
 
 
 def is_whole_document_file(file_name: str) -> bool:

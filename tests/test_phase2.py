@@ -109,7 +109,9 @@ def test_varrer_inventario_e_ignorados(tmp_path):
 
     eventos = list_events(conn, step="scan")
     mensagens = [e["message"] for e in eventos]
-    assert any("arquivo_desconhecido.xyz" in m and "ignorado" in m for m in mensagens)
+    # 2.0.0: um evento-resumo por execução (não mais um aviso por arquivo).
+    assert any("1 arquivo(s) ignorado(s)" in m for m in mensagens)
+    assert not any("arquivo_desconhecido.xyz" in m for m in mensagens)
     assert any("varredura concluída" in m for m in mensagens)
 
     conn.close()
@@ -119,9 +121,10 @@ def test_varrer_com_extensoes_padrao_ignora_o_que_nao_esta_na_lista(tmp_path):
     origem = _criar_acervo_exemplo(tmp_path)
     saida = tmp_path / "origem_indexado"
     saida.mkdir()
-    # Config sem "extensions" explícito usa o padrão da seção 6: pdf, docx, imagens.
+    # 2.0.0: o padrão novo é "all"; a lista antiga (pdf, docx, imagens) é escolha explícita.
     config = load_config(
-        {"name": "Acervo de Teste", "source_folder": str(origem), "output_folder": str(saida)}
+        {"name": "Acervo de Teste", "source_folder": str(origem), "output_folder": str(saida),
+         "extensions": ["pdf", "docx", "imagens"]}
     )
 
     conn = connect(saida / "project.db")

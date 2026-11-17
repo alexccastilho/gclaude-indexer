@@ -293,7 +293,8 @@ def test_categorias_por_familia_cobre_todas_as_categorias_menos_todos():
 
     agrupadas = categories_by_family()
     vistas = {item["categoria"] for _familia, itens in agrupadas for item in itens}
-    assert vistas == set(EXTENSION_CATEGORIES)
+    # Áudio e vídeo (`midia`) têm caixa própria no formulário, fora das famílias.
+    assert vistas == set(EXTENSION_CATEGORIES) - {"midia"}
     assert CATEGORY_ALL not in vistas
     assert [familia for familia, _itens in agrupadas][0] == "documentos"
 
