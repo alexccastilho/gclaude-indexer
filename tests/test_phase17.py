@@ -345,6 +345,41 @@ def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
     assert nao_conferidos == ["a.pdf"]
 
 
+def test_arquivo_novo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
+    """O hash de um arquivo novo do mesmo tamanho de um indexado (a conferência
+    de duplicata) tem o mesmo prazo da varredura."""
+    import threading
+    import time
+
+    from gclaude_indexer import update_plan
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    arquivo = origem / "a.pdf"
+    arquivo.write_text("a", encoding="utf-8")
+    (origem / "b.pdf").write_text("b", encoding="utf-8")  # novo, mesmo tamanho
+    conn = _conn(tmp_path)
+    _registrar(conn, "a.pdf", "a", arquivo.stat().st_mtime)
+    solta = threading.Event()
+
+    def _travado(_caminho):
+        solta.wait(30)
+        return "nunca"
+
+    monkeypatch.setattr(update_plan, "compute_hash", _travado)
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 0.2)
+    inicio = time.monotonic()
+    try:
+        plano = update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
+    finally:
+        solta.set()
+
+    assert time.monotonic() - inicio < 10
+    assert [c.relative_path for c in plano.new] == ["b.pdf"]
+
+
 def test_novo_alterado_e_removido_sao_detectados(tmp_path):
     origem = tmp_path / "origem"
     origem.mkdir()
