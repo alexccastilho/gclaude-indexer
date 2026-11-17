@@ -48,6 +48,7 @@ from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, b
 from .config import ConfigError, ProjectConfig
 from .i18n import DEFAULT_LANGUAGE, translate
 from .managed_block import merge_managed
+from .paths import OUTPUT_MARKER_NAME, is_inside_folder
 from .project import load_project
 from .sets import SetEntry, SetMember
 from .windows_prep import CLAUDE_MD_FILENAME
@@ -362,11 +363,13 @@ def _is_protected_folder(folder: Path, members: list[Member]) -> bool:
     if (destino / "project.db").exists():
         return True
     protegidas = set()
+    origens = []
     for member in members:
         protegidas.add(Path(member.catalog.output_folder) if member.catalog else None)
         if member.config is not None:
             protegidas.add(Path(member.config.output_folder))
             protegidas.add(Path(member.config.source_folder))
+            origens.append(Path(member.config.source_folder))
     for pasta in protegidas:
         if pasta is None or not str(pasta):
             continue
@@ -375,6 +378,11 @@ def _is_protected_folder(folder: Path, members: list[Member]) -> bool:
                 return True
         except OSError:
             continue
+    # Destino dentro de uma origem: os arquivos gravados ali seriam lidos
+    # como documentos do acervo na próxima varredura.
+    for origem in origens:
+        if str(origem) and is_inside_folder(destino, origem):
+            return True
     return False
 
 
@@ -398,6 +406,10 @@ def write_folder(entry: SetEntry, folder: Path, language: str = DEFAULT_LANGUAGE
     if _is_protected_folder(folder, combined.members):
         raise ProtectedFolderError(str(folder))
     folder.mkdir(parents=True, exist_ok=True)
+    # O marcador diz a qualquer varredura que esta pasta é saída gerada.
+    (folder / OUTPUT_MARKER_NAME).write_text(
+        "GClaude Indexer: pasta gerada, não é acervo.\n", encoding="utf-8"
+    )
     _remove_stale(folder, {item.arcname for item in combined.files})
     written: list[Path] = []
 

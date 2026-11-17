@@ -94,6 +94,7 @@ class InvalidationResult:
     prune_failures: int = 0
     pages_deleted: int = 0
     files_removed: int = 0
+    files_generated: int = 0
     files_reset: int = 0
     files_renumbered: int = 0
     files_reconverted: int = 0
@@ -450,7 +451,7 @@ def apply_pending_changes(
     # Only a changed file or a touched group has anything to discard. A
     # document new to a group of its own needs no invalidation, and an
     # "update applied" line on every run that found one would only be noise.
-    if not (current.changed or current.groups):
+    if not (current.changed or current.groups or current.generated):
         return None
     checkpoint(should_stop)
     return _apply(conn, config, current, language)
@@ -524,7 +525,10 @@ def _apply(
                 # way, and the row may have gone in an earlier apply.
                 discarded_keys.add(key)
 
-        for change in current.removed:
+        # `generated` segue a mesma cascata da remoção, só que sem
+        # `removed_file`: não foi documento que saiu, foi saída gerada que
+        # nunca devia ter entrado.
+        for change in (*current.removed, *current.generated):
             row = _file_row(conn, change.relative_path)
             if row is None:
                 continue
@@ -553,6 +557,7 @@ def _apply(
                 conn.execute("DELETE FROM file WHERE id = ?", (copy["id"],))
                 released_copies.append(copy["relative_path"])
         result.files_removed = _record_removals(conn, current)
+        result.files_generated = len(current.generated)
 
         for change in current.changed:
             row = _file_row(conn, change.relative_path)
@@ -703,6 +708,16 @@ def _apply(
                 "warning",
                 "log.update.renumbered",
                 {"count": len(renumbered), "files": ", ".join(sorted(renumbered))},
+                language=language,
+            )
+
+        if current.generated:
+            record_event(
+                conn,
+                "update",
+                "info",
+                "log.update.generated_removed",
+                {"count": len(current.generated)},
                 language=language,
             )
 

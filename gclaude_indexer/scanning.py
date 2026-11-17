@@ -35,6 +35,7 @@ from .db import BatchWriter
 from .events import record_event
 from .file_types import is_extension_allowed
 from .i18n import DEFAULT_LANGUAGE, translate
+from .paths import holds_generated_output
 from .worker_pool import CallTimedOut, StepStalledError, call_with_deadline, deadline_for_size
 
 HASH_BLOCK_SIZE = 1024 * 1024
@@ -221,12 +222,26 @@ def relative_text(path: Path, root: Path) -> str:
     return str(path.relative_to(root))
 
 
+class SourceListing(list):
+    """A lista de `SourceFile` de uma varredura, com as pastas que ela pulou
+    por serem saída gerada (a própria saída, outro projeto, um Conjunto):
+    `skipped_folders` guarda cada uma como texto relativo à origem, com
+    `/`. O plano de atualização usa isso para tirar do índice o que um
+    1.x antigo indexou dali."""
+
+    skipped_folders: list[str]
+
+    def __init__(self, items=(), skipped_folders=()):
+        super().__init__(items)
+        self.skipped_folders = list(skipped_folders)
+
+
 def walk_source_stats(
     source_dir: Path,
     output_dir: Path,
     on_found: Callable[[int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-) -> list[SourceFile]:
+) -> SourceListing:
     """Path, size and modification time of every file of the collection, in
     the order the scan walks them.
 
@@ -246,17 +261,26 @@ def walk_source_stats(
     """
     output_dir = output_dir.resolve()
     found: list[SourceFile] = []
+    skipped: list[str] = []
     pending = [source_dir]
     while pending:
         if should_stop is not None and should_stop():
             break
         current = pending.pop()
         if current.resolve() == output_dir:
+            if current != source_dir:
+                skipped.append(relative_text(current, source_dir).replace(os.sep, "/"))
             continue
         try:
             entries = _list_folder(current)
         except OSError:
             continue  # unreadable folder: same as `rglob`, which skips it
+        # Saída gerada de qualquer projeto (`project.db`) ou de um Conjunto
+        # (marcador) nunca é documento. A pasta de origem em si não entra
+        # na regra: pular a raiz esvaziaria o acervo inteiro.
+        if current != source_dir and holds_generated_output(entry.name for entry in entries):
+            skipped.append(relative_text(current, source_dir).replace(os.sep, "/"))
+            continue
         for entry in entries:
             try:
                 if entry.is_dir(follow_symlinks=False):
@@ -274,7 +298,7 @@ def walk_source_stats(
             if on_found is not None:
                 on_found(len(found))
     found.sort(key=lambda item: relative_text(item.path, source_dir).lower())
-    return found
+    return SourceListing(found, skipped)
 
 
 def walk_source_files(
