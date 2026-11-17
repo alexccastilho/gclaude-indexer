@@ -1498,6 +1498,35 @@ def test_arquivo_que_some_entre_as_duas_caminhadas_nao_e_apagado(tmp_path, monke
     assert conn.execute("SELECT COUNT(*) FROM removed_file").fetchone()[0] == 0
 
 
+@pytest.mark.parametrize("antes, depois", [(1, 0), (0, 1)])
+def test_estado_do_indice_que_muda_com_a_mesma_pasta_nao_expira_o_plano(tmp_path, antes, depois):
+    """Rodada final, item 5: o plano expira só pela pasta de origem. Aqui a
+    pasta é a mesma e só o índice mudou entre a tela e a aplicação (o OCR
+    que falhou foi refeito, ou falhou agora). Não expira; aplica-se o plano
+    de agora, que já parte do índice como ele está."""
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    grupo = _group_key(origem, saida)
+    for nome in ("a.pdf", "b.pdf"):
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar_com_paginas(conn, origem, nome, 2, group_key=grupo)
+    conn.execute("UPDATE file SET ocr_failed = ? WHERE relative_path = 'b.pdf'", (antes,))
+    conn.commit()
+    config = _config(origem, saida)
+    visto = build_update_plan(conn, config, record_warnings=False)
+    assert [c.relative_path for c in visto.changed] == (["b.pdf"] if antes else [])
+
+    conn.execute("UPDATE file SET ocr_failed = ? WHERE relative_path = 'b.pdf'", (depois,))
+    conn.commit()
+    apply_update_plan(conn, config, visto)
+
+    status = conn.execute("SELECT status FROM file WHERE relative_path = 'b.pdf'").fetchone()[0]
+    assert status == ("discovered" if depois else "extracted")
+
+
 def test_o_plano_recebido_e_so_testemunha_da_impressao_digital(tmp_path):
     """Os índices do plano apontam para o layout que existia quando a
     fotografia foi tirada; os vãos fatiados aqui vêm do banco de agora. A
