@@ -42,6 +42,7 @@ from pathlib import Path
 
 from ..db import READER_TIMEOUT_SECONDS
 from ..lock import LockManager
+from ..paths import sqlite_readonly_uri
 from ..project import DB_NAME, load_project
 
 # 64 MB of page cache: measured enough for the full gain on a project with
@@ -123,7 +124,7 @@ class ReaderPool:
             config, writer = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
             writer.close()
             conn = sqlite3.connect(
-                f"{db_path.resolve().as_uri()}?mode=ro", uri=True,
+                sqlite_readonly_uri(db_path.resolve()), uri=True,
                 timeout=READER_TIMEOUT_SECONDS, check_same_thread=False,
             )
             conn.row_factory = sqlite3.Row

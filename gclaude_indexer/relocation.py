@@ -279,7 +279,7 @@ def _source_paths(old: Path) -> tuple[set[str], set[str]]:
     alterado nem criado."""
     db_path = old / paths.PROJECT_DB_NAME
     try:
-        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True, timeout=10)
+        conn = sqlite3.connect(paths.sqlite_readonly_uri(db_path), uri=True, timeout=10)
     except sqlite3.Error:
         return set(), set()
     try:
@@ -379,14 +379,32 @@ def _is_free(path: Path) -> bool:
         return False
 
 
+def _components_below_source(source_folder: str, output_folder: str) -> list[Path]:
+    """A pasta de saída e cada pasta entre ela e a origem, como gravadas (sem
+    resolver). Uma junção em qualquer uma delas levaria o plano, depois do
+    `resolve`, para fora da origem; nenhuma pode ser link. Se a saída não
+    está abaixo da origem pela grafia, só ela mesma é conferida."""
+    written = Path(os.path.normpath(os.path.abspath(output_folder)))
+    source = Path(os.path.normpath(os.path.abspath(source_folder)))
+    components = [written]
+    if not Path(os.path.normcase(str(written))).is_relative_to(Path(os.path.normcase(str(source)))):
+        return components
+    source_key = os.path.normcase(str(source))
+    for parent in written.parents:
+        if os.path.normcase(str(parent)) == source_key:
+            break
+        components.append(parent)
+    return components
+
+
 def build_plan(source_folder: str, output_folder: str, destination: str | None = None) -> RelocationPlan:
     """O que a mudança faria, sem tocar em nada. Levanta `RelocationError`
     quando ela não pode ser feita (destino ocupado, link, origem na raiz)."""
     # Antes de resolver: `resolve` seguiria uma junção na própria pasta de
     # saída e o plano passaria a mover o que ela aponta.
-    written = Path(output_folder)
-    if (written.exists() or written.is_symlink()) and _is_link(written):
-        raise RelocationError("relocation.error.link", path=str(output_folder))
+    for component in _components_below_source(source_folder, output_folder):
+        if (component.exists() or component.is_symlink()) and _is_link(component):
+            raise RelocationError("relocation.error.link", path=str(component))
     source = Path(source_folder).resolve()
     old = Path(output_folder).resolve()
     if destination is None:
@@ -555,11 +573,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _copy_file_verified(source: Path, target: Path) -> None:
+def _copy_file_verified(source: Path, target: Path, on_created=None) -> None:
     """Copia byte a byte para um arquivo novo (`xb`: nunca sobrescreve) e
     confere tamanho e SHA-256 lendo a cópia de volta do disco."""
     digest = hashlib.sha256()
     with open(source, "rb") as reader, open(target, "xb") as writer:
+        if on_created is not None:
+            on_created()
         for chunk in iter(lambda: reader.read(_COPY_CHUNK), b""):
             digest.update(chunk)
             writer.write(chunk)
@@ -573,13 +593,18 @@ def _copy_file_verified(source: Path, target: Path) -> None:
         raise RelocationError("relocation.error.copy_mismatch", path=str(source))
 
 
-def _copy_tree_verified(source: Path, target: Path) -> None:
+def _copy_tree_verified(source: Path, target: Path, on_created=None) -> None:
+    """Copia arquivo ou pasta, conferindo cada arquivo. `on_created()` roda
+    logo depois que o destino do primeiro nível foi criado por nós (`xb` ou
+    `mkdir` exclusivos): é o que autoriza o desfazer a apagá-lo depois."""
     if _is_link(source):
         raise RelocationError("relocation.error.link", path=str(source))
     if source.is_file():
-        _copy_file_verified(source, target)
+        _copy_file_verified(source, target, on_created)
         return
     target.mkdir(exist_ok=False)
+    if on_created is not None:
+        on_created()
     with os.scandir(source) as entries:
         children = list(entries)
     for entry in children:
@@ -739,7 +764,15 @@ def _move_all(journal: dict, should_stop) -> None:
         if op["action"] == "move":
             os.rename(source, target)
         else:
-            _copy_tree_verified(source, target)
+            def mark_created(op=op):
+                # Só depois da criação exclusiva: um arquivo que apareceu no
+                # destino antes dela (corrida, ou durante uma queda) nunca é
+                # marcado como nosso e nunca é apagado. Uma queda entre criar
+                # e anotar deixa uma cópia pela metade, nunca apaga nada.
+                op["created"] = True
+                _write_journal(journal)
+
+            _copy_tree_verified(source, target, on_created=mark_created)
 
 
 def _undo(journal: dict) -> None:
@@ -764,6 +797,10 @@ def _undo(journal: dict) -> None:
         if op["action"] == "move":
             if not source.exists():
                 os.rename(target, source)
+        elif not op.get("created"):
+            # Cópia anotada como começada, mas o destino não foi criado por
+            # nós: o que está lá é de outro e fica.
+            continue
         elif source.exists():
             _remove_tree(target)
         else:
@@ -963,6 +1000,13 @@ def recover(output_folder, on_finalize=None) -> bool:
                 _write_journal(journal)
             if journal.get("phase") == "committed":
                 if not (new / paths.PROJECT_DB_NAME).is_file():
+                    return False
+                # Pasta antiga ausente só é "removida por ter ficado vazia"
+                # se a pasta acima dela está lá. Sem ela, a unidade está fora
+                # do ar: concluir agora largaria os originais (até o
+                # `project.db`, numa cópia entre volumes) na origem para
+                # sempre. Fica para quando ela voltar.
+                if journal.get("mode") == "items" and not old.exists() and not old.parent.exists():
                     return False
                 _finish(journal, on_finalize)
             else:

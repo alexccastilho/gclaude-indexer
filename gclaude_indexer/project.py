@@ -20,6 +20,7 @@ from pathlib import Path
 from .config import ProjectConfig, load_config, config_to_json
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .events import record_event
+from .paths import sqlite_readonly_uri
 from .windows_prep import mark_answered_windows
 
 DB_NAME = "project.db"
@@ -72,7 +73,7 @@ def describe_project(output_folder: str | Path) -> ProjectSummary | None:
         # `mode=ro` through a URI: SQLite then refuses to create or modify
         # anything, so this cannot be the call that brings a stray database
         # into existence.
-        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=10)
+        conn = sqlite3.connect(sqlite_readonly_uri(path), uri=True, timeout=10)
     except sqlite3.Error:
         return None
 
