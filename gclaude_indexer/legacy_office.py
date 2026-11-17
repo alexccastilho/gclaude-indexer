@@ -23,10 +23,13 @@ Como a conversão é feita:
   segurando o original); espaços e acentos do caminho de origem não chegam a
   ele;
 - o perfil nasce já travado (`registrymodifications.xcu`, ver `PROFILE_LOCKDOWN`):
-  nenhuma macro roda, nenhum vínculo externo é atualizado, nenhum conteúdo
-  remoto é buscado (um documento de terceiros não pode ler arquivos locais
-  nem fazer o computador acessar a rede); o LibreOffice ainda é isolado do
-  perfil do usuário;
+  macros desligadas, vínculos, campos e gráficos externos sem atualização ao
+  abrir, vínculos de origem não confiável bloqueados e a verificação de
+  atualização do próprio LibreOffice desligada. Isso fecha os caminhos mais
+  comuns para um documento de terceiros ler arquivos locais ou fazer o
+  computador acessar a rede, mas não é uma garantia de que o LibreOffice
+  nunca busque nada (o mesmo que o SECURITY.md promete: macros, vínculos e
+  atualizador desligados); o LibreOffice ainda é isolado do perfil do usuário;
 - uma conversão por vez neste processo (cada `soffice` carrega centenas de
   megabytes, e dois no mesmo perfil de instalação se atropelam);
 - tempo limite por arquivo; passado dele, a árvore inteira de processos é
