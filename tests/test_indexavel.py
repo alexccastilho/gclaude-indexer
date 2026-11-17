@@ -14,6 +14,7 @@ from gclaude_indexer.config import ProjectConfig, load_config
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.file_types import (
+    has_private_key_marker,
     index_decision,
     is_extension_allowed,
     normalize_categories,
@@ -442,3 +443,16 @@ def test_indexado_cujo_conteudo_vira_chave_perde_paginas_busca_e_intermediario(t
     assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM fulltext").fetchone()[0] == 0
     assert not artefato.exists()
+
+
+def test_chave_privada_pgp_tambem_e_segredo():
+    """Revisão final: o marcador só casava `PRIVATE KEY-----`; a chave PGP
+    termina em `PRIVATE KEY BLOCK-----` e entrava no índice."""
+    chave = (
+        b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBF0abc\n-----END PGP PRIVATE KEY BLOCK-----\n"
+    )
+    assert index_decision("chave.asc", chave) == "secret"
+    assert has_private_key_marker(b"texto antes\n" + chave)
+    # A chave pública PGP não é segredo.
+    publica = b"-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBF0abc\n-----END PGP PUBLIC KEY BLOCK-----\n"
+    assert index_decision("publica.txt", publica) is None
