@@ -44,7 +44,7 @@ from .parallelism import _physical_cores, io_workers_for, workers_for
 from .file_types import (
     ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
     REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
-    HEAD_BYTES, category_of_extension, has_private_key_marker, index_decision, looks_binary,
+    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, looks_binary,
 )
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
@@ -1162,9 +1162,12 @@ def _attachment_text(path: Path, config: ProjectConfig, original_name: str | Non
     # `binary` não barra aqui: um anexo de extensão estranha mas conteúdo de PDF
     # ou DOCX vale pelo tipo real, e o que é binário de verdade o farejador
     # (`sniff_content_type`) recusa logo abaixo.
-    reason = index_decision(name, head, config.extensions)
-    if reason is not None and reason != REASON_BINARY:
-        return None
+    # O nome original e o nome gravado em disco: se qualquer um é recusado, o
+    # anexo é recusado.
+    for candidate in (name, path.name):
+        reason = index_decision(candidate, head, config.extensions)
+        if reason is not None and reason != REASON_BINARY:
+            return None
     text = _extract_attachment_text(path, config)
     if text and has_private_key_marker(text.encode("utf-8", errors="ignore")):
         return None
@@ -1172,7 +1175,8 @@ def _attachment_text(path: Path, config: ProjectConfig, original_name: str | Non
 
 
 def _extract_attachment_text(path: Path, config: ProjectConfig) -> str | None:
-    extension = path.suffix.lower()
+    # `file_extension` (e não `Path.suffix`): `.env` é extensão, não nome.
+    extension = file_extension(path.name)
     if (
         extension in ARCHIVE_EXTENSIONS or extension in ALWAYS_BLOCKED_EXTENSIONS
         or extension in SECRET_EXTENSIONS or extension in GOOGLE_DOC_EXTENSIONS

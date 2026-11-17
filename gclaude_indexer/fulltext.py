@@ -175,7 +175,7 @@ def _page_references(conn: sqlite3.Connection, file_id: int) -> dict[int, str]:
 def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> list[Passage]:
     """Every passage of one extracted file, from the same sources extraction
     reads — the OCR'd copy or the original PDF, or the converted text."""
-    return _read_passages(config, row, _page_references(conn, row["id"]))
+    return list(_read_passages(config, row, _page_references(conn, row["id"])))
 
 
 # PyMuPDF does not promise thread safety; PDFs are few in any collection,
@@ -183,7 +183,28 @@ def passages_for_file(conn: sqlite3.Connection, config: ProjectConfig, row) -> l
 _PDF_LOCK = threading.Lock()
 
 
-def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> list[Passage]:
+class MessagePassages:
+    """Os trechos de uma caixa de mensagens (`.mbox`, `.pst`), produzidos
+    página a página só quando iterados: o intermediário (gigabytes, num
+    `.pst`) nunca fica inteiro na memória, nem a lista de todos os trechos.
+    `_store_passages` os insere conforme saem. Pode ser percorrido de novo
+    (a gravação é refeita se o banco travar)."""
+
+    def __init__(self, path: Path, references: dict[int, str]) -> None:
+        self.path = path
+        self.references = references
+
+    def __iter__(self):
+        from .light_formats import iter_pages
+
+        for number, message in enumerate(iter_pages(self.path), start=1):
+            reference = self.references.get(number, f"p. {number}")
+            for passage in split_document(message):
+                passage.locator = " · ".join(part for part in (reference, passage.locator) if part)
+                yield passage
+
+
+def _read_passages(config: ProjectConfig, row, references: dict[int, str]):
     """`passages_for_file` without the database: safe in a worker thread."""
     from .conversion import converted_artifact_path
 
@@ -204,17 +225,9 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> li
             return _pdf_passages(pdf_path, references)
 
     if category in MESSAGE_PAGE_CATEGORIES:
-        # Cada mensagem é uma página, com a referência dela. Lida em
-        # pedaços: o intermediário inteiro nunca fica na memória.
-        from .light_formats import iter_pages
-
-        found: list[Passage] = []
-        for number, message in enumerate(iter_pages(intermediate), start=1):
-            reference = references.get(number, f"p. {number}")
-            for passage in split_document(message):
-                passage.locator = " · ".join(part for part in (reference, passage.locator) if part)
-                found.append(passage)
-        return found
+        # Cada mensagem é uma página, com a referência dela. Preguiçoso:
+        # nada é lido aqui, só ao gravar.
+        return MessagePassages(intermediate, references)
     text = intermediate.read_text(encoding="utf-8")
     if not is_whole_document_file(row["name"]):
         # A single image: one page, its OCR text.
@@ -254,7 +267,7 @@ def remove_file(conn: sqlite3.Connection, file_id: int) -> None:
     conn.execute("DELETE FROM fulltext_file WHERE file_id = ?", (file_id,))
 
 
-def _store_passages(conn: sqlite3.Connection, row, passages: list[Passage]) -> int:
+def _store_passages(conn: sqlite3.Connection, row, passages) -> int:
     """Stores one file's passages under consecutive rowids and records the
     range, so `remove_file` never has to scan the table.
 
@@ -268,15 +281,22 @@ def _store_passages(conn: sqlite3.Connection, row, passages: list[Passage]) -> i
     remove_file(conn, row["id"])
     last = conn.execute("SELECT rowid FROM fulltext ORDER BY rowid DESC LIMIT 1").fetchone()
     first = (last[0] if last else 0) + 1
-    conn.executemany(
-        "INSERT INTO fulltext (rowid, text, file_id, locator, line) VALUES (?, ?, ?, ?, ?)",
-        [(first + offset, p.text, row["id"], p.locator, p.line) for offset, p in enumerate(passages)],
-    )
+    # `passages` pode ser preguiçoso (`MessagePassages`): inserido conforme
+    # sai, contado no caminho, sem lista intermediária.
+    count = 0
+
+    def rows():
+        nonlocal count
+        for p in passages:
+            yield (first + count, p.text, row["id"], p.locator, p.line)
+            count += 1
+
+    conn.executemany("INSERT INTO fulltext (rowid, text, file_id, locator, line) VALUES (?, ?, ?, ?, ?)", rows())
     conn.execute(
         "INSERT INTO fulltext_file (file_id, first_rowid, last_rowid) VALUES (?, ?, ?)",
-        (row["id"], first, first + len(passages) - 1),
+        (row["id"], first, first + count - 1),
     )
-    return len(passages)
+    return count
 
 
 def pending_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -351,8 +371,13 @@ def index_pending(
                         writer.add(lambda c, row=row: _store_passages(c, row, []))
                         writer.flush_if_due()
                         continue
-                    writer.add(lambda c, row=row, passages=passages: _store_passages(c, row, passages))
-                    result.passages += len(passages)
+                    stored = [0]
+
+                    def store(c, row=row, passages=passages, stored=stored) -> None:
+                        stored[0] = _store_passages(c, row, passages)
+
+                    writer.add(store)
+                    result.passages += stored[0]
                     result.files += 1
                     writer.flush_if_due()
         writer.flush()
