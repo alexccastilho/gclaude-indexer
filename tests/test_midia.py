@@ -59,6 +59,9 @@ class Simulador:
         self.silences = silences
         self.language = language
         self.ffmpeg_calls: list[list[str]] = []
+        self.probe_calls: list[list[str]] = []
+        self.probe_format = "mp3"
+        self.probe_exit = 0
         self.whisper_calls: list[float] = []  # duração (s) de cada trecho recebido
         self.ffmpeg_exit = 0
         self.ffmpeg_log = ""
@@ -83,8 +86,15 @@ class Simulador:
         def kill(self):
             pass
 
-    def popen(self, command, stderr):
+    def popen(self, command, stderr, stdout=None):
         name = Path(command[0]).name
+        if name.startswith("ffprobe"):
+            self.probe_calls.append(command)
+            if self.probe_exit == 0 and stdout is not None:
+                stdout.write((self.probe_format + "\n").encode())
+            elif self.probe_exit != 0:
+                stderr.write(b"Invalid data found when processing input")
+            return self.Processo(self.probe_exit)
         if name.startswith("ffmpeg"):
             self.ffmpeg_calls.append(command)
             if self.hang == "ffmpeg":
@@ -194,8 +204,8 @@ def test_o_idioma_e_o_que_mais_tempo_de_fala_teve(tmp_path, sim, monkeypatch):
     idiomas = iter(["en", "pt", "pt"])
     original = sim.popen
 
-    def alterna(comando, stderr):
-        processo = original(comando, stderr)
+    def alterna(comando, stderr, stdout=None):
+        processo = original(comando, stderr, stdout)
         if Path(comando[0]).name.startswith("whisper"):
             saida = Path(comando[comando.index("-of") + 1] + ".json")
             dados = json.loads(saida.read_text(encoding="utf-8"))
@@ -231,6 +241,28 @@ def test_arquivo_ilegivel_falha_e_nao_deixa_nada(tmp_path, sim):
     assert not list((tmp_path / "saida").glob("*"))
 
 
+def test_playlist_ou_roteiro_disfarcado_de_midia_e_recusado_sem_transcrever(tmp_path, sim):
+    for formato in ("hls", "concat", "ffconcat", "mov,mp4,m4a,hls", "applehttp"):
+        sim.probe_format = formato
+        with pytest.raises(media.MediaRefused):
+            _transcrever(tmp_path)
+    assert sim.ffmpeg_calls == [] and sim.whisper_calls == []
+    assert not (tmp_path / "trabalho").exists()
+    # A sondagem também só lê arquivos locais.
+    comando = sim.probe_calls[0]
+    assert comando[comando.index("-protocol_whitelist") + 1] == "file"
+    # Mídia de verdade passa.
+    sim.probe_format = "mov,mp4,m4a,3gp,3g2,mj2"
+    assert _transcrever(tmp_path)[3].pages == 3
+
+
+def test_sondagem_que_falha_e_arquivo_ilegivel(tmp_path, sim):
+    sim.probe_exit = 1
+    with pytest.raises(media.MediaError, match="ffprobe"):
+        _transcrever(tmp_path)
+    assert sim.ffmpeg_calls == []
+
+
 def test_falha_do_whisper_apaga_o_progresso(tmp_path, sim):
     sim.whisper_exit = 1
     with pytest.raises(media.MediaError, match="whisper"):
@@ -243,10 +275,11 @@ def test_tempo_limite_mata_o_processo_e_falha(tmp_path, sim, monkeypatch):
     monkeypatch.setattr(media, "_kill_tree", lambda processo: mortos.append(processo))
     monkeypatch.setattr(media, "FILE_TIMEOUT_MIN_S", 0.0)
     monkeypatch.setattr(media, "PROCESS_TIMEOUT_MIN_S", 0.0)
+    monkeypatch.setattr(media, "PROCESS_TIMEOUT_FACTOR", 0)
     sim.hang = "whisper"
     with pytest.raises(media.MediaError, match="tempo limite"):
         _transcrever(tmp_path)
-    assert mortos and not (tmp_path / "trabalho").exists()
+    assert mortos  # e o que já havia fica no disco (ver o teste dos trechos prontos)
 
 
 # --- Parar e retomar ---------------------------------------------------------------
@@ -283,6 +316,90 @@ def test_parar_depois_do_primeiro_trecho_e_retomar_sem_refazer_o_que_ja_foi(tmp_
     assert [p.splitlines()[0] for p in destino2.read_text(encoding="utf-8").split(media.MBOX_PAGE_SEPARATOR)] == [
         p.splitlines()[0] for p in paginas
     ]
+
+
+def _relogio(monkeypatch, sim, saltos):
+    """Um relógio falso: cada trecho transcrito avança `saltos[n]` segundos."""
+    agora = {"t": 0.0}
+    monkeypatch.setattr(media.time, "monotonic", lambda: agora["t"])
+    chamadas = iter(saltos)
+    sim.after_whisper = lambda: agora.update(t=agora["t"] + next(chamadas, 0.0))
+    return agora
+
+
+def test_estouro_do_orcamento_guarda_o_progresso_e_a_proxima_execucao_retoma(tmp_path, sim, monkeypatch):
+    monkeypatch.setattr(media, "FILE_TIMEOUT_MIN_S", 0.0)
+    # Trecho 1: 10 s (a velocidade medida projeta ~25 s, orçamento ~75 s);
+    # trecho 2: 1000 s (a máquina engasgou). Antes do trecho 3 o orçamento estoura.
+    _relogio(monkeypatch, sim, [10.0, 1000.0])
+    arquivo = _origem(tmp_path)
+    destino = tmp_path / "saida" / "aula.mp3.txt"
+    destino.parent.mkdir()
+    trabalho = tmp_path / "trabalho"
+    ferramentas = _tools(tmp_path)
+
+    with pytest.raises(media.Postponed):
+        media.transcribe(arquivo, destino, trabalho, ferramentas)
+    assert len(sim.whisper_calls) == 2 and not destino.exists()
+    parcial = destino.parent / "aula.mp3.txt.partial"
+    assert parcial.read_text(encoding="utf-8").count("Fala do trecho") == 2
+    assert (destino.parent / "aula.mp3.txt.progress").exists() and (trabalho / media.WORK_WAV).exists()
+
+    # Próxima execução (relógio normal): só o trecho 3, sem extrair de novo.
+    monkeypatch.undo()
+    monkeypatch.setattr(media, "_popen", sim.popen)
+    monkeypatch.setattr(media, "CHUNK_SECONDS", 10)
+    monkeypatch.setattr(media, "PAUSE_SEARCH_SECONDS", 2)
+    sim.after_whisper = lambda: None
+    resultado = media.transcribe(arquivo, destino, trabalho, ferramentas)
+    assert len(sim.ffmpeg_calls) == 1 and len(sim.whisper_calls) == 3 and resultado.pages == 3
+    assert destino.read_text(encoding="utf-8").count("Fala do trecho") == 3
+
+
+def test_tempo_limite_de_um_processo_nao_joga_fora_os_trechos_prontos(tmp_path, sim, monkeypatch):
+    monkeypatch.setattr(media, "_kill_tree", lambda processo: None)
+    arquivo = _origem(tmp_path)
+    destino = tmp_path / "saida" / "aula.mp3.txt"
+    destino.parent.mkdir()
+    trabalho = tmp_path / "trabalho"
+    original = sim.popen
+    contagem = {"n": 0}
+
+    def trava_no_segundo(comando, stderr, stdout=None):
+        if Path(comando[0]).name.startswith("whisper"):
+            contagem["n"] += 1
+            if contagem["n"] == 2:
+                sim.whisper_calls.append(0)
+                return sim.Processo(0, hang=True)
+        return original(comando, stderr, stdout)
+
+    monkeypatch.setattr(media, "_popen", trava_no_segundo)
+    monkeypatch.setattr(media, "PROCESS_TIMEOUT_MIN_S", 0.0)
+    monkeypatch.setattr(media, "PROCESS_TIMEOUT_FACTOR", 0)
+    with pytest.raises(media.MediaTimeout):
+        media.transcribe(arquivo, destino, trabalho, _tools(tmp_path))
+    assert (destino.parent / "aula.mp3.txt.partial").exists() and (destino.parent / "aula.mp3.txt.progress").exists()
+
+
+def test_erro_no_aviso_de_estimativa_nao_derruba_o_arquivo(tmp_path, sim):
+    def quebra(_info):
+        raise RuntimeError("banco ocupado")
+
+    assert _transcrever(tmp_path, on_estimate=quebra)[3].pages == 3
+
+
+def test_idioma_obsoleto_some_quando_a_nova_transcricao_nao_tem_idioma(tmp_path, sim):
+    _arquivo, destino, _trabalho, _r = _transcrever(tmp_path)
+    sidecar = destino.parent / "aula.mp3.txt.idioma"
+    assert sidecar.exists()
+    sim.empty_chunks = {4, 5, 6}  # a segunda transcrição: nenhuma fala
+    _transcrever(tmp_path)
+    assert not sidecar.exists()
+    # E o caminho sem faixa de áudio.
+    sidecar.write_text("pt", encoding="utf-8")
+    sim.ffmpeg_exit = 1
+    sim.ffmpeg_log = "Output file does not contain any stream"
+    assert _transcrever(tmp_path)[3].no_audio and not sidecar.exists()
 
 
 def test_arquivo_trocado_ou_outro_modelo_descarta_o_progresso(tmp_path, sim):
@@ -529,6 +646,31 @@ def test_parar_deixa_o_arquivo_na_fila_e_a_conversao_seguinte_retoma(tmp_path, s
     conn.close()
 
 
+def test_lista_de_reproducao_vira_ignorada_e_estouro_deixa_na_fila_com_aviso(tmp_path, sim, monkeypatch):
+    origem, _saida, config, conn = _projeto(tmp_path)
+    (origem / "lista.mp4").write_bytes(b"#EXTM3U\nhttp://x/y.ts\n")
+    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    sim.probe_format = "hls"
+    scan(conn, config)
+    assert convert(conn, config).failed == 0
+    linha = _arquivo(conn, "lista.mp4")
+    assert (linha["status"], linha["error"]) == ("skipped", "unsupported")
+    assert sim.ffmpeg_calls == [] and sim.whisper_calls == []
+
+    # Estouro do orçamento: continua `discovered`, com um aviso traduzido.
+    sim.probe_format = "mp3"
+    (origem / "lista.mp4").unlink()
+    (origem / "aula.mp3").write_bytes(b"ID3\x00\x00dados")
+    monkeypatch.setattr(media, "FILE_TIMEOUT_MIN_S", 0.0)
+    _relogio(monkeypatch, sim, [10.0, 1000.0])
+    scan(conn, config)
+    assert convert(conn, config, language="pt-BR").failed == 0
+    assert _arquivo(conn, "aula.mp3")["status"] == "discovered"
+    avisos = [r["message"] for r in conn.execute("SELECT message FROM event WHERE level = 'warning'")]
+    assert any("passou do tempo previsto" in a and "aula.mp3" in a for a in avisos), avisos
+    conn.close()
+
+
 def test_arquivo_de_midia_ilegivel_falha_sem_derrubar_os_demais(tmp_path, sim, monkeypatch):
     origem, _saida, config, conn = _projeto(tmp_path)
     (origem / "quebrado.mp3").write_bytes(b"lixo")
@@ -552,6 +694,7 @@ def test_rotulos_nos_tres_idiomas():
             ("log.conversion.media_estimate", {"name": "a.mp3", "model": "small", "device": "CPU", "duration": "00:01:00", "minutes": 3}),
             ("log.conversion.media_language", {"name": "a.mp3", "lang": "pt"}),
             ("log.conversion.media_no_audio", {"name": "a.mp3"}),
+            ("log.conversion.media_postponed", {"name": "a.mp3"}),
             ("log.conversion.media_truncated", {"name": "a.mp3", "hours": 24, "limit_mb": 256}),
         ):
             texto = translate(idioma, chave, **parametros)

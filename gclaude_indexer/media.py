@@ -118,8 +118,28 @@ class MediaError(Exception):
     """Falha ao transcrever. A mensagem não leva conteúdo do arquivo."""
 
 
+class MediaTimeout(MediaError):
+    """Um processo passou do tempo limite e foi morto. O que já estava
+    transcrito fica no disco (um tempo limite nunca joga trechos prontos fora)."""
+
+
+class MediaRefused(MediaError):
+    """O contêiner é uma lista de reprodução ou roteiro (HLS, `concat`…), que
+    pode apontar para outros arquivos: não é mídia de verdade e não é lido."""
+
+
 class Interrupted(Exception):
     """Parar foi pedido; o progresso já está gravado."""
+
+
+class Postponed(Exception):
+    """A execução passou do tempo previsto para o arquivo; o progresso está
+    gravado e o arquivo continua na fila para a próxima conversão."""
+
+
+# Formatos que o ffprobe reconhece por conteúdo e que mandam o ffmpeg buscar
+# outros arquivos ou endereços (listas de reprodução, roteiros, descrições).
+REFUSED_FORMATS = frozenset({"hls", "applehttp", "concat", "ffconcat", "dash", "sdp", "rtsp", "rtp"})
 
 
 @dataclass(frozen=True)
@@ -238,12 +258,12 @@ def format_clock(seconds: float) -> str:
 # --- processo ----------------------------------------------------------------
 
 
-def _popen(command: list[str], stderr) -> subprocess.Popen:
+def _popen(command: list[str], stderr, stdout=subprocess.DEVNULL) -> subprocess.Popen:
     """O único ponto que cria o processo (a suíte o troca por um simulador).
     Sem shell, sem janela, sem entrada; a saída padrão é descartada (o
     `whisper-cli` a usaria para imprimir o texto transcrito) e os avisos vão
     para o arquivo `stderr`."""
-    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": stderr}
+    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": stdout, "stderr": stderr}
     if sys.platform == "win32":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -287,12 +307,12 @@ class _Process:
     def __init__(self, should_stop: Callable[[], bool] | None) -> None:
         self.should_stop = should_stop
 
-    def run(self, command: list[str], timeout: float, log: Path) -> tuple[int, str]:
+    def run(self, command: list[str], timeout: float, log: Path, stdout_to: Path | None = None) -> tuple[int, str]:
         """`(código, fim do log)`. Levanta `Interrupted` quando
         Parar é pedido e `MediaError` ao estourar o tempo."""
-        with open(log, "wb") as stream:
+        with open(log, "wb") as stream, open(stdout_to or os.devnull, "wb") as out:
             try:
-                process = _popen(command, stream)
+                process = _popen(command, stream, out)
             except OSError as exc:
                 raise MediaError(f"não foi possível iniciar {Path(command[0]).name}: {exc.strerror or 'erro'}") from exc
             deadline = time.monotonic() + max(1.0, timeout)
@@ -308,7 +328,7 @@ class _Process:
                         raise Interrupted()
                     if time.monotonic() > deadline:
                         _kill_tree(process)
-                        raise MediaError(
+                        raise MediaTimeout(
                             f"{Path(command[0]).name} passou do tempo limite ({int(timeout)} s) e foi encerrado"
                         )
             except BaseException:
@@ -344,6 +364,34 @@ def ffmpeg_command(ffmpeg: Path, source: Path, target: Path) -> list[str]:
         "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le",
         "-t", str(MAX_AUDIO_SECONDS), "-f", "wav", str(target),
     ]
+
+
+def probe_command(tools: Toolset, source: Path) -> list[str]:
+    ffprobe = tools.ffmpeg.with_name("ffprobe" + tools.ffmpeg.suffix)
+    return [
+        str(ffprobe), "-v", "error", "-protocol_whitelist", "file",
+        "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", str(source.resolve()),
+    ]
+
+
+def check_container(tools: Toolset, source: Path, process: _Process, work: Path) -> None:
+    """Recusa listas de reprodução e roteiros disfarçados de mídia (o
+    `-protocol_whitelist file` ainda deixaria um `concat` ou HLS ler outros
+    arquivos do disco). Levanta `MediaRefused` ou `MediaError`."""
+    result = work / "formato.txt"
+    code, log = process.run(
+        probe_command(tools, source), PROCESS_TIMEOUT_MIN_S, work / "ffprobe.log", stdout_to=result
+    )
+    try:
+        names = {item.strip().lower() for item in result.read_text(encoding="utf-8", errors="replace").split(",")}
+    except OSError:
+        names = set()
+    result.unlink(missing_ok=True)
+    names.discard("")
+    if names & REFUSED_FORMATS:
+        raise MediaRefused("o arquivo é uma lista de reprodução ou roteiro, não mídia")
+    if code != 0 or not names:
+        raise MediaError(f"o ffprobe não conseguiu ler o arquivo ({_last_line(log) or 'arquivo corrompido ou protegido'})")
 
 
 def extract_audio(
@@ -531,10 +579,12 @@ def transcribe(
     runner = _Process(should_stop)
     try:
         if not wav.is_file():
+            check_container(tools, source, runner, work)
             if not extract_audio(tools, source, wav, runner):
                 return _finish_empty(destination, partial, progress, work, no_audio=True)
         return _transcribe_wav(source, destination, partial, progress, work, wav, tools, runner, saved, on_estimate)
-    except Interrupted:
+    except (Interrupted, Postponed, MediaTimeout):
+        # Nada do que já foi transcrito é jogado fora.
         raise
     except BaseException:
         # Falha (ou qualquer erro inesperado): nada fica para trás.
@@ -549,6 +599,7 @@ def _finish_empty(destination: Path, partial: Path, progress: Path, work: Path, 
     partial.unlink(missing_ok=True)
     progress.unlink(missing_ok=True)
     destination.write_text("", encoding="utf-8")
+    destination.with_name(destination.name + LANGUAGE_SUFFIX).unlink(missing_ok=True)
     return MediaResult(pages=1, no_audio=no_audio)
 
 
@@ -569,13 +620,25 @@ def _transcribe_wav(
         remaining = max(0.0, (total - offset) / SAMPLE_RATE)
         estimate = estimate_seconds(remaining, tools.model, tools.vulkan)
         if on_estimate is not None:
-            on_estimate({
-                "duration": duration, "remaining": remaining, "estimate": estimate,
-                "model": tools.model_name, "vulkan": tools.vulkan,
-            })
+            try:
+                on_estimate({
+                    "duration": duration, "remaining": remaining, "estimate": estimate,
+                    "model": tools.model_name, "vulkan": tools.vulkan,
+                })
+            except Exception:
+                # O aviso é só informação: um erro ao gravá-lo (banco ocupado)
+                # não pode jogar fora o progresso do arquivo.
+                pass
         if duration >= MAX_AUDIO_SECONDS - 1:
             truncated = "duration"
-        deadline = time.monotonic() + max(FILE_TIMEOUT_MIN_S, FILE_TIMEOUT_FACTOR * estimate)
+        # Orçamento desta execução: 3x a estimativa até o primeiro trecho ser
+        # medido; dali em diante, 3x o que a velocidade real do primeiro trecho
+        # projeta para o áudio restante (uma máquina mais lenta que a tabela
+        # não estoura sozinha). Estourar não perde nada: o progresso fica e o
+        # arquivo volta na próxima conversão.
+        run_start = time.monotonic()
+        projected = estimate
+        measured = False
         chunk_timeout = max(
             PROCESS_TIMEOUT_MIN_S, PROCESS_TIMEOUT_FACTOR * estimate_seconds(CHUNK_SECONDS, tools.model, tools.vulkan)
         )
@@ -600,13 +663,14 @@ def _transcribe_wav(
                 if total - end < MIN_TAIL_SECONDS * SAMPLE_RATE:
                     end = total
                 write_chunk(reader, offset, end, chunk_wav)
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise MediaError("a transcrição passou do tempo limite do arquivo e foi encerrada")
+                if time.monotonic() - run_start > max(FILE_TIMEOUT_MIN_S, FILE_TIMEOUT_FACTOR * projected):
+                    handle.flush()
+                    raise Postponed()
+                chunk_started = time.monotonic()
                 result_json = out_base.with_name(out_base.name + ".json")
                 result_json.unlink(missing_ok=True)
                 code, _detail = runner.run(
-                    whisper_command(tools, chunk_wav, out_base, threads), min(left, chunk_timeout), work / "whisper.log"
+                    whisper_command(tools, chunk_wav, out_base, threads), chunk_timeout, work / "whisper.log"
                 )
                 if code != 0 or not result_json.is_file():
                     raise MediaError(f"o whisper.cpp falhou ao transcrever o trecho em {format_clock(offset / SAMPLE_RATE)}")
@@ -620,6 +684,9 @@ def _transcribe_wav(
                     if language:
                         languages[language] += (end - offset) / SAMPLE_RATE
                 handle.flush()
+                if not measured and end > offset:
+                    measured = True
+                    projected = (time.monotonic() - chunk_started) / ((end - offset) / SAMPLE_RATE) * remaining
                 offset = end
                 _write_progress(progress, source, tools.model_name, {
                     "offset": offset, "bytes": size, "pages": pages, "languages": dict(languages),
@@ -631,7 +698,12 @@ def _transcribe_wav(
         partial.write_text("", encoding="utf-8")
         pages = 1
     os.replace(partial, destination)
-    destination.with_name(destination.name + LANGUAGE_SUFFIX).write_text(language, encoding="utf-8")
+    sidecar = destination.with_name(destination.name + LANGUAGE_SUFFIX)
+    if language:
+        sidecar.write_text(language, encoding="utf-8")
+    else:
+        # Sem idioma (nenhuma fala): nada de um `.idioma` de transcrição anterior.
+        sidecar.unlink(missing_ok=True)
     progress.unlink(missing_ok=True)
     shutil.rmtree(work, ignore_errors=True)
     return MediaResult(pages=pages, language=language, duration=duration, truncated=truncated)

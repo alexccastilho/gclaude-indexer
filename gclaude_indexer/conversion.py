@@ -1332,6 +1332,20 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
         outcome = media.transcribe(source_path, destination, work, tools, should_stop, on_estimate)
     except media.Interrupted:
         return None
+    except media.Postponed:
+        # Passou do tempo previsto: o progresso ficou e o arquivo continua na
+        # fila (`discovered`) para a próxima conversão, que retoma dele.
+        return {"postponed": True, "name": name}
+    except media.MediaRefused:
+        # Lista de reprodução ou roteiro disfarçado de mídia: não é lido.
+        return {
+            "id": row["id"], "name": name, "events": [], "ocr_applied": False,
+            "sql": (
+                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
+                " ocr_failed = 0 WHERE id = ?"
+            ),
+            "params": (REASON_UNSUPPORTED, row["id"]),
+        }
     events: list[tuple[str, str, str, dict]] = []
     if outcome.no_audio:
         events.append(("conversion", "warning", "log.conversion.media_no_audio", {"name": name}))
@@ -1411,6 +1425,12 @@ def _convert_media(conn, config: ProjectConfig, rows, should_stop, result, langu
                 continue
             if info is None:
                 break
+            if info.get("postponed"):
+                record_event(
+                    conn, "conversion", "warning", "log.conversion.media_postponed",
+                    {"name": info["name"]}, language=language,
+                )
+                continue
             _apply_result(writer, result, info, language=language)
     finally:
         try:
