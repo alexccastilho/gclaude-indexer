@@ -386,6 +386,24 @@ def odf_has_table(path: Path) -> bool:
     return path.suffix.lower() in (".ods", ".fods")
 
 
+def iter_pages(path: Path, chunk_chars: int = 1 << 20):
+    """As páginas de um intermediário de caixa de mensagens (`.mbox`,
+    `.pst`), lidas em pedaços: o arquivo inteiro (que pode ter gigabytes)
+    nunca fica na memória, só a página em curso."""
+    buffer = ""
+    with open(path, encoding="utf-8") as handle:
+        while True:
+            piece = handle.read(chunk_chars)
+            if not piece:
+                break
+            buffer += piece
+            # O separador pode ter sido cortado entre dois pedaços: a última
+            # parte fica no buffer até chegar o resto.
+            *complete, buffer = buffer.split(MBOX_PAGE_SEPARATOR)
+            yield from complete
+    yield buffer
+
+
 # --- RTF -----------------------------------------------------------------------
 
 

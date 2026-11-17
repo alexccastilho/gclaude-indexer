@@ -203,18 +203,19 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> li
         with _PDF_LOCK:
             return _pdf_passages(pdf_path, references)
 
-    text = intermediate.read_text(encoding="utf-8")
     if category in MESSAGE_PAGE_CATEGORIES:
-        # Cada mensagem é uma página, com a referência dela.
-        from .light_formats import MBOX_PAGE_SEPARATOR
+        # Cada mensagem é uma página, com a referência dela. Lida em
+        # pedaços: o intermediário inteiro nunca fica na memória.
+        from .light_formats import iter_pages
 
         found: list[Passage] = []
-        for number, message in enumerate(text.split(MBOX_PAGE_SEPARATOR), start=1):
+        for number, message in enumerate(iter_pages(intermediate), start=1):
             reference = references.get(number, f"p. {number}")
             for passage in split_document(message):
                 passage.locator = " · ".join(part for part in (reference, passage.locator) if part)
                 found.append(passage)
         return found
+    text = intermediate.read_text(encoding="utf-8")
     if not is_whole_document_file(row["name"]):
         # A single image: one page, its OCR text.
         body = text.strip()

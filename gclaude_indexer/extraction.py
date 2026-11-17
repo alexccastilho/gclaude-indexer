@@ -135,14 +135,16 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative_path
         return _read_pdf_pages(pdf_path, limit)
 
+    if category in MESSAGE_PAGE_CATEGORIES:
+        # Cada mensagem é uma página. Lido em pedaços e cortado página a
+        # página: o intermediário (um `.pst` rende gigabytes) nunca é
+        # carregado nem partido inteiro.
+        return [(part[:limit], 0, False) for part in light_formats.iter_pages(intermediate)]
+
     text = intermediate.read_text(encoding="utf-8")[:limit]
 
     if category == "imagens":
         return [(text, 1, False)]
-    if category in MESSAGE_PAGE_CATEGORIES:
-        # Cada mensagem é uma página.
-        parts = intermediate.read_text(encoding="utf-8").split(light_formats.MBOX_PAGE_SEPARATOR)
-        return [(part[:limit], 0, False) for part in parts]
     if category == "xlsx" or (
         category == "opendocument" and light_formats.odf_has_table(Path(row["relative_path"]))
     ):
