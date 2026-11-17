@@ -219,3 +219,71 @@ def test_depois_de_entrar_a_rodada_seguinte_fica_quieta(tmp_path, sem_componente
     assert _janelas(conn) == janelas
     assert build_update_plan(conn, config, record_warnings=False).is_empty
     conn.close()
+
+
+def test_arquivo_em_espera_editado_e_alterado_mesmo_sem_o_componente(tmp_path, sem_componentes, monkeypatch):
+    """Rodada extra da revisão (I1): o `.doc` em espera foi editado enquanto
+    o LibreOffice faltava, e a rede voltou. Ele precisa sair como alterado:
+    senão a varredura o devolve à fila sem invalidar nada, a conversão baixa
+    o componente na mesma rodada, e as páginas novas caem no meio do grupo
+    por cima das janelas já classificadas."""
+    origem, _saida, config, conn = _projeto(tmp_path)
+    (origem / "video.mp4").unlink()
+    _rodada(conn, config)
+    conn.execute("UPDATE window SET status = 'done'")
+    conn.commit()
+
+    (origem / "a_antigo.doc").write_bytes(b"\xd0\xcf\x11\xe0documento antigo EDITADO com mais bytes")
+    plano = build_update_plan(conn, config, record_warnings=False)
+    assert [c.relative_path for c in plano.changed] == ["a_antigo.doc"]
+
+    # A rede voltou: a conversão desta rodada obtém o LibreOffice.
+    falso = tmp_path / "soffice.exe"
+    falso.write_bytes(b"MZ")
+    estado = {"tem": False}
+    monkeypatch.setattr(legacy_office, "soffice_path", lambda: falso if estado["tem"] else None)
+
+    def _obtem(**_k):
+        estado["tem"] = True
+        return falso
+
+    def _pdf_do_doc(_origem_doc, _soffice):
+        documento = fitz.open()
+        documento.new_page().insert_text((72, 72), "Texto do documento antigo editado.")
+        dados = documento.tobytes()
+        documento.close()
+        return dados
+
+    monkeypatch.setattr(legacy_office, "ensure_available", _obtem)
+    monkeypatch.setattr(legacy_office, "convert_to_pdf_bytes", _pdf_do_doc)
+
+    resultado = _rodada(conn, config)
+    assert resultado is not None and resultado.windows_deleted > 0
+    assert _estado(conn, "a_antigo.doc")[0] == "extracted"
+    # Janelas coerentes: nenhuma classificada sobrou de antes, nada sobreposto.
+    assert all(status != "done" for _key, status in _janelas(conn)), _janelas(conn)
+    conn.close()
+
+
+def test_video_em_espera_editado_tambem_e_alterado(tmp_path, sem_componentes):
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _rodada(conn, config)
+    assert build_update_plan(conn, config, record_warnings=False).changed == ()
+    (origem / "video.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42video editado e maior")
+    plano = build_update_plan(conn, config, record_warnings=False)
+    assert [c.relative_path for c in plano.changed] == ["video.mp4"]
+    conn.close()
+
+
+def test_arquivo_em_espera_com_so_a_data_mexida_continua_quieto(tmp_path, sem_componentes):
+    """O Drive reescreve a data sem mudar o conteúdo: o hash decide, como no
+    resto do plano."""
+    import os
+
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _rodada(conn, config)
+    caminho = origem / "a_antigo.doc"
+    os.utime(caminho, (caminho.stat().st_atime, caminho.stat().st_mtime + 3600))
+    assert build_update_plan(conn, config, record_warnings=False).changed == ()
+    assert _rodada(conn, config) is None
+    conn.close()
