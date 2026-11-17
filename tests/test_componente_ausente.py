@@ -287,3 +287,64 @@ def test_arquivo_em_espera_com_so_a_data_mexida_continua_quieto(tmp_path, sem_co
     assert build_update_plan(conn, config, record_warnings=False).changed == ()
     assert _rodada(conn, config) is None
     conn.close()
+
+
+def _libreoffice_chega_na_conversao(tmp_path, monkeypatch):
+    """A rede volta no meio da execução: a próxima conversão obtém o
+    LibreOffice (falso) e o `.doc` vira um PDF de uma página."""
+    falso = tmp_path / "soffice.exe"
+    falso.write_bytes(b"MZ")
+    estado = {"tem": False}
+    monkeypatch.setattr(legacy_office, "soffice_path", lambda: falso if estado["tem"] else None)
+
+    def _obtem(**_k):
+        estado["tem"] = True
+        return falso
+
+    def _pdf_do_doc(_origem_doc, _soffice):
+        documento = fitz.open()
+        documento.new_page().insert_text((72, 72), "Texto do documento antigo editado.")
+        dados = documento.tobytes()
+        documento.close()
+        return dados
+
+    monkeypatch.setattr(legacy_office, "ensure_available", _obtem)
+    monkeypatch.setattr(legacy_office, "convert_to_pdf_bytes", _pdf_do_doc)
+
+
+def test_varredura_sem_a_atualizacao_antes_mantem_o_arquivo_em_espera(tmp_path, sem_componentes, monkeypatch):
+    """A atualização automática antes da varredura falhou (pasta
+    inalcançável num instante, Parar) e a varredura rodou assim mesmo sobre
+    o `.doc` em espera, editado. Ela grava o hash novo, mas o arquivo
+    continua em espera: se virasse `discovered`, a conversão que obtém o
+    LibreOffice na mesma execução poria as páginas no começo do grupo, por
+    cima das janelas já classificadas, sem que nada as invalidasse."""
+    origem, _saida, config, conn = _projeto(tmp_path)
+    (origem / "video.mp4").unlink()
+    _rodada(conn, config)
+    conn.execute("UPDATE window SET status = 'done'")
+    conn.commit()
+    classificadas = _janelas(conn)
+    hash_antigo = conn.execute("SELECT sha256 FROM file WHERE name = 'a_antigo.doc'").fetchone()[0]
+
+    (origem / "a_antigo.doc").write_bytes(b"\xd0\xcf\x11\xe0documento antigo EDITADO com mais bytes")
+    scan(conn, config, language="pt-BR")  # sem `apply_pending_changes` antes
+    linha = conn.execute("SELECT sha256, size FROM file WHERE name = 'a_antigo.doc'").fetchone()
+    assert linha["sha256"] != hash_antigo
+    assert linha["size"] == (origem / "a_antigo.doc").stat().st_size
+    assert _estado(conn, "a_antigo.doc") == ("skipped", "component_unavailable", 1)
+
+    _libreoffice_chega_na_conversao(tmp_path, monkeypatch)
+    convert(conn, config, language="pt-BR")
+    extract_pages(conn, config, language="pt-BR")
+    prepare_windows(conn, config, language="pt-BR")
+    # Esta execução só obteve o componente: nenhuma página nova, janelas intactas.
+    assert _estado(conn, "a_antigo.doc") == ("skipped", "component_unavailable", 1)
+    assert _janelas(conn) == classificadas
+
+    # A seguinte o aponta como alterado e refaz as janelas do grupo.
+    resultado = _rodada(conn, config)
+    assert resultado is not None and resultado.windows_deleted > 0
+    assert _estado(conn, "a_antigo.doc")[0] == "extracted"
+    assert all(status != "done" for _key, status in _janelas(conn)), _janelas(conn)
+    conn.close()
