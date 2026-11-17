@@ -10,7 +10,7 @@
 {% if error %}
   <p class="error">{{ t(error) }}</p>
 {% else %}
-  {% if not plan.has_changes and not plan.unverified %}
+  {% if plan.is_empty %}
   <p>{{ t('update.nothing_changed') }}</p>
   {% endif %}
   {% if plan.unverified %}
