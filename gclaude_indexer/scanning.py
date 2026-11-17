@@ -39,6 +39,7 @@ from .file_types import (
     REASON_UNREADABLE,
     index_decision,
     is_extension_allowed,
+    is_unreadable_placeholder,
     is_waiting_component,
     name_decision,
     needs_head,
@@ -587,16 +588,7 @@ def _is_unreadable_placeholder(row) -> bool:
     """A linha de um arquivo novo que a varredura não conseguiu ler
     (`REASON_UNREADABLE`): para tudo o mais, ele ainda é novo."""
     try:
-        return row is not None and row["status"] == "skipped" and row["error"] == REASON_UNREADABLE
-    except (KeyError, IndexError):
-        return False
-
-
-def _may_hold_old_data(row) -> bool:
-    """Pré-filtro barato, pela linha lida no começo da varredura: só um
-    documento do índice (não ignorado, não cópia) pode ter dados antigos."""
-    try:
-        return row is not None and row["status"] not in ("skipped", "duplicate")
+        return row is not None and is_unreadable_placeholder(row["status"], row["error"])
     except (KeyError, IndexError):
         return False
 
@@ -802,7 +794,9 @@ def _record_scanned_file(
 
         result.discovered += 1
     else:
-        if _may_hold_old_data(existing_row):
+        # Pré-filtro barato pela linha do começo da varredura: só um
+        # documento do índice (não ignorado, não cópia) pode ter dados antigos.
+        if _is_indexed_row(existing_row):
             # A rede da atualização: o documento mudou e o índice ainda tem o
             # que ele era (páginas, busca, janelas do grupo). Normalmente a
             # atualização automática antes da varredura já descartou isso;

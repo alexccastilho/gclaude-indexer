@@ -31,7 +31,7 @@ from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, ocr_retry_count
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
-from gclaude_indexer.file_types import is_waiting_component
+from gclaude_indexer.file_types import is_unreadable_placeholder, is_waiting_component
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.invalidation import apply_pending_changes
 from gclaude_indexer.scanning import scan
@@ -425,3 +425,9 @@ def test_predicado_unico_do_arquivo_em_espera():
     assert not is_waiting_component("skipped", "secret")
     assert not is_waiting_component("discovered", "component_unavailable")
     assert not is_waiting_component("extracted", None)
+
+
+def test_predicado_unico_da_linha_de_arquivo_ilegivel():
+    assert is_unreadable_placeholder("skipped", "unreadable")
+    assert not is_unreadable_placeholder("skipped", "component_unavailable")
+    assert not is_unreadable_placeholder("discovered", "unreadable")
