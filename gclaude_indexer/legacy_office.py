@@ -22,6 +22,11 @@ Como a conversão é feita:
   (o LibreOffice engasga com alguns caminhos e o Google Drive pode estar
   segurando o original); espaços e acentos do caminho de origem não chegam a
   ele;
+- o perfil nasce já travado (`registrymodifications.xcu`, ver `PROFILE_LOCKDOWN`):
+  nenhuma macro roda, nenhum vínculo externo é atualizado, nenhum conteúdo
+  remoto é buscado (um documento de terceiros não pode ler arquivos locais
+  nem fazer o computador acessar a rede); o LibreOffice ainda é isolado do
+  perfil do usuário;
 - uma conversão por vez neste processo (cada `soffice` carrega centenas de
   megabytes, e dois no mesmo perfil de instalação se atropelam);
 - tempo limite por arquivo; passado dele, a árvore inteira de processos é
@@ -50,6 +55,32 @@ _STANDARD_LOCATIONS = (
     "ProgramFiles", "ProgramFiles(x86)",
 )
 
+# Um LibreOffice já instalado na máquina só serve se for desta versão ou
+# mais nova (as anteriores têm filtros de importação com falhas de segurança
+# corrigidas depois); abaixo disso, ou sem versão legível, o componente
+# baixado é o único aceito. O componente, quando existe, sempre vem antes.
+MIN_SYSTEM_VERSION = (7, 6)
+
+# (caminho da configuração, nome, tipo, valor): vai para o perfil de cada
+# execução antes de o `soffice` abrir. Só chaves que existem no esquema do
+# LibreOffice (conferidas em `share/registry/main.xcd` da 26.2).
+PROFILE_LOCKDOWN: tuple[tuple[str, str, str, str], ...] = (
+    # Nunca atualizar vínculos, campos e gráficos ao abrir o documento
+    # (Calc/Writer: 2 = nunca).
+    ("/org.openoffice.Office.Calc/Content/Update", "Link", "int", "2"),
+    ("/org.openoffice.Office.Writer/Content/Update", "Link", "int", "2"),
+    ("/org.openoffice.Office.Writer/Content/Update", "Field", "boolean", "false"),
+    ("/org.openoffice.Office.Writer/Content/Update", "Chart", "boolean", "false"),
+    # Macros: nível "muito alto" e execução desligada.
+    ("/org.openoffice.Office.Common/Security/Scripting", "MacroSecurityLevel", "int", "3"),
+    ("/org.openoffice.Office.Common/Security/Scripting", "DisableMacrosExecution", "boolean", "true"),
+    # Vínculos que vêm de outro documento ou de fora não são seguidos.
+    ("/org.openoffice.Office.Common/Security/Scripting", "BlockUntrustedRefererLinks", "boolean", "true"),
+    ("/org.openoffice.Office.Common/Security/Scripting", "CheckDocumentEvents", "boolean", "true"),
+    # Sem verificação de atualização do próprio LibreOffice pela rede.
+    ("/org.openoffice.Office.Update/Update", "Enabled", "boolean", "false"),
+)
+
 _lock = threading.Lock()
 
 
@@ -72,8 +103,45 @@ def soffice_path() -> Path | None:
             continue
         candidate = Path(base) / "LibreOffice" / "program" / "soffice.exe"
         if candidate.is_file():
-            return candidate
+            version = _version_of(candidate)
+            if version is not None and version >= MIN_SYSTEM_VERSION:
+                return candidate
     return None
+
+
+def _version_of(soffice: Path) -> tuple[int, int] | None:
+    """`(major, minor)` lida do `bootstrap.ini` ao lado do `soffice`
+    (`ProductKey=LibreOffice 26.2`). `None` se ilegível."""
+    import re
+
+    try:
+        text = (soffice.parent / "bootstrap.ini").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    found = re.search(r"^ProductKey\s*=\s*LibreOffice\s+(\d+)\.(\d+)", text, re.MULTILINE | re.IGNORECASE)
+    return (int(found.group(1)), int(found.group(2))) if found else None
+
+
+def write_profile(profile: Path) -> Path:
+    """Grava o `registrymodifications.xcu` travado em `<profile>/user/`,
+    onde o LibreOffice o lê ao criar o perfil. Devolve o caminho."""
+    from xml.sax.saxutils import quoteattr
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<oor:items xmlns:oor="http://openoffice.org/2001/registry"'
+        ' xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+    ]
+    for path, name, kind, value in PROFILE_LOCKDOWN:
+        lines.append(
+            f'<item oor:path={quoteattr(path)}><prop oor:name={quoteattr(name)} oor:op="fuse">'
+            f"<value>{value}</value></prop></item>"
+        )
+    lines.append("</oor:items>")
+    target = profile / "user" / "registrymodifications.xcu"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return target
 
 
 def ensure_available() -> Path | None:
@@ -149,6 +217,8 @@ def convert_to_pdf_bytes(source: Path, soffice: Path, timeout: float = CONVERT_T
         indir = work_path / "entrada"
         for folder in (profile, outdir, indir):
             folder.mkdir()
+        # Antes de o `soffice` abrir: ele lê estas chaves ao criar o perfil.
+        write_profile(profile)
         # Nome simples, mantendo só a extensão: o LibreOffice escolhe o filtro
         # de importação por ela.
         copy = indir / ("documento" + source.suffix.lower())

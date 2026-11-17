@@ -1,4 +1,17 @@
 {
  "format": 1,
- "components": []
+ "components": [
+  {
+   "name": "libreoffice",
+   "url": "https://download.documentfoundation.org/libreoffice/stable/26.2.7/win/x86_64/LibreOffice_26.2.7_Win_x86-64.msi",
+   "sha256": "480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59",
+   "size": 373121024,
+   "license": "MPL-2.0",
+   "kind": "msi",
+   "target": "libreoffice",
+   "max_extracted": 2000000000,
+   "max_members": 40000,
+   "check": "program/soffice.exe"
+  }
+ ]
 }

@@ -493,3 +493,234 @@ def test_redirecionamento_para_http_e_recusado():
 
 def test_o_abridor_de_verdade_usa_o_manipulador_de_redirecionamento():
     assert any(isinstance(h, components._HttpsOnlyRedirects) for h in components._opener.handlers)
+
+
+# --- componente `msi` (extração administrativa), com o msiexec simulado -----------------
+
+
+def _msiexec_falso(monkeypatch, arquivos=None, codigo=0, chamadas=None, erro=None):
+    """Troca `components._run_msiexec`: lê o TARGETDIR da linha de comando e
+    escreve lá o que um `msiexec /a` escreveria (inclusive a cópia do .msi)."""
+    import re
+
+    def _rodar(linha, timeout):
+        if chamadas is not None:
+            chamadas.append((linha, timeout))
+        if erro is not None:
+            raise erro
+        destino = Path(re.search(r'TARGETDIR="([^"]+)"', linha).group(1))
+        pacote = re.search(r'/a "([^"]+)"', linha).group(1)
+        assert Path(pacote).suffix == ".msi" and Path(pacote).is_file()
+        for nome, dados in (arquivos or {}).items():
+            alvo = destino / nome
+            alvo.parent.mkdir(parents=True, exist_ok=True)
+            alvo.write_bytes(dados)
+        (destino / "pacote.msi").write_bytes(b"copia")
+        return codigo
+
+    monkeypatch.setattr(components, "_run_msiexec", _rodar)
+
+
+def _componente_msi(dados: bytes, **extras):
+    import hashlib
+
+    base = dict(check="program/soffice.exe", max_extracted=10_000, max_members=50)
+    base.update(extras)
+    return components.Component(
+        name="pacote", url="https://example.invalid/pacote.msi", sha256=hashlib.sha256(dados).hexdigest(),
+        size=len(dados), license="MPL-2.0", kind="msi", target="teste/pacote", **base,
+    )
+
+
+def test_msi_e_extraido_com_msiexec_marcado_e_o_msi_apagado(tmp_path, monkeypatch):
+    dados = b"conteudo do msi"
+    chamadas = []
+    _msiexec_falso(monkeypatch, {"program/soffice.exe": b"MZ", "share/a.txt": b"a"}, chamadas=chamadas)
+    assert _instalar(monkeypatch, _componente_msi(dados), dados) == {"pacote": components.STATUS_INSTALLED}
+
+    pasta = components.path_of("pacote")
+    assert (pasta / "program" / "soffice.exe").is_file()
+    assert not list(pasta.glob("*.msi"))  # a cópia do administrativo sai
+    teste = tmp_path / "local" / "teste"
+    assert not list(teste.glob("*.msi")) and not list(teste.glob("*.part"))
+    assert not (teste / "pacote.extracting").exists()
+    linha, timeout = chamadas[0]
+    # Uma linha só, sem shell, com o TARGETDIR entre aspas (o caminho pode ter espaço).
+    assert linha.lower().count("msiexec.exe") == 1 and " /a " in linha and " /qn " in linha
+    assert 'TARGETDIR="' in linha and timeout == 15 * 60
+    # Marcado: já está instalado.
+    assert components.ensure(["pacote"]) == {"pacote": components.STATUS_PRESENT}
+    assert [c.name for c in components.installed_components()] == ["pacote"]
+    assert components.remove("pacote") and components.path_of("pacote") is None
+
+
+@pytest.mark.parametrize("cenario", ["codigo", "tempo", "sem_executavel", "teto", "membros"])
+def test_msi_com_problema_fica_indisponivel_sem_sobras(tmp_path, monkeypatch, cenario):
+    dados = b"msi"
+    arquivos = {"program/soffice.exe": b"MZ"}
+    codigo, erro = 0, None
+    if cenario == "codigo":
+        codigo = 1625  # exige elevação / política recusa
+    elif cenario == "tempo":
+        erro = subprocess.TimeoutExpired("msiexec", 1)
+    elif cenario == "sem_executavel":
+        arquivos = {"outra/coisa.txt": b"x"}
+    elif cenario == "teto":
+        arquivos = {"program/soffice.exe": b"M" * 20_000}
+    elif cenario == "membros":
+        arquivos = {"program/soffice.exe": b"MZ", **{f"m{i}.txt": b"x" for i in range(60)}}
+    _msiexec_falso(monkeypatch, arquivos, codigo=codigo, erro=erro)
+    assert _instalar(monkeypatch, _componente_msi(dados), dados) == {"pacote": components.STATUS_UNAVAILABLE}
+    teste = tmp_path / "local" / "teste"
+    assert components.path_of("pacote") is None
+    assert not (teste / "pacote").exists() and not (teste / "pacote.extracting").exists()
+    assert not list(teste.glob("*.msi")) and not list(teste.glob("*.part"))
+
+
+def test_junction_ou_link_no_extraido_e_recusado(tmp_path, monkeypatch):
+    import re
+
+    fora = tmp_path / "fora"
+    fora.mkdir()
+    (fora / "segredo.txt").write_text("não pode sair", encoding="utf-8")
+    dados = b"msi"
+
+    def _rodar(linha, timeout):
+        destino = Path(re.search(r'TARGETDIR="([^"]+)"', linha).group(1))
+        (destino / "program").mkdir(parents=True)
+        (destino / "program" / "soffice.exe").write_bytes(b"MZ")
+        atalho = destino / "atalho"
+        if sys.platform == "win32":
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(atalho), str(fora)], check=True, capture_output=True)
+        else:
+            atalho.symlink_to(fora, target_is_directory=True)
+        return 0
+
+    monkeypatch.setattr(components, "_run_msiexec", _rodar)
+    assert _instalar(monkeypatch, _componente_msi(dados), dados) == {"pacote": components.STATUS_UNAVAILABLE}
+    assert (fora / "segredo.txt").exists()  # nada foi apagado através do link
+    assert components.path_of("pacote") is None
+
+
+def test_manifesto_do_pacote_tem_o_libreoffice_msi_oficial_fixado():
+    item = components.load_manifest()["libreoffice"]
+    assert item.kind == "msi" and item.license == "MPL-2.0"
+    assert item.url.startswith("https://download.documentfoundation.org/libreoffice/stable/")
+    assert item.url.endswith("_Win_x86-64.msi") and len(item.sha256) == 64 and item.size > 100_000_000
+    assert item.check == legacy_office.SOFFICE_RELATIVE
+    # A árvore real: cerca de 1,2 GB e 19,5 mil arquivos.
+    assert item.max_extracted >= 1_300_000_000 and item.members_limit >= 25_000
+
+
+# --- perfil travado e versão do LibreOffice do sistema (revisão de segurança) -------------
+
+
+def test_perfil_travado_e_gravado_antes_de_abrir_o_soffice(tmp_path, simulador, monkeypatch):
+    import re
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+
+    vistos = []
+    real = legacy_office._popen
+
+    def _espiao(comando, env):
+        uri = next(a for a in comando if a.startswith("-env:UserInstallation="))[len("-env:UserInstallation="):]
+        perfil = Path(urllib.request.url2pathname(urllib.parse.urlparse(uri).path))
+        arquivo = perfil / "user" / "registrymodifications.xcu"
+        vistos.append(arquivo.read_text(encoding="utf-8") if arquivo.is_file() else None)
+        return real(comando, env)
+
+    monkeypatch.setattr(legacy_office, "_popen", _espiao)
+    arquivo = tmp_path / "a.doc"
+    arquivo.write_bytes(b"x")
+    legacy_office.convert_to_pdf_bytes(arquivo, tmp_path / "soffice.exe")
+
+    xcu = vistos[0]
+    assert xcu is not None
+    ET.fromstring(xcu)  # XML bem formado
+    esperados = {
+        ("/org.openoffice.Office.Common/Security/Scripting", "MacroSecurityLevel", "3"),
+        ("/org.openoffice.Office.Common/Security/Scripting", "DisableMacrosExecution", "true"),
+        ("/org.openoffice.Office.Common/Security/Scripting", "BlockUntrustedRefererLinks", "true"),
+        ("/org.openoffice.Office.Calc/Content/Update", "Link", "2"),
+        ("/org.openoffice.Office.Writer/Content/Update", "Link", "2"),
+        ("/org.openoffice.Office.Writer/Content/Update", "Field", "false"),
+        ("/org.openoffice.Office.Update/Update", "Enabled", "false"),
+    }
+    achados = set(re.findall(
+        r'<item oor:path="([^"]+)"><prop oor:name="([^"]+)" oor:op="fuse"><value>([^<]*)</value>', xcu
+    ))
+    assert esperados <= achados
+
+
+def _instalacao_do_sistema(tmp_path, monkeypatch, produto):
+    base = tmp_path / "ProgramFiles"
+    programa = base / "LibreOffice" / "program"
+    programa.mkdir(parents=True)
+    (programa / "soffice.exe").write_bytes(b"MZ")
+    if produto is not None:
+        (programa / "bootstrap.ini").write_text(f"[Bootstrap]\nProductKey={produto}\n", encoding="utf-8")
+    monkeypatch.setenv("ProgramFiles", str(base))
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    return programa / "soffice.exe"
+
+
+@pytest.mark.parametrize(
+    "produto, aceito",
+    [("LibreOffice 7.5", False), ("LibreOffice 6.4", False), (None, False), ("Outra coisa", False),
+     ("LibreOffice 7.6", True), ("LibreOffice 24.2", True), ("LibreOffice 26.2", True)],
+)
+def test_libreoffice_do_sistema_exige_versao_minima(tmp_path, monkeypatch, produto, aceito):
+    exe = _instalacao_do_sistema(tmp_path, monkeypatch, produto)
+    assert (legacy_office.soffice_path() == exe) is aceito
+
+
+def test_componente_vem_antes_do_libreoffice_do_sistema(tmp_path, monkeypatch):
+    _instalacao_do_sistema(tmp_path, monkeypatch, "LibreOffice 26.2")
+    pasta = tmp_path / "componente"
+    (pasta / "program").mkdir(parents=True)
+    (pasta / "program" / "soffice.exe").write_bytes(b"MZ")
+    monkeypatch.setattr(components, "path_of", lambda nome: pasta)
+    assert legacy_office.soffice_path() == pasta / "program" / "soffice.exe"
+
+
+# --- fila de reconversão: só o que ficou pendente por falta do componente --------------
+
+
+def _linha(conn, nome, extensao, status, erro, ocr_failed):
+    conn.execute(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, mtime, status, error, ocr_failed)"
+        " VALUES (?, ?, ?, 1, '', 0, ?, ?, ?)",
+        (nome, nome, extensao, status, erro, ocr_failed),
+    )
+    conn.commit()
+
+
+def test_fila_de_reconversao_nao_reabre_o_que_a_varredura_recusou(tmp_path):
+    origem, saida, config, conn = _projeto(tmp_path)
+    recusados = ("secret", "binary", "archive", "blocked_extension", "unsupported")
+    for erro in recusados:
+        _linha(conn, f"{erro}.x", "x", "skipped", erro, 1)  # estado impossível, mas não pode reabrir
+    _linha(conn, "pendente.doc", "doc", "skipped", "component_unavailable", 1)
+
+    assert ocr_retry_count(conn) == 1
+    conversion.requeue_ocr_failures(conn)
+    estados = {r["name"]: r["status"] for r in conn.execute("SELECT name, status FROM file")}
+    assert estados["pendente.doc"] == "discovered"
+    assert all(estados[f"{e}.x"] == "skipped" for e in recusados)
+    conn.close()
+
+
+def test_varredura_zera_ocr_failed_quando_o_arquivo_vira_ignorado(tmp_path):
+    from gclaude_indexer import scanning
+
+    origem, saida, config, conn = _projeto(tmp_path)
+    _linha(conn, "chave.doc", "doc", "skipped", "component_unavailable", 1)
+    scanning._update_file(conn, "chave.doc", "chave.doc", "doc", 5, "", 1.0, None, "skipped", "secret")
+    linha = conn.execute("SELECT status, error, ocr_failed FROM file").fetchone()
+    assert (linha["status"], linha["error"], linha["ocr_failed"]) == ("skipped", "secret", 0)
+
+    _linha(conn, "outro.pdf", "pdf", "failed", "x", 1)
+    scanning._update_file(conn, "outro.pdf", "outro.pdf", "pdf", 5, "h", 1.0, None, "discovered")
+    assert conn.execute("SELECT ocr_failed FROM file WHERE name = 'outro.pdf'").fetchone()[0] == 1
+    conn.close()
