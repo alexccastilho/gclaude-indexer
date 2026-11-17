@@ -517,7 +517,7 @@ def _scan_files(
         if reason is not None:
             _record_ignored_file(
                 writer, relative_path, name, extension, size, mtime, reason,
-                existing_row, known_paths, result,
+                existing_row, known_paths, result, config.output_folder,
             )
             continue
 
@@ -538,6 +538,28 @@ def _is_indexed_row(row) -> bool:
         return row is not None and row["status"] not in ("skipped", "duplicate")
     except (KeyError, IndexError):
         return False
+
+
+def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
+    """Pages, full-text rows and converted intermediate of one file."""
+    # Local imports: both modules import this one.
+    from .conversion import converted_artifact_path
+    from .fulltext import remove_file as remove_from_search
+
+    row = conn.execute(
+        "SELECT id, extension, needs_ocr FROM file WHERE relative_path = ?", (relative_path,)
+    ).fetchone()
+    if row is None:
+        return
+    remove_from_search(conn, row["id"])
+    conn.execute("DELETE FROM page WHERE file_id = ?", (row["id"],))
+    if output_folder:
+        artifact = converted_artifact_path(output_folder, relative_path, row["extension"], bool(row["needs_ocr"]))
+        if artifact is not None:
+            try:
+                artifact.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _ignore_reason(path: Path, name: str, config: ProjectConfig) -> str | None:
@@ -561,7 +583,7 @@ def _ignore_reason(path: Path, name: str, config: ProjectConfig) -> str | None:
 
 def _record_ignored_file(
     writer: BatchWriter, relative_path: str, name: str, extension: str, size: int, mtime: float,
-    reason: str, existing_row, known_paths, result: ScanResult,
+    reason: str, existing_row, known_paths, result: ScanResult, output_folder: str | None = None,
 ) -> None:
     """The file stays in the inventory as `skipped`, the reason in
     `file.error`, with an empty hash: it was never read, so it has no
@@ -572,9 +594,19 @@ def _record_ignored_file(
             c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
         ))
     else:
-        writer.add(lambda c: _update_file(
-            c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
-        ))
+        def op(c) -> None:
+            # A row that held a document (its content changed into a key, or
+            # into binary) must not leave the old text behind: pages and
+            # full-text rows go with the flip, and so does the intermediate
+            # on disk. In the normal flow the update plan already did this
+            # before the scan; this is the net under a direct scan.
+            if _is_indexed_row(existing_row):
+                _drop_derived_data(c, relative_path, output_folder)
+            _update_file(
+                c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
+            )
+
+        writer.add(op)
     result.ignored += 1
     result.ignored_by_reason[reason] = result.ignored_by_reason.get(reason, 0) + 1
     known_paths[relative_path] = {

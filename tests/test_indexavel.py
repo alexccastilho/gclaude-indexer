@@ -404,3 +404,39 @@ def test_cartao_da_varredura_mostra_os_ignorados(tmp_path):
     scan(conn, _config(origem, tmp_path / "saida", ["all"]))
     etapas = step_status(conn, lambda chave: False)
     assert etapas[0]["vars"] == {"total": 6, "ignored": 5}
+
+
+def test_indexado_cujo_conteudo_vira_chave_perde_paginas_busca_e_intermediario(tmp_path):
+    """Já indexado como texto e depois reescrito como chave privada: numa
+    varredura direta (sem o plano antes), o texto antigo sai do índice."""
+    import os
+
+    from gclaude_indexer.conversion import convert, converted_artifact_path
+    from gclaude_indexer.extraction import extract_pages
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    alvo = origem / "notas.txt"
+    alvo.write_text("TEXTO-ANTIGO-SIGILOSO sobre o contrato", encoding="utf-8")
+    saida = tmp_path / "saida"
+    conn = _banco(saida)
+    config = _config(origem, saida, ["all"])
+    scan(conn, config)
+    convert(conn, config)
+    extract_pages(conn, config)
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM fulltext").fetchone()[0] >= 1
+    artefato = converted_artifact_path(config.output_folder, "notas.txt", "txt", False)
+    assert artefato is not None and artefato.exists()
+
+    alvo.write_text(
+        "-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----\n", encoding="utf-8"
+    )
+    os.utime(alvo, (1_000_000_000, 1_000_000_000))
+    scan(conn, config)
+
+    linha = conn.execute("SELECT status, error FROM file").fetchone()
+    assert (linha["status"], linha["error"]) == ("skipped", "secret")
+    assert conn.execute("SELECT COUNT(*) FROM page").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM fulltext").fetchone()[0] == 0
+    assert not artefato.exists()
