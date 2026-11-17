@@ -503,6 +503,29 @@ def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path
     assert leituras["chamadas"] == ["d0.pdf"]
 
 
+def test_leitura_tardia_de_arquivo_novo_tambem_vale_para_o_plano_seguinte(tmp_path, leituras):
+    """Achado 8: o resultado guardado vale também para a conferência de cópia
+    dos arquivos novos (com a data da caminhada)."""
+    import time
+
+    from gclaude_indexer import update_plan
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    (origem / "a.pdf").write_text("a", encoding="utf-8")
+    _registrar(conn, "a.pdf", "a", (origem / "a.pdf").stat().st_mtime)
+    (origem / "b.pdf").write_text("b", encoding="utf-8")  # novo, mesmo tamanho
+    leituras["espera"] = 0.5
+
+    update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
+    time.sleep(1.0)
+    update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
+    assert leituras["chamadas"] == ["b.pdf"]
+
+
 def test_telas_usam_prazo_curto(tmp_path, leituras, monkeypatch):
     import time
 
