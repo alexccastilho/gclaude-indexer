@@ -51,6 +51,21 @@ from .paths import natural_sort_key
 
 ERROR_MESSAGE_CHAR_LIMIT = 500
 
+# Documento inteiro (DOCX, PPTX, XLSX, HTML, TXT, e-mail...) vira uma página
+# só, com o texto todo do arquivo. O limite por página do projeto
+# (`chars_per_page`) é calibrado em páginas de PDF e de imagem; aplicado a um
+# documento inteiro cortaria o corpo da peça logo depois do título, e por isso
+# estes têm um teto fixo, que ainda traz título, data e ementa para a
+# classificação (o texto completo vai para a busca de qualquer jeito).
+WHOLE_DOCUMENT_CHARS = 4000
+_PAGED_CATEGORIES = ("pdf", "imagens")
+
+
+def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
+    """Quantos caracteres de cada página entram em `page.text`: o limite do
+    projeto para PDF e imagem, `WHOLE_DOCUMENT_CHARS` para o resto."""
+    return config.chars_per_page if category in _PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
+
 
 @dataclass
 class ExtractionResult:
@@ -95,8 +110,8 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
     # collection that's the entire collection's text in memory at once (I2,
     # Phase 13 final review). The sequential path never had this problem
     # (one file at a time), but truncates here too, at no extra cost.
-    limit = config.chars_per_page
     category = category_of_extension("." + row["extension"])
+    limit = chars_limit_for(category, config)
     relative_path = row["relative_path"]
 
     # The intermediate lives on the machine that converted the file
@@ -125,7 +140,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
 
 
 def _write_pages(conn, config: ProjectConfig, row, pages: list[tuple[str, int, bool]], start_sheet: int) -> int:
-    limit = config.chars_per_page
+    limit = chars_limit_for(category_of_extension("." + row["extension"]), config)
     library = config.collection_type == "biblioteca"
     sheet = start_sheet
 

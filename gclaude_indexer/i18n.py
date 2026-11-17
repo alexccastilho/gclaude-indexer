@@ -117,40 +117,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.group_pattern": "Padrão do agrupador (regex)",
         "new_project.group_pattern_placeholder": "usado só quando o agrupamento é por padrão no nome",
         "new_project.extensions": "Extensões incluídas",
-        "new_project.section_slicing": "Fatiamento, janelas e OCR",
-        "new_project.pages_per_block": "Páginas por bloco",
-        "new_project.pages_per_window": "Páginas por janela",
-        "new_project.overlap": "Sobreposição",
-        "new_project.chars_per_page": "Caracteres por página",
-        "new_project.ocr_language": "Idioma do OCR",
-        "proposal.analyze": "Analisar a pasta e propor",
-        "proposal.no_folder": "Escolha a pasta de origem: o sistema analisa o que há nela e propõe os valores desta seção.",
-        "proposal.folder_not_found": "A pasta \"{folder}\" não foi encontrada.",
-        "proposal.empty": "Nenhum arquivo das extensões marcadas foi encontrado nesta pasta.",
-        "proposal.title": "Configuração proposta para esta pasta",
-        "proposal.analyzed": "{files} arquivos analisados, cerca de {pages} páginas:",
-        "proposal.composition_item": "{count} × {kind}",
-        "proposal.partial": "A pasta é grande: a análise parou em {files} arquivos ({seconds} s), e a proposta vale para essa amostra.",
-        "proposal.apply": "Aplicar estas configurações",
-        "proposal.applied": "Aplicado. Você ainda pode mudar qualquer campo.",
-        "proposal.language.por": "português",
-        "proposal.language.eng": "inglês",
-        "proposal.language.spa": "espanhol",
-        "proposal.reason.block_no_pdf": "Não há PDFs: só PDFs são cortados em blocos, então este campo não tem efeito.",
-        "proposal.reason.block_default": "Os PDFs têm texto próprio; o corte em blocos de {value} páginas só evita travar em arquivos grandes.",
-        "proposal.reason.block_scanned": "{share}% dos PDFs analisados são escaneados e passam por OCR: blocos menores mostram progresso mais cedo e retomam mais rápido se algo parar.",
-        "proposal.reason.chars_whole_docs": "A maior parte são arquivos de documento inteiro (HTML, DOCX, TXT…): os primeiros {value} caracteres já trazem título, data e ementa para a classificação. O texto completo de todos os arquivos vai para a busca.",
-        "proposal.reason.chars_scanned": "Os PDFs são escaneados: o texto vem do OCR, e {value} caracteres por página bastam.",
-        "proposal.reason.chars_pdf": "Em 3 de cada 4 páginas analisadas o texto cabe em {value} caracteres (a mais cheia tem {max}). O texto completo vai para a busca de qualquer jeito.",
-        "proposal.reason.window_whole_docs": "{share}% das páginas são arquivos de documento inteiro, uma peça por arquivo: não há divisa a procurar dentro da janela, e janelas maiores só reduzem o número de chamadas.",
-        "proposal.reason.window_short_pdfs": "Os PDFs são curtos (mediana de {median} páginas): cada arquivo tende a ser uma peça, e janelas maiores são mais rápidas.",
-        "proposal.reason.window_long_pdfs": "Os PDFs são longos (mediana de {median} páginas) e costumam juntar várias peças: janelas menores marcam melhor onde cada uma começa.",
-        "proposal.reason.window_capped": "Reduzido para {value} para a janela caber no contexto do modelo local com {chars} caracteres por página.",
-        "proposal.reason.overlap_zero": "Só há arquivos de documento inteiro: nenhum documento fica partido entre duas janelas, então repetir páginas só gastaria tempo.",
-        "proposal.reason.overlap_multi_page": "Há documentos de várias páginas: repetir {value} páginas garante que um documento partido na borda apareça inteiro numa janela.",
-        "proposal.reason.ocr_detected": "Idioma predominante do texto: {languages}.",
-        "proposal.reason.ocr_missing": "Também apareceu {languages}, mas o Tesseract desta máquina não tem os dados desse idioma; ficou de fora.",
-        "proposal.reason.ocr_unused": "Nada nesta pasta precisa de OCR (nenhum PDF escaneado nem imagem): o valor não será usado.",
         "new_project.section_classification": "Classificação",
         "new_project.classification_engine": "Motor de classificação",
         "new_project.help_engine": '"automático" escolhe o motor "local" se o hardware permitir, senão "regras".',
@@ -267,26 +233,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             'fora da lista marcada é ignorado (fica registrado, mas não processado). Use "TODOS" '
             "para não se preocupar com a lista, dentro do limite de segurança (nunca indexa "
             "executáveis, compactados, bancos de dados, chaves nem áudio e vídeo, que têm caixa própria)."
-        ),
-        "hint.pages_per_block": (
-            "PDFs com mais páginas que este número são cortados em blocos menores antes de processar, para evitar travar em arquivos muito grandes. Ex. 80 corta um PDF de 300 "
-            "páginas em 4 blocos."
-        ),
-        "hint.pages_per_window": (
-            "Quantas páginas entram em cada \"janela\" enviada à classificação de uma vez. Janelas "
-            "menores custam mais chamadas ao motor, mas erram menos em documentos curtos "
-            "intercalados; janelas maiores são mais rápidas, mas podem misturar peças."
-        ),
-        "hint.overlap": (
-            "Quantas páginas do fim de uma janela se repetem no início da próxima, para evitar que um documento partido exatamente na borda de duas janelas seja classificado errado. Tem "
-            "que ser menor que \"Páginas por janela\"."
-        ),
-        "hint.chars_per_page": (
-            "Limite de caracteres de texto considerado por página ao montar a janela enviada à classificação. O texto além disso é cortado. Evita estourar o contexto do modelo em "
-            "páginas com texto excessivo (ex. tabela muito grande)."
-        ),
-        "hint.ocr_language": (
-            'Código de idioma do Tesseract (o motor de OCR) para páginas escaneadas: "por" para português, "eng" para inglês, "por+eng" para os dois no mesmo acervo.'
         ),
         "hint.classification_engine": (
             '"automático" usa o motor "local" (IA rodando nesta máquina) se o hardware permitir, '
@@ -1197,7 +1143,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.phase_fulltext": "incluindo os arquivos na busca de texto completo",
         "busy.title": "Banco de dados ocupado",
         "busy.message": "O banco de dados do projeto está ocupado neste instante (uma etapa está gravando ou o Google Drive está sincronizando). Nada se perdeu. Aguarde alguns segundos e recarregue a página.",
-        "log.conversion.summary": "Conversão concluída: {converted} documento(s) preparado(s), {ocr} com reconhecimento de texto (OCR), {sliced} dividido(s) em {blocks} parte(s) e {failed} com falha.",
+        "log.conversion.summary": "Conversão concluída: {converted} documento(s) preparado(s), {ocr} com reconhecimento de texto (OCR) e {failed} com falha.",
         "log.extraction.failed": "Não foi possível ler o texto das páginas de {name}: {error}",
         "log.extraction.intermediate_missing": "{name}: a cópia convertida deste arquivo não está neste computador, então ele volta para a conversão. Rode a conversão de novo e depois a extração.",
         "log.extraction.summary_interrupted": "Leitura das páginas pausada: até aqui, {pages} página(s) de {files} arquivo(s) e {failed} arquivo(s) com falha. Clique em \"Rodar etapa seguinte\" para continuar de onde parou.",
@@ -1240,6 +1186,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.fulltext.summary_interrupted": "Busca de texto completo pausada: {files} arquivo(s) incluído(s) agora e {pending} ainda por incluir. Continue em \"Buscar no acervo\" ou rodando a etapa de novo.",
         "log.fulltext.file_failed": "Não foi possível incluir {name} na busca: {error}. O arquivo continua no índice; só a busca de texto completo não o encontra.",
         "log.windows.summary": "Páginas organizadas em janelas, isto é, trechos de algumas páginas que são analisados de uma vez na classificação: {created} trecho(s) novo(s) e {existing} que já existiam.",
+        "log.settings.window": "Configuração automática depois da varredura: janelas de {value} página(s), com sobreposição de {overlap}. Janela: {window_reason} Sobreposição: {overlap_reason}",
+        "log.settings.chars_per_page": "Configuração automática: texto de PDF e de imagem limitado a {value} caracteres por página. {reason}",
+        "log.settings.ocr_language": "Configuração automática: idioma do OCR \"{value}\". {reason}",
+        "auto.reason.window_local": "o motor local lê melhor trechos curtos.",
+        "auto.reason.window_rules": "o motor de regras não depende de contexto, e janelas maiores são mais rápidas.",
+        "auto.reason.overlap_zero": "quase só há documentos inteiros, que não ficam partidos entre duas janelas.",
+        "auto.reason.overlap_repeat": "há documentos de várias páginas: repetir {value} página(s) mostra inteiro o que ficar partido na borda.",
+        "auto.reason.chars_pdf": "em 3 de cada 4 páginas de PDF amostradas o texto cabe nesse limite. O texto completo vai para a busca de qualquer jeito.",
+        "auto.reason.ocr_detected": "idioma predominante do texto amostrado.",
         "log.update.layout_mismatch": "No grupo {group}, as páginas mudaram e a divisão em trechos não bate mais com a anterior ({stored} trecho(s) guardado(s), {derived} pelas páginas atuais). Para não arriscar, todos os trechos deste grupo serão classificados de novo.",
         "log.update.renumbered": "Atenção: como um documento saiu do meio do grupo, a numeração de folhas (f. N) de {count} documento(s) seguinte(s) mudou: {files}. Se você já tinha conversas no Claude citando folhas desses documentos, confira a nova numeração depois de usar \"Importar e gerar relatórios\".",
         "log.update.generated_removed": "{count} arquivo(s) gerado(s) por um projeto ou por um conjunto saíram do índice: estavam dentro da pasta de origem e não são documentos do acervo.",
@@ -1343,40 +1298,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.group_pattern": "Grouping pattern (regex)",
         "new_project.group_pattern_placeholder": "used only when grouping by name pattern",
         "new_project.extensions": "Included extensions",
-        "new_project.section_slicing": "Slicing, windows and OCR",
-        "new_project.pages_per_block": "Pages per block",
-        "new_project.pages_per_window": "Pages per window",
-        "new_project.overlap": "Overlap",
-        "new_project.chars_per_page": "Characters per page",
-        "new_project.ocr_language": "OCR language",
-        "proposal.analyze": "Analyse the folder and propose",
-        "proposal.no_folder": "Choose the source folder: the system looks at what it holds and proposes the values of this section.",
-        "proposal.folder_not_found": "The folder \"{folder}\" was not found.",
-        "proposal.empty": "No file with the checked extensions was found in this folder.",
-        "proposal.title": "Proposed settings for this folder",
-        "proposal.analyzed": "{files} files analysed, about {pages} pages:",
-        "proposal.composition_item": "{count} × {kind}",
-        "proposal.partial": "The folder is large: the analysis stopped at {files} files ({seconds} s), and the proposal is based on that sample.",
-        "proposal.apply": "Apply these settings",
-        "proposal.applied": "Applied. You can still change any field.",
-        "proposal.language.por": "Portuguese",
-        "proposal.language.eng": "English",
-        "proposal.language.spa": "Spanish",
-        "proposal.reason.block_no_pdf": "There are no PDFs: only PDFs are cut into blocks, so this field has no effect.",
-        "proposal.reason.block_default": "The PDFs have their own text; cutting them into blocks of {value} pages only avoids stalling on large files.",
-        "proposal.reason.block_scanned": "{share}% of the PDFs analysed are scanned and go through OCR: smaller blocks show progress sooner and resume faster if something stops.",
-        "proposal.reason.chars_whole_docs": "Most are whole-document files (HTML, DOCX, TXT…): their first {value} characters already carry the title, date and summary for classification. The full text of every file goes into search.",
-        "proposal.reason.chars_scanned": "The PDFs are scanned: the text comes from OCR, and {value} characters per page are enough.",
-        "proposal.reason.chars_pdf": "In 3 out of 4 pages analysed the text fits in {value} characters (the fullest has {max}). The full text goes into search either way.",
-        "proposal.reason.window_whole_docs": "{share}% of the pages are whole-document files, one item per file: there is no boundary to find inside a window, and larger windows only cut the number of calls.",
-        "proposal.reason.window_short_pdfs": "The PDFs are short (median of {median} pages): each file tends to be one item, and larger windows are faster.",
-        "proposal.reason.window_long_pdfs": "The PDFs are long (median of {median} pages) and usually hold several items: smaller windows mark better where each one starts.",
-        "proposal.reason.window_capped": "Reduced to {value} so the window fits the local model's context with {chars} characters per page.",
-        "proposal.reason.overlap_zero": "There are only whole-document files: no document is split between two windows, so repeating pages would only cost time.",
-        "proposal.reason.overlap_multi_page": "There are multi-page documents: repeating {value} pages makes sure a document split at the edge appears whole in one window.",
-        "proposal.reason.ocr_detected": "Main language of the text: {languages}.",
-        "proposal.reason.ocr_missing": "{languages} also appeared, but Tesseract on this machine has no data for it; it was left out.",
-        "proposal.reason.ocr_unused": "Nothing in this folder needs OCR (no scanned PDF nor image): the value will not be used.",
         "new_project.section_classification": "Classification",
         "new_project.classification_engine": "Classification engine",
         "new_project.help_engine": '"automatic" picks the "local" engine if the hardware allows, otherwise "rules".',
@@ -1492,26 +1413,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             'is outside the checked list is skipped (logged, but not processed). Use "ALL" to not '
             "worry about the list, within the safety limit (never indexes executables, archives, "
             "databases, keys, or audio and video, which have their own box)."
-        ),
-        "hint.pages_per_block": (
-            "PDFs with more pages than this number are cut into smaller blocks before processing, to avoid getting stuck on very large files. E.g. 80 cuts a 300-page PDF into 4 blocks."
-        ),
-        "hint.pages_per_window": (
-            'How many pages go into each "window" sent to classification at once. Smaller windows '
-            "cost more engine calls but make fewer mistakes on short interleaved documents; larger "
-            "windows are faster but may mix pieces together."
-        ),
-        "hint.overlap": (
-            "How many pages from the end of one window repeat at the start of the next. This prevents a document split exactly at the border between two windows from being misclassified. "
-            "Must be smaller than \"Pages per window\"."
-        ),
-        "hint.chars_per_page": (
-            "Character limit of text considered per page when building the window sent to classification. Text beyond that is cut. Prevents overflowing the model's context on "
-            "pages with excessive text (e.g. a very large table)."
-        ),
-        "hint.ocr_language": (
-            'Tesseract (the OCR engine) language code for scanned pages: "por" for Portuguese, '
-            '"eng" for English, "por+eng" for both in the same collection.'
         ),
         "hint.classification_engine": (
             '"automatic" uses the "local" engine (AI running on this machine) if the hardware '
@@ -2391,7 +2292,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.phase_fulltext": "adding the files to the full-text search",
         "busy.title": "Database busy",
         "busy.message": "The project's database is busy right now (a step is writing or Google Drive is syncing). Nothing was lost. Wait a few seconds and reload the page.",
-        "log.conversion.summary": "Conversion complete: {converted} document(s) prepared, {ocr} with text recognition (OCR), {sliced} split into {blocks} part(s) and {failed} failed.",
+        "log.conversion.summary": "Conversion complete: {converted} document(s) prepared, {ocr} with text recognition (OCR) and {failed} failed.",
         "log.extraction.failed": "Could not read the text of the pages in {name}: {error}",
         "log.extraction.intermediate_missing": "{name}: the converted copy of this file is not on this computer, so it goes back to conversion. Run the conversion again, then the extraction.",
         "log.extraction.summary_interrupted": "Page reading paused: so far, {pages} page(s) from {files} file(s), and {failed} file(s) failed. Click \"Run next step\" to continue where it left off.",
@@ -2434,6 +2335,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.fulltext.summary_interrupted": "Full-text search paused: {files} file(s) added now and {pending} still to add. Continue in \"Search the collection\" or by running the step again.",
         "log.fulltext.file_failed": "Could not add {name} to the search: {error}. The file is still in the index; only full-text search does not find it.",
         "log.windows.summary": "Pages organized into windows, that is, sections of a few pages that are analyzed together during classification: {created} new section(s) and {existing} that already existed.",
+        "log.settings.window": "Automatic settings after the scan: windows of {value} page(s), with an overlap of {overlap}. Window: {window_reason} Overlap: {overlap_reason}",
+        "log.settings.chars_per_page": "Automatic settings: PDF and image text limited to {value} characters per page. {reason}",
+        "log.settings.ocr_language": "Automatic settings: OCR language \"{value}\". {reason}",
+        "auto.reason.window_local": "the local engine reads short sections better.",
+        "auto.reason.window_rules": "the rules engine does not depend on context, and larger windows are faster.",
+        "auto.reason.overlap_zero": "there are almost only whole documents, which are never split between two windows.",
+        "auto.reason.overlap_repeat": "there are multi-page documents: repeating {value} page(s) shows whole what is split at the edge.",
+        "auto.reason.chars_pdf": "in 3 out of 4 sampled PDF pages the text fits this limit. The full text goes into search either way.",
+        "auto.reason.ocr_detected": "main language of the sampled text.",
         "log.update.layout_mismatch": "In group {group}, the pages changed and the split into sections no longer matches the previous one ({stored} section(s) stored, {derived} from the current pages). To be safe, every section in this group will be classified again.",
         "log.update.renumbered": "Heads up: because a document left the middle of the group, the sheet numbers (f. N) of {count} following document(s) changed: {files}. If you already had Claude conversations citing sheets of these documents, check the new numbering after using \"Import and generate reports\".",
         "log.update.generated_removed": "{count} file(s) generated by a project or a set left the index: they were inside the source folder and are not documents of the collection.",
@@ -2537,40 +2447,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.group_pattern": "Patrón de agrupación (regex)",
         "new_project.group_pattern_placeholder": "usado solo cuando se agrupa por patrón en el nombre",
         "new_project.extensions": "Extensiones incluidas",
-        "new_project.section_slicing": "Fraccionamiento, ventanas y OCR",
-        "new_project.pages_per_block": "Páginas por bloque",
-        "new_project.pages_per_window": "Páginas por ventana",
-        "new_project.overlap": "Solapamiento",
-        "new_project.chars_per_page": "Caracteres por página",
-        "new_project.ocr_language": "Idioma del OCR",
-        "proposal.analyze": "Analizar la carpeta y proponer",
-        "proposal.no_folder": "Elija la carpeta de origen: el sistema analiza lo que contiene y propone los valores de esta sección.",
-        "proposal.folder_not_found": "No se encontró la carpeta \"{folder}\".",
-        "proposal.empty": "No se encontró ningún archivo de las extensiones marcadas en esta carpeta.",
-        "proposal.title": "Configuración propuesta para esta carpeta",
-        "proposal.analyzed": "{files} archivos analizados, unas {pages} páginas:",
-        "proposal.composition_item": "{count} × {kind}",
-        "proposal.partial": "La carpeta es grande: el análisis se detuvo en {files} archivos ({seconds} s), y la propuesta vale para esa muestra.",
-        "proposal.apply": "Aplicar esta configuración",
-        "proposal.applied": "Aplicado. Todavía puede cambiar cualquier campo.",
-        "proposal.language.por": "portugués",
-        "proposal.language.eng": "inglés",
-        "proposal.language.spa": "español",
-        "proposal.reason.block_no_pdf": "No hay PDF: solo los PDF se cortan en bloques, así que este campo no tiene efecto.",
-        "proposal.reason.block_default": "Los PDF tienen texto propio; el corte en bloques de {value} páginas solo evita que se trabe con archivos grandes.",
-        "proposal.reason.block_scanned": "El {share}% de los PDF analizados están escaneados y pasan por OCR: bloques más pequeños muestran el progreso antes y se reanudan más rápido si algo se detiene.",
-        "proposal.reason.chars_whole_docs": "La mayoría son archivos de documento entero (HTML, DOCX, TXT…): sus primeros {value} caracteres ya traen título, fecha y sumario para la clasificación. El texto completo de todos los archivos va a la búsqueda.",
-        "proposal.reason.chars_scanned": "Los PDF están escaneados: el texto viene del OCR, y {value} caracteres por página bastan.",
-        "proposal.reason.chars_pdf": "En 3 de cada 4 páginas analizadas el texto cabe en {value} caracteres (la más llena tiene {max}). El texto completo va a la búsqueda de todos modos.",
-        "proposal.reason.window_whole_docs": "El {share}% de las páginas son archivos de documento entero, una pieza por archivo: no hay límite que buscar dentro de la ventana, y ventanas más grandes solo reducen el número de llamadas.",
-        "proposal.reason.window_short_pdfs": "Los PDF son cortos (mediana de {median} páginas): cada archivo tiende a ser una pieza, y las ventanas más grandes son más rápidas.",
-        "proposal.reason.window_long_pdfs": "Los PDF son largos (mediana de {median} páginas) y suelen reunir varias piezas: ventanas más pequeñas marcan mejor dónde empieza cada una.",
-        "proposal.reason.window_capped": "Reducido a {value} para que la ventana quepa en el contexto del modelo local con {chars} caracteres por página.",
-        "proposal.reason.overlap_zero": "Solo hay archivos de documento entero: ningún documento queda partido entre dos ventanas, así que repetir páginas solo costaría tiempo.",
-        "proposal.reason.overlap_multi_page": "Hay documentos de varias páginas: repetir {value} páginas garantiza que un documento partido en el borde aparezca entero en una ventana.",
-        "proposal.reason.ocr_detected": "Idioma predominante del texto: {languages}.",
-        "proposal.reason.ocr_missing": "También apareció {languages}, pero el Tesseract de esta máquina no tiene los datos de ese idioma; quedó fuera.",
-        "proposal.reason.ocr_unused": "Nada en esta carpeta necesita OCR (ningún PDF escaneado ni imagen): el valor no se usará.",
         "new_project.section_classification": "Clasificación",
         "new_project.classification_engine": "Motor de clasificación",
         "new_project.help_engine": '"automático" elige el motor "local" si el hardware lo permite, si no "reglas".',
@@ -2688,26 +2564,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "extensión fuera de la lista marcada se omite (queda registrado, pero no se procesa). "
             'Use "TODOS" para no preocuparse por la lista, dentro del límite de seguridad (nunca '
             "indexa ejecutables, comprimidos, bases de datos, claves ni audio y vídeo, que tienen casilla propia)."
-        ),
-        "hint.pages_per_block": (
-            "Los PDF con más páginas que este número se cortan en bloques más pequeños antes de procesar, para evitar atascos en archivos muy grandes. Ej. 80 corta un PDF de 300 páginas "
-            "en 4 bloques."
-        ),
-        "hint.pages_per_window": (
-            'Cuántas páginas entran en cada "ventana" enviada a clasificación de una vez. Ventanas '
-            "más pequeñas cuestan más llamadas al motor, pero fallan menos en documentos cortos "
-            "intercalados; ventanas más grandes son más rápidas, pero pueden mezclar piezas."
-        ),
-        "hint.overlap": (
-            "Cuántas páginas del final de una ventana se repiten al inicio de la siguiente, para evitar que un documento partido justo en el borde de dos ventanas se clasifique mal. Debe "
-            "ser menor que \"Páginas por ventana\"."
-        ),
-        "hint.chars_per_page": (
-            "Límite de caracteres de texto considerado por página al armar la ventana enviada a clasificación. El texto que exceda esto se corta. Evita desbordar el contexto del "
-            "modelo en páginas con texto excesivo (ej. una tabla muy grande)."
-        ),
-        "hint.ocr_language": (
-            'Código de idioma de Tesseract (el motor de OCR) para páginas escaneadas: "por" para portugués, "eng" para inglés, "por+eng" para ambos en la misma colección.'
         ),
         "hint.classification_engine": (
             '"automático" usa el motor "local" (IA corriendo en esta máquina) si el hardware lo '
@@ -3600,7 +3456,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "run.phase_fulltext": "incluyendo los archivos en la búsqueda de texto completo",
         "busy.title": "Base de datos ocupada",
         "busy.message": "La base de datos del proyecto está ocupada en este momento (una etapa está grabando o Google Drive está sincronizando). No se perdió nada. Espere unos segundos y vuelva a cargar la página.",
-        "log.conversion.summary": "Conversión completa: {converted} documento(s) preparado(s), {ocr} con reconocimiento de texto (OCR), {sliced} dividido(s) en {blocks} parte(s) y {failed} con error.",
+        "log.conversion.summary": "Conversión completa: {converted} documento(s) preparado(s), {ocr} con reconocimiento de texto (OCR) y {failed} con error.",
         "log.extraction.failed": "No se pudo leer el texto de las páginas de {name}: {error}",
         "log.extraction.intermediate_missing": "{name}: la copia convertida de este archivo no está en este equipo, así que vuelve a la conversión. Ejecute la conversión de nuevo y luego la extracción.",
         "log.extraction.summary_interrupted": "Lectura de páginas en pausa: hasta ahora, {pages} página(s) de {files} archivo(s) y {failed} archivo(s) con error. Haga clic en \"Ejecutar siguiente etapa\" para continuar donde quedó.",
@@ -3643,6 +3499,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.fulltext.summary_interrupted": "Búsqueda de texto completo en pausa: {files} archivo(s) incluido(s) ahora y {pending} todavía por incluir. Continúe en \"Buscar en el acervo\" o ejecutando la etapa de nuevo.",
         "log.fulltext.file_failed": "No se pudo incluir {name} en la búsqueda: {error}. El archivo sigue en el índice; solo la búsqueda de texto completo no lo encuentra.",
         "log.windows.summary": "Páginas organizadas en ventanas, es decir, tramos de algunas páginas que se analizan juntos en la clasificación: {created} tramo(s) nuevo(s) y {existing} que ya existían.",
+        "log.settings.window": "Configuración automática después del escaneo: ventanas de {value} página(s), con una superposición de {overlap}. Ventana: {window_reason} Superposición: {overlap_reason}",
+        "log.settings.chars_per_page": "Configuración automática: texto de PDF y de imagen limitado a {value} caracteres por página. {reason}",
+        "log.settings.ocr_language": "Configuración automática: idioma del OCR \"{value}\". {reason}",
+        "auto.reason.window_local": "el motor local lee mejor tramos cortos.",
+        "auto.reason.window_rules": "el motor de reglas no depende del contexto, y las ventanas más grandes son más rápidas.",
+        "auto.reason.overlap_zero": "casi solo hay documentos completos, que nunca quedan partidos entre dos ventanas.",
+        "auto.reason.overlap_repeat": "hay documentos de varias páginas: repetir {value} página(s) muestra completo lo que quede partido en el borde.",
+        "auto.reason.chars_pdf": "en 3 de cada 4 páginas de PDF muestreadas el texto cabe en este límite. El texto completo va a la búsqueda de todos modos.",
+        "auto.reason.ocr_detected": "idioma predominante del texto muestreado.",
         "log.update.layout_mismatch": "En el grupo {group}, las páginas cambiaron y la división en tramos ya no coincide con la anterior ({stored} tramo(s) guardado(s), {derived} según las páginas actuales). Para no correr riesgos, todos los tramos de este grupo se clasificarán de nuevo.",
         "log.update.renumbered": "Atención: como un documento salió del medio del grupo, la numeración de folios (f. N) de {count} documento(s) siguiente(s) cambió: {files}. Si ya tenía conversaciones en Claude que citan folios de estos documentos, revise la nueva numeración después de usar \"Importar y generar informes\".",
         "log.update.generated_removed": "{count} archivo(s) generado(s) por un proyecto o un conjunto salieron del índice: estaban dentro de la carpeta de origen y no son documentos del acervo.",

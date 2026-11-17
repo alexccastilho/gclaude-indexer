@@ -6,10 +6,11 @@
 # Software Foundation, either version 3 of the License, or (at your option)
 # any later version. See the LICENSE file for details.
 
-"""Conversion by type, OCR, and slicing of large PDFs (section 5, steps 2 and 3).
+"""Conversion by type and OCR (section 5, steps 2 and 3). PDFs are no longer
+sliced (2.0.0): extraction reads the pages straight from the PDF.
 
 Every file with `status = "discovered"` is processed once. The original is
-never read for writing nor altered — all output (OCR'd PDF, sliced blocks,
+never read for writing nor altered — all output (OCR'd PDF,
 extracted text) goes to `output_folder`. A corrupted file, or one that fails
 at any step, gets `status = "failed"`, has the error recorded in `file.error`
 and in an event, and processing moves on to the next file.
@@ -56,8 +57,6 @@ ERROR_MESSAGE_CHAR_LIMIT = 500
 class ConversionResult:
     converted: int = 0
     ocr_applied: int = 0
-    sliced: int = 0
-    blocks_generated: int = 0
     failed: int = 0
 
 
@@ -245,35 +244,6 @@ def _run_ocrmypdf(
         )
 
 
-def slice_pdf(source_path: Path, destination_dir: Path, base_name: str, pages_per_block: int) -> list[Path]:
-    """Cuts `source_path` into blocks of at most `pages_per_block` pages.
-
-    Block name: `<base>_p<start>-<end>.pdf`, preserving the real (1-based)
-    page numbering of the source document in the name.
-    """
-    document = fitz.open(source_path)
-    try:
-        page_count = document.page_count
-        blocks: list[Path] = []
-
-        for start in range(0, page_count, pages_per_block):
-            end = min(start + pages_per_block, page_count) - 1
-            start_1based = start + 1
-            end_1based = end + 1
-
-            block = fitz.open()
-            block.insert_pdf(document, from_page=start, to_page=end)
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            block_path = destination_dir / f"{base_name}_p{start_1based}-{end_1based}.pdf"
-            block.save(block_path)
-            block.close()
-            blocks.append(block_path)
-
-        return blocks
-    finally:
-        document.close()
-
-
 def _docx_paragraph_text(paragraph) -> str:
     """The paragraph's text with struck runs marked `~~`. Goes through
     `iter_inner_content()` because `paragraph.runs` skips the runs inside
@@ -448,13 +418,10 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     events: list[tuple[str, str, str, dict]] = []
     ocr_applied = False
     ocr_failed = False
-    sliced = False
-    blocks_generated = 0
 
     if category == "pdf":
         ocr_pages, page_count = _pdf_pages_needing_ocr(source_path)
         needs_ocr = bool(ocr_pages)
-        path_to_slice = source_path
 
         if needs_ocr:
             ocr_destination = _destination_path(output_dir, "converted", relative_path, ".pdf")
@@ -478,7 +445,6 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
                      "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
                 ))
             else:
-                path_to_slice = ocr_destination
                 ocr_applied = True
                 if partial:
                     events.append((
@@ -491,15 +457,6 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
                         "conversion", "info", "log.conversion.ocr_applied",
                         {"name": name, "ocr_language": config.ocr_language},
                     ))
-
-        if page_count > config.pages_per_block:
-            blocks_dir = workdir.work_folder(output_dir) / "blocks" / Path(relative_path).parent
-            blocks = slice_pdf(path_to_slice, blocks_dir, Path(relative_path).stem, config.pages_per_block)
-            sliced = True
-            blocks_generated = len(blocks)
-            events.append((
-                "conversion", "info", "log.conversion.sliced", {"name": name, "blocks": len(blocks)},
-            ))
 
         sql = (
             "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
@@ -571,8 +528,6 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         "params": params,
         "events": events,
         "ocr_applied": ocr_applied,
-        "sliced": sliced,
-        "blocks_generated": blocks_generated,
     }
 
 
@@ -585,8 +540,6 @@ def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, lan
     writer.add(op)
     result.converted += 1
     result.ocr_applied += int(info["ocr_applied"])
-    result.sliced += int(info["sliced"])
-    result.blocks_generated += info["blocks_generated"]
 
 
 def _record_failure(
@@ -894,7 +847,7 @@ def convert(
         "log.conversion.summary",
         {
             "converted": result.converted, "ocr": result.ocr_applied,
-            "sliced": result.sliced, "blocks": result.blocks_generated, "failed": result.failed,
+            "failed": result.failed,
         },
         language=language,
     )

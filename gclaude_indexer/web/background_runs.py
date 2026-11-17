@@ -36,6 +36,7 @@ from ..update_plan import SourceFolderUnavailable, stale_page_paths
 from ..conversion import convert, requeue_ocr_failures
 from ..extraction import extract_pages
 from ..windows_prep import prepare_windows
+from ..auto_settings import resolve_auto_settings
 from ..engine_local import model_to_use
 from ..orchestrator import resolve_effective_engine, run_classification
 from ..project import load_project
@@ -59,7 +60,14 @@ def _apply_pending_changes(conn, config, should_stop, language, listed=None) -> 
 
 def _scan_step(conn, config, should_stop, language, files=None, on_progress=None):
     _apply_pending_changes(conn, config, should_stop, language, listed=files)
-    return scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
+    result = scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
+    if should_stop is None or not should_stop():
+        # 2.0.0: janela, sobreposição, caracteres por página e idioma do OCR
+        # saem do que a varredura achou (`auto_settings.py`). Uma varredura
+        # pausada não resolve: o inventário está pela metade, e a próxima,
+        # que o completa, é quem decide.
+        resolve_auto_settings(conn, config, language=language)
+    return result
 
 
 def _extraction_step(conn, config, should_stop, language):
@@ -445,6 +453,8 @@ class TaskManager:
         self, project_id: int, entry_output_folder: str, config: ProjectConfig, step: str,
         stop_signal: StopSignal | None = None, language: str | None = None,
     ) -> StepTask:
+        # `config` é só o do chamador: a etapa recarrega a configuração do banco
+        # ao começar (ver `body`), para valer o que a varredura resolveu.
         # Registered first, measured afterwards, inside the task. Measuring
         # used to happen here, on the request: for the scan that is a walk
         # of the whole source folder — minutes on a large Google
@@ -468,7 +478,11 @@ class TaskManager:
                 files = self._measure(task, entry_output_folder, step, language)
                 if task.stop_signal.should_stop():
                     return  # paused while counting: nothing started, nothing to record
-                _, work_conn = load_project(entry_output_folder)
+                # A configuração vem do banco a cada etapa, não da que o
+                # chamador carregou antes: a varredura acaba de gravar janela,
+                # sobreposição, caracteres e idioma (`auto_settings.py`), e as
+                # etapas seguintes da cadeia têm de usar esses valores.
+                current_config, work_conn = load_project(entry_output_folder)
                 try:
                     # Task 15: time per step, for the engine/model
                     # benchmark (`quality.compare_runs`). Records the
@@ -483,14 +497,14 @@ class TaskManager:
                     # same thread) instead of opening another connection:
                     # sqlite3 does not allow sharing a connection between
                     # threads.
-                    engine = resolve_effective_engine(work_conn, config, language=language)
-                    model = model_to_use(work_conn, config) if engine == "local" else None
+                    engine = resolve_effective_engine(work_conn, current_config, language=language)
+                    model = model_to_use(work_conn, current_config) if engine == "local" else None
                     cursor = work_conn.execute(
                         """
                         INSERT INTO run (step, engine, model, parallelism, started_at, items, ok)
                         VALUES (?, ?, ?, ?, ?, 0, 0)
                         """,
-                        (step, engine, model, config.parallelism, datetime.now().isoformat(timespec="microseconds")),
+                        (step, engine, model, current_config.parallelism, datetime.now().isoformat(timespec="microseconds")),
                     )
                     work_conn.commit()
                     run_id = cursor.lastrowid
@@ -501,7 +515,7 @@ class TaskManager:
                             task.scanned, task.scanned_bytes = files_done, bytes_done
 
                         extra = {"files": files, "on_progress": scanned}
-                    _STEP_FUNCTIONS[step](work_conn, config, task.stop_signal.should_stop, language, **extra)
+                    _STEP_FUNCTIONS[step](work_conn, current_config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
                     work_conn.close()

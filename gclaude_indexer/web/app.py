@@ -91,7 +91,6 @@ from ..fulltext import (
     index_pending as index_fulltext,
     search as fulltext_search,
 )
-from ..settings_proposal import propose_for_folder
 from ..staleness import is_stale as source_is_stale, record_loaded_source
 from ..sync import check_sync, mark_synced
 from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, categories_by_family, normalize_categories
@@ -394,10 +393,13 @@ def _handle_incomplete_sync(request: Request, exc: IncompleteSyncError):
         {"project": exc.entry, "message_key": exc.message_key, "message_params": exc.message_params}, status_code=409,
     )
 
-INTEGER_FIELDS = ("pages_per_block", "pages_per_window", "overlap", "chars_per_page")
+# Janelas, sobreposição, caracteres por página e idioma do OCR não são mais
+# campos do formulário (2.0.0): `auto_settings.py` decide depois da varredura.
+# Ficam fora destas listas de propósito, para um POST forjado com eles ser
+# ignorado.
 TEXT_FIELDS = (
     "name", "subject", "source_folder", "output_folder", "collection_type", "group_mode",
-    "group_pattern", "ocr_language", "classification_engine", "local_model", "processing_mode",
+    "group_pattern", "classification_engine", "local_model", "processing_mode",
     "parallelism", "role_instructions", "existing_instructions",
 )
 
@@ -649,12 +651,6 @@ def _create_new_project_body(request: Request, form):
     for field in TEXT_FIELDS:
         if field in form:
             data[field] = str(form[field])
-    for field in INTEGER_FIELDS:
-        if field in form and str(form[field]).strip():
-            try:
-                data[field] = int(form[field])
-            except ValueError:
-                data[field] = form[field]  # let load_config's validation report it
     # "TODOS" já cobre as categorias específicas (menos áudio e vídeo,
     # que só entram marcando `midia`): o servidor garante a regra que o
     # formulário só garante em JavaScript.
@@ -868,12 +864,7 @@ def _select_folder_body(request: Request, form):
         suggestion = suggest_output_folder(folder)
         if suggestion:
             context["output_suggestion"] = suggestion
-    response = render(request, "_folder_field.html", context)
-    if field == "source_folder" and folder:
-        # The settings proposal panel listens for this and analyses the
-        # folder just chosen (see `_settings_proposal.html`).
-        response.headers["HX-Trigger"] = "sourceFolderChosen"
-    return response
+    return render(request, "_folder_field.html", context)
 
 
 @app.post("/projects/suggest-output", response_class=HTMLResponse)
@@ -894,48 +885,6 @@ def _suggest_output_body(request: Request, form):
     return render(
         request, "_folder_field.html",
         {"field": "output_folder", "form_field_name": "output_folder", "value": suggestion, "touched": ""},
-    )
-
-
-@app.post("/projects/propose-settings", response_class=HTMLResponse)
-async def propose_settings(request: Request):
-    form = await request.form()
-    return await run_in_threadpool(_propose_settings_body, request, form)
-
-
-def _propose_settings_body(request: Request, form):
-    """Looks at the source folder and proposes the five fields of
-    "Slicing, windows and OCR" — see `settings_proposal.py`."""
-    folder_text = str(form.get("source_folder", "")).strip()
-    categories = [str(value) for value in form.getlist("extensions")]
-    folder = Path(folder_text) if folder_text else None
-    if folder is None or not folder.is_dir():
-        return render(request, "_settings_proposal.html", {"proposal": None, "folder": folder_text})
-
-    proposal = propose_for_folder(folder, categories)
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
-
-    def reason_text(reason) -> str:
-        params = dict(reason.params)
-        if "languages" in params:
-            params["languages"] = ", ".join(t(f"proposal.language.{code}") for code in params["languages"])
-        return t(reason.key, **params)
-
-    survey = proposal.survey
-    composition = [
-        t("proposal.composition_item", count=count, kind=t(f"new_project.category.{category}"))
-        for category, count in survey.by_category.most_common()
-    ]
-    return render(
-        request, "_settings_proposal.html",
-        {
-            "proposal": proposal,
-            "folder": folder_text,
-            "reasons": {name: [reason_text(r) for r in items] for name, items in proposal.reasons.items()},
-            "composition": composition,
-            "estimated_pages": survey.estimated_pages(),
-        },
     )
 
 
