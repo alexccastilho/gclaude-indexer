@@ -115,8 +115,11 @@ vêm primeiro.
   whisper.cpp b5454, os modelos ggml do whisper e todo o conjunto
   `tessdata_fast` de idiomas do OCR. Quando um componente não pode ser obtido
   (sem internet, download recusado), os documentos que dependem dele são
-  pulados com um motivo claro, não são marcados como falha e voltam para a
-  fila na próxima execução.
+  pulados com um motivo claro, não são marcados como falha e cada conversão
+  tenta obter o componente de novo. Num grupo ainda sem janelas, eles voltam
+  para a fila na próxima execução; num grupo que já tem janelas, esperam,
+  mesmo se editados nesse meio-tempo, até o componente estar na máquina, e
+  então a atualização os traz e refaz as janelas do grupo a partir deles.
 - **Temas Vidro e Apple**, cada um num par claro e escuro, com alternativas para
   navegadores sem desfoque e para a transparência reduzida.
 - **Segurança de pastas na varredura.** A varredura pula a própria saída do
