@@ -1,0 +1,14 @@
+{% import "_macros.html" as m %}
+{# Conteúdo do grupo do campo de saída. Também é devolvido por swap (a
+   resposta de /select-folder para a origem e /projects/suggest-output), por
+   isso o `output_touched` mora aqui dentro: ele é refeito junto com o campo.
+   Não vazio = a pessoa mexeu na saída, e nenhuma sugestão a sobrescreve.
+   Sem `required`: saída em branco quer dizer "use a sugestão" (o servidor
+   calcula). #}
+<input type="text" id="output_folder" name="output_folder" value="{{ value }}"
+       oninput="document.getElementById('output_touched').value = '1'">
+<input type="hidden" id="output_touched" name="output_touched" value="{{ touched }}">
+<button type="button"
+        hx-post="/select-folder" hx-target="#output_folder_group" hx-swap="innerHTML"
+        hx-vals='{"field": "output_folder"}'
+        hx-include="#output_folder">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>

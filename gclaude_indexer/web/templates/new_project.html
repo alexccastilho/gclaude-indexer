@@ -58,20 +58,18 @@
     <label for="source_folder">{{ t('new_project.source_folder') }} {{ m.tooltip(t, 'hint.source_folder') }}</label>
     <div id="source_folder_group" class="folder-field">
       <input type="text" id="source_folder" name="source_folder" value="{{ values.source_folder }}"
-             oninput="adjustDefaultOutputFolder()" required>
+             hx-post="/projects/suggest-output" hx-trigger="input changed delay:500ms"
+             hx-target="#output_folder_group" hx-swap="innerHTML"
+             hx-include="#source_folder, #output_touched" required>
       <button type="button"
               hx-post="/select-folder" hx-target="#source_folder_group" hx-swap="innerHTML"
               hx-vals='{"field": "source_folder"}'
-              hx-include="#source_folder">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>
+              hx-include="#source_folder, #output_touched">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>
     </div>
 
     <label for="output_folder">{{ t('new_project.output_folder') }} {{ m.tooltip(t, 'hint.output_folder') }}</label>
     <div id="output_folder_group" class="folder-field">
-      <input type="text" id="output_folder" name="output_folder" value="{{ values.output_folder }}" required>
-      <button type="button"
-              hx-post="/select-folder" hx-target="#output_folder_group" hx-swap="innerHTML"
-              hx-vals='{"field": "output_folder"}'
-              hx-include="#output_folder">{{ m.icon('folder') }} {{ t('new_project.browse') }}</button>
+      {% with value=values.output_folder, touched=values.output_touched or '' %}{% include "_output_field.html" %}{% endwith %}
     </div>
     <p class="help">{{ t('new_project.help_output_folder') }}</p>
   </fieldset>
@@ -256,17 +254,5 @@
   <button type="submit" class="button button-primary">{{ m.icon('check') }} {{ t('new_project.create') }}</button>
 </form>
 
-<script>
-function adjustDefaultOutputFolder() {
-  var source = document.getElementById("source_folder").value;
-  var output = document.getElementById("output_folder");
-  if (!output.dataset.manuallyEdited && source) {
-    output.value = source.replace(/[\\\/]+$/, "") + "\\_indexado";
-  }
-}
-document.getElementById("output_folder").addEventListener("input", function () {
-  this.dataset.manuallyEdited = "1";
-});
-</script>
 {% endblock %}
 {% block help_modal %}{{ m.help_modal(t, 'help.new_project.title', ['help.new_project.p1', 'help.new_project.p2', 'help.new_project.p3']) }}{% endblock %}

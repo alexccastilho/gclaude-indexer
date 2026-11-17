@@ -70,7 +70,11 @@ from ..cleanup import clear_intermediates, intermediates_size
 from ..engine_claude_code import command_for_language, prepare, sync_progress
 from .. import claude_package, combined_package
 from ..claude_package import generate_claude_project_package
-from ..paths import resolve_within
+from ..paths import (
+    check_new_project_folders, ensure_writable_folder, resolve_within, suggest_output_folder,
+    PROJECT_DB_NAME as _PROJECT_DB_NAME,
+)
+from ..config import ConfigErrorMessage
 from ..run_control import OperationCancelled, StopSignal
 from ..project import load_project, create_project, save_project_config
 from ..sets import SetEntry, SetMember, find_set, list_sets, propose_alias, remove_set, save_set
@@ -653,10 +657,20 @@ def _create_new_project_body(request: Request, form):
     data["extensions"] = form.getlist("extensions")
     data["review_low_confidence"] = "review_low_confidence" in form
 
-    try:
-        config = load_config(data)
-    except ConfigError as exc:
-        values = _config_to_form(data)
+    # Saída em branco (o campo deixou de ser `required`, ou o POST veio sem
+    # ele): o servidor calcula a mesma sugestão `<origem>-AI` que a tela
+    # mostra, em vez de reprovar ou de deixar a decisão para o navegador.
+    if not str(data.get("output_folder", "")).strip():
+        suggestion = suggest_output_folder(str(data.get("source_folder", "")))
+        if suggestion:
+            data["output_folder"] = suggestion
+
+    # Reexibido junto com o formulário, para uma saída editada não ser
+    # trocada por sugestão depois de um erro.
+    values = _config_to_form(data)
+    values["output_touched"] = str(form.get("output_touched", ""))
+
+    def _refuse(errors: list) -> HTMLResponse:
         return render(
             request, "new_project.html",
             {
@@ -666,10 +680,23 @@ def _create_new_project_body(request: Request, form):
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
                 "default_local_model": recommended_local_model(),
-                "errors": exc.errors,
+                "errors": errors,
             },
             status_code=400,
         )
+
+    try:
+        config = load_config(data)
+    except ConfigError as exc:
+        return _refuse(exc.errors)
+
+    # As regras de pasta valem só aqui, na criação (não em `_validate`, que
+    # roda a cada abertura e não pode trancar projetos antigos). Vêm antes
+    # de `describe_project` e de qualquer `mkdir`: nada é criado se a
+    # origem e a saída não passarem.
+    folder_errors = check_new_project_folders(config.source_folder, config.output_folder)
+    if folder_errors:
+        return _refuse(folder_errors)
 
     # A project already in this output folder is not an error to report and
     # walk away from — it is almost always the user trying to *reopen* it,
@@ -685,7 +712,7 @@ def _create_new_project_body(request: Request, form):
         return render(
             request, "new_project.html",
             {
-                "values": _config_to_form(data),
+                "values": values,
                 "familias": categories_by_family(),
                 "category_all": CATEGORY_ALL,
                 "engines": CLASSIFICATION_ENGINES_ORDER,
@@ -697,11 +724,41 @@ def _create_new_project_body(request: Request, form):
             status_code=409,
         )
 
-    conn, _ = create_project(config)
+    # Cria a pasta e prova que dá para gravar nela antes do banco: sem
+    # permissão, unidade ausente ou nome inválido viram uma mensagem na
+    # tela, não um 500.
+    try:
+        created_folder = ensure_writable_folder(config.output_folder)
+    except OSError:
+        return _refuse([ConfigErrorMessage("config_error.output_not_writable", {"path": config.output_folder})])
+
+    try:
+        conn, _ = create_project(config)
+    except (OSError, sqlite3.Error):
+        _undo_created_output_folder(config.output_folder, created_folder)
+        return _refuse([ConfigErrorMessage("config_error.output_not_writable", {"path": config.output_folder})])
     conn.close()
     entry = register_project(config.name, config.output_folder)
     _side_bar_cache.clear()  # The side bar shows it at once
     return RedirectResponse(url=f"/projects/{entry.id}/run", status_code=303)
+
+
+def _undo_created_output_folder(folder: str, created: bool) -> None:
+    """Se a criação do banco falhou depois de a pasta ter sido criada por
+    nós, não deixa uma pasta órfã para trás: tira o banco pela metade e a
+    pasta, mas só se ela ficar vazia (nunca apaga o que não é nosso)."""
+    if not created:
+        return
+    base = Path(folder)
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            (base / f"{_PROJECT_DB_NAME}{suffix}").unlink()
+        except OSError:
+            pass
+    try:
+        base.rmdir()
+    except OSError:
+        pass
 
 
 @app.get("/projects/open", response_class=HTMLResponse)
@@ -792,14 +849,47 @@ def _select_folder_body(request: Request, form):
     folder = choose_folder(title=translate(language, "new_project.folder_picker_title"), initial=current_value)
     value = folder or current_value
 
-    response = render(
-        request, "_folder_field.html", {"field": field, "form_field_name": field, "value": value},
-    )
+    # `output_touched` não vazio = a pessoa já mexeu na saída. Escolher a
+    # saída pelo Procurar também conta como mexer.
+    touched = bool(str(form.get("output_touched", "")).strip()) or field == "output_folder"
+    context = {
+        "field": field, "form_field_name": field, "value": value,
+        "touched": "1" if touched else "",
+    }
+    if field == "source_folder" and folder and not touched:
+        # Procurar não dispara `input` no campo: sem isto a saída só seria
+        # preenchida a quem digitasse a origem. A sugestão chega por um swap
+        # fora de banda do campo de saída.
+        suggestion = suggest_output_folder(folder)
+        if suggestion:
+            context["output_suggestion"] = suggestion
+    response = render(request, "_folder_field.html", context)
     if field == "source_folder" and folder:
         # The settings proposal panel listens for this and analyses the
         # folder just chosen (see `_settings_proposal.html`).
         response.headers["HX-Trigger"] = "sourceFolderChosen"
     return response
+
+
+@app.post("/projects/suggest-output", response_class=HTMLResponse)
+async def suggest_output(request: Request):
+    form = await request.form()
+    return await run_in_threadpool(_suggest_output_body, request, form)
+
+
+def _suggest_output_body(request: Request, form):
+    """Sugestão de saída para uma origem digitada. Só calcula e devolve o
+    campo: não cria pasta nenhuma. Sem sugestão, ou com a saída já editada
+    pela pessoa, responde 204 e a tela fica como está."""
+    if str(form.get("output_touched", "")).strip():
+        return Response(status_code=204)
+    suggestion = suggest_output_folder(str(form.get("source_folder", "")))
+    if not suggestion:
+        return Response(status_code=204)
+    return render(
+        request, "_folder_field.html",
+        {"field": "output_folder", "form_field_name": "output_folder", "value": suggestion, "touched": ""},
+    )
 
 
 @app.post("/projects/propose-settings", response_class=HTMLResponse)

@@ -245,4 +245,4 @@ def test_pasta_sem_banco_falha_com_instrucao(tmp_path, capsys):
     """O erro mais provável de quem usa o script é apontar para a pasta de
     origem em vez da pasta de saída."""
     assert main([str(tmp_path)]) == 1
-    assert "_indexado" in capsys.readouterr().err
+    assert "-AI" in capsys.readouterr().err

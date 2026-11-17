@@ -105,7 +105,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.output_folder": "Pasta de saída",
         "new_project.browse": "Procurar…",
         "new_project.folder_picker_title": "Selecione a pasta",
-        "new_project.help_output_folder": 'Padrão: a própria pasta de origem com "_indexado" no final.',
+        "new_project.help_output_folder": 'Padrão: uma pasta ao lado da origem, com "-AI" no final do nome. A saída nunca pode ficar dentro da origem nem ser a própria origem.',
         "new_project.section_collection": "Acervo",
         "new_project.collection_type": "Tipo de acervo",
         "new_project.collection_type_case_file": "processo (numera folha)",
@@ -228,7 +228,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "hint.output_folder": (
             "Pasta onde tudo é gravado: banco de dados do projeto, arquivos convertidos, índice, "
-            "cronologia e as instruções para o Claude. Pode ficar dentro da pasta sincronizada."
+            "cronologia e as instruções para o Claude. Fica ao lado da pasta de origem (nome com -AI) "
+            "e nunca dentro dela. Pode ficar numa pasta sincronizada."
         ),
         "hint.collection_type": (
             '"processo" numera por folha (f. 1, f. 2…), como um processo administrativo ou '
@@ -327,6 +328,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.source_folder_not_found": "source_folder não existe: {path}",
         "config_error.source_folder_not_a_directory": "source_folder não é uma pasta: {path}",
         "config_error.output_folder_required": "output_folder é obrigatória",
+        "config_error.output_same_as_source": "A pasta de saída não pode ser a própria pasta de origem ({path}). Escolha outra.",
+        "config_error.output_inside_source": "A pasta de saída não pode ficar dentro da pasta de origem ({path}): o que o sistema gera seria lido como documento do acervo.",
+        "config_error.source_inside_output": "A pasta de origem não pode ficar dentro da pasta de saída ({path}). Escolha uma saída fora dela.",
+        "config_error.output_not_writable": "Não foi possível gravar na pasta de saída ({path}). Confira a permissão, a unidade e o nome da pasta.",
+        "config_error.output_not_empty": "A pasta de saída ({path}) já tem arquivos e não é um projeto do GClaude Indexer. Use uma pasta vazia, por exemplo: {suggestion}",
+        "config_error.output_not_absolute": "O caminho precisa ser completo, com a unidade ou o servidor: {path}",
+        "config_error.source_is_drive_root": "A pasta de origem não pode ser a raiz de uma unidade ou de um compartilhamento ({path}). Escolha uma pasta dentro dela.",
         "config_error.collection_type_invalid": "collection_type inválido: {value} (opções: {options})",
         "config_error.group_mode_invalid": "group_mode inválido: {value} (opções: {options})",
         "config_error.extensions_empty": "extensions não pode ser vazio",
@@ -1321,7 +1329,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.output_folder": "Output folder",
         "new_project.browse": "Browse…",
         "new_project.folder_picker_title": "Select folder",
-        "new_project.help_output_folder": 'Default: the source folder itself with "_indexado" appended.',
+        "new_project.help_output_folder": 'Default: a folder next to the source, with "-AI" appended to its name. The output can never be inside the source or the source itself.',
         "new_project.section_collection": "Collection",
         "new_project.collection_type": "Collection type",
         "new_project.collection_type_case_file": "case file (numbers leaves)",
@@ -1444,7 +1452,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "hint.output_folder": (
             "Folder where everything is written: the project's database, converted files, index, "
-            "chronology and the instructions for Claude. Can live inside the synced folder."
+            "chronology and the instructions for Claude. It sits next to the source folder (name with -AI) "
+            "and never inside it. It can live in a synced folder."
         ),
         "hint.collection_type": (
             '"case file" numbers by leaf (f. 1, f. 2…), like an administrative or legal case; '
@@ -1536,6 +1545,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.source_folder_not_found": "source_folder does not exist: {path}",
         "config_error.source_folder_not_a_directory": "source_folder is not a folder: {path}",
         "config_error.output_folder_required": "output_folder is required",
+        "config_error.output_same_as_source": "The output folder cannot be the source folder itself ({path}). Choose another one.",
+        "config_error.output_inside_source": "The output folder cannot be inside the source folder ({path}): what the system generates would be read as documents of the collection.",
+        "config_error.source_inside_output": "The source folder cannot be inside the output folder ({path}). Choose an output outside it.",
+        "config_error.output_not_writable": "Could not write to the output folder ({path}). Check the permission, the drive and the folder name.",
+        "config_error.output_not_empty": "The output folder ({path}) already has files and is not a GClaude Indexer project. Use an empty folder, for example: {suggestion}",
+        "config_error.output_not_absolute": "The path must be complete, with the drive or the server: {path}",
+        "config_error.source_is_drive_root": "The source folder cannot be the root of a drive or a share ({path}). Choose a folder inside it.",
         "config_error.collection_type_invalid": "invalid collection_type: {value} (options: {options})",
         "config_error.group_mode_invalid": "invalid group_mode: {value} (options: {options})",
         "config_error.extensions_empty": "extensions cannot be empty",
@@ -2504,7 +2520,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.output_folder": "Carpeta de salida",
         "new_project.browse": "Buscar…",
         "new_project.folder_picker_title": "Seleccione la carpeta",
-        "new_project.help_output_folder": 'Predeterminado: la propia carpeta de origen con "_indexado" al final.',
+        "new_project.help_output_folder": 'Predeterminado: una carpeta junto al origen, con "-AI" al final del nombre. La salida nunca puede estar dentro del origen ni ser el propio origen.',
         "new_project.section_collection": "Colección",
         "new_project.collection_type": "Tipo de colección",
         "new_project.collection_type_case_file": "expediente (numera folio)",
@@ -2627,8 +2643,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "hint.output_folder": (
             "Carpeta donde se graba todo: base de datos del proyecto, archivos convertidos, "
-            "índice, cronología e instrucciones para Claude. Puede estar dentro de la carpeta "
-            "sincronizada."
+            "índice, cronología e instrucciones para Claude. Queda junto a la carpeta de origen "
+            "(nombre con -AI) y nunca dentro de ella. Puede estar en una carpeta sincronizada."
         ),
         "hint.collection_type": (
             '"expediente" numera por folio (f. 1, f. 2…), como un expediente administrativo o '
@@ -2722,6 +2738,13 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.source_folder_not_found": "source_folder no existe: {path}",
         "config_error.source_folder_not_a_directory": "source_folder no es una carpeta: {path}",
         "config_error.output_folder_required": "output_folder es obligatoria",
+        "config_error.output_same_as_source": "La carpeta de salida no puede ser la propia carpeta de origen ({path}). Elija otra.",
+        "config_error.output_inside_source": "La carpeta de salida no puede estar dentro de la carpeta de origen ({path}): lo que el sistema genera se leería como documento del acervo.",
+        "config_error.source_inside_output": "La carpeta de origen no puede estar dentro de la carpeta de salida ({path}). Elija una salida fuera de ella.",
+        "config_error.output_not_writable": "No fue posible grabar en la carpeta de salida ({path}). Revise el permiso, la unidad y el nombre de la carpeta.",
+        "config_error.output_not_empty": "La carpeta de salida ({path}) ya tiene archivos y no es un proyecto de GClaude Indexer. Use una carpeta vacía, por ejemplo: {suggestion}",
+        "config_error.output_not_absolute": "La ruta debe ser completa, con la unidad o el servidor: {path}",
+        "config_error.source_is_drive_root": "La carpeta de origen no puede ser la raíz de una unidad o de un recurso compartido ({path}). Elija una carpeta dentro de ella.",
         "config_error.collection_type_invalid": "collection_type inválido: {value} (opciones: {options})",
         "config_error.group_mode_invalid": "group_mode inválido: {value} (opciones: {options})",
         "config_error.extensions_empty": "extensions no puede estar vacío",

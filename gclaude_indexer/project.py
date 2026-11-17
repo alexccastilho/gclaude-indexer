@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -239,6 +240,26 @@ def load_project(
         )
 
     config = load_config(data)
+
+    # A pasta pode ter sido renomeada ou movida (ou o projeto aberto de
+    # outro computador, por outra unidade) depois da criação. O que vale é
+    # a pasta realmente aberta: devolver o caminho gravado faria os
+    # artefatos serem escritos num lugar que já não é este projeto.
+    opened = str(Path(output_folder))
+    if os.path.normcase(os.path.normpath(config.output_folder)) != os.path.normcase(
+        os.path.normpath(opened)
+    ):
+        config.output_folder = opened
+        try:
+            conn.execute(
+                "UPDATE project SET output_folder = ?, config_json = ? WHERE id = ?",
+                (opened, config_to_json(config), row["id"]),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            # Banco travado por outro processo: vale só nesta abertura, e a
+            # próxima tenta de novo.
+            pass
     return config, conn
 
 
