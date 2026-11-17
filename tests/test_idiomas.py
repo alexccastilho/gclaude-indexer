@@ -474,7 +474,7 @@ def test_download_recusado_pelo_hash_nao_usa_o_arquivo_e_refaz_depois(tmp_path, 
 
     _servidor(monkeypatch, {"script/Cyrillic": b"cirilico", "tessdata/rus": certo})
     assert convert(conn, config, language="pt-BR").failed == 0
-    assert pedidos == ["rus"]
+    assert pedidos == ["rus", "script/Cyrillic"]  # 2.0.0: OCR curto relido com o modelo da escrita
     assert _linha(conn, "foto.png")["ocr_failed"] == 0
 
 

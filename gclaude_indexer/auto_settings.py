@@ -51,6 +51,12 @@ from .settings_proposal import (
 SCOPE_ALL = "all"
 SCOPE_WINDOWS = "windows"
 
+# 8 páginas por janela no motor local. Medido em `demo/acervo` (matriz janela
+# {8, 12, 16} x sobreposição {1, 2}, 3 rodadas por célula, idênticas entre si;
+# docs/QUALITY.md): a janela 12 empata com a 8 no melhor F1 (68,6%, em 12/1 e
+# 8/2), mas com acerto de tipo menor (33,3% contra 44,4%); a regra era trocar
+# a 8 pela 12 só se ela ficasse a menos de 1 p.p. do melhor F1 E acertasse o
+# tipo com menos pedidos. A 16 tem o pior F1 (62,5%).
 WINDOW_LOCAL = 8
 WINDOW_RULES = 16
 MIN_CHARS = 1500

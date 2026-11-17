@@ -21,17 +21,19 @@ import sqlite3
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
 from .classification import (
     CLASSIFICATION_BATCH_SECONDS, WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages,
     item_to_dict, validate_item,
-    page_order, starts_new_document,
+    page_order, starts_new_document, normalize_type,
 )
 from .config import ProjectConfig
 from .db import BatchWriter
+from .file_types import PAGED_CATEGORIES, category_of_extension
 from .events import record_event
 from .i18n import nested
 from .import_items import RAW_ITEMS_FILE_NAME
@@ -509,6 +511,28 @@ class LocalEngine:
     # para o log.
     context_ceiling: int = field(default=0, repr=False)
     ceiling_details: dict = field(default_factory=dict, repr=False)
+    # 2.0.0: o perfil do acervo (tipos, idiomas e termos dos títulos),
+    # acrescentado ao contexto quando o Tema do projeto está vazio, e de onde
+    # sai o texto inteiro de uma página (o índice de busca guarda o que a
+    # janela cortou). Ambos preenchidos por `classify_pending`; sem eles o
+    # motor se comporta como antes.
+    profile_text: str = ""
+    page_text: "Callable[[WindowPage], str] | None" = field(default=None, repr=False)
+    # Contadores da segunda tentativa (ver `_second_attempts`): pedidos
+    # normais, pedidos extras e o que cada tipo de segunda tentativa tratou.
+    # O teto de pedidos extras é `EXTRA_REQUEST_SHARE` dos normais.
+    base_requests: int = field(default=0, repr=False)
+    extra_requests: int = field(default=0, repr=False)
+    second_missing: int = field(default=0, repr=False)
+    second_untyped: int = field(default=0, repr=False)
+    second_capped: int = field(default=0, repr=False)
+    # Páginas que já tiveram a sua tentativa extra (no máximo uma por
+    # página, mesmo que ela apareça em duas janelas sobrepostas).
+    _retried: set = field(default_factory=set, repr=False)
+    _window_pages: list = field(default_factory=list, repr=False)
+    # O último pedido foi recusado por tamanho: reler a página com vizinhas
+    # só aumentaria o prompt que já não coube.
+    _last_refused: bool = field(default=False, repr=False)
 
     def _measure_ceiling(self) -> int:
         """O maior contexto que ainda cabe na placa com o modelo inteiro.
@@ -622,6 +646,7 @@ class LocalEngine:
         """
         self.last_window_warnings = []
         self.last_window_notes = []
+        self._window_pages = list(pages)
         return self._classify_pages(pages)
 
     def _classify_pages(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
@@ -640,7 +665,7 @@ class LocalEngine:
         o necessário e repete a janela inteira; (4) só quando nem o teto
         basta ela é dividida. O gatilho final continua `linhas < páginas`.
         """
-        prompt = _build_page_prompt(pages, self.config)
+        prompt = _build_page_prompt(pages, self.config, self.profile_text)
         total = len(pages)
         teto = self._measure_ceiling()
         precisa = context_tokens_for(prompt, page_count=total, chars_per_token=self._chars_per_token)
@@ -682,7 +707,8 @@ class LocalEngine:
             meio = total // 2
             return self._classify_pages(pages[:meio]) + self._classify_pages(pages[meio:])
 
-        faltantes = max(0, len(pages) - len(rows))
+        rows = self._second_attempts(pages, rows)
+        faltantes = max(0, len(pages) - len(_rows_by_index(rows, len(pages))))
         if faltantes:
             # Não é motivo para recusar nada — o agrupamento cobre a página
             # de qualquer modo. É registrado porque distingue um modelo que
@@ -693,7 +719,143 @@ class LocalEngine:
             ))
         return _group_pages_into_items(pages, rows)
 
-    def _attempt(self, prompt: str, page_count: int) -> tuple[list[dict], int]:
+    def _extra_allowed(self) -> bool:
+        """Se mais um pedido extra cabe no teto de `EXTRA_REQUEST_SHARE`
+        dos pedidos normais já feitos nesta execução. Contado em pedidos,
+        não em páginas: é o que custa tempo."""
+        return (self.extra_requests + 1) <= EXTRA_REQUEST_SHARE * self.base_requests
+
+    def _second_attempts(self, pages: list[WindowPage], rows: list[dict]) -> list[dict]:
+        """A segunda tentativa, na mesma passada (2.0.0; substitui a antiga
+        revisão da confiança baixa, que era uma segunda passada inteira).
+
+        Duas situações, cada uma com no máximo um pedido extra por trecho e
+        uma tentativa extra por página:
+
+        1. página sem resposta depois de tudo (`_classify_pages` já subiu o
+           contexto e dividiu o trecho): novo pedido só com elas e uma
+           página vizinha de cada lado, com uma nota de que a anterior
+           não trouxe resposta;
+        2. página que abre uma peça respondida sem tipo: novo pedido com o
+           texto inteiro dela (o índice de busca guarda o que o limite de
+           caracteres cortou), se esse texto for maior que o da janela.
+
+        O teto é de `EXTRA_REQUEST_SHARE` de pedidos a mais por execução; o
+        que não coube fica contado (`second_capped`) e entra como estava."""
+        por_indice = _rows_by_index(rows, len(pages))
+        if len(por_indice) < len(pages):
+            por_indice = self._retry_missing(pages, por_indice)
+        if self.page_text is not None:
+            por_indice = self._retry_untyped(pages, por_indice)
+        return [dict(row, n=indice + 1) for indice, row in sorted(por_indice.items())]
+
+    def _retry_key(self, page: WindowPage) -> tuple:
+        return (page.file_id, page.reference, page.file_name)
+
+    def _retry_missing(self, pages: list[WindowPage], por_indice: dict[int, dict]) -> dict[int, dict]:
+        janela = self._window_pages or pages
+        posicao = {id(page): lugar for lugar, page in enumerate(janela)}
+        faltantes = [
+            indice for indice in range(len(pages))
+            if indice not in por_indice and self._retry_key(pages[indice]) not in self._retried
+        ]
+        if not faltantes or self._last_refused or any(id(pages[i]) not in posicao for i in faltantes):
+            return por_indice
+        if not self._extra_allowed():
+            self.second_capped += len(faltantes)
+            return por_indice
+
+        lugares: set[int] = set()
+        for indice in faltantes:
+            centro = posicao[id(pages[indice])]
+            lugares.update(lugar for lugar in (centro - 1, centro, centro + 1) if 0 <= lugar < len(janela))
+        escolhidas = [janela[lugar] for lugar in sorted(lugares)]
+        for indice in faltantes:
+            self._retried.add(self._retry_key(pages[indice]))
+        prompt = _build_page_prompt(
+            escolhidas, self.config, self.profile_text, note=_RETRY_MISSING_NOTE.format(count=len(escolhidas))
+        )
+        novas = self._extra_attempt(prompt, escolhidas)
+        if novas is None:
+            return por_indice
+        self.second_missing += len(faltantes)
+        por_novas = _rows_by_index(novas, len(escolhidas))
+        lugar_na_nova = {id(page): numero for numero, page in enumerate(escolhidas)}
+        for indice in faltantes:
+            linha = por_novas.get(lugar_na_nova[id(pages[indice])])
+            if linha:
+                por_indice[indice] = linha
+        return por_indice
+
+    def _retry_untyped(self, pages: list[WindowPage], por_indice: dict[int, dict]) -> dict[int, dict]:
+        linhas = [dict(row, n=indice + 1) for indice, row in sorted(por_indice.items())]
+        ordem_para_indice = {page_order(page): indice for indice, page in enumerate(pages)}
+        candidatas: list[tuple[int, str]] = []
+        for item in _group_pages_into_items(pages, linhas):
+            indice = ordem_para_indice.get(item.start_order)
+            if indice is None or indice not in por_indice or normalize_type(item.type):
+                continue
+            page = pages[indice]
+            if self._retry_key(page) in self._retried:
+                continue
+            try:
+                inteiro = (self.page_text(page) or "").strip()
+            except Exception:
+                inteiro = ""
+            # Sem texto a mais do que a janela já tinha, o mesmo pedido daria
+            # a mesma resposta: não gasta o teto.
+            if len(inteiro) <= len(page.text.strip()) * 1.1:
+                continue
+            candidatas.append((indice, inteiro[:_FULL_PAGE_CHARS]))
+        if not candidatas:
+            return por_indice
+        if not self._extra_allowed():
+            self.second_capped += len(candidatas)
+            return por_indice
+
+        escolhidas: list[tuple[int, str]] = []
+        tamanho = 0
+        for indice, texto in candidatas:
+            if escolhidas and tamanho + len(texto) > _RETRY_PROMPT_CHARS:
+                break
+            escolhidas.append((indice, texto))
+            tamanho += len(texto)
+        paginas = [replace(pages[indice], text=texto) for indice, texto in escolhidas]
+        for indice, _texto in escolhidas:
+            self._retried.add(self._retry_key(pages[indice]))
+        prompt = _build_page_prompt(
+            paginas, self.config, self.profile_text, note=_RETRY_UNTYPED_NOTE.format(count=len(paginas))
+        )
+        novas = self._extra_attempt(prompt, paginas)
+        if novas is None:
+            return por_indice
+        self.second_untyped += len(escolhidas)
+        por_novas = _rows_by_index(novas, len(paginas))
+        for posicao, (indice, _texto) in enumerate(escolhidas):
+            linha = por_novas.get(posicao)
+            if linha and normalize_type(linha.get("type")):
+                # Só o que a leitura inteira trouxe de novo substitui; o
+                # sinal de continuação continua sendo o da primeira leitura.
+                por_indice[indice] = dict(linha, continues=por_indice[indice].get("continues", False))
+        return por_indice
+
+    def _extra_attempt(self, prompt: str, pages: list[WindowPage]) -> list[dict] | None:
+        """Um pedido extra. `None` quando ele não cabe no contexto que esta
+        máquina permite ou o servidor falha: a segunda tentativa nunca
+        derruba o trecho, ele segue com o que tinha."""
+        teto = self._measure_ceiling()
+        precisa = context_tokens_for(prompt, page_count=len(pages), chars_per_token=self._chars_per_token)
+        if teto and precisa > teto:
+            self.second_capped += len(pages)
+            return None
+        self.plan_gpu_use(prompt, page_count=len(pages))
+        try:
+            linhas, _alvo = self._attempt(prompt, len(pages), extra=True)
+        except ModelAnswerError:
+            return None
+        return linhas
+
+    def _attempt(self, prompt: str, page_count: int, extra: bool = False) -> tuple[list[dict], int]:
         """Uma tentativa da janela: `(linhas, contexto que ela pediria)`.
 
         O segundo valor é 0 quando a resposta cobriu todas as páginas. Uma
@@ -703,9 +865,14 @@ class LocalEngine:
         calibração só aprende com uma chamada íntegra.
         """
         teto = self._measure_ceiling()
+        if extra:
+            self.extra_requests += 1
+        else:
+            self.base_requests += 1
         try:
             generation = self._generate(prompt)
         except PromptTooLongError as exc:
+            self._last_refused = True
             if exc.tokens:
                 # Exact: returned uncapped, so that a count above the ceiling
                 # is recognisable as "does not fit at all" by the caller.
@@ -715,6 +882,7 @@ class LocalEngine:
             alvo = -(-alvo // _CONTEXT_GRANULARITY) * _CONTEXT_GRANULARITY
             return [], min(alvo, teto) if teto else alvo
 
+        self._last_refused = False
         estimativa = int(len(prompt) / self._chars_per_token)
         if _looks_truncated(generation, estimativa):
             return [], self._context_needed(generation, page_count)
@@ -875,7 +1043,7 @@ def _clip(text: str, limit: int = _CONTEXT_FIELD_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def build_context(config: ProjectConfig | None) -> str:
+def build_context(config: ProjectConfig | None, profile: str = "") -> str:
     """The "what am I looking at" block of the prompt, from the project form.
 
     This is the fix for the largest defect found in the quality review: the
@@ -909,6 +1077,10 @@ def build_context(config: ProjectConfig | None) -> str:
     subject = _clip(getattr(config, "subject", "") or "")
     if subject:
         lines.append(f"- Assunto do acervo: {subject}")
+    elif profile:
+        # 2.0.0: sem Tema, o que se sabe do acervo pelos próprios arquivos
+        # (tipos, idiomas, termos dos títulos) ocupa o lugar dele.
+        lines.append(f"- Perfil do acervo (tirado dos arquivos): {_clip(profile)}")
 
     collection_type = getattr(config, "collection_type", "") or ""
     description = _COLLECTION_TYPE_TEXT.get(collection_type)
@@ -975,8 +1147,11 @@ def _language_note(pages: list[WindowPage], fields: str) -> str:
     )
 
 
-def _prompt_context(pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS) -> str:
-    context = build_context(config)
+def _prompt_context(
+    pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS, profile: str = "",
+    note: str = "",
+) -> str:
+    context = build_context(config, profile) + note
     if any(STRUCK_MARK in page.text for page in pages):
         context += _STRUCK_TEXT_NOTE
     context += _language_note(pages, fields)
@@ -1060,6 +1235,22 @@ def _normalize_reference(reference: str) -> str:
 # garantida por construção — se o modelo responde sobre a página, ela está
 # no índice — e o agrupamento em peças vira trabalho do código, que sabe
 # somar. O modelo só informa se a página continua o assunto da anterior.
+# 2.0.0: a segunda tentativa de página (ver `LocalEngine._second_attempts`).
+# No máximo 15% de pedidos extras sobre os normais da execução.
+EXTRA_REQUEST_SHARE = 0.15
+# Texto inteiro de uma página: o bastante para ler um tipo que estava depois
+# do corte de `chars_per_page`, sem estourar o contexto do pedido extra.
+_FULL_PAGE_CHARS = 6000
+_RETRY_PROMPT_CHARS = 24000
+_RETRY_MISSING_NOTE = (
+    "\nO pedido anterior não trouxe resposta para algumas destas {count} páginas; esta é uma segunda "
+    "leitura. As páginas vizinhas estão aqui só como contexto, mas todas precisam da sua linha.\n"
+)
+_RETRY_UNTYPED_NOTE = (
+    "\nEstas {count} páginas vêm COM O TEXTO INTEIRO (antes elas foram lidas cortadas). Releia cada uma "
+    "e preencha o \"type\" se o texto permitir reconhecer o documento.\n"
+)
+
 _PAGE_PROMPT = """\
 Você é um indexador de um acervo documental.
 {context}
@@ -1101,7 +1292,9 @@ Páginas:
 """
 
 
-def _build_page_prompt(pages: list[WindowPage], config: ProjectConfig | None = None) -> str:
+def _build_page_prompt(
+    pages: list[WindowPage], config: ProjectConfig | None = None, profile: str = "", note: str = ""
+) -> str:
     """As páginas numeradas de 1 a N.
 
     O número é o que o modelo devolve para identificar a página, em vez da
@@ -1118,7 +1311,8 @@ def _build_page_prompt(pages: list[WindowPage], config: ProjectConfig | None = N
         for numero, page in enumerate(pages, start=1)
     ]
     return _PAGE_PROMPT.format(
-        context=_prompt_context(pages, config, _PAGE_FIELDS), count=len(pages), text="\n\n".join(blocks)
+        context=_prompt_context(pages, config, _PAGE_FIELDS, profile, note), count=len(pages),
+        text="\n\n".join(blocks),
     )
 
 
@@ -1139,6 +1333,12 @@ def _pages_json(response_text: str) -> list[dict]:
 
 # Palavras curtas demais para distinguir um assunto de outro.
 _SUBJECT_NOISE = frozenset({"de", "do", "da", "e", "com", "para", "em", "a", "o", "-", "–", "—"})
+
+
+def _gap_between(previous: WindowPage, page: WindowPage) -> bool:
+    """Se há página de fora entre as duas (só com a posição conhecida das
+    duas)."""
+    return bool(previous.order and page.order and page.order != previous.order + 1)
 
 
 def _subject_key(subject: object) -> str:
@@ -1169,6 +1369,25 @@ def _same_topic_start(a: str, b: str, palavras: int = 2) -> bool:
     return a.split()[:palavras] == b.split()[:palavras]
 
 
+def _rows_by_index(rows: list[dict], total: int) -> dict[int, dict]:
+    """Posição da página (de 0) → linha do modelo. Casa pelo número `n`;
+    quem não trouxer um `n` utilizável entra pela posição na resposta."""
+    por_indice: dict[int, dict] = {}
+    sem_numero: list[dict] = []
+    for row in rows:
+        numero = row.get("n")
+        if isinstance(numero, str) and numero.strip().isdigit():
+            numero = int(numero.strip())
+        if isinstance(numero, int) and not isinstance(numero, bool) and 1 <= numero <= total:
+            por_indice.setdefault(numero - 1, row)
+        else:
+            sem_numero.append(row)
+
+    for posicao, row in enumerate(sem_numero):
+        por_indice.setdefault(posicao, row)
+    return por_indice
+
+
 def _group_pages_into_items(
     pages: list[WindowPage], rows: list[dict], model_engine: str = "local"
 ) -> list[ClassifiedItem]:
@@ -1186,19 +1405,7 @@ def _group_pages_into_items(
     # um "n" utilizável entra pela posição na resposta, que é a ordem
     # pedida — e uma linha que não casar com página nenhuma é simplesmente
     # ignorada, nunca some com a página dela.
-    por_indice: dict[int, dict] = {}
-    sem_numero: list[dict] = []
-    for row in rows:
-        numero = row.get("n")
-        if isinstance(numero, str) and numero.strip().isdigit():
-            numero = int(numero.strip())
-        if isinstance(numero, int) and not isinstance(numero, bool) and 1 <= numero <= len(pages):
-            por_indice.setdefault(numero - 1, row)
-        else:
-            sem_numero.append(row)
-
-    for posicao, row in enumerate(sem_numero):
-        por_indice.setdefault(posicao, row)
+    por_indice = _rows_by_index(rows, len(pages))
 
     itens: list[ClassifiedItem] = []
     atual: list[tuple[WindowPage, dict]] = []
@@ -1268,10 +1475,12 @@ def _group_pages_into_items(
         # redação sem mudar de documento ("Instalações elétricas, bloco A" /
         # "Instalações elétricas, bloco B"): aí ele desempata, desde que o começo
         # do assunto coincida.
-        if not atual or starts_new_document(atual[-1][0], page):
+        if not atual or starts_new_document(atual[-1][0], page) or _gap_between(atual[-1][0], page):
             # Um arquivo de documento inteiro (HTML, DOCX, TXT…) é sempre
             # uma peça: duas leis seguidas têm o mesmo "assunto" para o
-            # modelo e seriam juntadas.
+            # modelo e seriam juntadas. Uma página que ficou de fora do
+            # pedido (a página em branco, que não vai ao modelo) também
+            # separa: a peça não pode cobrir a página que ela não tem.
             continua = False
         elif assunto and anterior_assunto:
             continua = assunto == anterior_assunto or (
@@ -1405,6 +1614,15 @@ class LocalClassificationResult:
     # value, and windows split in two because they did not fit the ceiling.
     windows_context_raised: int = 0
     windows_split_for_size: int = 0
+    # 2.0.0: páginas em branco que nem foram ao modelo, e a segunda
+    # tentativa (páginas sem resposta, páginas sem tipo, pedidos extras e
+    # normais, o que o teto de 15% deixou de fora).
+    blank_pages: int = 0
+    second_missing: int = 0
+    second_untyped: int = 0
+    extra_requests: int = 0
+    base_requests: int = 0
+    second_capped: int = 0
 
 
 def _log_window_notes(
@@ -1482,6 +1700,48 @@ _FALLBACK_SUMMARY_CHARS = 300
 # sem limite transformaria o índice numa segunda cópia do acervo, que é
 # exatamente o que ele existe para evitar.
 _SUMMARY_CHAR_LIMIT = 600
+
+
+# Tipo da peça de uma página sem texto e sem imagem. É o que o acervo traz de
+# verdade (a folha em branco de um volume encadernado): conhecida pelo código,
+# não precisa de pedido ao modelo e sai com confiança alta.
+BLANK_PAGE_TYPE = "PÁGINA EM BRANCO"
+BLANK_PAGE_SUMMARY = "Página em branco: sem texto e sem imagem."
+
+
+def is_blank_page(page: WindowPage) -> bool:
+    """Página de documento paginado (PDF, imagem, formatos convertidos) sem
+    texto e sem imagem. As mensagens de e-mail (`.mbox`, Outlook) e os
+    trechos de transcrição são uma página cada e ficam de fora de propósito:
+    uma mensagem vazia é uma mensagem, não uma folha em branco; e um arquivo
+    de documento inteiro (TXT, DOCX…) vazio continua pelo caminho de sempre."""
+    if page.text.strip() or page.image_count:
+        return False
+    return category_of_extension(Path(page.file_name).suffix) in PAGED_CATEGORIES
+
+
+def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], list[WindowPage]]:
+    """`(peças das páginas em branco, páginas que seguem para o modelo)`.
+    Páginas em branco seguidas do mesmo arquivo são uma peça só."""
+    blank = [page for page in pages if is_blank_page(page)]
+    if not blank:
+        return [], pages
+    items: list[ClassifiedItem] = []
+    blocks: list[list[WindowPage]] = [[blank[0]]]
+    for previous, page in zip(blank, blank[1:]):
+        if page.file_name == previous.file_name and page_order(page) == page_order(previous) + 1:
+            blocks[-1].append(page)
+        else:
+            blocks.append([page])
+    for block in blocks:
+        items.append(ClassifiedItem(
+            start_ref=block[0].reference, end_ref=block[-1].reference,
+            start_order=page_order(block[0]), end_order=page_order(block[-1]),
+            type=BLANK_PAGE_TYPE, date=None, author=None, summary=BLANK_PAGE_SUMMARY,
+            has_table=False, has_image=False, engine="local", confidence="high",
+            files=sorted({p.file_name for p in block}),
+        ))
+    return items, [page for page in pages if not is_blank_page(page)]
 
 
 def _uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> list[WindowPage]:
@@ -1653,6 +1913,21 @@ def _log_backend(conn: sqlite3.Connection, language: str | None = None) -> None:
 
 
 MODEL_RETRY_SECONDS = 60.0
+def _prepare_second_attempts(conn: sqlite3.Connection, config: ProjectConfig, local_engine) -> None:
+    """Dá ao motor o perfil do acervo (só com o Tema vazio) e de onde ler o
+    texto inteiro de uma página (o índice de busca). Um motor que não tem
+    esses campos (um dublê de teste, outro motor) segue como antes."""
+    from . import collection_profile, fulltext
+
+    try:
+        if not (getattr(config, "subject", "") or "").strip() and not getattr(local_engine, "profile_text", ""):
+            local_engine.profile_text = collection_profile.build_profile(conn)
+        if getattr(local_engine, "page_text", None) is None:
+            local_engine.page_text = lambda page: fulltext.page_text(conn, page.file_id, page.reference)
+    except Exception:
+        pass
+
+
 def _classify_in_parts(engine: "LocalEngine", pages: list[WindowPage]) -> list[ClassifiedItem]:
     """The window in halves, and each half in halves again, until the page
     the model cannot read is alone. That page gets no item from the
@@ -1748,6 +2023,8 @@ def classify_pending(
             config=config,
         )
 
+    _prepare_second_attempts(conn, config, local_engine)
+
     rules_fallback_engine = RulesEngine(load_rules())
     # 1.5.12, explicit request: with a graphics card the model is the only
     # engine. Losing it means waiting for it to come back and carrying on
@@ -1801,7 +2078,11 @@ def classify_pending(
                 # Planalto acts are read from their own structure
                 # (`planalto.py`); only the other pages go to the model. A
                 # window made only of acts never waits for the model.
-                structured_items, model_pages = planalto.split(pages)
+                # A página em branco (sem texto e sem imagem) não vai ao modelo:
+                # vira "PÁGINA EM BRANCO" com confiança alta.
+                blank_items, pages_to_read = split_blank_pages(pages)
+                result.blank_pages += sum(item.end_order - item.start_order + 1 for item in blank_items)
+                structured_items, model_pages = planalto.split(pages_to_read)
                 result.windows_structured += 1 if structured_items else 0
 
                 items = None if model_pages else []
@@ -1918,7 +2199,7 @@ def classify_pending(
 
                 if items is None:
                     continue  # stopped, or skipped: the window stays pending
-                items = structured_items + items
+                items = blank_items + structured_items + items
 
                 def escrever(item: ClassifiedItem) -> bool:
                     """Valida e grava a peça. `False` quando ela foi recusada."""
@@ -1989,6 +2270,22 @@ def classify_pending(
             {
                 "raised": result.windows_context_raised, "split": result.windows_split_for_size,
                 "ceiling": int(getattr(local_engine, "context_ceiling", 0) or 0),
+            },
+            language=language,
+        )
+
+    result.base_requests = int(getattr(local_engine, "base_requests", 0) or 0)
+    result.extra_requests = int(getattr(local_engine, "extra_requests", 0) or 0)
+    result.second_missing = int(getattr(local_engine, "second_missing", 0) or 0)
+    result.second_untyped = int(getattr(local_engine, "second_untyped", 0) or 0)
+    result.second_capped = int(getattr(local_engine, "second_capped", 0) or 0)
+    if result.blank_pages or result.extra_requests or result.second_capped:
+        record_event(
+            conn, "classification", "info", "log.local_engine.second_pass_summary",
+            {
+                "blank": result.blank_pages, "missing": result.second_missing,
+                "untyped": result.second_untyped, "extra": result.extra_requests,
+                "base": result.base_requests, "capped": result.second_capped,
             },
             language=language,
         )

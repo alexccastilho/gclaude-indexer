@@ -479,6 +479,147 @@ def _extract_light_text(category: str, extension: str, source_path: Path) -> str
     return _extract_text_eml(source_path)
 
 
+# 2.0.0: página com imagem cujo OCR devolveu menos que isto é lida mais uma
+# vez, com o modelo da escrita que o OSD achou nela (ver `_reread_model`).
+REREAD_MIN_CHARS = 100
+# Quantas páginas de um mesmo arquivo passam pelo OSD para isso: o OSD e o
+# OCR de cada uma custam segundos, e um livro escaneado ilegível inteiro não
+# merece centenas deles.
+REREAD_MAX_PAGES = 30
+
+
+def _reread_model(image, used: list[str], usable) -> tuple[str | None, int, bool]:
+    """`(modelo, graus a girar, falta o modelo)` para ler de novo uma página
+    cujo OCR deu pouco texto: o modelo da escrita que o OSD vê nela
+    (`ocr_detection.osd_image`, o mesmo da detecção de idioma). `None` quando
+    o OSD não diz a escrita ou o modelo dela já foi o usado (ler de novo com
+    o mesmo modelo daria o mesmo texto). O que falta nesta máquina não é
+    baixado aqui: quem chama marca o arquivo e a próxima conversão baixa."""
+    found = ocr_detection.osd_image(image)
+    if found is None or found[0] is None:
+        return None, 0, False
+    script, degrees = found
+    model = language_detect.script_model(script)
+    if not model or model in used:
+        return None, degrees, False
+    return model, degrees, usable is not None and model not in set(usable)
+
+
+def _ocr_pages_text(document, pages: list[int]) -> dict[int, int]:
+    return {number: len(document[number - 1].get_text().strip()) for number in pages}
+
+
+def _reread_weak_pdf_pages(
+    name: str, source_pdf: Path, destination: Path, ocr_pages: list[int], used: list[str], usable,
+    jobs: int, rotate: bool, events: list, notes: dict,
+) -> tuple[list[str], bool]:
+    """Lê de novo, uma vez, as páginas escaneadas que o OCR deixou com menos
+    de `REREAD_MIN_CHARS` caracteres, cada uma com o modelo da escrita dela.
+    Devolve `(modelos que faltam aqui, se algo foi lido)`. O `ocrmypdf` roda
+    sobre a cópia já lida, só nessas páginas (`--force-ocr --pages`: as outras
+    passam intactas), uma vez por modelo, como o plano com grupos de
+    páginas."""
+    try:
+        document = fitz.open(destination)
+        try:
+            weak = [n for n, size in _ocr_pages_text(document, ocr_pages).items() if size < REREAD_MIN_CHARS]
+        finally:
+            document.close()
+    except Exception:
+        return [], False
+    if not weak:
+        return [], False
+
+    groups: dict[str, list[int]] = {}
+    missing: list[str] = []
+    source = fitz.open(source_pdf)
+    try:
+        for number in weak[:REREAD_MAX_PAGES]:
+            image = ocr_detection._prepared(ocr_detection._render(source, number))
+            model, _degrees, absent = _reread_model(image, used, usable)
+            if model is None:
+                continue
+            if absent:
+                if model not in missing:
+                    missing.append(model)
+                continue
+            groups.setdefault(model, []).append(number)
+    finally:
+        source.close()
+
+    done_models: list[str] = []
+    current = destination
+    temporaries: list[Path] = []
+    try:
+        for index, (model, pages) in enumerate(groups.items()):
+            target = destination.with_name(f"{destination.name}.releitura{index}.pdf")
+            temporaries.append(target)
+            try:
+                _run_ocrmypdf(current, target, model, jobs=jobs, pages=pages, rotate=rotate)
+            except OcrError as exc:
+                events.append((
+                    "conversion", "warning", "log.conversion.ocr_pages_failed",
+                    {"name": name, "pages": len(pages), "total": len(ocr_pages),
+                     "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
+                ))
+                continue
+            current = target
+            done_models.append(f"{model} ({len(pages)})")
+        if current != destination:
+            os.replace(current, destination)
+            temporaries.remove(current)
+    finally:
+        for temporary in temporaries:
+            temporary.unlink(missing_ok=True)
+    if done_models:
+        events.append((
+            "conversion", "info", "log.conversion.ocr_reread",
+            {"name": name, "models": ", ".join(done_models)},
+        ))
+    return missing, bool(done_models)
+
+
+def _plan_with_models(plan: str, extra: list[str]) -> str | None:
+    """O plano de idiomas do arquivo com os modelos que faltam, para a
+    próxima conversão os baixar e ler com eles. Só um plano de um grupo só
+    (`"por"`, `"deu+eng"`); com grupos de páginas, `None`: não se mexe."""
+    groups = ocr_detection.parse_plan(plan)
+    if len(groups) != 1 or groups[0][0] is not None:
+        return None
+    models = list(dict.fromkeys([*groups[0][1], *extra]))[: language_detect.MAX_LANGUAGES]
+    return "+".join(models)
+
+
+def _reread_image(
+    path: Path, text: str, languages: str, rotate: int, usable, events: list, name: str
+) -> tuple[str, list[str]]:
+    """`(texto, modelos que faltam)`: a imagem de OCR curto lida de novo
+    com o modelo da escrita; fica o texto mais longo."""
+    from PIL import Image
+
+    try:
+        _register_heif()
+        with Image.open(path) as image:
+            image.load()
+            prepared = ocr_detection._prepared(image)
+    except Exception:
+        return text, []
+    try:
+        model, degrees, absent = _reread_model(prepared, languages.split("+"), usable)
+    except Exception:
+        return text, []
+    if model is None:
+        return text, []
+    if absent:
+        return text, [model]
+    try:
+        again = _extract_text_image(path, model, rotate=rotate or degrees)
+    except Exception:
+        return text, []
+    events.append(("conversion", "info", "log.conversion.ocr_reread", {"name": name, "models": model}))
+    return (again if len(again.strip()) > len(text.strip()) else text), []
+
+
 def _row_plan(config: ProjectConfig, row: dict | None) -> tuple[str, bool]:
     """`(plano de idiomas, se falta idioma)` que o processo principal mandou
     para este arquivo (`convert`); sem plano (chamada direta, projeto sem a
@@ -650,6 +791,25 @@ def _ocr_pdf_pages(
                     "conversion", "info", "log.conversion.ocr_applied",
                     {"name": name, "ocr_language": used},
                 ))
+    if ocr_applied and not ocr_failed and not left_out and not wanted_pages and not short:
+        # 2.0.0: página com imagem e menos de 100 caracteres depois do OCR:
+        # uma leitura a mais, com o modelo da escrita. O que falta aqui é
+        # pedido ao plano do arquivo e o arquivo volta à fila (`ocr_failed`),
+        # a mesma via de um idioma que ainda não chegou.
+        used = [model for _pages, languages in runs for model in languages.split("+")]
+        try:
+            absent, _read = _reread_weak_pdf_pages(
+                name, source_pdf, destination, ocr_pages, used,
+                row.get("ocr_usable") if row is not None else None, ocrmypdf_jobs, rotate, events, notes,
+            )
+        except Exception:
+            # A releitura é um extra: nunca derruba a conversão que já deu certo.
+            absent = []
+        if absent:
+            wanted_plan = _plan_with_models(plan, absent)
+            if wanted_plan:
+                notes["ocr_lang"] = wanted_plan
+                ocr_failed = True
     if left_out or wanted_pages or short:
         # Parte das páginas foi lida sem o idioma certo (ou ficou sem OCR):
         # bom o bastante por ora, refeito quando o idioma chegar.
@@ -928,6 +1088,12 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             text = _extract_text_image(source_path, languages, rotate=rotate)
             ocr_applied = True
             ocr_failed = short
+            if not short and len(text.strip()) < REREAD_MIN_CHARS:
+                text, absent = _reread_image(source_path, text, languages, rotate, row.get("ocr_usable"), events, name)
+                wanted_plan = _plan_with_models(plan, absent) if absent else None
+                if wanted_plan:
+                    notes["ocr_lang"] = wanted_plan
+                    ocr_failed = True
             events.append((
                 "conversion", "info", "log.conversion.ocr_applied",
                 {"name": name, "ocr_language": languages},

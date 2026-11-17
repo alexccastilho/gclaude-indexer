@@ -56,7 +56,10 @@ def _versao() -> str:
         return "?"
 
 
-def run(source: Path, output: Path, engine: str = "rules", model: str = "automatic", language: str = "pt") -> dict:
+def run(
+    source: Path, output: Path, engine: str = "rules", model: str = "automatic", language: str = "pt",
+    window: int | None = None, overlap: int | None = None,
+) -> dict:
     from gclaude_indexer.config import load_config
     from gclaude_indexer.conversion import convert
     from gclaude_indexer.db import connect, init_schema
@@ -84,14 +87,22 @@ def run(source: Path, output: Path, engine: str = "rules", model: str = "automat
         ))
     output.mkdir(parents=True, exist_ok=True)
 
-    config = load_config({
+    dados = {
         "name": source.name,
         "source_folder": str(source),
         "output_folder": str(output),
         "extensions": EXTENSOES,
         "classification_engine": engine,
         "local_model": model,
-    })
+    }
+    # Sem estes dois, vale o padrão de `ProjectConfig` (16 páginas, sobreposição
+    # 2): este script não chama `auto_settings`, que só a interface chama. Com
+    # eles, a matriz janela × sobreposição da medição de `docs/QUALITY.md`.
+    if window is not None:
+        dados["pages_per_window"] = window
+    if overlap is not None:
+        dados["overlap"] = overlap
+    config = load_config(dados)
 
     # Mesmos nomes, mesma ordem que a interface; se `STEP_ORDER` ganhar uma
     # etapa, este dicionário deixa de cobri-lo e o erro aparece aqui.
@@ -131,6 +142,8 @@ def run(source: Path, output: Path, engine: str = "rules", model: str = "automat
         "machine": platform.node(),
         "started_at": iniciado_em,
         "duration_s": round(time.monotonic() - inicio, 1),
+        "pages_per_window": config.pages_per_window,
+        "overlap": config.overlap,
         "windows": janelas,
         "items": itens,
         "source": str(source),
@@ -146,11 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--motor", choices=["rules", "local"], default="rules",
                         help="rules: só regras, roda em qualquer máquina; local: modelo via Ollama")
     parser.add_argument("--modelo", default="automatic", help="modelo do Ollama para --motor local (padrão: automático)")
+    parser.add_argument("--janela", type=int, default=None, help="páginas por janela (padrão do projeto: 16)")
+    parser.add_argument("--sobreposicao", type=int, default=None, help="páginas repetidas entre janelas (padrão: 2)")
     parser.add_argument("--idioma", default="pt", help="idioma dos textos do índice e do log (pt, en, es)")
     args = parser.parse_args(argv)
 
     print(f"Indexando {args.origem} com o motor '{args.motor}'...")
-    info = run(args.origem, args.saida, engine=args.motor, model=args.modelo, language=args.idioma)
+    info = run(args.origem, args.saida, engine=args.motor, model=args.modelo, language=args.idioma,
+               window=args.janela, overlap=args.sobreposicao)
     print(f"Concluído em {info['duration_s']} s: {info['windows']} trecho(s), {info['items']} peça(s). "
           f"Saída em {args.saida.resolve()}.")
     return 0

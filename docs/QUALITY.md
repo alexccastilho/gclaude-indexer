@@ -69,6 +69,79 @@ author matches by surname or acronym.
   phases can start (dates in the rules engine and fragmentation in the
   model are the two largest gains in sight).
 
+## Low confidence and window (2.0.0, 17 November 2026)
+
+Version 2.0.0 removed the "review low confidence" step (a whole second
+pass) and improves within the single pass instead: a page with no text and
+no image becomes "PÁGINA EM BRANCO" (blank page) with high confidence
+without going to the model; a page with an image and OCR under 100
+characters is read again, once, with the model for its script; with no Theme
+set, a profile of the collection goes into the context; a page with no
+answer (plus its neighbours) and a page answered without a type (with its
+whole text, from the index) get a second attempt, at most one per page and
+15% extra requests per run; in the rules engine, the continuation of a
+piece opened by a marker no longer drops it to `low`. The report
+(`medir_acerto.py`) now also splits pieces and accuracy **by confidence
+level**. Same machine, same collection, same commands (`--janela` and
+`--sobreposicao` are new options of `indexar_pasta.py`).
+
+| Run | Pieces (index) | F1 | Type | High / medium / low confidence (pieces; type right) |
+|---|---|---|---|---|
+| Rules, baseline (1.10.4) | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 2 (100.0%; 2/2) / 17 (88.2%; 15/17) |
+| Rules, 2.0.0 | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 19 (89.5%; 17/19) / 0 |
+| Local `qwen3.5:9b`, baseline (1.10.4, window 16, overlap 2) | 71 | 62.5% | 57.1% | 53 (60.0%; 18/30) / 18 (40.0%; 2/5) / 0 |
+| Local `qwen3.5:9b`, 2.0.0, window 16, overlap 2 | 71 | 62.5% | 57.1% | 53 (60.0%; 18/30) / 18 (40.0%; 2/5) / 0 |
+| Local `qwen3.5:9b`, 2.0.0, window 8, overlap 2 (new default) | 64 | 68.6% | 44.4% | 59 (44.4%; 16/36) / 5 (no piece found) / 0 |
+
+Commands: `python tools/indexar_pasta.py demo/acervo <folder> --motor rules`
+and `... --motor local --modelo qwen3.5:9b [--janela 8 --sobreposicao 2]`,
+then `python tools/medir_acerto.py <folder> demo/gabarito.csv`. The baseline
+was indexed with the code of commit `a9a17e8` (before any 2.0.0 change) and
+measured with the new tool, which only reads `project.db`.
+
+**Window × overlap matrix (local engine, 3 runs per cell).** The three runs
+of each cell came out **identical** (temperature 0): the variation described
+in the section below comes from changing the text, not from repeating the
+run.
+
+| Window / overlap | Windows | Pieces | F1 | Type | Date | Author | Time |
+|---|---|---|---|---|---|---|---|
+| 8 / 1 | 11 | 67 | 64.8% | 45.7% | 94.3% | 87.5% | 4 min 0 s |
+| **8 / 2** | 13 | 64 | **68.6%** | 44.4% | 86.1% | 81.8% | 4 min 32 s |
+| 12 / 1 | 7 | 64 | **68.6%** | 33.3% | 83.3% | 78.8% | 3 min 42 s |
+| 12 / 2 | 8 | 71 | 62.5% | 34.3% | 85.7% | 78.1% | 4 min 12 s |
+| 16 / 1 | 6 | 71 | 62.5% | 45.7% | 80.0% | 87.5% | 3 min 50 s |
+| 16 / 2 | 6 | 71 | 62.5% | 57.1% | 91.4% | 84.4% | 4 min 2 s |
+
+The rule was to stay at 8 pages unless window 12 ended within 1 percentage
+point of the best F1 **and** got the type right with fewer requests. 12 ties
+for the best F1 (12/1) but gets the type right less often (33.3% against
+44.4%), so the local engine's window stays **8** (`auto_settings.
+WINDOW_LOCAL`), with the overlap of 2 that 2.0.0 already used for PDF
+collections. Window 16 (the 1.x one) has the worst F1. Type is the number
+that moves most with the window (33% to 57%): it is the model's weak point
+on this collection, not the window's.
+
+**By confidence level.** In the rules engine, the continuation of a piece
+opened by a marker became `medium`: the 17 pieces that used to be `low` got
+the type right 88.2% of the time, and today's 19 `medium` 89.5%, below `high`
+(100%), so the high > medium > low order holds and the change stayed. The
+base is small (2 `medium` pieces before the change) and the collection has
+no piece without an opening marker, so the rules engine's `low` is now empty:
+these numbers alone cannot say that `medium` stays above `low` where `low`
+exists. In the local engine confidence separates nothing: 75% to 92% of the
+pieces come out `high`, and the type right among them (44% to 60%) is close
+to that of `medium`.
+
+**The second attempt did not show up in this collection.** With 6 to 13
+windows, the 15% cap on extra requests only frees the first extra request
+after the seventh regular one, and no run had a page with no answer (every
+page had text, none was blank) nor a piece with no type whose whole text was
+longer than the window's. That is why the 1.10.4 and 2.0.0 (16/2) rows came
+out equal. What the measurement shows here is the effect of the window and of
+the by-confidence report; the effect of the second attempt only appears in
+larger collections, with long or scanned pages.
+
 ## What this does not say
 
 - **Synthetic collection.** It was written with clean headings, legible

@@ -94,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
         f"(precisão {_pct(report.precision)}, revocação {_pct(report.recall)}, F1 {_pct(report.f1)}); "
         f"tipo {_pct(report.type_score.rate)}, data {_pct(report.date_score.rate)}, autor {_pct(report.author_score.rate)}."
     )
+    total = sum(level.pieces for level in report.by_confidence.values())
+    for nome, nivel in report.by_confidence.items():
+        if nivel.pieces:
+            print(
+                f"  confiança {nome}: {nivel.pieces} peças ({_pct(nivel.pieces / total)}), "
+                f"limites certos {_pct(nivel.boundary_rate)}, tipo {_pct(nivel.type_score.rate)} "
+                f"({nivel.type_score.hits}/{nivel.type_score.total})"
+            )
     if report.missing_files:
         print(f"Arquivos do gabarito ausentes no índice: {', '.join(report.missing_files)}")
     if report.unknown_files:

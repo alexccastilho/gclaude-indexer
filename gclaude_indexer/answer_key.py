@@ -71,6 +71,27 @@ class FieldScore:
         return None if self.total == 0 else self.hits / self.total
 
 
+CONFIDENCE_LEVELS = ("high", "medium", "low")
+
+
+@dataclass
+class ConfidenceScore:
+    """Quanto o índice declarou em cada nível de confiança e quanto desse
+    nível estava certo. `pieces` são peças do índice; `matched`, as que
+    casam com uma peça do gabarito (limites certos); tipo, data e autor só
+    entre elas, como no total."""
+
+    pieces: int = 0
+    matched: int = 0
+    type_score: FieldScore = field(default_factory=FieldScore)
+    date_score: FieldScore = field(default_factory=FieldScore)
+    author_score: FieldScore = field(default_factory=FieldScore)
+
+    @property
+    def boundary_rate(self) -> float | None:
+        return None if self.pieces == 0 else self.matched / self.pieces
+
+
 @dataclass
 class AccuracyReport:
     pages_total: int = 0
@@ -82,6 +103,7 @@ class AccuracyReport:
     date_score: FieldScore = field(default_factory=FieldScore)
     author_score: FieldScore = field(default_factory=FieldScore)
     by_group: dict[str, "AccuracyReport"] = field(default_factory=dict)
+    by_confidence: dict[str, ConfidenceScore] = field(default_factory=dict)
     mismatches: list[dict] = field(default_factory=list)
     unknown_files: list[str] = field(default_factory=list)
     missing_files: list[str] = field(default_factory=list)
@@ -162,6 +184,7 @@ class _IndexPiece:
     author: str | None
     start_ref: str
     end_ref: str
+    confidence: str = ""
 
 
 def _index_pieces(conn) -> tuple[list[_IndexPiece], dict[str, str]]:
@@ -173,7 +196,7 @@ def _index_pieces(conn) -> tuple[list[_IndexPiece], dict[str, str]]:
             file_group[page["file_relative_path"]] = group
     pieces = []
     rows = conn.execute(
-        "SELECT id, group_key, start_order, end_order, type, date, author, start_ref, end_ref"
+        "SELECT id, group_key, start_order, end_order, type, date, author, start_ref, end_ref, confidence"
         " FROM item ORDER BY group_key, start_order, end_order, id"
     ).fetchall()
     for row in rows:
@@ -185,7 +208,7 @@ def _index_pieces(conn) -> tuple[list[_IndexPiece], dict[str, str]]:
         )
         pieces.append(_IndexPiece(
             row["id"], row["group_key"], pages, row["type"], row["date"], row["author"],
-            row["start_ref"], row["end_ref"],
+            row["start_ref"], row["end_ref"], row["confidence"] or "",
         ))
     return pieces, file_group
 
@@ -241,6 +264,30 @@ def _fill(report: AccuracyReport, key: list[KeyPiece], key_ids: list[int], index
             report.author_score.hits += author_matches(k.author, p.author)
 
 
+def _by_confidence(
+    key: list[KeyPiece], index: list[_IndexPiece], matches: dict[int, tuple[int, float]]
+) -> dict[str, ConfidenceScore]:
+    """O mesmo cálculo do total, repartido pelo nível de confiança que o
+    motor declarou em cada peça do índice (2.0.0: é o que diz se `low` é
+    mesmo onde o índice erra, e se `high` merece a confiança)."""
+    levels: dict[str, ConfidenceScore] = {name: ConfidenceScore() for name in CONFIDENCE_LEVELS}
+    for piece in index:
+        levels.setdefault(piece.confidence or "?", ConfidenceScore()).pieces += 1
+    for ki, (pi, _score) in matches.items():
+        k, p = key[ki], index[pi]
+        score = levels.setdefault(p.confidence or "?", ConfidenceScore())
+        score.matched += 1
+        score.type_score.total += 1
+        score.type_score.hits += normalize_type(k.type) == normalize_type(p.type)
+        if k.date:
+            score.date_score.total += 1
+            score.date_score.hits += (p.date or "") == k.date
+        if k.author:
+            score.author_score.total += 1
+            score.author_score.hits += author_matches(k.author, p.author)
+    return levels
+
+
 def compare_with_answer_key(conn, key: list[KeyPiece]) -> AccuracyReport:
     index, file_group = _index_pieces(conn)
     matches = _match(key, index)
@@ -266,6 +313,8 @@ def compare_with_answer_key(conn, key: list[KeyPiece]) -> AccuracyReport:
             [pi for pi, p in enumerate(index) if p.group == group], index, matches, covered,
         )
         report.by_group[group] = sub
+
+    report.by_confidence = _by_confidence(key, index, matches)
 
     matched_index = {pi for pi, _ in matches.values()}
     for ki, k in enumerate(key):
@@ -343,6 +392,27 @@ def render_report(report: AccuracyReport, context: dict) -> str:
         "encontradas / peças do índice; revocação: encontradas / peças do gabarito. Tipo, data e "
         "autor são medidos só entre as peças encontradas; data e autor só onde o gabarito os tem.",
     ]
+    if any(level.pieces for level in report.by_confidence.values()):
+        lines += [
+            "", "## Por nível de confiança", "",
+            "| Confiança | Peças do índice | % das peças | Limites certos | Tipo | Data | Autor |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        total = sum(level.pieces for level in report.by_confidence.values())
+        for name, level in report.by_confidence.items():
+            if not level.pieces:
+                continue
+            lines.append(
+                f"| {name} | {level.pieces} | {_pct(level.pieces / total)} | {level.matched}/{level.pieces}"
+                f" ({_pct(level.boundary_rate)}) | {_pct(level.type_score.rate)}"
+                f" ({level.type_score.hits}/{level.type_score.total}) | {_pct(level.date_score.rate)}"
+                f" | {_pct(level.author_score.rate)} |"
+            )
+        lines += [
+            "",
+            "Confiança: o nível que o motor declarou na peça. Limites certos: peças do índice desse nível "
+            "que casam com uma do gabarito; tipo, data e autor, só entre essas.",
+        ]
     if report.missing_files:
         lines += ["", "## Arquivos do gabarito que o índice não tem", ""]
         lines += [f"- `{f}`" for f in report.missing_files]

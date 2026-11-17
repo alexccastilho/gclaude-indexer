@@ -95,7 +95,7 @@ def test_pagina_sem_marcador_algum_entra_na_peca_anterior_com_confianca_baixa():
     assert len(pecas) == 1  # a página 2 não abre peça nova, entra na mesma
     assert pecas[0].start_ref == "f. 1"
     assert pecas[0].end_ref == "f. 2"
-    assert pecas[0].confidence == "low"  # rebaixada pela página sem marcador
+    assert pecas[0].confidence == "medium"  # 2.0.0: peça aberta por marcador, só a continuação é suposta
 
 
 def test_pagina_em_branco_anterior_abre_nova_peca():

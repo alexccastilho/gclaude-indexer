@@ -71,6 +71,79 @@ forma exacta; el autor vale por el apellido o la sigla.
   fases (la fecha en el motor de reglas y la fragmentación en el modelo son
   las dos mayores ganancias a la vista).
 
+## Confianza baja y ventana (2.0.0, 17 de noviembre de 2026)
+
+La versión 2.0.0 quitó la "revisión de confianza baja" (una segunda pasada
+completa) y mejora dentro de la pasada única: una página sin texto y sin
+imagen pasa a ser "PÁGINA EM BRANCO" (página en blanco) con confianza alta
+sin ir al modelo; una página con imagen y OCR de menos de 100 caracteres se
+lee de nuevo, una vez, con el modelo de su escritura; sin Tema, el perfil del
+archivo entra en el contexto; una página sin respuesta (con sus vecinas) y
+una página respondida sin tipo (con el texto entero, del índice) tienen un
+segundo intento, como máximo uno por página y un 15 % más de pedidos por
+ejecución; en el motor de reglas, la continuación de una pieza abierta por un
+marcador ya no la rebaja a `low`. El informe (`medir_acerto.py`) ahora también
+reparte piezas y acierto **por nivel de confianza**. Misma máquina, mismo
+acervo, mismos comandos (`--janela` y `--sobreposicao` son opciones nuevas de
+`indexar_pasta.py`).
+
+| Ejecución | Piezas (índice) | F1 | Tipo | Confianza alta / media / baja (piezas; tipo acertado) |
+|---|---|---|---|---|
+| Reglas, línea base (1.10.4) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 2 (100,0 %; 2/2) / 17 (88,2 %; 15/17) |
+| Reglas, 2.0.0 | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 19 (89,5 %; 17/19) / 0 |
+| Local `qwen3.5:9b`, línea base (1.10.4, ventana 16, solapamiento 2) | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
+| Local `qwen3.5:9b`, 2.0.0, ventana 16, solapamiento 2 | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
+| Local `qwen3.5:9b`, 2.0.0, ventana 8, solapamiento 2 (nuevo valor por defecto) | 64 | 68,6 % | 44,4 % | 59 (44,4 %; 16/36) / 5 (ninguna pieza encontrada) / 0 |
+
+Comandos: `python tools/indexar_pasta.py demo/acervo <carpeta> --motor rules` y
+`... --motor local --modelo qwen3.5:9b [--janela 8 --sobreposicao 2]`, luego
+`python tools/medir_acerto.py <carpeta> demo/gabarito.csv`. La línea base se
+indexó con el código del commit `a9a17e8` (antes de cualquier cambio de la
+2.0.0) y se midió con la herramienta nueva, que solo lee el `project.db`.
+
+**Matriz ventana × solapamiento (motor local, 3 rondas por celda).** Las tres
+rondas de cada celda salieron **idénticas** (temperatura 0): la variación que
+describe la sección siguiente viene de cambiar el texto, no de repetir la
+ronda.
+
+| Ventana / solapamiento | Ventanas | Piezas | F1 | Tipo | Fecha | Autor | Tiempo |
+|---|---|---|---|---|---|---|---|
+| 8 / 1 | 11 | 67 | 64,8 % | 45,7 % | 94,3 % | 87,5 % | 4 min 0 s |
+| **8 / 2** | 13 | 64 | **68,6 %** | 44,4 % | 86,1 % | 81,8 % | 4 min 32 s |
+| 12 / 1 | 7 | 64 | **68,6 %** | 33,3 % | 83,3 % | 78,8 % | 3 min 42 s |
+| 12 / 2 | 8 | 71 | 62,5 % | 34,3 % | 85,7 % | 78,1 % | 4 min 12 s |
+| 16 / 1 | 6 | 71 | 62,5 % | 45,7 % | 80,0 % | 87,5 % | 3 min 50 s |
+| 16 / 2 | 6 | 71 | 62,5 % | 57,1 % | 91,4 % | 84,4 % | 4 min 2 s |
+
+La regla era quedarse en 8 páginas, salvo que la ventana 12 acabara a menos de
+1 punto porcentual del mejor F1 **y** acertara el tipo con menos pedidos. La
+12 empata en el mejor F1 (12/1), pero acierta menos el tipo (33,3 % frente a
+44,4 %), así que la ventana del motor local sigue siendo **8**
+(`auto_settings.WINDOW_LOCAL`), con el solapamiento 2 que la 2.0.0 ya usaba
+para acervos de PDF. La ventana 16 (la de las versiones 1.x) tiene el peor F1.
+El tipo es el número que más oscila con la ventana (del 33 % al 57 %): es el
+punto débil del modelo en este acervo, no de la ventana.
+
+**Por nivel de confianza.** En el motor de reglas, la continuación de una pieza
+abierta por un marcador pasó a `medium`: las 17 piezas que antes eran `low`
+acertaban el tipo en un 88,2 %, y las 19 `medium` de ahora en un 89,5 %, por
+debajo de las `high` (100 %), así que el orden alta > media > baja se mantiene
+y el cambio se quedó. La base es pequeña (2 piezas `medium` antes del cambio)
+y el acervo no tiene piezas sin marcador de apertura, de modo que la `low` de
+las reglas quedó vacía: solo con estos números no se puede decir que `medium`
+siga por encima de `low` donde `low` existe. En el motor local la confianza no
+separa nada: del 75 % al 92 % de las piezas salen `high`, y el tipo acertado
+en ellas (44 % a 60 %) es casi el mismo que el de las `medium`.
+
+**El segundo intento no apareció en este acervo.** Con 6 a 13 ventanas, el tope
+del 15 % de pedidos extra solo libera el primer pedido extra después del
+séptimo pedido normal, y ninguna ronda tuvo una página sin respuesta (todas las
+páginas tenían texto, ninguna estaba en blanco) ni una pieza sin tipo cuyo
+texto entero fuera mayor que el de la ventana. Por eso las filas 1.10.4 y 2.0.0
+(16/2) salieron iguales. Lo que la medición muestra aquí es el efecto de la
+ventana y del informe por confianza; el efecto del segundo intento solo
+aparece en acervos mayores, con páginas largas o escaneadas.
+
 ## Qué no dice esto
 
 - **Colección sintética.** Fue escrita con encabezados limpios, texto
