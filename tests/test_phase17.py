@@ -318,19 +318,25 @@ def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
     assert not plano.is_empty and not plano.has_changes
 
     update_plan.build_update_plan(conn, config, language="pt-BR")
-    apply_update_plan(conn, config, update_plan.UpdatePlan.witness(plano.fingerprint), "pt-BR")
     apply_pending_changes(conn, config, language="pt-BR", warn_unverified=False)
     assert _avisos() == []
 
     apply_pending_changes(conn, config, language="pt-BR")
     avisos = _avisos()
     assert len(avisos) == 1 and "a.pdf" in avisos[0], avisos
+
+    # O botão Atualizar também avisa, uma vez por aplicação (achado 4).
+    apply_update_plan(conn, config, update_plan.UpdatePlan.witness(plano.fingerprint), "pt-BR")
+    assert len(_avisos()) == 2
     # Nada gravado no arquivo: a próxima execução o confere de novo.
     linha = conn.execute("SELECT mtime FROM file WHERE relative_path = 'a.pdf'").fetchone()
     assert linha["mtime"] == 1.0
 
 
-def test_a_extracao_nao_repete_o_aviso_da_varredura(monkeypatch):
+def test_a_extracao_so_avisa_se_a_varredura_nao_avisou_na_mesma_execucao(monkeypatch):
+    """Achado 4: a execução que começa na extração avisa; a que passou pela
+    varredura (mesma cadeia, mesmo `StopSignal.run_state`) não repete."""
+    from gclaude_indexer.run_control import StopSignal
     from gclaude_indexer.web import background_runs
 
     chamadas = []
@@ -339,8 +345,18 @@ def test_a_extracao_nao_repete_o_aviso_da_varredura(monkeypatch):
         background_runs, "apply_pending_changes", lambda *a, **k: chamadas.append(k),
     )
     monkeypatch.setattr(background_runs, "extract_pages", lambda *a, **k: None)
-    background_runs._extraction_step(None, None, None, "pt-BR")
-    assert chamadas and chamadas[0].get("warn_unverified") is False
+    monkeypatch.setattr(background_runs, "scan", lambda *a, **k: None)
+    monkeypatch.setattr(background_runs, "resolve_auto_settings", lambda *a, **k: None)
+
+    so_extracao = StopSignal()
+    background_runs._extraction_step(None, None, None, "pt-BR", run_state=so_extracao.run_state)
+    assert chamadas[-1].get("warn_unverified") is True
+
+    cadeia = StopSignal()
+    background_runs._scan_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    assert chamadas[-1].get("warn_unverified") is True
+    background_runs._extraction_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    assert chamadas[-1].get("warn_unverified") is False
 
 
 def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
