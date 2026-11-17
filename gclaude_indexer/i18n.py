@@ -165,16 +165,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.local_model": "Modelo local",
         "new_project.help_local_model": 'Modelos instalados no Ollama desta máquina. A escolha é usada de verdade na classificação: deixe em "automático" para usar qwen3.5:4b (placa de até 6 GB) ou qwen3.5:9b (8 GB ou mais), ou escolha outro para comparar a qualidade entre modelos.',
         "new_project.local_model_no_ollama": "O Ollama não está respondendo em 127.0.0.1:11434, então não dá para listar os modelos instalados. A classificação com o motor \"local\" usa o modelo escolhido aqui (padrão {default}), e precisa do Ollama no ar na hora de rodar; parado, o sistema cai no motor de regras com aviso.",
-        "new_project.review_low_confidence": (
-            'Revisar confiança baixa (roda "regras" em tudo e submete ao motor escolhido só as '
-            "janelas duvidosas)"
-        ),
         "new_project.section_instructions": "Instruções do projeto",
         "new_project.instructions_role": "Papel nas instruções",
         "new_project.instructions_role_placeholder": "em branco usa o modelo padrão",
         "new_project.existing_instructions": "Instruções que você já usa",
         "new_project.existing_instructions_placeholder": "cole aqui as instruções atuais do seu Projeto no Claude. Elas são mantidas",
-        "new_project.extra_rules": "Regras extras",
         "new_project.processing_mode": "Processamento",
         "new_project.processing_mode_automatic": "automático (usa GPU ao máximo)",
         "new_project.processing_mode_gpu": "forçar GPU",
@@ -318,22 +313,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             'anterior a esta opção: um arquivo por vez; "automático" deixa um núcleo livre para '
             'a interface; "máximo" usa todos. Não afeta a GPU nem o motor de classificação.'
         ),
-        "hint.review_low_confidence": (
-            "Roda primeiro o motor \"regras\" (rápido) em tudo; só as janelas em que ele não teve "
-            "certeza (confiança baixa) são reenviadas ao motor escolhido acima. Reduz custo/tempo "
-            "sem abrir mão de revisão nos casos duvidosos."
-        ),
         "hint.instructions_role": (
             'Substitui o parágrafo padrão de "papel" nas instruções geradas para o Claude (o que '
             "ele deve ser/fazer neste projeto). Deixe em branco para usar o texto padrão do "
             "sistema, adequado à maioria dos acervos."
         ),
         "hint.existing_instructions": "Se o seu Projeto no Claude já tem instruções, cole-as aqui. Elas vão para o topo de project_instructions.md, e o texto gerado pelo GClaude Indexer entra logo abaixo, entre duas marcas. Nas atualizações, só o trecho entre as marcas é refeito: o que é seu nunca é apagado. Você também pode editar o arquivo à vontade fora das marcas.",
-        "hint.extra_rules": (
-            "Texto livre acrescentado ao final das instruções geradas, com regras específicas deste "
-            'acervo, ex. "sempre responda citando o número do processo" ou um glossário de siglas '
-            "usadas nos documentos."
-        ),
         # --- config validation errors: `config.py`
         # produced these as hardcoded Portuguese text; `ConfigError.errors`
         # now carries `(key, params)` pairs instead (see that module's
@@ -757,6 +742,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.instructions.dedup_kept": "O usuário escolheu manter as instruções como estão, com {count} seção(ões) repetida(s) ({sections}).",
         "instructions.saved": "Instruções salvas. A cópia anterior ficou em {backup}. Na próxima geração de relatórios o arquivo completo fica pronto para colar no Projeto do Claude.",
         "instructions.unchanged": "Nada mudou: o texto é igual ao que já estava no arquivo.",
+        "instructions.extra_rules.label": "Regras extras do projeto",
+        "instructions.extra_rules.help": "Regras específicas deste acervo, acrescentadas ao final das instruções geradas, por exemplo \"sempre cite o número do processo\" ou um glossário de siglas. Aceita até {limit} caracteres; o modelo local usa só os primeiros {prompt} ao reconhecer os documentos.",
+        "instructions.extra_rules.save": "Salvar regras extras",
+        "instructions.extra_rules.saved": "Regras extras salvas. Elas entram nas instruções na próxima geração de relatórios.",
+        "instructions.extra_rules.too_long": "As regras extras têm {size} caracteres; o limite é {limit}. Nada foi salvo: encurte o texto e tente de novo.",
         "instructions.generated_title": "Seção gerada pelo programa (só leitura)",
         "instructions.no_file": "O arquivo ainda não existe. Ele é criado na primeira geração de relatórios. Se você já tem instruções, cole aqui e elas serão usadas desde a primeira vez.",
         "instructions.button": "Instruções do projeto",
@@ -1412,16 +1402,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.local_model": "Local model",
         "new_project.help_local_model": 'Models installed in Ollama on this machine. Your choice is actually used for classification: leave it as "automatic" to use qwen3.5:4b (cards up to 6 GB) or qwen3.5:9b (8 GB or more), or pick another one to compare quality across models.',
         "new_project.local_model_no_ollama": "Ollama is not responding on 127.0.0.1:11434, so the installed models cannot be listed. Classification with the \"local\" engine uses the model chosen here (default {default}), and needs Ollama running at classification time; if it is down, the system falls back to the rules engine with a warning.",
-        "new_project.review_low_confidence": (
-            'Review low confidence (runs "rules" on everything and submits only the doubtful '
-            "windows to the chosen engine)"
-        ),
         "new_project.section_instructions": "Project instructions",
         "new_project.instructions_role": "Role in the instructions",
         "new_project.instructions_role_placeholder": "leave blank to use the default template",
         "new_project.existing_instructions": "Instructions you already use",
         "new_project.existing_instructions_placeholder": "paste your Claude Project's current instructions here. They are kept",
-        "new_project.extra_rules": "Extra rules",
         "new_project.processing_mode": "Processing",
         "new_project.processing_mode_automatic": "automatic (uses GPU to the max)",
         "new_project.processing_mode_gpu": "force GPU",
@@ -1563,22 +1548,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             'time, using physical CPU cores. "economical" keeps the behavior before this option existed: one file at a time; "automatic" leaves one core free for the interface; '
             '"maximum" uses every core. Does not affect the GPU or the classification engine.'
         ),
-        "hint.review_low_confidence": (
-            'Runs the "rules" engine (fast) on everything first; only the windows it wasn\'t sure '
-            "about (low confidence) are resubmitted to the engine chosen above. Cuts cost/time "
-            "without giving up review on doubtful cases."
-        ),
         "hint.instructions_role": (
             'Replaces the default "role" paragraph in the instructions generated for Claude (what '
             "it should be/do in this project). Leave blank to use the system's default text, "
             "suitable for most collections."
         ),
         "hint.existing_instructions": "If your Claude Project already has instructions, paste them here. They go at the top of project_instructions.md, and the text GClaude Indexer generates goes right below, between two marks. On updates only the part between the marks is rewritten: what is yours is never deleted. You can also edit the file freely outside the marks.",
-        "hint.extra_rules": (
-            "Free text appended at the end of the generated instructions, with rules specific to this "
-            'collection, e.g. "always answer citing the case number", or a glossary of '
-            "abbreviations used in the documents."
-        ),
         "lock.free": "No lock found; you can open it.",
         "lock.same_machine": "The lock already belongs to this machine ({machine}), from an earlier session that was not closed properly. You can continue.",
         "lock.blocked": "Machine '{machine}' (user {user}) is using this project right now. Last activity {minutes} minute(s) ago. Close the GClaude Indexer tabs in the browser there: about 5 minutes after the last one is closed, if no step is running, the project is free. If that computer is off or asleep, the lock expires on its own after {timeout} minutes.",
@@ -1976,6 +1951,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.instructions.dedup_kept": "The user chose to keep the instructions as they are, with {count} repeated section(s) ({sections}).",
         "instructions.saved": "Instructions saved. The previous copy is in {backup}. On the next report generation the full file is ready to paste into the Claude Project.",
         "instructions.unchanged": "Nothing changed: the text is the same as the one already in the file.",
+        "instructions.extra_rules.label": "Extra project rules",
+        "instructions.extra_rules.help": "Rules specific to this collection, appended at the end of the generated instructions, e.g. \"always cite the case number\" or a glossary of abbreviations. Up to {limit} characters; the local model uses only the first {prompt} when recognising the documents.",
+        "instructions.extra_rules.save": "Save extra rules",
+        "instructions.extra_rules.saved": "Extra rules saved. They enter the instructions on the next report generation.",
+        "instructions.extra_rules.too_long": "The extra rules are {size} characters long; the limit is {limit}. Nothing was saved: shorten the text and try again.",
         "instructions.generated_title": "Section generated by the program (read only)",
         "instructions.no_file": "The file does not exist yet. It is created by the first report generation. If you already have instructions, paste them here and they are used from the first time.",
         "instructions.button": "Project instructions",
@@ -2626,16 +2606,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.local_model": "Modelo local",
         "new_project.help_local_model": 'Modelos instalados en Ollama de esta máquina. La elección se usa de verdad en la clasificación: déjelo en "automático" para usar qwen3.5:4b (tarjeta de hasta 6 GB) o qwen3.5:9b (8 GB o más), o elija otro para comparar la calidad entre modelos.',
         "new_project.local_model_no_ollama": "Ollama no responde en 127.0.0.1:11434, así que no se pueden listar los modelos instalados. La clasificación con el motor \"local\" usa el modelo elegido aquí (por defecto {default}), y necesita que Ollama esté activo al momento de clasificar; si está detenido, el sistema recurre al motor de reglas con aviso.",
-        "new_project.review_low_confidence": (
-            'Revisar confianza baja (ejecuta "reglas" en todo y solo envía las ventanas dudosas '
-            "al motor elegido)"
-        ),
         "new_project.section_instructions": "Instrucciones del proyecto",
         "new_project.instructions_role": "Rol en las instrucciones",
         "new_project.instructions_role_placeholder": "en blanco usa la plantilla predeterminada",
         "new_project.existing_instructions": "Instrucciones que ya usa",
         "new_project.existing_instructions_placeholder": "pegue aquí las instrucciones actuales de su Proyecto en Claude. Se conservan",
-        "new_project.extra_rules": "Reglas adicionales",
         "new_project.processing_mode": "Procesamiento",
         "new_project.processing_mode_automatic": "automático (usa la GPU al máximo)",
         "new_project.processing_mode_gpu": "forzar GPU",
@@ -2780,22 +2755,12 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             'anterior a esta opción: un archivo a la vez; "automático" deja un núcleo libre para '
             'la interfaz; "máximo" usa todos. No afecta la GPU ni el motor de clasificación.'
         ),
-        "hint.review_low_confidence": (
-            'Ejecuta primero el motor "reglas" (rápido) en todo; solo las ventanas en las que no '
-            "tuvo certeza (confianza baja) se reenvían al motor elegido arriba. Reduce costo/"
-            "tiempo sin renunciar a la revisión en los casos dudosos."
-        ),
         "hint.instructions_role": (
             'Reemplaza el párrafo predeterminado de "rol" en las instrucciones generadas para '
             "Claude (qué debe ser/hacer en este proyecto). Déjelo en blanco para usar el texto "
             "predeterminado del sistema, adecuado para la mayoría de las colecciones."
         ),
         "hint.existing_instructions": "Si su Proyecto en Claude ya tiene instrucciones, péguelas aquí. Van al inicio de project_instructions.md, y el texto que genera GClaude Indexer queda justo debajo, entre dos marcas. En las actualizaciones solo se rehace la parte entre las marcas: lo suyo nunca se borra. También puede editar el archivo libremente fuera de las marcas.",
-        "hint.extra_rules": (
-            "Texto libre agregado al final de las instrucciones generadas, con reglas específicas de "
-            'esta colección, ej. "responda siempre citando el número de expediente" o un glosario '
-            "de siglas usadas en los documentos."
-        ),
         "lock.free": "No se encontró ningún bloqueo; puede abrirlo.",
         "lock.same_machine": "El bloqueo ya es de esta máquina ({machine}), de una sesión anterior que no se cerró correctamente. Puede continuar.",
         "lock.blocked": "La máquina '{machine}' (usuario {user}) está usando este proyecto ahora. Última actividad hace {minutes} minuto(s). Cierre las pestañas de GClaude Indexer en el navegador de allí: unos 5 minutos después de cerrar la última, si ninguna etapa está en marcha, el proyecto queda libre. Si esa computadora está apagada o suspendida, el bloqueo caduca solo después de {timeout} minutos.",
@@ -3199,6 +3164,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "log.instructions.dedup_kept": "El usuario eligió mantener las instrucciones como están, con {count} sección(es) repetida(s) ({sections}).",
         "instructions.saved": "Instrucciones guardadas. La copia anterior quedó en {backup}. En la próxima generación de informes el archivo completo queda listo para pegar en el Proyecto de Claude.",
         "instructions.unchanged": "No cambió nada: el texto es igual al que ya estaba en el archivo.",
+        "instructions.extra_rules.label": "Reglas adicionales del proyecto",
+        "instructions.extra_rules.help": "Reglas específicas de esta colección, agregadas al final de las instrucciones generadas, por ejemplo \"responda siempre citando el número de expediente\" o un glosario de siglas. Acepta hasta {limit} caracteres; el modelo local usa solo los primeros {prompt} al reconocer los documentos.",
+        "instructions.extra_rules.save": "Guardar reglas adicionales",
+        "instructions.extra_rules.saved": "Reglas adicionales guardadas. Entran en las instrucciones en la próxima generación de informes.",
+        "instructions.extra_rules.too_long": "Las reglas adicionales tienen {size} caracteres; el límite es {limit}. No se guardó nada: acorte el texto e inténtelo de nuevo.",
         "instructions.generated_title": "Sección generada por el programa (solo lectura)",
         "instructions.no_file": "El archivo todavía no existe. Se crea en la primera generación de informes. Si ya tiene instrucciones, péguelas aquí y se usarán desde la primera vez.",
         "instructions.button": "Instrucciones del proyecto",

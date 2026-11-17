@@ -19,7 +19,6 @@ from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.windows_prep import prepare_windows
 from gclaude_indexer.engine_claude_code import finish, prepare, sync_progress
 from gclaude_indexer.engine_local import LocalEngine, _dict_to_item, _extract_items_json, classify_pending, model_to_use
-from gclaude_indexer.review import classify_with_review
 from gclaude_indexer.scanning import scan
 
 
@@ -340,78 +339,4 @@ def test_finalizar_claude_code_importa_e_consolida(tmp_path):
     linha_peca = conn.execute("SELECT * FROM item").fetchone()
     assert linha_peca["engine"] == "claude_code"
     assert conn.execute("SELECT status FROM window").fetchone()["status"] == "done"
-    conn.close()
-
-
-# --- modo revisão ----------------------------------------------------------
-
-
-class _MotorSegundoFake:
-    def __init__(self, pecas: list[ClassifiedItem]):
-        self._pecas = pecas
-        self.chamadas = 0
-
-    def classify(self, paginas):
-        self.chamadas += 1
-        return self._pecas
-
-
-def test_revisao_submete_ao_segundo_motor_so_janelas_com_confianca_baixa(tmp_path):
-    # duas janelas pequenas em agrupadores separados: uma com marcador claro
-    # (regras deve dar alta), outra sem marcador nenhum (regras dá baixa)
-    origem = tmp_path / "origem"
-    (origem / "volume_1").mkdir(parents=True)
-    (origem / "volume_2").mkdir(parents=True)
-    saida = tmp_path / "origem_indexado"
-
-    _pdf(
-        origem / "volume_1" / "boa.pdf",
-        ["OFÍCIO No 1\nAssunto: solicitação de informações ao setor competente.\n10/01/2024"],
-    )
-    _pdf(origem / "volume_2" / "ruim.pdf", [TEXTO_LONGO_SEM_MARCADOR])
-
-    config = load_config({"name": "Revisão", "source_folder": str(origem), "output_folder": str(saida)})
-    conn = connect(saida / "project.db")
-    init_schema(conn)
-    scan(conn, config)
-    convert(conn, config)
-    extract_pages(conn, config)
-    prepare_windows(conn, config)
-
-    peca_do_segundo_motor = ClassifiedItem(
-        start_ref="f. 1", end_ref="f. 1", start_order=1, end_order=1,
-        type="MEMORANDO", date="2024-02-02", author="Fulano", summary="resumo do segundo motor",
-        has_table=False, has_image=False, engine="local", confidence="high", files=["ruim.pdf"],
-    )
-    motor_segundo = _MotorSegundoFake([peca_do_segundo_motor])
-
-    resultado = classify_with_review(conn, config, motor_segundo, "local")
-
-    assert resultado.windows_classified_by_rules == 2
-    assert resultado.windows_reviewed == 1  # só a janela de "volume_2" tinha confiança baixa
-    assert motor_segundo.chamadas == 1
-    assert resultado.items_from_second_engine == 1
-
-    from gclaude_indexer.import_items import import_and_consolidate
-
-    resultado_importacao = import_and_consolidate(conn, config)
-    pecas_finais = {p["group_key"]: p for p in conn.execute("SELECT * FROM item").fetchall()}
-    assert pecas_finais["volume_2"]["engine"] == "local"  # o resultado do segundo motor prevaleceu
-    assert pecas_finais["volume_2"]["confidence"] == "high"
-    assert pecas_finais["volume_1"]["engine"] == "rules"  # essa nem precisou de revisão
-
-    conn.close()
-
-
-def test_revisao_nao_chama_segundo_motor_quando_tudo_e_confianca_alta(tmp_path):
-    config, conn = _projeto_pronto_para_classificar(
-        tmp_path,
-        ["OFÍCIO No 1\nAssunto: solicitação de informações ao setor competente.\n10/01/2024"],
-    )
-    motor_segundo = _MotorSegundoFake([])
-
-    resultado = classify_with_review(conn, config, motor_segundo, "local")
-
-    assert resultado.windows_reviewed == 0
-    assert motor_segundo.chamadas == 0
     conn.close()

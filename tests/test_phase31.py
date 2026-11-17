@@ -565,14 +565,6 @@ def test_confianca_volta_com_peca_media(tmp_path):
     assert "| medium |" in next(l for l in linhas if "ATA" in l)
 
 
-def test_confianca_volta_com_revisao_ligada(tmp_path):
-    conn = _banco(tmp_path)
-    _peca(conn, "Avulsos", 1, 2, "ATA", "anexo.pdf")
-    generate_index_md(conn, _config(tmp_path, review_low_confidence=True), "pt")
-
-    assert "Confiança" in _indice_avulsos(tmp_path)[2]
-
-
 def test_confianca_e_decidida_pelo_projeto_inteiro(tmp_path):
     """Uma peça média num grupo põe a coluna em todos: as instruções
     descrevem as colunas uma vez só."""

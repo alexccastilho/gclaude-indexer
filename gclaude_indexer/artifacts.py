@@ -436,10 +436,8 @@ def _legislation_count(conn) -> int:
 
 
 def _show_confidence(conn, config: ProjectConfig) -> bool:
-    """A coluna Confiança entra quando o projeto revisa confiança baixa ou
-    quando existe ao menos uma peça abaixo de `high` (fase 31)."""
-    if config.review_low_confidence:
-        return True
+    """A coluna Confiança entra quando existe ao menos uma peça abaixo de
+    `high` (fase 31); a opção de revisar confiança baixa deixou de existir."""
     duvidosas = conn.execute(
         "SELECT group_key, engine, files FROM item WHERE confidence != 'high'"
     ).fetchall()
@@ -918,7 +916,7 @@ def project_instructions_sections(
     ).fetchone()[0]
 
     role = config.role_instructions.strip()
-    extra_rules = config.extra_rules.strip() or t("artifact.project_instructions.extra_rules_missing")
+    extra_rules = config.extra_rules.strip()
 
     lines: list[str] = []
     # `default_role=False`: the user's own instructions already say
@@ -994,11 +992,16 @@ def project_instructions_sections(
         "",
     ]
 
-    lines += [
-        f"## {t('artifact.project_instructions.extra_rules_section')}",
-        "",
-        extra_rules,
-    ]
+    # A seção só existe quando há regras: o campo saiu do formulário de
+    # criação e vive na tela Instruções, então vazio é o caso comum e não
+    # justifica um "não informado". As chaves i18n (seção e "não informado")
+    # ficam porque o detector de repetição reconhece blocos gerados antes.
+    if extra_rules:
+        lines += [
+            f"## {t('artifact.project_instructions.extra_rules_section')}",
+            "",
+            extra_rules,
+        ]
     return lines
 
 

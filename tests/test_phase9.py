@@ -118,9 +118,12 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
         'name="collection_type"', 'name="group_mode"', 'name="group_pattern"',
         'name="extensions"', 'name="pages_per_block"', 'name="pages_per_window"',
         'name="overlap"', 'name="chars_per_page"', 'name="ocr_language"',
-        'name="classification_engine"', 'name="review_low_confidence"',
-        'name="role_instructions"', 'name="extra_rules"',
+        'name="classification_engine"', 'name="role_instructions"',
     ]
+    # Saíram do formulário de criação (2.0.0): sem repassagem de confiança
+    # baixa e com as regras extras editadas na tela Instruções.
+    assert 'name="review_low_confidence"' not in corpo
+    assert 'name="extra_rules"' not in corpo
     for campo in campos_esperados:
         assert campo in corpo, f"campo ausente do formulário: {campo}"
 

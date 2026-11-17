@@ -7,9 +7,8 @@
 # any later version. See the LICENSE file for details.
 
 """Picks and runs the right classification engine according to
-`config.classification_engine` and `config.review_low_confidence` (spec
-section 6, form fields) — the link between the form and the engines from
-phases 5 and 8. `automatic` picks `local` if the hardware allows a model,
+`config.classification_engine` (spec section 6, form field) — the link
+between the form and the engines from phases 5 and 8. `automatic` picks `local` if the hardware allows a model,
 otherwise `rules`.
 
 NOTE: `config.classification_engine` now speaks the same English vocabulary
@@ -31,8 +30,7 @@ import sqlite3
 from .config import ProjectConfig
 from .hardware import diagnose, choose_model
 from .engine_local import LocalEngine, classify_pending as classify_pending_local, model_to_use
-from .engine_rules import RulesEngine, load_rules, classify_pending as classify_pending_rules
-from .review import classify_with_review
+from .engine_rules import classify_pending as classify_pending_rules
 
 
 def resolve_effective_engine(
@@ -45,27 +43,13 @@ def resolve_effective_engine(
     return "rules" if choice.use_rules_engine else "local"
 
 
-def _instantiate_engine(conn: sqlite3.Connection, config: ProjectConfig, engine_name: str):
-    if engine_name == "local":
-        return LocalEngine(model=model_to_use(conn, config))
-    return RulesEngine(load_rules())
-
-
 def run_classification(
     conn: sqlite3.Connection, config: ProjectConfig, should_stop=None, language: str | None = None
 ) -> tuple[str, object]:
-    """Runs step 6 for the synchronous engines (`regras`/`local`, with or
-    without review mode). `claude_code` does not go through here — it is
+    """Runs step 6 for the synchronous engines (`rules`/`local`). `claude_code` does not go through here — it is
     handled separately by the interface (asynchronous execution). Returns
     `(motor_usado, resultado)`."""
     effective_engine = resolve_effective_engine(conn, config, language=language)
-
-    if config.review_low_confidence and effective_engine != "rules":
-        second_engine = _instantiate_engine(conn, config, effective_engine)
-        result = classify_with_review(
-            conn, config, second_engine, effective_engine, should_stop=should_stop, language=language
-        )
-        return f"rules + revisão ({effective_engine})", result
 
     if effective_engine == "local":
         result = classify_pending_local(
