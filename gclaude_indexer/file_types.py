@@ -164,6 +164,13 @@ def is_waiting_component(status: str | None, error: str | None) -> bool:
     return status == "skipped" and error == REASON_COMPONENT_UNAVAILABLE
 
 
+def is_unreadable_placeholder(status: str | None, error: str | None) -> bool:
+    """A linha que a varredura grava para um arquivo novo que não conseguiu
+    ler (`REASON_UNREADABLE`): para o plano e para a varredura seguinte ele
+    ainda é novo."""
+    return status == "skipped" and error == REASON_UNREADABLE
+
+
 # Categorias com páginas reais (o limite de caracteres por página do projeto
 # vale para elas, e o documento pode continuar no arquivo seguinte).
 PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")

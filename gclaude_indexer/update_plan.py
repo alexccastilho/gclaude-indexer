@@ -51,7 +51,8 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, REASON_UNREADABLE, category_of_extension, is_extension_allowed, is_waiting_component, name_decision,
+    MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, is_unreadable_placeholder,
+    is_waiting_component, name_decision,
 )
 from .paths import natural_sort_key
 from .run_control import checkpoint
@@ -305,7 +306,7 @@ def detect_changes(
         # A linha que a varredura grava para um arquivo novo ilegível
         # (`REASON_UNREADABLE`) só existe para a contagem: para o plano ele
         # continua novo, como se a linha não existisse.
-        if row is None or (row["status"] == "skipped" and row["error"] == REASON_UNREADABLE):
+        if row is None or is_unreadable_placeholder(row["status"], row["error"]):
             changes.append(FileChange(relative_path, "new", path.name, size))
             continue
 
