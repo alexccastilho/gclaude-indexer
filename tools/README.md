@@ -24,8 +24,8 @@ python tools/reprocessar_janelas_com_falha.py "<pasta de saída>" --aplicar
 
 Sem `--aplicar` ele não escreve nada: lista o que faria e para. Com
 `--aplicar`, copia `project.db` e `raw_items.jsonl` com sufixo `.bak-<data>`
-antes de tocar em qualquer um dos dois. A pasta de saída é a que termina em
-`_indexado`.
+antes de tocar em qualquer um dos dois. A pasta de saída é a do projeto (por
+padrão `<origem>-AI`, irmã da pasta de origem).
 
 Depois de rodar, é preciso rodar a etapa 6 pela interface e deixar a
 importação e os relatórios rodarem em seguida. Senão o índice continua
