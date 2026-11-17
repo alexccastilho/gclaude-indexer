@@ -206,7 +206,15 @@ def detect_changes(
                 from .conversion import component_ready
 
                 ready_by_extension[extension] = component_ready(extension)
-            if not ready_by_extension[extension]:
+            # Só com os mesmos bytes (tamanho e data, ou o hash, como no fim
+            # desta função). Editado enquanto esperava, ele é alterado: a
+            # varredura o devolveria à fila sem invalidar nada, e se a
+            # conversão obtivesse o componente na mesma execução, as páginas
+            # novas cairiam no meio do grupo por cima das janelas antigas.
+            if not ready_by_extension[extension] and (
+                (row["size"] == size and row["mtime"] == mtime)
+                or (row["sha256"] and compute_hash(path) == row["sha256"])
+            ):
                 unchanged += 1
                 continue
 
