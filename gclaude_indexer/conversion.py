@@ -1520,7 +1520,8 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
     never rewrites (`prepare_windows` keeps a `.txt` that exists); sending
     it back would silently leave the old blank pages in those windows.
     Those files are named in a warning instead — the project update is the
-    path that discards windows correctly."""
+    path that discards windows correctly. A file waiting for a component in
+    a group with windows is held the same way (`components_held_back`)."""
     from .fulltext import remove_file as remove_from_search
 
     rows, held_back = _ocr_retry_candidates(conn)
@@ -1902,8 +1903,10 @@ def _convert_media(conn, config: ProjectConfig, rows, should_stop, result, langu
 
     Os componentes e o modelo escolhido pelo computador são baixados aqui,
     só porque o acervo tem mídia selecionada. Sem eles (sem rede, download
-    recusado) ninguém falha: cada arquivo fica pendente, volta à fila na
-    próxima conversão e o log diz uma vez o que faltou."""
+    recusado) ninguém falha: cada arquivo fica pendente, a conversão tenta
+    de novo a cada execução (`requeue_ocr_failures`, ou
+    `_obtain_held_components` quando o grupo já tem janelas) e o log diz uma
+    vez o que faltou."""
     found, missing = media.prepare(should_stop=should_stop, on_download=_announce_download(conn, language))
     if found is None and should_stop is not None and should_stop():
         # Parar no meio do download: os arquivos continuam na fila.
@@ -1973,8 +1976,9 @@ def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, lang
 
     O componente é baixado aqui, só porque o acervo tem um destes arquivos.
     Sem ele (sem rede, download recusado) ninguém falha: cada arquivo fica
-    pendente (`_process_file`), volta à fila na próxima conversão e o log
-    diz uma vez o que faltou."""
+    pendente (`_process_file`), a conversão tenta de novo a cada execução
+    (`requeue_ocr_failures`, ou `_obtain_held_components` quando o grupo já
+    tem janelas) e o log diz uma vez o que faltou."""
     soffice = legacy_office.ensure_available(should_stop=should_stop, on_download=_announce_download(conn, language))
     if should_stop is not None and should_stop():
         # Parar no meio do download: os arquivos continuam na fila, sem o
