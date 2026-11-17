@@ -292,6 +292,30 @@ class BatchWriter:
             return
         self._reset()
 
+    def run_own_transaction(self, fn: Callable[[sqlite3.Connection], object]) -> object:
+        """`fn(conn)` for work that opens and commits its own transaction
+        (the scan's net, `invalidation.discard_changed_file`), with the same
+        patience as a batch: the pending batch is committed first, and a
+        `database is locked` makes it wait and try again until
+        `retry_seconds`, instead of aborting the step. `fn` must leave
+        nothing behind when it raises (it rolls back), so trying it again is
+        safe."""
+        self.flush()
+        deadline = self._clock() + self._retry_seconds
+        delay = 0.25
+        while True:
+            try:
+                return fn(self.conn)
+            except sqlite3.OperationalError as exc:
+                if not is_lock_error(exc) or self._clock() >= deadline:
+                    raise
+                try:
+                    self.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                self._sleep(delay)
+                delay = min(delay * 2, 5.0)
+
     def discard(self) -> None:
         """Rolls back whatever is pending. Safe to lose: a step only marks
         work done inside its ops, so the next run redoes it."""

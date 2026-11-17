@@ -190,3 +190,35 @@ def test_documento_novo_que_o_plano_nao_leu_ainda_entra_no_grupo(tmp_path, monke
     # a (0-1), b (2-3) ficam; b_novo entra na página 4 e desloca o c.
     assert sorted(k for k, s in depois.items() if s == "done") == sorted(antes)[:2]
     conn.close()
+
+
+def test_banco_ocupado_por_um_instante_nao_derruba_a_rede_da_varredura(tmp_path, monkeypatch):
+    """Achado 1 da revisão seguinte: o descarte da rede roda numa transação
+    própria; um `database is locked` momentâneo (o Drive, outra conexão) é
+    esperado e tentado de novo, como no lote da varredura, em vez de abortar
+    a varredura inteira."""
+    import sqlite3
+
+    from gclaude_indexer import invalidation
+
+    origem, config, conn = _projeto(tmp_path)
+    _etapas(conn, config)
+    _classificadas(conn)
+    _pdf(origem / "b.pdf", ["Nova primeira do b.", "Nova segunda do b.", "Nova terceira do b."])
+
+    aplicar_real = invalidation._apply
+    tentativas = {"n": 0}
+
+    def _ocupado_na_primeira(*args, **kwargs):
+        tentativas["n"] += 1
+        if tentativas["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return aplicar_real(*args, **kwargs)
+
+    monkeypatch.setattr(invalidation, "_apply", _ocupado_na_primeira)
+    _etapas(conn, config)  # sem a atualização antes: a rede descarta
+
+    assert tentativas["n"] == 2
+    assert _paginas(conn, "b.pdf") == 3
+    assert any("b.pdf" in m for m in _avisos(conn, "log.scan.discarded_without_update"))
+    conn.close()
