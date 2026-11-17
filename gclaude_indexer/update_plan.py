@@ -86,18 +86,17 @@ class FileChange:
 def _fingerprint(entries: list[tuple[str, int, float]], changed_paths=()) -> str:
     """Cheap identity of the folder as the plan saw it.
 
-    Re-checked before the invalidation writes: applying a plan built from
-    a folder that has since changed would write one thing having shown
-    another.
+    Invariante: o plano expira quando, e só quando, o que seria aplicado
+    difere do que a tela mostrou por causa da pasta de origem — um arquivo
+    entrou, saiu ou teve os bytes mudados, ou um não conferido virou
+    alterado; mudança só no índice (OCR refeito, páginas antigas reparadas,
+    componente que ficou pronto) não expira, e aplica-se o plano de agora.
+    Por isso entram os caminhos, tamanhos e datas, e os alterados que a
+    leitura dos bytes achou (`changed_paths`), não os que o índice aponta.
     """
     digest = hashlib.sha256()
     for relative_path, size, mtime in sorted(entries):
         digest.update(f"{relative_path}|{size}|{mtime:.6f}\n".encode("utf-8"))
-    # Os alterados também, pelo que a leitura achou (revisão, achado 2): um
-    # arquivo que a pessoa viu como "não conferido" e que, na hora de
-    # aplicar, foi lido e mudou faria a aplicação descartar janelas que a
-    # tela não mostrou. Quais ficaram sem conferir não entra: lido na hora
-    # de aplicar e igual ao do índice, nada do que a pessoa viu mudou.
     for relative_path in sorted(changed_paths):
         digest.update(f"~{relative_path}\n".encode("utf-8"))
     return digest.hexdigest()
@@ -305,6 +304,7 @@ def detect_changes(
         raise SourceFolderUnavailable(str(source_dir))
 
     changes: list[FileChange] = []
+    read_changed: list[str] = []  # alterados pela leitura dos bytes (`_fingerprint`)
     unchanged = 0
     entries: list[tuple[str, int, float]] = []
     seen: set[str] = set()
@@ -392,6 +392,7 @@ def detect_changes(
             continue
 
         changes.append(FileChange(relative_path, "changed", path.name, size))
+        read_changed.append(relative_path)
 
     for relative_path in sorted(generated):
         changes.append(FileChange(relative_path, "generated", Path(relative_path).name, 0))
@@ -402,8 +403,7 @@ def detect_changes(
                 FileChange(relative_path, "removed", Path(relative_path).name, 0)
             )
 
-    changed_paths = [change.relative_path for change in changes if change.kind == "changed"]
-    return changes, unchanged, _fingerprint(entries, changed_paths)
+    return changes, unchanged, _fingerprint(entries, read_changed)
 
 
 @dataclass(frozen=True)
