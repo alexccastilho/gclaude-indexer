@@ -91,6 +91,43 @@ def test_o_catalogo_nao_esta_na_lista_de_estado_descartavel():
     assert "tools.json" in bloco
 
 
+
+def test_componentes_baixados_saem_com_a_desinstalacao():
+    """Revisão final da 2.0.0 (I3): LibreOffice, ffmpeg, whisper.cpp, os
+    modelos e os idiomas do OCR baixados sob demanda (vários GB) ficavam para
+    trás. São desta instalação, como o venv: saem com -KeepDependencies, sem
+    nome de componente (esse nome é contrato com a tela do Inno)."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("Downloaded components")
+    assert inicio != -1, "passo dos componentes baixados não encontrado"
+    antes = texto[texto.rfind("$DownloadedPaths = @()", 0, inicio):inicio]
+    for pasta in ("libreoffice", "ffmpeg", "whisper-cpp", "whisper-models", "tessdata"):
+        assert f'"{pasta}"' in antes
+    # Sobras de um download interrompido também.
+    for sufixo in (".part", ".extracting", ".msi"):
+        assert f'"$name{sufixo}"' in antes
+    passo = texto[inicio - 200:inicio + 400]
+    assert "Confirm-Step" in passo
+    assert "-IsSharedDependency" not in passo and "-Component " not in passo and "-IsUserData" not in passo
+
+
+def test_diario_da_mudanca_de_pasta_e_estado_de_instalacao():
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("Installation state")
+    bloco = texto[inicio:texto.find("} else { $Kept.Add(\"installation state\") }", inicio)]
+    for nome in ("relocation.json", "relocation-postponed.json", "ollama-serve.log"):
+        assert f'"{nome}"' in bloco
+    assert "sets.json" not in bloco
+
+
+def test_conjuntos_sao_dados_do_usuario():
+    """`sets.json` (os Conjuntos) é feito pela pessoa, como `projects.json`:
+    sai só com -RemoveUserData."""
+    texto = (RAIZ / "uninstall.ps1").read_text(encoding="utf-8")
+    inicio = texto.find("Confirm-Step -IsUserData")
+    assert '"projects.json", "sets.json", "settings.json"' in texto[inicio:inicio + 1200]
+
+
 # --- nenhum terminal, em momento nenhum ------------------------------------
 
 

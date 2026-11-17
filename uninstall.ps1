@@ -542,6 +542,31 @@ if (Test-Path -LiteralPath $LocalGhostscript) {
     } else { $Kept.Add("local Ghostscript") }
 }
 
+# 2.0.0: what the program itself downloaded on demand into this machine's
+# private folder - the portable LibreOffice, ffmpeg, whisper.cpp and its
+# models, and the OCR languages (`components.py`). All of it belongs to this
+# installation, is pinned by SHA-256 and is downloaded again the next time it
+# is needed, so it goes like the virtual environment. It can be several
+# gigabytes, which is why the size is shown before the question. Also what an
+# interrupted download left behind (`.part`, `.extracting`, the renamed `.msi`).
+$DownloadedPaths = @()
+foreach ($name in @("libreoffice", "ffmpeg", "whisper-cpp", "whisper-models", "tessdata")) {
+    foreach ($candidate in @($name, "$name.part", "$name.extracting", "$name.msi")) {
+        $path = Join-Path $LocalFolder $candidate
+        if (Test-Path -LiteralPath $path) { $DownloadedPaths += $path }
+    }
+}
+if ($DownloadedPaths.Count -gt 0) {
+    $DownloadedMb = 0
+    foreach ($path in $DownloadedPaths) { $DownloadedMb += Get-FolderSizeMb $path }
+    if (Confirm-Step -Title "Downloaded components (LibreOffice, ffmpeg, Whisper, OCR languages)" `
+            -Detail ("$LocalFolder ({0} MB) - private copies this system downloaded; downloaded again if ever needed." -f $DownloadedMb)) {
+        foreach ($path in $DownloadedPaths) {
+            Remove-ItemSafely -Path $path -Label ("downloaded component: " + (Split-Path -Leaf $path)) | Out-Null
+        }
+    } else { $Kept.Add("downloaded components") }
+}
+
 # Two groups, deliberately separate, because they answer to different
 # questions. What this installation left behind is rubbish once the
 # program is gone. What the user built is not, and it used to be swept up
@@ -558,7 +583,11 @@ if (Confirm-Step -Title "Installation state (caches, logs, helper)" `
     # have been kept, and this must not take it with it.
     foreach ($name in @(
         "tools.json", "sincronizacao.json", "requirements.sha256",
-        "sensor_snapshot.json", "sensor_helper_status.txt", "servidor.log", "helper"
+        "sensor_snapshot.json", "sensor_helper_status.txt", "servidor.log", "helper",
+        # 2.0.0: the log of the Ollama server the app starts, and the journal
+        # and the postponed answer of the output-folder relocation
+        # (`relocation.py`). Without the program, none of them means anything.
+        "ollama-serve.log", "relocation.json", "relocation-postponed.json"
     )) {
         $path = Join-Path $LocalFolder $name
         if (Test-Path -LiteralPath $path) {
@@ -570,11 +599,12 @@ if (Confirm-Step -Title "Installation state (caches, logs, helper)" `
 # Your own data: the list of what you indexed, and where your shared
 # catalogue lives. Kept by every mode except an explicit -RemoveUserData.
 if (Confirm-Step -IsUserData -Title "Your project list and settings" `
-        -Detail ("$LocalFolder — projects.json (every collection you have opened) and " +
+        -Detail ("$LocalFolder — projects.json (every collection you have opened), " +
+                 "sets.json (your sets of projects) and " +
                  "settings.json. Removing this does NOT delete a single document: your " +
                  "collections stay in their own output folders. What you lose is the list, " +
                  "and with it the need to find each folder by hand again.")) {
-    foreach ($name in @("projects.json", "settings.json")) {
+    foreach ($name in @("projects.json", "sets.json", "settings.json")) {
         $path = Join-Path $LocalFolder $name
         if (Test-Path -LiteralPath $path) {
             Remove-ItemSafely -Path $path -Label "your data: $name" | Out-Null
