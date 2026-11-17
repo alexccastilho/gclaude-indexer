@@ -158,3 +158,35 @@ def test_com_a_atualizacao_antes_a_varredura_nao_descarta_de_novo(tmp_path):
     assert _avisos(conn, "log.scan.discarded_without_update") == []
     assert _paginas(conn, "b.pdf") == 2
     conn.close()
+
+
+def test_documento_novo_que_o_plano_nao_leu_ainda_entra_no_grupo(tmp_path, monkeypatch):
+    """O arquivo novo do mesmo tamanho de um indexado é lido pelo plano para
+    saber se é cópia. Se a leitura não sai (sem rede, prazo, leitura ainda
+    pendente), ele não pode ficar fora do grupo: a varredura logo depois o lê,
+    ele entra, e as páginas dele caem por baixo das janelas seguintes."""
+    origem, config, conn = _projeto(tmp_path)
+    _etapas(conn, config)
+    antes = _classificadas(conn)
+
+    novo = origem / "b_novo.pdf"
+    _pdf(novo, ["x"])
+    tamanho = (origem / "a.pdf").stat().st_size
+    assert novo.stat().st_size < tamanho
+    with open(novo, "ab") as arquivo:  # mesmo tamanho do a.pdf, outro conteúdo
+        arquivo.write(b"\n%" + b" " * (tamanho - novo.stat().st_size - 2))
+    assert novo.stat().st_size == tamanho
+
+    def _sem_rede(_caminho):
+        raise OSError(22, "Invalid argument")
+
+    with monkeypatch.context() as m:
+        m.setattr(update_plan, "compute_hash", _sem_rede)
+        apply_pending_changes(conn, config, language="pt-BR")
+
+    _etapas(conn, config)
+    assert _paginas(conn, "b_novo.pdf") == 1
+    depois = _janelas(conn)
+    # a (0-1), b (2-3) ficam; b_novo entra na página 4 e desloca o c.
+    assert sorted(k for k, s in depois.items() if s == "done") == sorted(antes)[:2]
+    conn.close()

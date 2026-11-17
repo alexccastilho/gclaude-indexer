@@ -858,10 +858,7 @@ def _intended_membership(
 
     def _hash(relative_path: str, size: int) -> str | None:
         # Unreadable, already gone between the walk and this read, or never
-        # answering in time (`_PlanReader`, the scan's deadline). Leaving
-        # it out only means the group is not invalidated for it: the safe
-        # direction, and the same one a file that appears after the plan
-        # was built already takes.
+        # answering in time (`_PlanReader`). `None`.
         return reader.hash(source_dir / relative_path, size)
 
     for change in new_files:
@@ -889,11 +886,16 @@ def _intended_membership(
                 if earlier_hash is not None:
                     known.add(earlier_hash)
             file_hash = _hash(change.relative_path, size)
-            if file_hash is None:
+            # Sem o hash não se sabe se é cópia, e ele conta como membro do
+            # grupo (revisão de 7c0c04c..HEAD). Deixá-lo de fora parecia o
+            # lado seguro, mas a varredura, logo depois, costuma lê-lo: ele
+            # entra no grupo e as páginas dele caem por baixo das janelas
+            # seguintes, sem que nada as tenha descartado. Contá-lo custa,
+            # no pior caso, um descarte a mais quando ele era mesmo cópia.
+            if file_hash is not None and file_hash in known:
                 continue
-            if file_hash in known:
-                continue
-            known.add(file_hash)
+            if file_hash is not None:
+                known.add(file_hash)
 
         group_key = derive_group_key(change.relative_path, source_dir, config)
         if group_key is not None:
