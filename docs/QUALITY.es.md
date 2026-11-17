@@ -81,8 +81,8 @@ lee de nuevo, una vez, con el modelo de su escritura; sin Tema, el perfil del
 archivo entra en el contexto; una página sin respuesta (con sus vecinas) y
 una página respondida sin tipo (con el texto entero, del índice) tienen un
 segundo intento, como máximo uno por página y un 15 % más de pedidos por
-ejecución; en el motor de reglas, la continuación de una pieza abierta por un
-marcador ya no la rebaja a `low`. El informe (`medir_acerto.py`) ahora también
+ejecución; en el motor de reglas, dejar la continuación de una pieza abierta por un
+marcador en `medium` se midió pero **no se adoptó**. El informe (`medir_acerto.py`) ahora también
 reparte piezas y acierto **por nivel de confianza**. Misma máquina, mismo
 acervo, mismos comandos (`--janela` y `--sobreposicao` son opciones nuevas de
 `indexar_pasta.py`).
@@ -90,7 +90,8 @@ acervo, mismos comandos (`--janela` y `--sobreposicao` son opciones nuevas de
 | Ejecución | Piezas (índice) | F1 | Tipo | Confianza alta / media / baja (piezas; tipo acertado) |
 |---|---|---|---|---|
 | Reglas, línea base (1.10.4) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 2 (100,0 %; 2/2) / 17 (88,2 %; 15/17) |
-| Reglas, 2.0.0 | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 19 (89,5 %; 17/19) / 0 |
+| Reglas, 2.0.0 (igual a la base: el cambio no se adoptó) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 2 (100,0 %; 2/2) / 17 (88,2 %; 15/17) |
+| Reglas, continuación en `medium` (medido, no adoptado) | 42 | 86,7 % | 94,4 % | 23 (100,0 %; 17/17) / 19 (89,5 %; 17/19) / 0 |
 | Local `qwen3.5:9b`, línea base (1.10.4, ventana 16, solapamiento 2) | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, ventana 16, solapamiento 2 | 71 | 62,5 % | 57,1 % | 53 (60,0 %; 18/30) / 18 (40,0 %; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, ventana 8, solapamiento 2 (nuevo valor por defecto) | 64 | 68,6 % | 44,4 % | 59 (44,4 %; 16/36) / 5 (ninguna pieza encontrada) / 0 |
@@ -124,14 +125,15 @@ para acervos de PDF. La ventana 16 (la de las versiones 1.x) tiene el peor F1.
 El tipo es el número que más oscila con la ventana (del 33 % al 57 %): es el
 punto débil del modelo en este acervo, no de la ventana.
 
-**Por nivel de confianza.** En el motor de reglas, la continuación de una pieza
-abierta por un marcador pasó a `medium`: las 17 piezas que antes eran `low`
-acertaban el tipo en un 88,2 %, y las 19 `medium` de ahora en un 89,5 %, por
-debajo de las `high` (100 %), así que el orden alta > media > baja se mantiene
-y el cambio se quedó. La base es pequeña (2 piezas `medium` antes del cambio)
-y el acervo no tiene piezas sin marcador de apertura, de modo que la `low` de
-las reglas quedó vacía: solo con estos números no se puede decir que `medium`
-siga por encima de `low` donde `low` existe. En el motor local la confianza no
+**Por nivel de confianza.** En el motor de reglas probamos dejar la
+continuación de una pieza abierta por un marcador en `medium`, en vez de
+rebajar la pieza entera a `low`. Antes del cambio, las 2 piezas `medium`
+acertaban el tipo en un 100 % y las 17 `low` en un 88,2 %; con el cambio, las
+19 `medium` quedaron en un 89,5 % y `low` quedó vacía. **El cambio no se
+adoptó**: con 2 piezas `medium` frente a 17 `low`, y un acervo sin ninguna
+pieza sin marcador de apertura, la muestra es demasiado pequeña para decir
+que `medium` acierta más que `low`, y la regla era cambiar solo si la medición
+lo sostenía (`engine_rules.CONTINUATION_KEEPS_MEDIUM` sigue en `False`). En el motor local la confianza no
 separa nada: del 75 % al 92 % de las piezas salen `high`, y el tipo acertado
 en ellas (44 % a 60 %) es casi el mismo que el de las `medium`.
 
@@ -151,8 +153,10 @@ aparece en acervos mayores, con páginas largas o escaneadas.
   tiene sellos, páginas torcidas, OCR malo y tipos fuera del vocabulario; el
   acierto allí es menor, y no se sabe cuánto.
 - **Una máquina, un modelo, una corrida.** Otro modelo, otro tamaño de
-  fragmento u otra tarjeta dan números distintos; el modelo local no es
-  determinista entre corridas. Medido: una segunda corrida el 2 de
+  fragmento u otra tarjeta dan números distintos; el modelo local puede
+  variar con la versión de Ollama o del modelo (en la misma máquina y con la
+  misma entrada, las corridas de la 2.0.0 salieron idénticas, a temperatura 0).
+  Medido: una segunda corrida el 2 de
   noviembre, tras cambiar una palabra en los textos, llevó el tipo del
   45,7 % al 60,0 %, la fecha del 91,4 % al 88,6 % y el autor del 78,1 % al
   84,4 %, con los mismos límites (F1 66,0 %). La tabla muestra la corrida

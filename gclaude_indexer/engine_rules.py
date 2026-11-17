@@ -43,9 +43,10 @@ from .html_text import without_struck_text
 from .paths import app_root
 
 RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
-# Medido em `demo/acervo` (docs/QUALITY.md): só vale `True` enquanto o acerto
-# das peças `medium` continuar acima do das `low`.
-CONTINUATION_KEEPS_MEDIUM = True
+# Medido em `demo/acervo` (docs/QUALITY.md) e NÃO adotado: a base era pequena
+# demais (2 peças `medium` contra 17 `low`) para dizer que `medium` acerta mais
+# que `low`. Só vira `True` com uma medição que sustente.
+CONTINUATION_KEEPS_MEDIUM = False
 DEFAULT_RULES_PATH = app_root() / "config" / "classification_rules.json"
 
 

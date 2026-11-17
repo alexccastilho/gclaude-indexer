@@ -79,8 +79,8 @@ characters is read again, once, with the model for its script; with no Theme
 set, a profile of the collection goes into the context; a page with no
 answer (plus its neighbours) and a page answered without a type (with its
 whole text, from the index) get a second attempt, at most one per page and
-15% extra requests per run; in the rules engine, the continuation of a
-piece opened by a marker no longer drops it to `low`. The report
+15% extra requests per run; in the rules engine, keeping the continuation of a
+piece opened by a marker at `medium` was measured but **not adopted**. The report
 (`medir_acerto.py`) now also splits pieces and accuracy **by confidence
 level**. Same machine, same collection, same commands (`--janela` and
 `--sobreposicao` are new options of `indexar_pasta.py`).
@@ -88,7 +88,8 @@ level**. Same machine, same collection, same commands (`--janela` and
 | Run | Pieces (index) | F1 | Type | High / medium / low confidence (pieces; type right) |
 |---|---|---|---|---|
 | Rules, baseline (1.10.4) | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 2 (100.0%; 2/2) / 17 (88.2%; 15/17) |
-| Rules, 2.0.0 | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 19 (89.5%; 17/19) / 0 |
+| Rules, 2.0.0 (same as baseline: the change was not adopted) | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 2 (100.0%; 2/2) / 17 (88.2%; 15/17) |
+| Rules, continuation at `medium` (measured, not adopted) | 42 | 86.7% | 94.4% | 23 (100.0%; 17/17) / 19 (89.5%; 17/19) / 0 |
 | Local `qwen3.5:9b`, baseline (1.10.4, window 16, overlap 2) | 71 | 62.5% | 57.1% | 53 (60.0%; 18/30) / 18 (40.0%; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, window 16, overlap 2 | 71 | 62.5% | 57.1% | 53 (60.0%; 18/30) / 18 (40.0%; 2/5) / 0 |
 | Local `qwen3.5:9b`, 2.0.0, window 8, overlap 2 (new default) | 64 | 68.6% | 44.4% | 59 (44.4%; 16/36) / 5 (no piece found) / 0 |
@@ -122,14 +123,15 @@ collections. Window 16 (the 1.x one) has the worst F1. Type is the number
 that moves most with the window (33% to 57%): it is the model's weak point
 on this collection, not the window's.
 
-**By confidence level.** In the rules engine, the continuation of a piece
-opened by a marker became `medium`: the 17 pieces that used to be `low` got
-the type right 88.2% of the time, and today's 19 `medium` 89.5%, below `high`
-(100%), so the high > medium > low order holds and the change stayed. The
-base is small (2 `medium` pieces before the change) and the collection has
-no piece without an opening marker, so the rules engine's `low` is now empty:
-these numbers alone cannot say that `medium` stays above `low` where `low`
-exists. In the local engine confidence separates nothing: 75% to 92% of the
+**By confidence level.** In the rules engine we tested keeping the
+continuation of a piece opened by a marker at `medium`, instead of dropping the
+whole piece to `low`. Before the change the 2 `medium` pieces got the type
+right 100% of the time and the 17 `low` 88.2%; with the change the 19 `medium`
+sat at 89.5% and `low` became empty. **The change was not adopted**: with 2
+`medium` pieces against 17 `low`, and a collection with no piece lacking an
+opening marker, the sample is too small to say that `medium` is more accurate
+than `low`, and the rule was to change only if the measurement supported it
+(`engine_rules.CONTINUATION_KEEPS_MEDIUM` stays `False`). In the local engine confidence separates nothing: 75% to 92% of the
 pieces come out `high`, and the type right among them (44% to 60%) is close
 to that of `medium`.
 
@@ -149,7 +151,8 @@ larger collections, with long or scanned pages.
   skewed pages, poor OCR and types outside the vocabulary; accuracy there is
   lower, by an unknown amount.
 - **One machine, one model, one run.** Another model, window size or GPU
-  gives different numbers; the local model is not deterministic across runs.
+  gives different numbers; the local model can vary with the Ollama or model version (on the same machine and
+  with the same input, the 2.0.0 runs came out identical, at temperature 0).
   Measured: a second run on 2 November, after a one-word change in the
   texts, moved type from 45.7% to 60.0%, date from 91.4% to 88.6% and author
   from 78.1% to 84.4%, with the same boundaries (F1 66.0%). The table shows
