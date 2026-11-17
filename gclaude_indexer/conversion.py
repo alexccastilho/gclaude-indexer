@@ -1423,20 +1423,74 @@ def _minutes(seconds: float) -> int:
     return max(1, round(seconds / 60))
 
 
+def component_ready(extension: str) -> bool:
+    """Se o componente de que um arquivo desta extensão depende está nesta
+    máquina agora — o LibreOffice (o baixado ou um do sistema) para os
+    formatos antigos, ffmpeg/whisper.cpp/modelo para a mídia. Nunca usa a
+    rede. Extensão que não depende de componente: `True`.
+
+    É a mesma pergunta que a conversão faz antes de marcar o arquivo como
+    `component_unavailable`; se as duas discordassem, o plano de
+    atualização apontaria o arquivo, a conversão o marcaria de novo, e o
+    grupo perderia as janelas em toda execução (revisão final, I1)."""
+    category = category_of_extension("." + extension.lstrip("."))
+    if category == LEGACY_CATEGORY:
+        return legacy_office.soffice_path() is not None
+    if category == MEDIA_CATEGORY:
+        return media.tools_present()
+    return True
+
+
+def _groups_with_windows(conn) -> set[str]:
+    return {row[0] for row in conn.execute("SELECT DISTINCT group_key FROM window")}
+
+
+def _waiting_component(row, windowed: set[str]) -> bool:
+    """Arquivo que espera um componente num grupo que já tem janelas.
+
+    Fica fora da fila, como o `extracted` cujo OCR falhou: as páginas
+    novas entrariam no meio do grupo sem que as janelas fossem refeitas.
+    Quem o traz de volta é o plano de atualização, que só o aponta quando
+    o componente está nesta máquina (`update_plan.detect_changes`) e
+    então refaz as janelas do grupo junto."""
+    return (
+        row["status"] == "skipped"
+        and row["error"] == REASON_COMPONENT_UNAVAILABLE
+        and row["group_key"] in windowed
+    )
+
+
 def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
-    """`(rows to requeue, names held back)` — see `requeue_ocr_failures`."""
+    """`(rows to requeue, names held back)` — see `requeue_ocr_failures`.
+    Files waiting for a component in a group with windows are in neither
+    list (`components_held_back`)."""
     has_windows = conn.execute("SELECT 1 FROM window LIMIT 1").fetchone() is not None
+    windowed = _groups_with_windows(conn) if has_windows else set()
     rows = conn.execute(
-        "SELECT id, name, status FROM file WHERE ocr_failed = 1"
+        "SELECT id, name, status, error, group_key, extension FROM file WHERE ocr_failed = 1"
         " AND (status IN ('converted', 'extracted', 'failed')"
         # Um `skipped` só volta à fila se foi a falta do componente que o
         # deixou assim; o que a varredura recusou (segredo, binário,
         # compactado…) nunca é reaberto por aqui.
         f" OR (status = 'skipped' AND error = '{REASON_COMPONENT_UNAVAILABLE}')) ORDER BY relative_path"
     ).fetchall()
+    rows = [row for row in rows if not _waiting_component(row, windowed)]
     requeue = [row for row in rows if not (row["status"] == "extracted" and has_windows)]
     held_back = [row["name"] for row in rows if row["status"] == "extracted" and has_windows]
     return requeue, held_back
+
+
+def components_held_back(conn) -> list:
+    """Os arquivos que esperam um componente fora da fila (ver
+    `_waiting_component`), em ordem de caminho."""
+    windowed = _groups_with_windows(conn)
+    if not windowed:
+        return []
+    rows = conn.execute(
+        "SELECT id, name, status, error, group_key, extension FROM file"
+        f" WHERE status = 'skipped' AND error = '{REASON_COMPONENT_UNAVAILABLE}' ORDER BY relative_path"
+    ).fetchall()
+    return [row for row in rows if _waiting_component(row, windowed)]
 
 
 def ocr_retry_count(conn) -> int:
@@ -1489,6 +1543,38 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
         conn.rollback()
         raise
     return requeued
+
+
+def _obtain_held_components(conn, should_stop, language) -> None:
+    """Tenta obter o componente dos arquivos que esperam fora da fila
+    (`components_held_back`) e diz no log por que eles ficaram de fora.
+
+    Sem isto ninguém mais pediria o download: só a fila da conversão chama
+    `legacy_office.ensure_available`/`media.prepare`, e esses arquivos não
+    voltam à fila. Com o componente obtido aqui, a próxima execução (ou
+    "Atualizar") os aponta como alterados e refaz as janelas do grupo."""
+    held = components_held_back(conn)
+    if not held:
+        return
+    legacy = [row["name"] for row in held if category_of_extension("." + row["extension"]) == LEGACY_CATEGORY]
+    media_names = [row["name"] for row in held if category_of_extension("." + row["extension"]) == MEDIA_CATEGORY]
+    for names, component, obtain in (
+        (legacy, "LibreOffice", lambda: legacy_office.ensure_available()),
+        (media_names, "ffmpeg/whisper.cpp", lambda: media.prepare()),
+    ):
+        if not names or (should_stop is not None and should_stop()):
+            continue
+        try:
+            obtain()
+        except Exception:
+            # `ensure` nunca levanta; isto é só para que um imprevisto aqui
+            # não derrube a conversão dos outros arquivos.
+            pass
+        record_event(
+            conn, "conversion", "warning", "log.conversion.component_held",
+            {"component": component, "count": len(names), "names": ", ".join(names[:20])},
+            language=language,
+        )
 
 
 def _convert_heavy(conn, config: ProjectConfig, heavy, should_stop, result, language) -> None:
@@ -2226,6 +2312,7 @@ def convert(
     workdir.ensure_work_folder(config.output_folder)
 
     requeue_ocr_failures(conn, language=language)
+    _obtain_held_components(conn, should_stop, language)
 
     rows = conn.execute(
         "SELECT * FROM file WHERE status = 'discovered' ORDER BY relative_path"
