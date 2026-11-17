@@ -46,7 +46,7 @@ from .events import record_event
 from .import_items import RAW_ITEMS_FILE_NAME
 from .paths import resolve_within
 from .run_control import checkpoint
-from .update_plan import UpdatePlan, build_update_plan, detect_changes
+from .update_plan import FileChange, UpdatePlan, build_update_plan, detect_changes, plan_from_changes
 from .windows_prep import sanitize_group_name, window_key, window_spans
 
 
@@ -455,6 +455,38 @@ def apply_pending_changes(
         return None
     checkpoint(should_stop)
     return _apply(conn, config, current, language)
+
+
+def discard_changed_file(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    relative_path: str,
+    name: str,
+    size: int,
+    language: str | None = None,
+) -> InvalidationResult:
+    """The scan's net (review of 7c0c04c..HEAD, findings 1 and 10): a
+    document the scan found changed while the index still holds its old
+    data — the automatic update before the scan did not discard it (the
+    plan could not read the file in time, the folder blinked, Stop). The
+    same invalidation the update applies, for this one file: its pages and
+    search rows, and the group's windows from it on. No folder walk and no
+    read: the plan is built from the index alone (`plan_from_changes`).
+
+    The caller must have committed its own pending writes: `_apply` runs in
+    a transaction of its own."""
+    plan = plan_from_changes(
+        conn, config, [FileChange(relative_path, "changed", name, size)], 0, "", language=language,
+    )
+    result = _apply(conn, config, plan, language)
+    try:
+        record_event(
+            conn, "scan", "warning", "log.scan.discarded_without_update",
+            {"name": name, "windows": result.windows_deleted}, language=language,
+        )
+    except (sqlite3.Error, OSError):
+        pass
+    return result
 
 
 def _apply(

@@ -106,8 +106,19 @@ def test_banco_ja_quebrado_pela_versao_anterior_e_reparado(tmp_path):
     _executar(conn, config)
 
     # What 1.10.2 did: the bare scan resets the row and keeps the pages.
-    _gravar(origem / "pasta" / "a.txt", "Ata da reunião extraordinária.", deslocamento=10)
-    scan(conn, config)
+    # Written by hand: today's scan discards the old data itself
+    # (`invalidation.discard_changed_file`), so it can no longer produce
+    # this state — but a database left by 1.10.2 still has it.
+    caminho = origem / "pasta" / "a.txt"
+    _gravar(caminho, "Ata da reunião extraordinária.", deslocamento=10)
+    from gclaude_indexer.scanning import compute_hash
+
+    conn.execute(
+        "UPDATE file SET status = 'discovered', page_count = NULL, sha256 = ?, size = ?, mtime = ?"
+        " WHERE name = 'a.txt'",
+        (compute_hash(caminho), caminho.stat().st_size, caminho.stat().st_mtime),
+    )
+    conn.commit()
     convert(conn, config)
     assert conn.execute(
         "SELECT status FROM file WHERE name = 'a.txt'"
