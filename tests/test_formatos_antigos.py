@@ -392,7 +392,7 @@ def test_baixa_o_componente_so_quando_ha_formato_antigo(tmp_path, monkeypatch):
     origem, saida, config, conn = _projeto(tmp_path, ["all"])
     (origem / "nota.txt").write_text("só texto", encoding="utf-8")
     pedidos = []
-    monkeypatch.setattr(components, "ensure", lambda nomes, download=True: pedidos.append(list(nomes)) or {})
+    monkeypatch.setattr(components, "ensure", lambda nomes, download=True, **_k: pedidos.append(list(nomes)) or {})
     monkeypatch.setattr(legacy_office, "soffice_path", lambda: None)
 
     scan(conn, config)

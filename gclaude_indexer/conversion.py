@@ -1545,6 +1545,27 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
     return requeued
 
 
+def component_display_name(name: str) -> str:
+    """O nome de um componente do manifesto como o log o mostra."""
+    if name == legacy_office.COMPONENT_NAME:
+        return "LibreOffice"
+    return media.DISPLAY_NAMES.get(name, name)
+
+
+def _announce_download(conn, language):
+    """`on_download` de `components.ensure`: antes de um download de
+    centenas de megabytes começar, o log diz o que vem e de que tamanho.
+    Antes disso a conversão ficava parada, sem aviso, por minutos."""
+    def on_download(component) -> None:
+        record_event(
+            conn, "conversion", "info", "log.conversion.component_downloading",
+            {"component": component_display_name(component.name), "size_mb": max(1, round(component.size / 1_000_000))},
+            language=language,
+        )
+
+    return on_download
+
+
 def _obtain_held_components(conn, should_stop, language) -> None:
     """Tenta obter o componente dos arquivos que esperam fora da fila
     (`components_held_back`) e diz no log por que eles ficaram de fora.
@@ -1558,9 +1579,10 @@ def _obtain_held_components(conn, should_stop, language) -> None:
         return
     legacy = [row["name"] for row in held if category_of_extension("." + row["extension"]) == LEGACY_CATEGORY]
     media_names = [row["name"] for row in held if category_of_extension("." + row["extension"]) == MEDIA_CATEGORY]
+    fetch = {"should_stop": should_stop, "on_download": _announce_download(conn, language)}
     for names, component, obtain in (
-        (legacy, "LibreOffice", lambda: legacy_office.ensure_available()),
-        (media_names, "ffmpeg/whisper.cpp", lambda: media.prepare()),
+        (legacy, "LibreOffice", lambda: legacy_office.ensure_available(**fetch)),
+        (media_names, "ffmpeg/whisper.cpp", lambda: media.prepare(**fetch)),
     ):
         if not names or (should_stop is not None and should_stop()):
             continue
@@ -1570,6 +1592,8 @@ def _obtain_held_components(conn, should_stop, language) -> None:
             # `ensure` nunca levanta; isto é só para que um imprevisto aqui
             # não derrube a conversão dos outros arquivos.
             pass
+        if should_stop is not None and should_stop():
+            return
         record_event(
             conn, "conversion", "warning", "log.conversion.component_held",
             {"component": component, "count": len(names), "names": ", ".join(names[:20])},
@@ -1872,7 +1896,10 @@ def _convert_media(conn, config: ProjectConfig, rows, should_stop, result, langu
     só porque o acervo tem mídia selecionada. Sem eles (sem rede, download
     recusado) ninguém falha: cada arquivo fica pendente, volta à fila na
     próxima conversão e o log diz uma vez o que faltou."""
-    found, missing = media.prepare()
+    found, missing = media.prepare(should_stop=should_stop, on_download=_announce_download(conn, language))
+    if found is None and should_stop is not None and should_stop():
+        # Parar no meio do download: os arquivos continuam na fila.
+        return
     writer = BatchWriter(conn)
     if found is None:
         def mark(row):
@@ -1940,7 +1967,12 @@ def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, lang
     Sem ele (sem rede, download recusado) ninguém falha: cada arquivo fica
     pendente (`_process_file`), volta à fila na próxima conversão e o log
     diz uma vez o que faltou."""
-    if legacy_office.ensure_available() is None:
+    soffice = legacy_office.ensure_available(should_stop=should_stop, on_download=_announce_download(conn, language))
+    if should_stop is not None and should_stop():
+        # Parar no meio do download: os arquivos continuam na fila, sem o
+        # aviso de "sem internet", que não seria verdade.
+        return
+    if soffice is None:
         record_event(
             conn, "conversion", "warning", "log.conversion.component_unavailable",
             {"component": "LibreOffice", "count": len(rows)}, language=language,
