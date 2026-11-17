@@ -52,7 +52,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, is_unreadable_placeholder,
+    MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed,
     is_waiting_component, name_decision,
 )
 from .paths import natural_sort_key
@@ -315,10 +315,7 @@ def detect_changes(
         seen.add(relative_path)
 
         row = known.get(relative_path)
-        # A linha que a varredura grava para um arquivo novo ilegível
-        # (`REASON_UNREADABLE`) só existe para a contagem: para o plano ele
-        # continua novo, como se a linha não existisse.
-        if row is None or is_unreadable_placeholder(row["status"], row["error"]):
+        if row is None:
             changes.append(FileChange(relative_path, "new", path.name, size, mtime))
             continue
 

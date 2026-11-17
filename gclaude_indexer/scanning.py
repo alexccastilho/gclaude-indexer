@@ -36,10 +36,8 @@ from .events import record_event
 from .file_types import (
     HEAD_BYTES,
     REASON_NOT_SELECTED,
-    REASON_UNREADABLE,
     index_decision,
     is_extension_allowed,
-    is_unreadable_placeholder,
     is_waiting_component,
     name_decision,
     needs_head,
@@ -467,8 +465,6 @@ def _scan_files(
         relative_path = path.relative_to(source_dir).as_posix()
         name = path.name
         extension = path.suffix.lower()
-        existing_row = known_paths.get(relative_path)
-        size = None
         try:
             if listed is not None:
                 size, mtime = listed.size, listed.mtime
@@ -476,6 +472,7 @@ def _scan_files(
                 file_stat = call_with_deadline(path.stat, deadline=STAT_DEADLINE_SECONDS)
                 size = file_stat.st_size
                 mtime = file_stat.st_mtime
+            existing_row = known_paths.get(relative_path)
             unchanged = (
                 existing_row is not None
                 and existing_row["size"] == size
@@ -492,9 +489,8 @@ def _scan_files(
                         compute_hash, path, deadline=deadline_for_size(size),
                     )
         except CallTimedOut as timeout:
-            # Left out of this scan: an indexed file stays untouched, a new
-            # one gets a row without hash (`_record_unread_new_file`), and
-            # the next scan looks at it again. Several in a row with nothing in
+            # Left out of this scan, untouched in the inventory: the next
+            # scan looks at it again. Several in a row with nothing in
             # between is the drive, not the file — stop instead of walking
             # the whole collection one deadline at a time.
             consecutive_timeouts += 1
@@ -503,7 +499,6 @@ def _scan_files(
                 c, "scan", "warning", "log.scan.file_timed_out", {"name": name, "minutes": minutes},
                 language=language, commit=False,
             ))
-            _record_unread_new_file(writer, relative_path, name, extension, size, existing_row, known_paths)
             if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
                 raise StepStalledError(
                     translate(language or DEFAULT_LANGUAGE, "log.pool_stalled", name=name)
@@ -520,7 +515,6 @@ def _scan_files(
                 {"name": name, "error": error.strerror or str(error)},
                 language=language, commit=False,
             ))
-            _record_unread_new_file(writer, relative_path, name, extension, size, existing_row, known_paths)
             continue
         consecutive_timeouts = 0
         bytes_done += size
@@ -571,36 +565,6 @@ def _is_waiting_component(row) -> bool:
     Rows the scan itself added to `known_paths` may carry no status."""
     try:
         return row is not None and is_waiting_component(row["status"], row["error"])
-    except (KeyError, IndexError):
-        return False
-
-
-def _record_unread_new_file(
-    writer: BatchWriter, relative_path: str, name: str, extension: str, size: int | None,
-    existing_row, known_paths,
-) -> None:
-    """Arquivo novo que a varredura não conseguiu ler (OSError ou prazo):
-    entra no inventário sem hash e sem data (`REASON_UNREADABLE`), para a
-    contagem de arquivos da etapa bater com a pasta, como a cópia
-    (`duplicate`). Sem data, a próxima varredura o lê de novo. Um arquivo já
-    no inventário fica como estava; sem o tamanho (o `stat` falhou), nada."""
-    if existing_row is not None or size is None:
-        return
-    extension_no_dot = extension.lstrip(".")
-    writer.add(lambda c: _insert_file(
-        c, relative_path, name, extension_no_dot, size, "", None, None, "skipped", REASON_UNREADABLE,
-    ))
-    known_paths[relative_path] = {
-        "relative_path": relative_path, "size": size, "sha256": "", "mtime": None,
-        "status": "skipped", "error": REASON_UNREADABLE,
-    }
-
-
-def _is_unreadable_placeholder(row) -> bool:
-    """A linha de um arquivo novo que a varredura não conseguiu ler
-    (`REASON_UNREADABLE`): para tudo o mais, ele ainda é novo."""
-    try:
-        return row is not None and is_unreadable_placeholder(row["status"], row["error"])
     except (KeyError, IndexError):
         return False
 
@@ -735,8 +699,7 @@ def _record_scanned_file(
             ))
         return
 
-    placeholder = _is_unreadable_placeholder(existing_row)
-    if (existing_row is None or placeholder) and file_hash in known_hashes:
+    if existing_row is None and file_hash in known_hashes:
         # Same content already indexed under another path (copy/duplicate).
         # It enters the table with status = 'duplicate' instead of vanishing:
         # without this row, the progress bar's numerator (COUNT(*) FROM
@@ -747,16 +710,10 @@ def _record_scanned_file(
         # stays out of processing as before, only visible in the
         # inventory.
         extension_no_dot = extension.lstrip(".")
-        if placeholder:
-            writer.add(lambda c: _update_file(
-                c, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, None, "duplicate"
-            ))
-        else:
-            writer.add(lambda c: _insert_file(
-                c, relative_path, name, extension_no_dot, size, file_hash,
-                mtime, None, "duplicate"
-            ))
+        writer.add(lambda c: _insert_file(
+            c, relative_path, name, extension_no_dot, size, file_hash,
+            mtime, None, "duplicate"
+        ))
         result.skipped += 1
         known_hashes.add(file_hash)
         known_paths[relative_path] = {
@@ -827,27 +784,17 @@ def _record_scanned_file(
                     lambda c: discard_changed_file(c, config, relative_path, name, size, language)
                 )
 
-        if placeholder:
-            # Lido enfim: é um arquivo novo, não um alterado.
-            def op(c) -> None:
-                _update_file(
-                    c, relative_path, name, extension_no_dot, size, file_hash,
-                    mtime, group_key, status
-                )
+        def op(c) -> None:
+            _update_file(
+                c, relative_path, name, extension_no_dot, size, file_hash,
+                mtime, group_key, status
+            )
+            record_event(
+                c, "scan", "warning", "log.scan.content_changed", {"name": name},
+                language=language, commit=False,
+            )
 
-            result.discovered += 1
-        else:
-            def op(c) -> None:
-                _update_file(
-                    c, relative_path, name, extension_no_dot, size, file_hash,
-                    mtime, group_key, status
-                )
-                record_event(
-                    c, "scan", "warning", "log.scan.content_changed", {"name": name},
-                    language=language, commit=False,
-                )
-
-            result.updated += 1
+        result.updated += 1
 
     # Committed within a second (`BatchWriter`), not only at the end:
     # the Execution screen's progress bar reads from a separate
