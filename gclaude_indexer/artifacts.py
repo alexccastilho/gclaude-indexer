@@ -1162,7 +1162,7 @@ def project_instructions_sections(
 
     no_struck = sorted(
         ext.lstrip(".")
-        for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"] | EXTENSION_CATEGORIES["paginados"]
+        for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"] | EXTENSION_CATEGORIES["paginados"] | EXTENSION_CATEGORIES["legados"]
     )
     placeholders = ", ".join("?" for _ in no_struck)
     has_struck_text = conn.execute(

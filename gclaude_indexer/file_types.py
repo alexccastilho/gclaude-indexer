@@ -31,6 +31,13 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     # Têm páginas de verdade: o PyMuPDF os converte para um PDF intermediário
     # e o resto do caminho (texto nativo, OCR de página sem texto) é o do PDF.
     "paginados": {".xps", ".oxps", ".epub", ".mobi", ".fb2", ".svg", ".cbz"},
+    # Formatos antigos que só o LibreOffice lê: ele os converte para um PDF
+    # intermediário e o resto do caminho é o do PDF. `.pages` fica de fora
+    # de propósito (ver `REASON_UNSUPPORTED`).
+    "legados": {
+        ".doc", ".dot", ".ppt", ".pps", ".pot", ".wpd", ".wps", ".pub", ".vsd", ".vsdx",
+        ".sxw", ".sxc", ".sxi", ".sdw", ".123", ".wk1", ".wb2",
+    },
     "imagens": {
         ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp",
         ".jp2", ".j2k", ".jpx", ".jfif", ".jpe", ".heic", ".heif",
@@ -118,6 +125,10 @@ _SECRET_MARKER_BEGIN = b"-----BEGIN"
 _SECRET_MARKER_END = b"PRIVATE KEY-----"
 _BINARY_CONTROL_RATIO = 0.30
 
+# Formato que nenhum conversor deste programa lê de verdade: o `.pages` da
+# Apple (um pacote que o LibreOffice não abre de modo confiável).
+UNSUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pages"})
+
 REASON_SYSTEM = "system"
 REASON_GOOGLE_DOC = "google_doc"
 REASON_ARCHIVE = "archive"
@@ -129,11 +140,15 @@ REASON_NOT_SELECTED = "extension_not_selected"
 # Gravado pela conversão (não pela varredura): um `.p7s` destacado não tem
 # conteúdo próprio, a assinatura vai para o arquivo irmão.
 REASON_SIGNATURE_DETACHED = "signature_detached"
+REASON_UNSUPPORTED = "unsupported"
+# Gravado pela conversão: o LibreOffice não pôde ser obtido (sem rede). O
+# arquivo fica pendente e volta à fila (`ocr_failed`), não é falha.
+REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 
 
 # Categorias com páginas reais (o limite de caracteres por página do projeto
 # vale para elas, e o documento pode continuar no arquivo seguinte).
-PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados")
+PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")
 
 
 def valid_categories() -> set[str]:
@@ -231,6 +246,8 @@ def name_decision(name: str, categories: list[str] | None = None) -> str | None:
         return REASON_MEDIA
     if extension in SECRET_EXTENSIONS or lower.startswith(_SECRET_NAME_PREFIXES):
         return REASON_SECRET
+    if extension in UNSUPPORTED_EXTENSIONS:
+        return REASON_UNSUPPORTED
     return None
 
 
@@ -241,7 +258,7 @@ def index_decision(
 
     One rule for the scan, the update plan and the conversion. The order is
     the contract: system file, Google shortcut, archive, blocked extension,
-    audio/video not selected, secret. Only then does the content count, and
+    audio/video not selected, secret, unsupported. Only then does the content count, and
     only the first `HEAD_BYTES`: a secret marker, or — for an extension with
     no category — binary content. `head_bytes=None` decides by name alone
     (nothing was read), so a video is never downloaded to be refused.
@@ -296,7 +313,7 @@ def category_of_extension(extension_with_dot: str) -> str | None:
 # is similar to what. Does not change any scan rule — `EXTENSION_CATEGORIES`
 # remains the source of truth.
 CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = {
-    "documentos": ("pdf", "docx", "xlsx", "pptx", "opendocument", "rtf", "paginados"),
+    "documentos": ("pdf", "docx", "xlsx", "pptx", "opendocument", "rtf", "paginados", "legados"),
     "imagens": ("imagens",),
     "text_data": ("text", "legendas", "web_dados"),
     "mensagens": ("email", "mbox"),

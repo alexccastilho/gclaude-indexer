@@ -131,7 +131,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> list[tuple[str, int, bool
         category = "pdf" if intermediate.suffix.lower() == ".pdf" else "text"
     limit = chars_limit_for(category, config)
 
-    if category in ("pdf", "paginados"):
+    if category in ("pdf", "paginados", "legados"):
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative_path
         return _read_pdf_pages(pdf_path, limit)
 

@@ -31,7 +31,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import light_formats, no_window, tools, workdir
+from . import legacy_office, light_formats, no_window, tools, workdir
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -41,7 +41,9 @@ from .worker_pool import (
     deadline_for_size,
 )
 from .parallelism import _physical_cores, io_workers_for, workers_for
-from .file_types import REASON_BINARY, REASON_SIGNATURE_DETACHED, category_of_extension, looks_binary
+from .file_types import (
+    REASON_BINARY, REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, category_of_extension, looks_binary,
+)
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
@@ -50,8 +52,9 @@ MIN_AVG_CHARS_PER_PAGE = 100
 _BINARY_SNIFF_BYTES = 8192
 # Categories whose conversion may run OCR — the CPU-bound queue.
 # Os paginados e os assinados (`.p7m` com PDF dentro) passam pelo mesmo OCR
-# do PDF.
-OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados"})
+# do PDF; os formatos antigos (LibreOffice) também, depois de virarem PDF.
+OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados", "legados"})
+LEGACY_CATEGORY = "legados"
 # Extensões que já existiam antes da 2.0.0: o texto intermediário delas
 # continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
 # Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
@@ -119,7 +122,7 @@ def converted_artifact_path(
         if not needs_ocr:
             return None
         return workdir.intermediate_path(output_folder, "converted", relative_path, ".pdf")
-    if category == "paginados":
+    if category in ("paginados", "legados"):
         # Sempre há um PDF intermediário (o original não é PDF).
         return workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
     if category == "assinados":
@@ -735,6 +738,30 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         )
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
+    elif category == LEGACY_CATEGORY:
+        soffice = legacy_office.soffice_path()
+        if soffice is None:
+            # O LibreOffice não pôde ser obtido (sem rede): o arquivo não
+            # falha. Fica pendente e volta à fila na próxima conversão; o
+            # aviso (uma vez só) sai em `convert`.
+            return {
+                "id": row["id"], "name": name, "events": [], "ocr_applied": False,
+                "sql": (
+                    "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
+                    " ocr_failed = 1 WHERE id = ?"
+                ),
+                "params": (REASON_COMPONENT_UNAVAILABLE, row["id"]),
+            }
+        needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
+            config, name, legacy_office.convert_to_pdf_bytes(source_path, soffice), output_dir,
+            relative_path, row["extension"], ocrmypdf_jobs, events,
+        )
+        sql = (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
+            " ocr_failed = ? WHERE id = ?"
+        )
+        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
+
     elif category == "assinados":
         signed = _convert_signed(config, row, source_path, output_dir, ocrmypdf_jobs, events)
         return {
@@ -995,7 +1022,7 @@ def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
     has_windows = conn.execute("SELECT 1 FROM window LIMIT 1").fetchone() is not None
     rows = conn.execute(
         "SELECT id, name, status FROM file WHERE ocr_failed = 1"
-        " AND status IN ('converted', 'extracted', 'failed') ORDER BY relative_path"
+        " AND status IN ('converted', 'extracted', 'failed', 'skipped') ORDER BY relative_path"
     ).fetchall()
     requeue = [row for row in rows if not (row["status"] == "extracted" and has_windows)]
     held_back = [row["name"] for row in rows if row["status"] == "extracted" and has_windows]
@@ -1090,6 +1117,22 @@ def _convert_heavy(conn, config: ProjectConfig, heavy, should_stop, result, lang
         _convert_in_parallel(conn, config, heavy, workers, ocrmypdf_jobs, should_stop, result, language=language)
 
 
+def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, language) -> None:
+    """`.doc`, `.ppt`, `.wpd`… pelo LibreOffice, um por vez, neste processo.
+
+    O componente é baixado aqui, só porque o acervo tem um destes arquivos.
+    Sem ele (sem rede, download recusado) ninguém falha: cada arquivo fica
+    pendente (`_process_file`), volta à fila na próxima conversão e o log
+    diz uma vez o que faltou."""
+    if legacy_office.ensure_available() is None:
+        record_event(
+            conn, "conversion", "warning", "log.conversion.component_unavailable",
+            {"component": "LibreOffice", "count": len(rows)}, language=language,
+        )
+    jobs = max(1, _physical_cores() // 2)
+    _convert_sequential(conn, config, rows, jobs, should_stop, result, language=language)
+
+
 def convert(
     conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> ConversionResult:
@@ -1120,7 +1163,13 @@ def convert(
     # per-core pool below; everything else waits on the disk and gets a far
     # larger pool (`parallelism.io_workers_for`). Light files first: they
     # are the bulk of a large collection and show progress at once.
-    heavy = [row for row in rows if category_of_extension("." + row["extension"]) in OCR_CATEGORIES]
+    ocr_rows = [row for row in rows if category_of_extension("." + row["extension"]) in OCR_CATEGORIES]
+    # Os formatos antigos formam uma fila própria: o LibreOffice roda um por
+    # vez (cada `soffice` ocupa centenas de megabytes), fora do conjunto de
+    # processos do OCR.
+    legacy = [row for row in ocr_rows if category_of_extension("." + row["extension"]) == LEGACY_CATEGORY]
+    legacy_ids = {row["id"] for row in legacy}
+    heavy = [row for row in ocr_rows if row["id"] not in legacy_ids]
     # Largest first. In path order a PDF of hundreds of pages could start
     # last and run alone for minutes after every other file was done;
     # started first, it runs alongside the rest.
@@ -1129,7 +1178,7 @@ def convert(
 
     heavy_config = config
     ocr_shortfall = False
-    if heavy:
+    if heavy or legacy:
         # The OCR language is installed here if the installer could
         # not (no administrator rights needed), before the OCR workers are
         # started — they inherit this process's `TESSDATA_PREFIX`.
@@ -1164,14 +1213,18 @@ def convert(
 
     if heavy and not (should_stop is not None and should_stop()):
         _convert_heavy(conn, heavy_config, heavy, should_stop, result, language)
-        if ocr_shortfall:
-            # Read with only part of the languages: good enough for now,
-            # done again in full once the rest is downloaded.
-            conn.executemany(
-                "UPDATE file SET ocr_failed = 1 WHERE id = ? AND status = 'converted' AND needs_ocr = 1",
-                [(row["id"],) for row in heavy],
-            )
-            conn.commit()
+
+    if legacy and not (should_stop is not None and should_stop()):
+        _convert_legacy(conn, heavy_config, legacy, should_stop, result, language)
+
+    if ocr_shortfall:
+        # Read with only part of the languages: good enough for now,
+        # done again in full once the rest is downloaded.
+        conn.executemany(
+            "UPDATE file SET ocr_failed = 1 WHERE id = ? AND status = 'converted' AND needs_ocr = 1",
+            [(row["id"],) for row in heavy + legacy],
+        )
+        conn.commit()
 
     record_event(
         conn,
