@@ -48,7 +48,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import category_of_extension, is_whole_document_file
+from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_whole_document_file
 from .parallelism import io_workers_for
 
 # A passage is cut at the next heading once it holds this many characters,
@@ -204,7 +204,7 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> li
             return _pdf_passages(pdf_path, references)
 
     text = intermediate.read_text(encoding="utf-8")
-    if category == "mbox":
+    if category in MESSAGE_PAGE_CATEGORIES:
         # Cada mensagem é uma página, com a referência dela.
         from .light_formats import MBOX_PAGE_SEPARATOR
 

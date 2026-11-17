@@ -93,6 +93,7 @@ NOVAS = {
     "paginados": {".xps", ".oxps", ".epub", ".mobi", ".fb2", ".svg", ".cbz"},
     "legendas": {".srt", ".vtt"},
     "mbox": {".mbox"},
+    "outlook": {".pst", ".ost"},
     "cad": {".dxf"},
     "assinados": {".p7s", ".p7m"},
 }
