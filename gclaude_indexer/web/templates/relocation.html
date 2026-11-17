@@ -26,7 +26,7 @@
 <h2>{{ t('relocation.what_moves') }}</h2>
 <p>{% if plan.mode == 'rename' %}{{ t('relocation.mode_rename') }}{% else %}{{ t('relocation.mode_items', kept=plan.kept) }}{% endif %}</p>
 <ul class="relocation-items">
-  {% for name in plan.carried %}<li><code>{{ name }}</code></li>{% endfor %}
+  {% for name in plan.carried %}<li><code>{{ name }}{% if name in plan.carried_folders %}/{% endif %}</code>{% if name in plan.carried_folders %} <span class="help">({{ t('relocation.folder_whole') }})</span>{% endif %}</li>{% endfor %}
 </ul>
 {% if plan.copied_instructions %}
 <p>{{ t('relocation.copied_instructions') }}</p>

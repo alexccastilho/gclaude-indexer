@@ -255,3 +255,18 @@ def _remove_if_empty(path: Path) -> None:
         path.rmdir()  # só remove pasta vazia
     except OSError:
         pass
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Grava num temporário ao lado, força para o disco (`fsync`) e troca
+    com `os.replace`: uma queda no meio deixa o arquivo antigo inteiro,
+    nunca um pela metade nem um vazio. Usado pelo diário da mudança de
+    pasta, pelos catálogos e pelo registro de sincronização."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    with open(temporary, "w", encoding="utf-8") as file:
+        file.write(text)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)

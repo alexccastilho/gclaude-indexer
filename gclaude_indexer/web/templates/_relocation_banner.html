@@ -1,16 +1,14 @@
 {% import "_macros.html" as m %}
 {# 2.0.0: aviso de saída dentro da origem, a cada abertura da Execução até a
-   mudança (o usuário adiou na tela de interrupção). O botão posta só o id
-   do projeto; o destino é calculado no servidor. #}
+   mudança (o usuário adiou na tela de interrupção). O botão leva à tela de
+   confirmação (decisão 10: a mudança só acontece com confirmação); nada se
+   move a partir daqui. #}
 <div id="relocation-banner" class="relocation-warning" role="status">
   {{ m.icon('warning') }}
   <div>
     <p>{{ t('relocation.banner', destination=relocation_banner.destination) }}</p>
     <div class="actions">
-      <form method="post" action="/projects/{{ project.id }}/relocate" data-activity="{{ t('relocation.move') }}">
-        <button type="submit" class="button-primary">{{ t('relocation.move_now') }}</button>
-      </form>
-      <a href="/projects/{{ project.id }}/relocate">{{ t('relocation.banner_details') }}</a>
+      <a href="/projects/{{ project.id }}/relocate" class="button button-primary">{{ t('relocation.banner_review') }}</a>
     </div>
   </div>
 </div>

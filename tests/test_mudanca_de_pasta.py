@@ -76,6 +76,15 @@ def _gerados(saida: Path) -> None:
     (saida / "logs" / "execucao.log").write_text("log\n", encoding="utf-8")
     (saida / "converted" / "grupo").mkdir(parents=True)
     (saida / "converted" / "grupo" / "a.pdf").write_bytes(b"%PDF-1.4 ocr antigo")
+    (saida / "converted" / "grupo" / "b.docx.txt").write_text("texto", encoding="utf-8")
+    # Os intermediários são de documentos que o projeto conhece.
+    conn = sqlite3.connect(saida / "project.db")
+    conn.executemany(
+        "INSERT INTO file (relative_path, name, extension, size, sha256, status) VALUES (?, ?, ?, 0, '', 'extracted')",
+        [("grupo/a.pdf", "a.pdf", "pdf"), ("grupo/b.docx", "b.docx", "docx")],
+    )
+    conn.commit()
+    conn.close()
     (saida / "windows").mkdir()
     (saida / "windows" / "grupo_j0001-0016.txt").write_text("janela", encoding="utf-8")
     (saida / "blocks").mkdir()
@@ -397,12 +406,10 @@ def test_queda_no_meio_dos_renames_e_retomada(local, tmp_path, monkeypatch, usua
     monkeypatch.setattr(relocation, "_undo", lambda journal: (_ for _ in ()).throw(_Queda()))
     if queda_no_rename == 99:
         # Todos os renames passam; a queda vem ao anotar "committed".
-        escritas = {"n": 0}
         gravar = relocation._write_journal
 
         def gravar_e_cair(journal):
-            escritas["n"] += 1
-            if escritas["n"] == 2:
+            if journal.get("phase") == "committed":
                 raise _Queda()
             return gravar(journal)
 
@@ -552,7 +559,18 @@ def test_adiar_mostra_o_aviso_a_cada_abertura(cliente, tmp_path):
         assert str(tmp_path / "Acervo-AI") in execucao.text
     assert (saida / "project.db").is_file()
 
-    # O botão do aviso faz a mudança.
+    # O aviso não move nada: o botão é um link para a tela de confirmação
+    # (decisão 10 do usuário).
+    banner = execucao.text[execucao.text.index('id="relocation-banner"'):]
+    banner = banner[: banner.index("</div>\n</div>")]
+    assert "<form" not in banner and 'method="post"' not in banner
+    assert f'href="/projects/{entrada.id}/relocate"' in banner
+    confirmacao = cliente.get(f"/projects/{entrada.id}/relocate")
+    assert confirmacao.status_code == 200
+    assert "Mover agora" in confirmacao.text
+    assert (saida / "project.db").is_file() and not (tmp_path / "Acervo-AI").exists()
+
+    # Só o "Mover agora" da tela de confirmação faz a mudança.
     resposta = cliente.post(f"/projects/{entrada.id}/relocate", headers=HEADERS, follow_redirects=False)
     assert resposta.status_code == 303
     assert find_project(entrada.id).output_folder == str(tmp_path / "Acervo-AI")
@@ -692,3 +710,200 @@ def test_diario_com_pastas_fora_do_ar_fica_para_depois(local, tmp_path):
 
     assert not relocation.recover(ausente / "saida")
     assert relocation.pending_for(ausente / "saida") is not None
+
+
+# --- rodada de correções 1 ---------------------------------------------------------
+
+
+def _religar(monkeypatch, local, tmp_path):
+    """Depois de `monkeypatch.undo()` (que também desfaz o conftest)."""
+    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(local))
+    monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(local / "work"))
+    monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
+    pasta = tmp_path / "_relocation_local"
+    monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
+    monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
+    monkeypatch.setattr(app_mod, "_relocation_due", lambda config: False)
+
+
+def test_colisao_numa_copia_entre_volumes_nao_apaga_o_intruso(local, tmp_path, monkeypatch):
+    """Item que nunca começou não é desfeito: o arquivo que outro gravou no
+    destino dele fica (antes, o desfazer o apagava achando que era cópia nossa)."""
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    _criar(origem, saida)
+    for nome in ("index.md", "timeline.md", "buscar.bat"):
+        (saida / nome).write_text(nome, encoding="utf-8")
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    antes = _conteudo(saida)
+    plano = relocation.build_plan(str(origem), str(saida))
+    alvo = Path(plano.new) / plano.carried[1]
+    real = relocation._copy_tree_verified
+    chamadas = {"n": 0}
+
+    def copiar_e_intrometer(origem_item, destino_item):
+        real(origem_item, destino_item)
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            alvo.write_text("INTRUSO", encoding="utf-8")
+
+    monkeypatch.setattr(relocation, "_copy_tree_verified", copiar_e_intrometer)
+    with pytest.raises(relocation.RelocationError) as erro:
+        relocation.execute(plano)
+
+    assert erro.value.key == "relocation.error.collision"
+    assert alvo.read_text(encoding="utf-8") == "INTRUSO"
+    assert not (Path(plano.new) / plano.carried[0]).exists()  # a cópia nossa saiu
+    assert _conteudo(saida) == antes
+    assert relocation.pending_for(saida) is None
+
+
+def test_queda_durante_a_copia_e_retomada_preserva_o_intruso(local, tmp_path, monkeypatch):
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    _gerados(saida)
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    antes = _conteudo(saida)
+    plano = relocation.build_plan(str(origem), str(saida))
+    nova = Path(plano.new)
+    real = relocation._copy_tree_verified
+    chamadas = {"n": 0}
+
+    def copiar_e_cair(origem_item, destino_item):
+        chamadas["n"] += 1
+        if chamadas["n"] == 3:
+            Path(destino_item).write_bytes(b"pela metade")  # a cópia começou e caiu
+            # Um arquivo de outro no destino de um item que ainda não começou.
+            (nova / plano.carried[-1]).write_text("de outro", encoding="utf-8")
+            raise _Queda()
+        return real(origem_item, destino_item)
+
+    monkeypatch.setattr(relocation, "_copy_tree_verified", copiar_e_cair)
+    monkeypatch.setattr(relocation, "_undo", lambda journal: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+
+    assert relocation.recover(saida)
+    assert _conteudo(saida) == antes
+    assert find_project(entrada.id).output_folder == str(saida)
+    assert (nova / plano.carried[-1]).read_text(encoding="utf-8") == "de outro"
+    assert sorted(p.name for p in nova.iterdir()) == [plano.carried[-1]]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="junção é do Windows")
+def test_saida_que_e_juncao_nao_e_seguida(local, tmp_path):
+    import subprocess
+
+    origem = tmp_path / "Acervo"
+    origem.mkdir()
+    real = tmp_path / "fora" / "saida-real"
+    _criar(tmp_path / "fora", real)
+    juncao = origem / "saida"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(juncao), str(real)], check=True, capture_output=True)
+    assert relocation._is_link(juncao)
+
+    assert relocation.output_inside_source(str(origem), str(juncao))
+    with pytest.raises(relocation.RelocationError) as erro:
+        relocation.build_plan(str(origem), str(juncao))
+    assert erro.value.key == "relocation.error.link"
+    assert (real / "project.db").is_file()
+
+
+def test_diario_achado_com_outra_grafia_do_caminho(cliente, local, tmp_path, monkeypatch):
+    """O catálogo pode guardar uma grafia (com `..`, nome curto) e o plano a
+    resolvida: as duas acham o mesmo diário, e a abertura conclui a mudança."""
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    _gerados(saida)
+    relocation.postpone(saida)
+    (origem / "outra").mkdir()
+    torto = str(origem / "outra" / ".." / "saida")
+    catalogo = local / "projects.json"
+    dados = json.loads(catalogo.read_text(encoding="utf-8"))
+    dados[0]["output_folder"] = torto
+    catalogo.write_text(json.dumps(dados), encoding="utf-8")
+    plano = relocation.build_plan(str(origem), torto)
+    monkeypatch.setattr(relocation, "relocate_catalog_entry", lambda *a: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+    assert find_project(entrada.id).output_folder == torto
+    assert relocation.pending_for(torto) is not None
+
+    resposta = cliente.get(f"/projects/{entrada.id}/run")
+
+    assert resposta.status_code == 200
+    assert find_project(entrada.id).output_folder == plano.new
+    assert relocation.pending_for(torto) is None
+
+
+@pytest.mark.parametrize("outro_volume", [False, True], ids=["mesmo-volume", "outro-volume"])
+def test_pastas_logs_e_converted_do_usuario_ficam(local, tmp_path, monkeypatch, outro_volume):
+    origem = tmp_path / "Acervo"
+    origem.mkdir()
+    (origem / "logs").mkdir()
+    (origem / "logs" / "servidor.log").write_text("do usuário", encoding="utf-8")
+    (origem / "converted").mkdir()
+    (origem / "converted" / "planilha.xlsx").write_bytes(b"do usuario")
+    (origem / "processo.pdf").write_bytes(b"%PDF")
+    entrada = _criar(origem, origem)
+    (origem / "index.md").write_text("# índice\n", encoding="utf-8")
+    if outro_volume:
+        monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+
+    plano = relocation.build_plan(str(origem), str(origem))
+    assert "logs" not in plano.carried and "converted" not in plano.carried
+    nova = Path(relocation.execute(plano))
+
+    assert (origem / "logs" / "servidor.log").read_text(encoding="utf-8") == "do usuário"
+    assert (origem / "converted" / "planilha.xlsx").read_bytes() == b"do usuario"
+    # Na pasta nova, `logs/` só tem o log do próprio programa (o evento da mudança).
+    assert not (nova / "converted").exists()
+    assert not (nova / "logs" / "servidor.log").exists()
+    assert (nova / "project.db").is_file() and find_project(entrada.id).output_folder == str(nova)
+
+
+def test_pastas_nossas_sao_listadas_como_pastas_na_confirmacao(cliente, tmp_path):
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    _gerados(saida)
+    plano = relocation.build_plan(str(origem), str(saida))
+    assert sorted(plano.carried_folders) == ["converted", "logs"]
+
+    tela = cliente.get(f"/projects/{entrada.id}/relocate")
+    assert "<code>converted/</code>" in tela.text and "<code>logs/</code>" in tela.text
+
+
+def test_origem_vazia_nunca_e_removida_e_retomada_tolera(local, tmp_path, monkeypatch):
+    """Saída = origem, sem documentos: a origem fica, mesmo vazia. E se a
+    pasta antiga sumir depois da confirmação, a retomada conclui assim mesmo."""
+    origem = tmp_path / "Acervo"
+    entrada = _criar(origem, origem)
+    nova = Path(relocation.execute(relocation.build_plan(str(origem), str(origem))))
+    assert origem.is_dir()
+    assert find_project(entrada.id).output_folder == str(nova)
+
+    origem2 = tmp_path / "Outro"
+    saida2 = origem2 / "saida"
+    entrada2 = _criar(origem2, saida2)
+    (saida2 / "meu.txt").write_text("u", encoding="utf-8")
+    plano = relocation.build_plan(str(origem2), str(saida2))
+    monkeypatch.setattr(relocation, "relocate_catalog_entry", lambda *a: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+    # O usuário esvaziou e apagou a pasta antiga antes da próxima abertura.
+    (saida2 / "meu.txt").unlink()
+    for resto in saida2.iterdir():
+        resto.unlink()
+    saida2.rmdir()
+
+    assert relocation.recover(saida2)
+    assert find_project(entrada2.id).output_folder == plano.new
