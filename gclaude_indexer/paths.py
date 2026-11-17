@@ -270,3 +270,18 @@ def write_text_atomic(path: Path, text: str) -> None:
         file.flush()
         os.fsync(file.fileno())
     os.replace(temporary, path)
+
+
+def sqlite_readonly_uri(path) -> str:
+    """URI `file:` de só leitura para `sqlite3.connect(..., uri=True)`, com
+    o caminho escapado. Montada à mão (`f"file:{caminho}"`), um `#` no nome
+    de uma pasta começava um fragmento: o SQLite abria o caminho truncado
+    *sem* `mode=ro`, podendo criar um arquivo vazio; `%20` e afins eram
+    decodificados. Caminho UNC (`//servidor/pasta`) vira `file:////servidor/...`
+    (autoridade vazia), que é o que o SQLite aceita no Windows."""
+    from urllib.parse import quote
+
+    posix = Path(os.path.abspath(str(path))).as_posix()
+    if not posix.startswith("/"):
+        posix = "/" + posix
+    return "file://" + quote(posix, safe="/:") + "?mode=ro"

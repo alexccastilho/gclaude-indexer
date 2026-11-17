@@ -741,8 +741,8 @@ def test_colisao_numa_copia_entre_volumes_nao_apaga_o_intruso(local, tmp_path, m
     real = relocation._copy_tree_verified
     chamadas = {"n": 0}
 
-    def copiar_e_intrometer(origem_item, destino_item):
-        real(origem_item, destino_item)
+    def copiar_e_intrometer(origem_item, destino_item, on_created=None):
+        real(origem_item, destino_item, on_created=on_created)
         chamadas["n"] += 1
         if chamadas["n"] == 1:
             alvo.write_text("INTRUSO", encoding="utf-8")
@@ -770,14 +770,15 @@ def test_queda_durante_a_copia_e_retomada_preserva_o_intruso(local, tmp_path, mo
     real = relocation._copy_tree_verified
     chamadas = {"n": 0}
 
-    def copiar_e_cair(origem_item, destino_item):
+    def copiar_e_cair(origem_item, destino_item, on_created=None):
         chamadas["n"] += 1
         if chamadas["n"] == 3:
-            Path(destino_item).write_bytes(b"pela metade")  # a cópia começou e caiu
+            Path(destino_item).write_bytes(b"pela metade")  # a cópia criou o destino e caiu
+            on_created()
             # Um arquivo de outro no destino de um item que ainda não começou.
             (nova / plano.carried[-1]).write_text("de outro", encoding="utf-8")
             raise _Queda()
-        return real(origem_item, destino_item)
+        return real(origem_item, destino_item, on_created=on_created)
 
     monkeypatch.setattr(relocation, "_copy_tree_verified", copiar_e_cair)
     monkeypatch.setattr(relocation, "_undo", lambda journal: (_ for _ in ()).throw(_Queda()))
@@ -907,3 +908,155 @@ def test_origem_vazia_nunca_e_removida_e_retomada_tolera(local, tmp_path, monkey
 
     assert relocation.recover(saida2)
     assert find_project(entrada2.id).output_folder == plano.new
+
+
+# --- rodada de correções 2 ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("nome", ["Acervo #1", "Acervo%20Dois", "Acervo #2%41"])
+def test_caminho_com_cerquilha_ou_percentual_nao_cria_arquivo_nem_perde_converted(local, tmp_path, nome):
+    """A URI de só leitura do SQLite é escapada: `#` não corta o caminho (o
+    que abria o banco truncado em leitura e escrita e criava um arquivo vazio
+    ao lado da origem) e `%20` não é decodificado."""
+    origem = tmp_path / nome
+    saida = origem / "saida"
+    _criar(origem, saida)
+    _gerados(saida)
+    antes = sorted(p.name for p in tmp_path.iterdir())
+
+    plano = relocation.build_plan(str(origem), str(saida))
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == antes  # nada criado ao lado
+    assert "converted" in plano.carried_folders
+    assert plano.mode == "rename"
+
+
+def test_describe_project_com_cerquilha_no_caminho(tmp_path):
+    from gclaude_indexer.project import describe_project
+
+    origem = tmp_path / "Acervo #1"
+    saida = origem / "saida"
+    origem.mkdir()
+    conn, _ = create_project(ProjectConfig(name="P", source_folder=str(origem), output_folder=str(saida)))
+    conn.close()
+    antes = sorted(p.name for p in tmp_path.iterdir())
+    resumo = describe_project(saida)
+    assert resumo is not None and resumo.name == "P"
+    assert sorted(p.name for p in tmp_path.iterdir()) == antes
+
+
+def test_uri_de_so_leitura_escapa_e_aceita_unc():
+    assert paths.sqlite_readonly_uri(r"C:\A #1\x%20y\project.db") == "file:///C:/A%20%231/x%2520y/project.db?mode=ro"
+    assert paths.sqlite_readonly_uri(r"\\srv\share\p.db").startswith("file:////srv/share/")
+
+
+def _projeto_com_tres_arquivos(tmp_path):
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    for nome in ("index.md", "timeline.md", "buscar.bat"):
+        (saida / nome).write_text(nome, encoding="utf-8")
+    return origem, saida, entrada
+
+
+def test_intruso_entre_a_conferencia_e_a_criacao_fica(local, tmp_path, monkeypatch):
+    """Revisão: o arquivo aparece no destino depois de anotado `started` e
+    antes do `xb`. A criação exclusiva falha e o desfazer não o toca."""
+    origem, saida, _ = _projeto_com_tres_arquivos(tmp_path)
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    plano = relocation.build_plan(str(origem), str(saida))
+    alvo = Path(plano.new) / plano.carried[1]
+    gravar = relocation._write_journal
+
+    def gravar_e_intrometer(journal):
+        gravar(journal)
+        ops = journal.get("ops", [])
+        if len(ops) > 1 and ops[1].get("started") and not alvo.exists():
+            alvo.write_text("INTRUSO", encoding="utf-8")
+
+    monkeypatch.setattr(relocation, "_write_journal", gravar_e_intrometer)
+    with pytest.raises(relocation.RelocationError):
+        relocation.execute(plano)
+    assert alvo.read_text(encoding="utf-8") == "INTRUSO"
+    assert (saida / plano.carried[1]).is_file() and (saida / "project.db").is_file()
+
+
+def test_queda_depois_de_started_e_intruso_antes_da_retomada(local, tmp_path, monkeypatch):
+    origem, saida, entrada = _projeto_com_tres_arquivos(tmp_path)
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    plano = relocation.build_plan(str(origem), str(saida))
+    alvo = Path(plano.new) / plano.carried[1]
+    gravar = relocation._write_journal
+
+    def gravar_e_cair(journal):
+        gravar(journal)
+        ops = journal.get("ops", [])
+        if len(ops) > 1 and ops[1].get("started"):
+            raise _Queda()
+
+    monkeypatch.setattr(relocation, "_write_journal", gravar_e_cair)
+    monkeypatch.setattr(relocation, "_undo", lambda journal: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+    assert relocation.pending_for(saida) is not None
+    alvo.write_text("INTRUSO", encoding="utf-8")
+
+    assert relocation.recover(saida)
+    assert alvo.read_text(encoding="utf-8") == "INTRUSO"
+    assert not (Path(plano.new) / plano.carried[0]).exists()  # a cópia nossa (criada) saiu
+    assert find_project(entrada.id).output_folder == str(saida)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="junção é do Windows")
+def test_juncao_acima_da_saida_nao_e_seguida(local, tmp_path):
+    import subprocess
+
+    origem = tmp_path / "Acervo"
+    origem.mkdir()
+    fora = tmp_path / "fora"
+    real = fora / "saida"
+    fora.mkdir()
+    conn, _ = create_project(ProjectConfig(name="P", source_folder=str(origem), output_folder=str(real)))
+    conn.close()
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(origem / "link"), str(fora)], check=True, capture_output=True)
+    escrito = origem / "link" / "saida"
+    assert relocation.output_inside_source(str(origem), str(escrito))
+
+    with pytest.raises(relocation.RelocationError) as erro:
+        relocation.build_plan(str(origem), str(escrito))
+    assert erro.value.key == "relocation.error.link"
+    assert (real / "project.db").is_file()
+
+
+def test_pasta_antiga_fora_do_ar_depois_da_confirmacao_nao_conclui(local, tmp_path, monkeypatch):
+    """Cópia entre volumes confirmada, e a unidade da origem sai do ar antes
+    de apagar os originais: a retomada espera, em vez de largar tudo lá."""
+    origem = tmp_path / "Unidade" / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    _gerados(saida)
+    (saida / "meu.txt").write_text("u", encoding="utf-8")
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    nova_base = tmp_path / "Outra"
+    nova_base.mkdir()
+    plano = relocation.build_plan(str(origem), str(saida), destination=str(nova_base / "Acervo-AI"))
+    monkeypatch.setattr(relocation, "_rewrite_project_paths", lambda *a: (_ for _ in ()).throw(_Queda()))
+    # A queda vem já na limpeza: força-a antes de apagar os originais.
+    monkeypatch.setattr(relocation, "_remove_tree", lambda *a: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+    assert relocation.pending_for(saida)["phase"] == "committed"
+
+    fora_do_ar = tmp_path / "Unidade-desmontada"
+    (tmp_path / "Unidade").rename(fora_do_ar)
+    assert not relocation.recover(saida)
+    assert relocation.pending_for(saida) is not None
+
+    fora_do_ar.rename(tmp_path / "Unidade")
+    assert relocation.recover(saida)
+    assert not (saida / "project.db").exists() and (saida / "meu.txt").is_file()
+    assert find_project(entrada.id).output_folder == plano.new
