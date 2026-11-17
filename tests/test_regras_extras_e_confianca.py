@@ -72,18 +72,30 @@ def test_caixa_de_regras_extras_salva_e_aparece_nas_instrucoes(tmp_path, monkeyp
     assert "Sempre cite o número do processo." in resposta.text
     assert _regras_gravadas(pasta) == "Sempre cite o número do processo."
 
-    # Sem regras, a seção some do arquivo gerado.
-    from gclaude_indexer.project import load_project as abrir
-    config, conn = abrir(pasta)
+
+
+def test_endpoint_reescreve_o_arquivo_e_a_secao_some_ao_limpar(tmp_path, monkeypatch):
+    """Confere o arquivo que o próprio endpoint regenera, sem objetos velhos."""
     from gclaude_indexer.artifacts import generate_project_instructions_md
+
+    cliente, pid, pasta = _web(tmp_path, monkeypatch)
+    config, conn = load_project(pasta)
     caminho = generate_project_instructions_md(conn, config, "pt")
-    assert "Sempre cite o número do processo." in generated_part(caminho)
-    cliente.post(f"/projects/{pid}/instructions/extra-rules", data={"extra_rules": "  "}, headers=HEADERS)
-    config.extra_rules = ""
-    generate_project_instructions_md(conn, config, "pt")
     conn.close()
+    titulo = translate("pt", "artifact.project_instructions.extra_rules_section")
+    assert titulo not in generated_part(caminho)
+
+    cliente.post(
+        f"/projects/{pid}/instructions/extra-rules",
+        data={"extra_rules": "Sempre cite o número do processo."}, headers=HEADERS,
+    )
     bloco = generated_part(caminho)
-    assert translate("pt", "artifact.project_instructions.extra_rules_section") not in bloco
+    assert titulo in bloco and "Sempre cite o número do processo." in bloco
+
+    cliente.post(f"/projects/{pid}/instructions/extra-rules", data={"extra_rules": "  "}, headers=HEADERS)
+    assert _regras_gravadas(pasta) == ""
+    bloco = generated_part(caminho)
+    assert titulo not in bloco and "Sempre cite o número do processo." not in bloco
 
 
 def test_regras_acima_do_teto_sao_recusadas_sem_cortar(tmp_path, monkeypatch):
@@ -123,5 +135,5 @@ def test_limpeza_de_repeticao_ainda_move_regras_para_a_config(tmp_path, monkeypa
         data={"action": "remove", "fingerprint": impressao, "move": candidatos}, headers=HEADERS,
     )
     assert resposta.status_code == 200
-    if candidatos:
-        assert _regras_gravadas(pasta).strip()
+    assert candidatos, "a cópia da fixture deveria oferecer ao menos uma regra para mover"
+    assert _regras_gravadas(pasta).strip()
