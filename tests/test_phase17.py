@@ -390,6 +390,43 @@ def test_atualizacao_que_falha_nao_deixa_aviso_de_nao_conferidos(tmp_path, monke
     ).fetchone()[0] == 0
 
 
+def test_banco_ocupado_no_aviso_da_execucao_nao_derruba_a_atualizacao(tmp_path, monkeypatch):
+    """Revisão cumulativa, ajuste 1: a atualização automática da execução
+    (`apply_pending_changes`) também grava o aviso só depois de `_apply`, e
+    um banco ocupado nele não derruba a etapa de varredura."""
+    from gclaude_indexer import invalidation
+
+    conn, config, _ = _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch)
+    registrar_real = invalidation.record_event
+
+    def _registrar_evento(c, source, level, key, *a, **k):
+        if key == "log.update.unverified":
+            raise sqlite3.OperationalError("database is locked")
+        return registrar_real(c, source, level, key, *a, **k)
+
+    monkeypatch.setattr(invalidation, "record_event", _registrar_evento)
+    invalidation.apply_pending_changes(conn, config, language="pt-BR")
+    linha = conn.execute("SELECT status FROM file WHERE relative_path = 'b.pdf'").fetchone()
+    assert linha["status"] == "discovered"
+    assert not conn.in_transaction
+
+
+def test_atualizacao_da_execucao_que_falha_nao_deixa_aviso(tmp_path, monkeypatch):
+    from gclaude_indexer import invalidation
+
+    conn, config, _ = _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch)
+
+    def _falha(*_a, **_k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(invalidation, "_apply", _falha)
+    with pytest.raises(sqlite3.OperationalError):
+        invalidation.apply_pending_changes(conn, config, language="pt-BR")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.update.unverified'"
+    ).fetchone()[0] == 0
+
+
 def test_a_extracao_so_avisa_se_a_varredura_nao_avisou_na_mesma_execucao(monkeypatch):
     """Achado 4: a execução que começa na extração avisa; a que passou pela
     varredura (mesma cadeia, mesmo `StopSignal.run_state`) não repete."""
