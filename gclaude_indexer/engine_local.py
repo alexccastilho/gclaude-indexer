@@ -956,7 +956,9 @@ _PAGE_FIELDS = '"subject", "type" e "detail"'
 
 def _language_note(pages: list[WindowPage], fields: str) -> str:
     languages, main = language_detect.majority_language([page.text for page in pages])
-    if main is None:
+    # Português é o idioma do próprio prompt: a janela em português fica com
+    # o prompt de sempre (sem ~70 tokens a mais em todo acervo que já existia).
+    if main is None or main == "pt":
         return ""
     name = language_detect.language_name(main)
     others = [language_detect.language_name(code) for code in languages[1:3]]

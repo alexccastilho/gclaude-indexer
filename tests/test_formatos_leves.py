@@ -497,7 +497,7 @@ def test_cbz_sem_texto_passa_pelo_ocr_das_paginas(tmp_path, monkeypatch):
         z.writestr("2.png", imagem.getvalue())
     pedidos = []
 
-    def _ocr_falso(origem_pdf, destino, idioma, jobs=1, pages=None):
+    def _ocr_falso(origem_pdf, destino, idioma, jobs=1, pages=None, rotate=False):
         pedidos.append((Path(origem_pdf).name, idioma, pages))
         shutil.copyfile(origem_pdf, destino)
 
