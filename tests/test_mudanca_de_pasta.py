@@ -1060,3 +1060,38 @@ def test_pasta_antiga_fora_do_ar_depois_da_confirmacao_nao_conclui(local, tmp_pa
     assert relocation.recover(saida)
     assert not (saida / "project.db").exists() and (saida / "meu.txt").is_file()
     assert find_project(entrada.id).output_folder == plano.new
+
+
+# --- rodada de correções 3 ---------------------------------------------------------
+
+
+def test_pasta_inteira_entre_volumes_com_origem_fora_do_ar_nao_conclui(local, tmp_path, monkeypatch):
+    """Troca da pasta inteira para outro volume (cópia), queda depois da
+    confirmação ao apagar os originais, e a unidade antiga sai do ar: a
+    retomada espera; com a unidade de volta, conclui e não sobra o projeto
+    antigo na origem."""
+    origem = tmp_path / "Unidade" / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    for nome in ("index.md", "timeline.md", "buscar.bat"):
+        (saida / nome).write_text(nome, encoding="utf-8")
+    monkeypatch.setattr(relocation, "_same_volume", lambda a, b: False)
+    (tmp_path / "Outra").mkdir()
+    plano = relocation.build_plan(str(origem), str(saida), destination=str(tmp_path / "Outra" / "Acervo-AI"))
+    assert plano.mode == "rename" and not plano.same_volume
+    monkeypatch.setattr(relocation, "_remove_tree", lambda *a: (_ for _ in ()).throw(_Queda()))
+    with pytest.raises(_Queda):
+        relocation.execute(plano)
+    monkeypatch.undo()
+    _religar(monkeypatch, local, tmp_path)
+    assert relocation.pending_for(saida)["phase"] == "committed"
+
+    fora_do_ar = tmp_path / "Unidade-desmontada"
+    (tmp_path / "Unidade").rename(fora_do_ar)
+    assert not relocation.recover(saida)
+    assert relocation.pending_for(saida) is not None
+
+    fora_do_ar.rename(tmp_path / "Unidade")
+    assert relocation.recover(saida)
+    assert not (saida / "project.db").exists()
+    assert find_project(entrada.id).output_folder == plano.new
