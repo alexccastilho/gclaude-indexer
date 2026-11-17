@@ -333,6 +333,63 @@ def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
     assert linha["mtime"] == 1.0
 
 
+def _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch):
+    """`a.pdf` não pode ser lido (sem rede); `b.pdf` mudou de verdade."""
+    from gclaude_indexer import update_plan
+
+    update_plan._forget_reads()
+    conn, config = _plano_com_data_mexida(tmp_path)
+    (Path(config.source_folder) / "b.pdf").write_text("b novo", encoding="utf-8")
+    _registrar(conn, "b.pdf", "b", 1.0)
+    hash_real = update_plan.compute_hash
+
+    def _hash(caminho):
+        if caminho.name == "a.pdf":
+            raise OSError(22, "Invalid argument")
+        return hash_real(caminho)
+
+    monkeypatch.setattr(update_plan, "compute_hash", _hash)
+    visto = update_plan.build_update_plan(conn, config, record_warnings=False)
+    assert visto.unverified == ("a.pdf",) and [c.relative_path for c in visto.changed] == ["b.pdf"]
+    return conn, config, update_plan.UpdatePlan.witness(visto.fingerprint)
+
+
+def test_banco_ocupado_no_aviso_de_nao_conferidos_nao_impede_a_atualizacao(tmp_path, monkeypatch):
+    """Rodada final, item 4: o aviso sai depois da atualização confirmada,
+    e um banco ocupado nele não a derruba."""
+    from gclaude_indexer import invalidation
+
+    conn, config, testemunha = _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch)
+    registrar_real = invalidation.record_event
+
+    def _registrar_evento(c, source, level, key, *a, **k):
+        if key == "log.update.unverified":
+            raise sqlite3.OperationalError("database is locked")
+        return registrar_real(c, source, level, key, *a, **k)
+
+    monkeypatch.setattr(invalidation, "record_event", _registrar_evento)
+    invalidation.apply_update_plan(conn, config, testemunha, "pt-BR")
+    linha = conn.execute("SELECT status FROM file WHERE relative_path = 'b.pdf'").fetchone()
+    assert linha["status"] == "discovered"
+    assert not conn.in_transaction
+
+
+def test_atualizacao_que_falha_nao_deixa_aviso_de_nao_conferidos(tmp_path, monkeypatch):
+    from gclaude_indexer import invalidation
+
+    conn, config, testemunha = _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch)
+
+    def _falha(*_a, **_k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(invalidation, "_apply", _falha)
+    with pytest.raises(sqlite3.OperationalError):
+        invalidation.apply_update_plan(conn, config, testemunha, "pt-BR")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.update.unverified'"
+    ).fetchone()[0] == 0
+
+
 def test_a_extracao_so_avisa_se_a_varredura_nao_avisou_na_mesma_execucao(monkeypatch):
     """Achado 4: a execução que começa na extração avisa; a que passou pela
     varredura (mesma cadeia, mesmo `StopSignal.run_state`) não repete."""

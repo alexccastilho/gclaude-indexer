@@ -410,8 +410,15 @@ def apply_update_plan(
     if current.fingerprint != plan.fingerprint:
         raise PlanExpired(plan.fingerprint)
 
-    _warn_unverified(conn, current, language)
-    return _apply(conn, config, current, language)
+    result = _apply(conn, config, current, language)
+    # Depois da atualização confirmada, como as linhas de log do próprio
+    # `_apply`: um banco ocupado no aviso não desfaz nem derruba o que já
+    # foi gravado, e uma atualização que falhou não deixa aviso.
+    try:
+        _warn_unverified(conn, current, language)
+    except (sqlite3.Error, OSError):
+        pass
+    return result
 
 
 def _warn_unverified(conn: sqlite3.Connection, plan: UpdatePlan, language: str | None) -> None:
