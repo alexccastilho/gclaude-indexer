@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('relocation.title') }} · {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('relocation.title') }}</h1>
+<p class="breadcrumb"><a href="/projects">{{ m.icon('back') }} {{ t('relocation.back') }}</a></p>
+
+{% if error_key %}
+<div class="errors" role="alert">
+  {{ m.icon('warning') }}
+  <p style="margin:0">{{ t(error_key, **error_params) }}</p>
+</div>
+{% endif %}
+
+<p>{{ t('relocation.intro') }}</p>
+
+<table class="relocation-paths">
+  <tr><th scope="row">{{ t('relocation.source') }}</th><td><code>{{ source_folder }}</code></td></tr>
+  <tr><th scope="row">{{ t('relocation.current') }}</th><td><code>{{ project.output_folder }}</code></td></tr>
+  {% if destination %}
+  <tr><th scope="row">{{ t('relocation.destination') }}</th><td><code>{{ destination }}</code></td></tr>
+  {% endif %}
+</table>
+
+{% if plan %}
+<h2>{{ t('relocation.what_moves') }}</h2>
+<p>{% if plan.mode == 'rename' %}{{ t('relocation.mode_rename') }}{% else %}{{ t('relocation.mode_items', kept=plan.kept) }}{% endif %}</p>
+<ul class="relocation-items">
+  {% for name in plan.carried %}<li><code>{{ name }}</code></li>{% endfor %}
+</ul>
+{% if plan.copied_instructions %}
+<p>{{ t('relocation.copied_instructions') }}</p>
+<ul class="relocation-items">
+  {% for name in plan.copied_instructions %}<li><code>{{ name }}</code></li>{% endfor %}
+</ul>
+{% endif %}
+{% if plan.dropped %}
+<p>{{ t('relocation.dropped') }}</p>
+<ul class="relocation-items">
+  {% for name in plan.dropped %}<li><code>{{ name }}</code></li>{% endfor %}
+</ul>
+{% endif %}
+{% if not plan.same_volume %}
+<p>{{ t('relocation.cross_volume', size=plan_size) }}</p>
+{% endif %}
+<p class="help">{{ t('relocation.also_updated') }}</p>
+<div class="relocation-warning" role="note">
+  {{ m.icon('warning') }}
+  <p>{{ t('relocation.before_moving') }}</p>
+</div>
+{% elif plan_error_key %}
+<div class="errors" role="alert">
+  {{ m.icon('warning') }}
+  <p style="margin:0"><strong>{{ t('relocation.cannot_move') }}.</strong> {{ t(plan_error_key, **plan_error_params) }}</p>
+</div>
+{% endif %}
+
+<div class="relocation-warning" role="note">
+  {{ m.icon('warning') }}
+  <p>{{ t('relocation.postpone_risks') }}</p>
+</div>
+{% if postponed %}<p class="help">{{ t('relocation.postponed_note') }}</p>{% endif %}
+
+<div class="actions">
+  {% if plan %}
+  <form method="post" action="/projects/{{ project.id }}/relocate" data-activity="{{ t('relocation.move') }}">
+    <button type="submit" class="button button-primary">{{ t('relocation.move_now') }}</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/projects/{{ project.id }}/relocate/postpone" data-no-wait>
+    <button type="submit" class="button">{{ t('relocation.postpone') }}</button>
+  </form>
+</div>
+{% endblock %}

@@ -19,6 +19,8 @@
      hx-trigger="load"
      hx-swap="innerHTML"><p class="help">{{ t('update.checking') }}</p></div>
 
+{% if relocation_banner %}{% include "_relocation_banner.html" %}{% endif %}
+
 {% if instructions_dedup %}
 <div id="instructions-dedup" class="notice" role="status">
   <p>{{ t('instructions.dedup.notice') }}
