@@ -44,6 +44,17 @@ def _idioma_do_ocr_sem_internet(monkeypatch):
         raise OSError(f"teste sem rede: {url}")
 
     monkeypatch.setattr(components, "_open_url", _sem_rede)
+
+    # 2.0.0 (Tarefa 12): a detecção de idioma antes do OCR roda o OSD do
+    # Tesseract da máquina quando o `osd` está presente. Os testes partem de
+    # "sem OSD" (o idioma vem do texto nativo, do grupo ou do projeto) e com
+    # todo idioma do manifesto "presente": o OCR é simulado. Quem testa a
+    # detecção troca isto no próprio teste. Vale também para os processos do
+    # conjunto, que recebem a lista pronta do processo principal.
+    from gclaude_indexer.language_detect import TESSERACT_CODES
+
+    todos = frozenset(TESSERACT_CODES.values()) | {"eng", "por", "spa", "chi_tra"}
+    monkeypatch.setattr(ocr_languages, "present_models", lambda _exe: todos)
     atual = os.environ.get("TESSDATA_PREFIX")
     if atual is None:
         # setenv first: it records "absent" so the teardown removes a value

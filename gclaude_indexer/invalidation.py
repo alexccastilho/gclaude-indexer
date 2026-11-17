@@ -572,9 +572,10 @@ def _apply(
             # output on disk is stale and OCR has to run again. This is
             # the expensive half of the update, and the only half that
             # should be expensive.
+            # The language is the content's, so it goes with the old bytes.
             conn.execute(
                 "UPDATE file SET status = 'discovered', page_count = NULL,"
-                " error = NULL WHERE id = ?",
+                " error = NULL, ocr_lang = NULL, language = NULL WHERE id = ?",
                 (file_id,),
             )
             result.files_reset += 1

@@ -29,7 +29,10 @@ import unicodedata
 from collections import Counter, defaultdict
 
 from . import planalto
+from .language_detect import script_of
 from .windows_prep import pages_for_group
+
+_ACCENTED_SCRIPTS = frozenset({"latin", "greek", "cyrillic", None})
 
 BLANK_PAGE_TYPE = "PÁGINA EM BRANCO"
 _BLANK_MARKERS = ("página em branco", "pagina em branco", "página vazia", "pagina vazia")
@@ -38,7 +41,18 @@ _BLANK_MARKERS = ("página em branco", "pagina em branco", "página vazia", "pag
 def _plain(text: str) -> str:
     """Upper case without accents: the key two spellings share."""
     decomposed = unicodedata.normalize("NFD", text.upper())
-    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
+    kept = []
+    base_script = None
+    for char in decomposed:
+        if unicodedata.category(char) != "Mn":
+            base_script = script_of(char)
+            kept.append(char)
+        elif base_script not in _ACCENTED_SCRIPTS:
+            # 2.0.0: fora das escritas de acento (latina, grega, cirílica) a
+            # marca é parte da letra — o dakuten do japonês (ガ/カ), as vogais
+            # do híndi — e tirá-la juntaria tipos diferentes.
+            kept.append(char)
+    return "".join(kept)
 
 
 def _spellings(values) -> dict[str, str]:

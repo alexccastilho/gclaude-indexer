@@ -33,6 +33,15 @@ what it found is struck — revoked, in legislation.
 Indexing runs at the end of the extraction step, in batches committed every
 few seconds, so it resumes where it stopped. Classification is not
 involved: this costs disk, not model time.
+
+2.0.0: Chinese, Japanese, Korean, Thai… have no spaces between words, and
+`unicode61` reads a whole paragraph of them as one word. A passage written
+mostly in one of those scripts also goes into `fulltext_trigram` (any
+three characters in a row are found), under the same rowid, and a search
+with such characters queries both tables (`search`). Terms of one or two
+characters (most Chinese words) go to `LIKE` on that table, which the
+trigram index cannot answer. Without the `trigram` tokenizer (SQLite older
+than 3.34) the same terms are found by `LIKE` on `fulltext`, more slowly.
 """
 
 from __future__ import annotations
@@ -46,7 +55,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import language_detect
 from .config import ProjectConfig
+from .db import trigram_available
 from .events import record_event
 from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_whole_document_file
 from .parallelism import io_workers_for
@@ -264,6 +275,9 @@ def remove_file(conn: sqlite3.Connection, file_id: int) -> None:
         conn.execute("DELETE FROM fulltext WHERE file_id = ?", (file_id,))
     elif last >= first:
         conn.execute("DELETE FROM fulltext WHERE rowid BETWEEN ? AND ?", (first, last))
+        if trigram_available(conn):
+            # Mesmos rowids: a faixa vale para as duas tabelas.
+            conn.execute("DELETE FROM fulltext_trigram WHERE rowid BETWEEN ? AND ?", (first, last))
     conn.execute("DELETE FROM fulltext_file WHERE file_id = ?", (file_id,))
 
 
@@ -284,19 +298,62 @@ def _store_passages(conn: sqlite3.Connection, row, passages) -> int:
     # `passages` pode ser preguiçoso (`MessagePassages`): inserido conforme
     # sai, contado no caminho, sem lista intermediária.
     count = 0
+    unspaced: list[tuple[int, str]] = []
+    with_trigram = trigram_available(conn)
 
     def rows():
         nonlocal count
         for p in passages:
-            yield (first + count, p.text, row["id"], p.locator, p.line)
+            rowid = first + count
+            if with_trigram and language_detect.is_unspaced(p.text):
+                unspaced.append((rowid, trigram_text(p.text)))
+            yield (rowid, p.text, row["id"], p.locator, p.line)
             count += 1
 
     conn.executemany("INSERT INTO fulltext (rowid, text, file_id, locator, line) VALUES (?, ?, ?, ?, ?)", rows())
+    if unspaced:
+        conn.executemany("INSERT INTO fulltext_trigram (rowid, text) VALUES (?, ?)", unspaced)
     conn.execute(
         "INSERT INTO fulltext_file (file_id, first_rowid, last_rowid) VALUES (?, ?, ?)",
         (row["id"], first, first + count - 1),
     )
     return count
+
+
+def trigram_text(text: str) -> str:
+    """O texto de um trecho como vai para a `fulltext_trigram`: sem o espaço
+    que o OCR põe entre ideogramas ("东京 都" → "东京都")."""
+    return language_detect.collapse_unspaced_spaces(text)
+
+
+# Filtro grosso, em C, do `backfill_trigram`: trecho com algum caractere de
+# escrita sem espaço (tailandesa, laosiana, birmanesa, khmer, kana, han, hangul).
+_UNSPACED_GLOB = "*[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]*"
+
+
+def backfill_trigram(conn: sqlite3.Connection) -> int:
+    """Copia para a `fulltext_trigram` os trechos de escrita sem espaço que um
+    projeto anterior à 2.0.0 já tinha na `fulltext` (uma vez só; o marcador
+    é de `db._ensure_fulltext_trigram_table`). O `GLOB` deixa para o Python
+    só os trechos com algum desses caracteres."""
+    if not trigram_available(conn):
+        return 0
+    state = conn.execute("SELECT backfilled FROM fulltext_trigram_state WHERE id = 1").fetchone()
+    if state is None or state[0]:
+        return 0
+    batch = []
+    try:
+        for rowid, text in conn.execute("SELECT rowid, text FROM fulltext WHERE text GLOB ?", (_UNSPACED_GLOB,)):
+            if language_detect.is_unspaced(text):
+                batch.append((rowid, trigram_text(text)))
+        conn.execute("DELETE FROM fulltext_trigram")
+        conn.executemany("INSERT INTO fulltext_trigram (rowid, text) VALUES (?, ?)", batch)
+        conn.execute("UPDATE fulltext_trigram_state SET backfilled = 1 WHERE id = 1")
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+    return len(batch)
 
 
 def pending_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -326,6 +383,7 @@ def index_pending(
 
     started = time.monotonic()
     result = IndexingResult()
+    backfill_trigram(conn)
     rows = pending_files(conn)
     # One commit per batch (`BatchWriter`; 1.5.9: every 3 s),
     # not per file — on a Drive-synced database each commit costs a round
@@ -417,6 +475,8 @@ def fts_query(text: str) -> str:
 
 def search(conn: sqlite3.Connection, text: str, limit: int = 50, offset: int = 0) -> tuple[list[SearchHit], int]:
     """`(hits, total)` for the user's words, best match first."""
+    if language_detect.has_unspaced(text):
+        return _search_unspaced(conn, text, limit, offset)
     query = fts_query(text)
     if not query:
         return [], 0
@@ -443,6 +503,127 @@ def search(conn: sqlite3.Connection, text: str, limit: int = 50, offset: int = 0
         for row in rows
     ]
     return hits, total
+
+
+# Um trigrama tem três caracteres: termo mais curto não usa o índice.
+_TRIGRAM_MIN = 3
+_SNIPPET_RADIUS = 80
+_LIKE = "text LIKE ? ESCAPE '!'"
+
+
+def _search_terms(text: str) -> list[str]:
+    """As palavras (ou "frases") do usuário, sem os operadores do FTS5 e sem
+    o espaço entre ideogramas (como o texto gravado na `fulltext_trigram`)."""
+    terms = []
+    for phrase, word in _FTS_TOKEN.findall(text):
+        clean = trigram_text(_FTS_UNSAFE.sub(" ", phrase or word).strip())
+        if phrase:
+            if clean:
+                terms.append(clean)
+        else:
+            terms.extend(part for part in clean.split() if part)
+    return terms
+
+
+def _like_pattern(term: str) -> str:
+    return "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+
+
+def _search_unspaced(conn: sqlite3.Connection, text: str, limit: int, offset: int) -> tuple[list[SearchHit], int]:
+    """Busca com caracteres de escrita sem espaço: a união, sem repetir
+    trecho, do que a `fulltext` acha pelas palavras e do que a
+    `fulltext_trigram` acha por sequência de caracteres. Todos os termos têm
+    de aparecer no trecho. Uma consulta só (`UNION ALL` agrupado por rowid),
+    para que o total, o `LIMIT` e o `OFFSET` contem o mesmo conjunto."""
+    terms = _search_terms(text)
+    if not terms:
+        return [], 0
+    query = fts_query(text)
+    long_terms = [term for term in terms if len(term) >= _TRIGRAM_MIN]
+    short_terms = [term for term in terms if len(term) < _TRIGRAM_MIN]
+    parts: list[str] = []
+    params: list = []
+    if query:
+        parts.append("SELECT rowid AS id, rank AS score FROM fulltext WHERE fulltext MATCH ?")
+        params.append(query)
+    if trigram_available(conn):
+        where: list[str] = []
+        if long_terms:
+            where.append("fulltext_trigram MATCH ?")
+            params.append(" ".join('"' + term.replace('"', " ") + '"' for term in long_terms))
+        for term in short_terms:
+            where.append(_LIKE)
+            params.append(_like_pattern(term))
+        score = "rank" if long_terms else "0"
+        parts.append(f"SELECT rowid AS id, {score} AS score FROM fulltext_trigram WHERE " + " AND ".join(where))
+    else:
+        # Sem o tokenizador `trigram`: substring na tabela principal (lê tudo).
+        parts.append("SELECT rowid AS id, 0 AS score FROM fulltext WHERE " + " AND ".join(_LIKE for _ in terms))
+        params.extend(_like_pattern(term) for term in terms)
+    union = " UNION ALL ".join(parts)
+    matched = f"SELECT id, MIN(score) AS score FROM ({union}) GROUP BY id"
+    total = conn.execute(f"SELECT COUNT(*) FROM ({matched})", params).fetchone()[0]
+    rows = conn.execute(
+        f"""
+        SELECT fulltext.text AS text, fulltext.file_id, fulltext.locator, fulltext.line,
+               file.name, file.relative_path, file.group_key
+        FROM ({matched}) AS matched
+        JOIN fulltext ON fulltext.rowid = matched.id
+        JOIN file ON file.id = fulltext.file_id
+        ORDER BY matched.score, matched.id
+        LIMIT ? OFFSET ?
+        """,
+        [*params, limit, offset],
+    ).fetchall()
+    hits = []
+    for row in rows:
+        snippet = _snippet(row["text"], terms)
+        hits.append(SearchHit(
+            file_id=row["file_id"], name=row["name"], relative_path=row["relative_path"],
+            group_key=row["group_key"], locator=row["locator"] or "", line=row["line"] or 0,
+            snippet=snippet, struck=_hit_is_struck(snippet),
+        ))
+    return hits, total
+
+
+def _folded(text: str) -> str:
+    """Minúsculas e sem acento, um caractere por caractere (mesmo
+    comprimento do original), para achar nele a posição de um termo."""
+    import unicodedata
+
+    return "".join((unicodedata.normalize("NFKD", char)[:1] or char).lower()[:1] for char in text)
+
+
+def _snippet(text: str, terms: list[str]) -> str:
+    """O trecho em volta do primeiro termo achado, com as marcas de destaque
+    (`MATCH_START`/`MATCH_END`) em cada termo, como o `snippet()` do FTS5
+    devolve na busca por palavras."""
+    body = trigram_text(text)
+    folded = _folded(body)
+    needles = [needle for needle in (_folded(term) for term in terms) if needle]
+    found = [index for index in (folded.find(needle) for needle in needles) if index >= 0]
+    if not found:
+        return body[: 2 * _SNIPPET_RADIUS]
+    first = min(found)
+    start = max(0, first - _SNIPPET_RADIUS)
+    end = min(len(body), first + _SNIPPET_RADIUS)
+    window, folded_window = body[start:end], folded[start:end]
+    marks: list[tuple[int, int]] = []
+    for needle in needles:
+        index = folded_window.find(needle)
+        while index >= 0:
+            marks.append((index, index + len(needle)))
+            index = folded_window.find(needle, index + len(needle))
+    pieces = []
+    cursor = 0
+    for begin, finish in sorted(marks):
+        if begin < cursor:
+            continue
+        pieces.append(window[cursor:begin])
+        pieces.append(MATCH_START + window[begin:finish] + MATCH_END)
+        cursor = finish
+    pieces.append(window[cursor:])
+    return (" … " if start > 0 else "") + "".join(pieces) + (" … " if end < len(body) else "")
 
 
 def _hit_is_struck(snippet: str) -> bool:

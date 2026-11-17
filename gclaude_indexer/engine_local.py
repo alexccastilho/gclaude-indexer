@@ -40,7 +40,7 @@ from .gpu_budget import server_environment
 from .html_text import STRUCK_MARK
 from . import ollama_backend
 from .subprocess_utils import start_in_background
-from . import planalto
+from . import language_detect, planalto
 from .paths import machine_local_folder
 from .tools import find as find_tool
 
@@ -942,10 +942,42 @@ _STRUCK_TEXT_NOTE = (
 )
 
 
-def _prompt_context(pages: list[WindowPage], config: ProjectConfig | None) -> str:
+# 2.0.0: idioma por documento. O prompt continua em português (ver
+# `_PROMPT`), mas o tipo e o resumo de cada peça saem no idioma do próprio
+# documento: um contrato em alemão é indexado em alemão, como quem procura
+# nele o procuraria. O idioma é detectado aqui, página a página, a cada
+# janela: um `.pst` mistura mensagens em idiomas diferentes, e a janela
+# carrega as que tiver. Com mais de um idioma, vale o da maior parte.
+# Projetos antigos não são reescritos: só o que for classificado de agora em
+# diante segue esta regra.
+_MAIN_FIELDS = '"type" e "summary"'
+_PAGE_FIELDS = '"subject", "type" e "detail"'
+
+
+def _language_note(pages: list[WindowPage], fields: str) -> str:
+    languages, main = language_detect.majority_language([page.text for page in pages])
+    if main is None:
+        return ""
+    name = language_detect.language_name(main)
+    others = [language_detect.language_name(code) for code in languages[1:3]]
+    line = f"\nIdioma do texto desta janela: {name}"
+    if others:
+        line += f" na maior parte; também aparece {', '.join(others)}"
+    return (
+        line + ".\n"
+        f"Escreva {fields} em {name}, o idioma do documento, mesmo que estas "
+        "instruções estejam em português; quando a janela misturar idiomas, "
+        f"use o da maior parte ({name}). Nomes, números e citações ficam como "
+        "estão no texto. O tipo vai em MAIÚSCULAS só se a escrita do idioma "
+        "tiver maiúsculas.\n"
+    )
+
+
+def _prompt_context(pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS) -> str:
     context = build_context(config)
     if any(STRUCK_MARK in page.text for page in pages):
         context += _STRUCK_TEXT_NOTE
+    context += _language_note(pages, fields)
     return context
 
 
@@ -1084,7 +1116,7 @@ def _build_page_prompt(pages: list[WindowPage], config: ProjectConfig | None = N
         for numero, page in enumerate(pages, start=1)
     ]
     return _PAGE_PROMPT.format(
-        context=_prompt_context(pages, config), count=len(pages), text="\n\n".join(blocks)
+        context=_prompt_context(pages, config, _PAGE_FIELDS), count=len(pages), text="\n\n".join(blocks)
     )
 
 
@@ -1125,7 +1157,14 @@ def _same_topic_start(a: str, b: str, palavras: int = 2) -> bool:
     bloco B" (mesmo documento, redação diferente) de "Fundação" e "Cobertura"
     (documentos diferentes).
     """
-    return bool(a) and bool(b) and a.split()[:palavras] == b.split()[:palavras]
+    if not a or not b:
+        return False
+    if language_detect.is_unspaced(a) and language_detect.is_unspaced(b):
+        # Sem espaço entre as palavras (chinês, japonês…), "as duas primeiras
+        # palavras" seriam o assunto inteiro: valem os primeiros caracteres.
+        prefixo = 2 * palavras
+        return a.replace(" ", "")[:prefixo] == b.replace(" ", "")[:prefixo]
+    return a.split()[:palavras] == b.split()[:palavras]
 
 
 def _group_pages_into_items(

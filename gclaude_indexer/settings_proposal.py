@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 import random
-import re
 import statistics
 import time
 from collections import Counter
@@ -45,19 +44,6 @@ _TEXT_BYTES = 64 * 1024
 _MIN_AVG_CHARS_PER_PAGE = 100
 
 _MULTI_PAGE_CATEGORIES = {"pdf", "imagens", "paginados", "legados"}
-
-# A few hundred of the most frequent function words is enough to tell
-# Portuguese, Spanish and English apart on a page of text.
-_STOPWORDS = {
-    "por": {"de", "da", "do", "das", "dos", "que", "não", "para", "com", "uma", "os", "no", "na",
-            "ao", "à", "pelo", "pela", "são", "também", "será", "nos", "às", "seu", "sua", "ou", "em"},
-    "spa": {"de", "la", "el", "los", "las", "que", "no", "para", "con", "una", "del", "al", "por",
-            "es", "se", "su", "lo", "como", "más", "pero", "sus", "le", "ya", "este", "esta", "y"},
-    "eng": {"the", "of", "and", "to", "in", "is", "that", "for", "it", "with", "as", "was", "on",
-            "be", "by", "this", "are", "or", "from", "at", "which", "an", "have", "not", "shall"},
-}
-_WORD = re.compile(r"[a-zà-ÿ]+")
-
 
 @dataclass
 class FolderSurvey:
@@ -204,14 +190,18 @@ def _survey_text_files(found: dict[str, list[Path]]) -> list[str]:
 
 
 def _count_languages(texts: list[str], survey: FolderSurvey) -> None:
+    """Conta o idioma de cada texto amostrado, já no código do Tesseract
+    ("por", "deu", "chi_sim"…). 2.0.0: pelo detector de qualquer idioma
+    (`language_detect`), não mais por palavras frequentes de três idiomas."""
+    from .language_detect import detect_languages, tesseract_languages
+
     for text in texts:
-        words = _WORD.findall(text.lower())
-        if len(words) < 20:
+        found = detect_languages(text, max_languages=1)
+        if not found:
             continue
-        scores = {code: sum(w in stop for w in words) for code, stop in _STOPWORDS.items()}
-        best = max(scores, key=scores.get)
-        if scores[best]:
-            survey.language_counts[best] += 1
+        models = tesseract_languages(found, text, limit=1)
+        if models:
+            survey.language_counts[models[0]] += 1
 
 
 def survey_folder(folder: Path, categories: list[str]) -> FolderSurvey:

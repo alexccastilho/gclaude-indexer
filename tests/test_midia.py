@@ -186,10 +186,11 @@ def test_trechos_cortados_em_pausas_viram_paginas_com_intervalo_no_cabecalho(tmp
     assert comando[comando.index("-protocol_whitelist") + 1] == "file"
     assert "-nostdin" in comando and "0:a:0?" in comando and "-vn" in comando
     assert comando[comando.index("-ar") + 1] == "16000" and comando[comando.index("-ac") + 1] == "1"
-    # Nada sobra no disco, e o idioma fica ao lado do intermediário.
+    # Nada sobra no disco. Tarefa 12: o idioma vai para `file.language` (pela
+    # conversão), não mais para um `.idioma` ao lado do intermediário.
     assert not trabalho.exists()
     assert not list(destino.parent.glob("*.partial")) and not list(destino.parent.glob("*.progress"))
-    assert (destino.parent / "aula.mp3.txt.idioma").read_text(encoding="utf-8") == "pt"
+    assert not (destino.parent / "aula.mp3.txt.idioma").exists()
 
 
 def test_trecho_sem_fala_nao_gera_pagina_mas_o_horario_do_proximo_continua(tmp_path, sim):
@@ -388,10 +389,12 @@ def test_erro_no_aviso_de_estimativa_nao_derruba_o_arquivo(tmp_path, sim):
     assert _transcrever(tmp_path, on_estimate=quebra)[3].pages == 3
 
 
-def test_idioma_obsoleto_some_quando_a_nova_transcricao_nao_tem_idioma(tmp_path, sim):
+def test_sobra_do_idioma_ao_lado_do_intermediario_e_apagada(tmp_path, sim):
+    """Tarefa 12: o `.idioma` da versão anterior (antes da coluna
+    `file.language`) some na transcrição seguinte, com ou sem fala."""
     _arquivo, destino, _trabalho, _r = _transcrever(tmp_path)
     sidecar = destino.parent / "aula.mp3.txt.idioma"
-    assert sidecar.exists()
+    sidecar.write_text("pt", encoding="utf-8")
     sim.empty_chunks = {4, 5, 6}  # a segunda transcrição: nenhuma fala
     _transcrever(tmp_path)
     assert not sidecar.exists()
@@ -592,6 +595,8 @@ def test_conversao_extracao_e_busca_de_um_audio(tmp_path, sim, monkeypatch):
     avisos = [r["message"] for r in conn.execute("SELECT message FROM event")]
     assert any("transcrição local com o modelo small (CPU)" in a and "00:00:25 de áudio" in a for a in avisos), avisos
     assert any("idioma detectado na fala: pt" in a for a in avisos)
+    # Tarefa 12: o idioma da fala fica na coluna do arquivo, como o de um texto.
+    assert _arquivo(conn, "reunião.mp3")["language"] == "pt"
     # A busca devolve o trecho com o horário.
     achados = fulltext.passages_for_file(conn, config, _arquivo(conn, "reunião.mp3"))
     assert any("Segunda frase" in p.text and "[00:00:10" in p.text for p in achados)

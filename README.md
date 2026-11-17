@@ -93,6 +93,7 @@ What that means in practice: every page of the collection is in the index, even 
 ## Privacy
 
 - The documents are read, go through OCR and are classified only on your computer. During processing, no document, page or file name is sent over the network. The local model talks only to the Ollama on the same machine.
+- The language of each document is detected on your computer. When a document needs an OCR language or script model this computer does not have yet, the program downloads only that model, on demand, from a pinned list with the SHA-256 of every file (a file that does not match is refused); the request carries the name of the model, never document content. Without internet, the document is read with what is already here and redone once the model arrives.
 - The program listens only on your own machine (`127.0.0.1`) and accepts requests only from its own screens: a website open in the browser cannot give it orders.
 - The source folder is never changed. Everything the program produces goes to the output folder.
 - The project database (`project.db`) holds the text of the pages. If the collection has personal data, protect the output folder as you would protect the documents, including on Google Drive.

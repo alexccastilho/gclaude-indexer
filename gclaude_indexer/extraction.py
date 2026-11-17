@@ -35,8 +35,10 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
+from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
 from .conversion import converted_artifact_path
+from .language_detect import CJK_SCRIPTS, dominant_script
 from .db import BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
@@ -73,6 +75,19 @@ def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
     return config.chars_per_page if category in _PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
 
 
+def capped_text(text: str, limit: int) -> str:
+    """O texto de uma página cortado no limite (`chars_limit_for`). Página
+    escrita em chinês, japonês ou coreano tem um limite menor
+    (`auto_settings.CJK_CHARS_PER_PAGE`): cada caractere ali carrega o que
+    uma palavra carrega numa escrita alfabética, e 4000 caracteres de
+    ideogramas encheriam a janela do classificador sozinhos. Função só do
+    texto: extrair de novo dá o mesmo corte."""
+    head = text[:limit]
+    if limit > CJK_CHARS_PER_PAGE and dominant_script(head) in CJK_SCRIPTS:
+        return head[:CJK_CHARS_PER_PAGE]
+    return head
+
+
 @dataclass
 class ExtractionResult:
     files_processed: int = 0
@@ -90,7 +105,7 @@ def _read_pdf_pages(pdf_path: Path, limit: int) -> list[tuple[str, int, bool]]:
     try:
         pages = []
         for page in document:
-            text = page.get_text()[:limit]
+            text = capped_text(page.get_text(), limit)
             image_count = len(page.get_images(full=True))
             try:
                 has_table = len(page.find_tables().tables) > 0
@@ -123,7 +138,7 @@ class MessagePages:
 
     def __iter__(self):
         for part in light_formats.iter_pages(self.path):
-            yield (part[: self.limit], 0, False)
+            yield (capped_text(part, self.limit), 0, False)
 
 
 def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, bool]] | MessagePages":
@@ -161,7 +176,7 @@ def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, boo
         # carregado nem partido inteiro.
         return MessagePages(intermediate, limit)
 
-    text = intermediate.read_text(encoding="utf-8")[:limit]
+    text = capped_text(intermediate.read_text(encoding="utf-8"), limit)
 
     if category == "imagens":
         return [(text, 1, False)]
@@ -182,7 +197,7 @@ def _write_pages(conn, config: ProjectConfig, row, pages, start_sheet: int) -> i
 
     for index, (full_text, image_count, has_table) in enumerate(pages, start=1):
         sheet += 1
-        truncated_text = full_text[:limit]
+        truncated_text = capped_text(full_text, limit)
         reference = f"p. {index}" if library else f"f. {sheet}"
 
         conn.execute(
