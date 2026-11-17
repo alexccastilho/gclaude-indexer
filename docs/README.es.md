@@ -8,7 +8,7 @@ GClaude Indexer lee una carpeta llena de documentos en su computadora con Window
 
 ![GClaude Indexer en uso](media/demo-es.gif)
 
-*Un recorrido por el diseño Área de trabajo (2.0.0): los proyectos en la barra lateral, las pestañas de un proyecto, la paleta de comandos (Ctrl+K) que lleva a la búsqueda y el tema Estudio oscuro.*
+*Un recorrido por el diseño Área de trabajo (1.10.0): los proyectos en la barra lateral, las pestañas de un proyecto, la paleta de comandos (Ctrl+K) que lleva a la búsqueda y el tema Estudio oscuro.*
 
 ## Tres personas que lo usan
 
