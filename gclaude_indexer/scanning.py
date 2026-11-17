@@ -35,6 +35,7 @@ from .db import BatchWriter
 from .events import record_event
 from .file_types import (
     HEAD_BYTES,
+    REASON_COMPONENT_UNAVAILABLE,
     REASON_NOT_SELECTED,
     index_decision,
     is_extension_allowed,
@@ -99,7 +100,7 @@ def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig
 
 
 def _list_known_files(conn: sqlite3.Connection) -> tuple[set[str], dict[str, sqlite3.Row]]:
-    rows = conn.execute("SELECT relative_path, size, sha256, mtime, status FROM file").fetchall()
+    rows = conn.execute("SELECT relative_path, size, sha256, mtime, status, error FROM file").fetchall()
     # "" é o hash de quem foi ignorado sem ser lido: não identifica conteúdo.
     known_hashes = {row["sha256"] for row in rows if row["sha256"]}
     by_path = {row["relative_path"]: row for row in rows}
@@ -541,6 +542,19 @@ def _is_indexed_row(row) -> bool:
         return False
 
 
+def _is_waiting_component(row) -> bool:
+    """The stored row waits for a component (LibreOffice, ffmpeg/whisper)
+    that was missing when the conversion reached it (`conversion.py`)."""
+    try:
+        return (
+            row is not None
+            and row["status"] == "skipped"
+            and row["error"] == REASON_COMPONENT_UNAVAILABLE
+        )
+    except (KeyError, IndexError):
+        return False
+
+
 def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
     """Pages, full-text rows and converted intermediate of one file."""
     # Local imports: both modules import this one.
@@ -672,6 +686,28 @@ def _record_scanned_file(
         known_hashes.add(file_hash)
         known_paths[relative_path] = {
             "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
+        }
+        return
+
+    if _is_waiting_component(existing_row):
+        # Editado enquanto esperava o componente: só os bytes mudam aqui; o
+        # arquivo continua em espera (`status`, `error`, `ocr_failed`). Se
+        # virasse `discovered`, a conversão que obtém o componente na mesma
+        # execução poria as páginas dele no grupo sem que as janelas já
+        # feitas fossem descartadas — o que acontece quando a atualização
+        # automática antes da varredura não rodou (pasta inalcançável num
+        # instante, Parar). Quem o devolve à fila é a conversão, se o grupo
+        # não tem janelas (`requeue_ocr_failures`), ou o plano de
+        # atualização, com o componente presente, junto com as janelas.
+        writer.add(lambda c: c.execute(
+            "UPDATE file SET size = ?, sha256 = ?, mtime = ? WHERE relative_path = ?",
+            (size, file_hash, mtime, relative_path),
+        ))
+        result.updated += 1
+        known_hashes.add(file_hash)
+        known_paths[relative_path] = {
+            "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
+            "status": existing_row["status"], "error": existing_row["error"],
         }
         return
 
