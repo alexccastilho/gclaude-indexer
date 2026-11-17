@@ -202,3 +202,94 @@ def test_midia_avisa_cada_componente_que_vai_baixar():
     assert ferramentas is None and faltando
     assert [nome for nome, _ in avisos] == ["ffmpeg", "whisper-cpp"]
     assert all(tamanho > 1_000_000 for _, tamanho in avisos)
+
+
+# --- endereço de reserva (R1) ---------------------------------------------------
+
+
+def _com_reserva(dados: bytes) -> components.Component:
+    return replace(
+        _componente(dados),
+        url="https://estavel.invalid/modelo.bin",
+        fallback_urls=("https://arquivo.invalid/modelo.bin",),
+    )
+
+
+@pytest.mark.parametrize("primeiro", ["sem_rede", "bytes_errados", "maior"])
+def test_endereco_de_reserva_entra_quando_o_primeiro_falha(monkeypatch, primeiro):
+    dados = b"r" * (components._BLOCK + 7)
+    componente = _com_reserva(dados)
+    monkeypatch.setattr(components, "manifest", lambda: {"modelo": componente})
+    pedidos: list[str] = []
+
+    def _abrir(url):
+        pedidos.append(url)
+        if url == componente.url:
+            if primeiro == "sem_rede":
+                raise OSError("404")
+            if primeiro == "bytes_errados":
+                return _Resposta(b"x" * len(dados))
+            return _Resposta(dados + b"a mais")
+        return _Resposta(dados)
+
+    monkeypatch.setattr(components, "_open_url", _abrir)
+    assert components.ensure(["modelo"]) == {"modelo": components.STATUS_INSTALLED}
+    assert pedidos == list(componente.urls)
+    assert components.path_of("modelo").read_bytes() == dados
+
+
+def test_reserva_com_hash_errado_tambem_e_recusada(monkeypatch):
+    dados = b"q" * 50
+    componente = _com_reserva(dados)
+    monkeypatch.setattr(components, "manifest", lambda: {"modelo": componente})
+    monkeypatch.setattr(
+        components, "_open_url",
+        lambda url: (_ for _ in ()).throw(OSError("fora")) if url == componente.url else _Resposta(b"p" * 50),
+    )
+    assert components.ensure(["modelo"]) == {"modelo": components.STATUS_UNAVAILABLE}
+    alvo = components.target_path(componente)
+    assert not alvo.exists() and not alvo.with_name(alvo.name + ".part").exists()
+
+
+def test_parar_nao_passa_para_o_endereco_de_reserva(monkeypatch):
+    dados = b"s" * (2 * components._BLOCK)
+    componente = _com_reserva(dados)
+    monkeypatch.setattr(components, "manifest", lambda: {"modelo": componente})
+    parar = {"agora": False}
+    pedidos: list[str] = []
+
+    def _abrir(url):
+        pedidos.append(url)
+        return _Resposta(dados, ao_ler=lambda n: parar.update(agora=True))
+
+    monkeypatch.setattr(components, "_open_url", _abrir)
+    assert components.ensure(["modelo"], should_stop=lambda: parar["agora"]) == {
+        "modelo": components.STATUS_UNAVAILABLE
+    }
+    assert pedidos == [componente.url]
+
+
+def test_manifesto_recusa_reserva_fora_do_https(tmp_path):
+    import json
+
+    entrada = {
+        "name": "x", "url": "https://a.invalid/x.bin", "fallback_urls": ["http://b.invalid/x.bin"],
+        "sha256": "0" * 64, "size": 1, "license": "MIT", "kind": "file", "target": "x/x.bin",
+    }
+    (tmp_path / "m.json").write_text(json.dumps({"format": 1, "components": [entrada]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="HTTPS"):
+        components.load_manifest(tmp_path)
+
+
+def test_libreoffice_tem_reserva_no_arquivo_da_tdf_com_o_mesmo_hash():
+    """O "stable" da TDF some quando sai a versão seguinte; o arquivo
+    histórico guarda o mesmo MSI (26.2.7.3, conferido byte a byte contra o
+    SHA-256 fixado ao incluir a reserva). O hash continua um só."""
+    item = components.load_manifest()["libreoffice"]
+    assert item.url.startswith("https://download.documentfoundation.org/libreoffice/stable/")
+    assert item.fallback_urls == (
+        "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.7.3/win/x86_64/"
+        "LibreOffice_26.2.7.3_Win_x86-64.msi",
+    )
+    assert item.sha256 == "480fecf759fc6393bd614fbf43753eb95a8198fc1a065d41b727e3b664cd1e59"
+    assert item.size == 373121024
