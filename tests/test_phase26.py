@@ -307,6 +307,7 @@ def test_chaves_novas_nos_tres_idiomas():
             ("log.scan.file_timed_out", {"name": "x", "minutes": 10}),
             ("log.scan.file_unreadable", {"name": "x", "error": "y"}),
             ("log.scan.discarded_without_update", {"name": "x", "windows": 2}),
+            ("log.scan.content_changed_waiting", {"name": "x"}),
             ("error.folder_stalled", {"folder": "x"}),
         ):
             texto = translate(idioma, chave, **params)
