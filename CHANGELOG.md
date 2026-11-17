@@ -9,6 +9,153 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.0.0] - 2026-11-17
+
+A major version, delivered all at once. The goals: an output folder that can
+never mix with the source, far fewer settings to get right, many more
+document formats, any language, and two new themes. Breaking changes and
+what happens to projects created before 2.0.0 come first.
+
+### Breaking changes and migrations
+
+- **The output folder is never the source folder, inside it, or above it.**
+  The form proposes a sibling folder, `<source>-AI`, and creates it by
+  itself if you do not change it; when that folder already exists and is not
+  empty, it proposes `-AI-2`, `-AI-3` and so on. The suffix is the same in
+  the three languages (`OUTPUT_FOLDER_SUFFIX` in `gclaude_indexer/paths.py`).
+- **A project whose output is inside the source is moved.** Opening it shows
+  a notice that leads to a **Folder move** screen: what goes where, whether
+  the destination is on another disk (then files are copied and checked one
+  by one before the originals are deleted), and what is kept (anything in the
+  folder that the program did not generate stays; instruction files that
+  hold your own text are copied and only the generated part leaves the
+  original). The project database goes last. If something fails midway, the
+  program undoes what it did or finishes the move the next time the project
+  is opened; the project catalog, the sync record, the local work folder and
+  the Sets follow the new path. **Postpone** is allowed with no deadline; the
+  screen says what can happen if you never move (the generated files, with
+  the text of every document, stay inside the source folder, where anyone
+  with access to it sees them and other tools may index them as documents).
+  This change does not take older program versions into account: a project
+  moved by 2.0.0 is meant to be opened by 2.0.0.
+- **The "Claude Code (manual)" engine is removed.** A project saved with it
+  opens as `automatic`, with a single notice; windows already answered in
+  `raw_items.jsonl` are marked as done so nothing is redone, and old items
+  still import; the history label is "Claude Code (earlier versions)". The
+  `CLAUDE.md` the program writes is now consultation-only: how to read the
+  index and use `buscar.bat`, with a reminder that document text is data,
+  never instructions. The old block in an existing `CLAUDE.md` is replaced
+  (your own text outside the marks stays), and "Import and generate reports"
+  removes the `windows/*.txt` files older versions left.
+- **"Review low confidence" is removed.** There is no second pass anymore:
+  low confidence is reduced before and during classification (see
+  "Changed").
+- **Slicing is gone, and slicing, windows and OCR are no longer settings.**
+  PDFs are no longer cut into blocks (extraction reads the pages straight
+  from the PDF; `blocks/` is only cleaned up by Free up space). Right after
+  the scan the program chooses pages per window, overlap, characters read
+  per page and OCR language from what it found, and writes each choice and
+  its reason in the log. The fields left the form; a project that already
+  has windows is never changed.
+- **"Extra rules" moved** from the New project form to an edit box on the
+  Instructions screen. The saved value is kept.
+- **Included extensions.** Every category now comes checked by default,
+  except audio and video, which are opt-in. Checking or unchecking "ALL"
+  checks or unchecks every category at once; unchecking one category leaves
+  only the boxes still checked.
+- **Compressed files are never opened.** Together with executables,
+  databases, fonts, keys and passwords, binary content and media that was not
+  selected, they are listed as ignored, with the reason. Google Docs
+  shortcuts (`.gdoc`, `.gsheet`, `.gslides`, `.gdraw`, `.gform`, `.gmap`,
+  `.gsite`, `.gjam`) are ignored with their own notice: they are only links
+  to the cloud; export them to DOCX, XLSX or PDF to index them.
+- A project that selects audio and video (`midia` in the extensions) may
+  not open in a 1.10.x program. This is deliberate for a major version.
+
+### Added
+
+- **New formats.** Newer OOXML variants (`.docm`, `.dotx`, `.xlsm`, `.pptm`
+  and others), OpenDocument (`.odt`, `.ods`, `.odp`, `.fodt` and others), XPS,
+  EPUB, MOBI, FB2, SVG, CBZ, JPEG 2000, JFIF and HEIC photos, RTF, `.xls`,
+  MBOX, DXF, `.srt` and `.vtt` subtitles, and `.p7s` and `.p7m` signed
+  under ICP-Brasil (the signer and the date go into the page). Outlook
+  `.pst` and `.ost` are read as a stream, one page per message, with the
+  attachments read by their real type and passed through the same
+  filters as the scan (including the secrets rule); Stop and resume work.
+- **Old formats through LibreOffice** (`.doc`, `.ppt`, `.wpd`, `.wps`, `.pub`,
+  `.vsd`, `.vsdx`, `.sxw`, `.123` and others), converted to PDF. LibreOffice
+  26.2.7 comes from the official MSI, unpacked by an administrative
+  extraction (`msiexec /a`) into the program's private folder: no
+  elevation and nothing installed in Windows. It runs headless, with a
+  pre-seeded profile that turns off macros, links and the updater.
+- **Audio and video, transcribed locally** (`.mp3`, `.wav`, `.m4a`, `.mp4`,
+  `.mkv` and others) with FFmpeg and whisper.cpp: one page per segment of
+  about 5 minutes, with Stop and resume, and a model (`base`, `small` or
+  `medium`) chosen by the computer. Opt-in. The whisper.cpp build is
+  CPU-only, because there is no official Vulkan build for Windows: the
+  `medium` model is out of reach for now, and transcription is slower.
+- **Any language.** The language of each document is detected on your
+  computer (`py3langid`), including languages outside the three of the
+  interface. OCR runs in the right language and script, and the type and the
+  summary of each item are written in the document's own language. Search
+  finds text in scripts written without spaces (Chinese, Japanese).
+- **Component manager** (`gclaude_indexer/components.py`, manifests in
+  `gclaude_indexer/manifests/`). Everything that is not in the installer is
+  fetched on demand, once, into the program's private folder: only from a
+  pinned manifest with the SHA-256 of every file, over HTTPS, with HTTPS-only
+  redirects, ceilings on the size of what is unpacked, and no shell. The
+  manifest covers the LibreOffice MSI, FFmpeg (LGPL, shared build, 8.1),
+  whisper.cpp b5454, the whisper ggml models and the whole `tessdata_fast`
+  set of OCR languages. When a component cannot be obtained (no internet,
+  download refused), the documents that need it are skipped with a clear
+  reason, are not marked as failed, and go back to the queue in the next run.
+- **Themes Glass ("Vidro") and Apple**, each in a light and a dark pair, with
+  fallbacks for browsers without blur and for reduced transparency.
+- **Folder-level safety in the scan.** The scan skips the program's own
+  output (marker `.gclaude-output` and folders with `project.db`), and
+  generated files stay out of the inventory. An indexed file that turns into
+  a key or a binary loses its pages, its search entries and its intermediate
+  copy.
+
+### Changed
+
+- **Less low confidence, in the same pass.** A blank page is classified
+  without calling the model; a page with an image and under 100 characters
+  of OCR text is read again once (the new text replaces the page only when
+  it is longer); and a page the model skipped or answered without a type
+  gets one extra attempt, capped at 15% of the requests. Continuation pages
+  in the rules engine stay `low`: the
+  measurement did not support raising them. The hit rate by confidence level
+  is in `docs/QUALITY.md`.
+- Documentation, manual and interface text about offline operation now say
+  plainly what needs a one-time download (legacy formats, media
+  transcription, extra OCR languages) and that those files are skipped with
+  a reason when the download is not possible.
+- `SYSTEM_VERSION` is `2.0.0`; the installer is
+  `GClaude-Indexer-Setup-2.0.0.exe`.
+- New dependencies, all pinned in `requirements.txt` with their licences:
+  `pillow-heif` (HEIC), `asn1crypto`, `striprtf`, `xlrd`, `ezdxf`,
+  `libpff-python` (LGPL) and `py3langid` (BSD-3-Clause).
+
+### Fixed
+
+- The extension categories of New project came checked by default only
+  inside the server; the form now shows them checked, so "ALL" is visible
+  and behaves as the other boxes do.
+- Wording of the "ALL" help text, in the three languages.
+
+### Security
+
+- Components are downloaded only from a pinned manifest, verified by
+  SHA-256, with HTTPS-only redirects; the ZIP and MSI readers have ceilings
+  on size and number of members and refuse paths that leave the target.
+- Media is read only from allowed audio and video containers, and FFmpeg
+  receives the demuxer that was checked (`-f` and `-format_whitelist`).
+- A moved output folder never deletes what the program did not create; a
+  junction above the output is refused.
+- HEIC decoding relies on HEVC, which is under patents in some countries;
+  see `SECURITY.md`.
+
 ## [1.10.4] - 2026-11-13
 
 ### Fixed
