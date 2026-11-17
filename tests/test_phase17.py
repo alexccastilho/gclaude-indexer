@@ -359,6 +359,34 @@ def test_a_extracao_so_avisa_se_a_varredura_nao_avisou_na_mesma_execucao(monkeyp
     assert chamadas[-1].get("warn_unverified") is False
 
 
+@pytest.mark.parametrize("erro", ["pasta", "parar"])
+def test_varredura_que_nao_chegou_a_avisar_nao_cala_a_extracao(monkeypatch, erro):
+    """Rodada final, item 3: a atualização antes da varredura caiu (pasta
+    fora do ar, Parar) antes de registrar o aviso dos não conferidos; a
+    extração da mesma cadeia ainda avisa."""
+    from gclaude_indexer.run_control import OperationCancelled, StopSignal
+    from gclaude_indexer.update_plan import SourceFolderUnavailable
+    from gclaude_indexer.web import background_runs
+
+    chamadas = []
+
+    def _aplicar(*_a, **k):
+        chamadas.append(k)
+        if len(chamadas) == 1:
+            raise SourceFolderUnavailable("x") if erro == "pasta" else OperationCancelled()
+
+    monkeypatch.setattr(background_runs, "stale_page_paths", lambda _conn: {"x"})
+    monkeypatch.setattr(background_runs, "apply_pending_changes", _aplicar)
+    monkeypatch.setattr(background_runs, "extract_pages", lambda *a, **k: None)
+    monkeypatch.setattr(background_runs, "scan", lambda *a, **k: None)
+    monkeypatch.setattr(background_runs, "resolve_auto_settings", lambda *a, **k: None)
+
+    cadeia = StopSignal()
+    background_runs._scan_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    background_runs._extraction_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    assert chamadas[-1].get("warn_unverified") is True
+
+
 def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
     """A mesma leitura com o prazo da varredura (`deadline_for_size`): um
     arquivo que o Drive nunca entrega custa o prazo, não a tela inteira."""

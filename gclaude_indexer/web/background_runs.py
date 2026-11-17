@@ -47,23 +47,25 @@ from .eta import ProgressEstimator
 STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
 
 
-def _apply_pending_changes(conn, config, should_stop, language, listed=None, warn_unverified=True) -> None:
+def _apply_pending_changes(conn, config, should_stop, language, listed=None, warn_unverified=True) -> bool:
     """1.10.3: what changed in the folder is invalidated before the scan
     records it (see `invalidation.apply_pending_changes`). An unreachable
     folder or a pause leaves the index as it was: the scan right after
-    finds the same folder, or stops at once."""
+    finds the same folder, or stops at once. `False` nesse caso: o aviso dos
+    não conferidos pode não ter saído."""
     try:
         apply_pending_changes(
             conn, config, language=language, should_stop=should_stop, listed=listed,
             warn_unverified=warn_unverified,
         )
     except (SourceFolderUnavailable, OperationCancelled):
-        pass
+        return False
+    return True
 
 
 def _scan_step(conn, config, should_stop, language, files=None, on_progress=None, run_state=None):
-    _apply_pending_changes(conn, config, should_stop, language, listed=files)
-    if run_state is not None:
+    applied = _apply_pending_changes(conn, config, should_stop, language, listed=files)
+    if applied and run_state is not None:
         # O aviso dos não conferidos desta execução já saiu (ou não havia).
         run_state["unverified_warned"] = True
     result = scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
