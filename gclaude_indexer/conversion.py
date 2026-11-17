@@ -31,7 +31,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import legacy_office, light_formats, no_window, outlook, tools, workdir
+from . import legacy_office, light_formats, media, no_window, outlook, tools, workdir
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -59,6 +59,8 @@ OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados", "legados
 LEGACY_CATEGORY = "legados"
 # Arquivos do Outlook: fila própria, lida em fluxo neste processo (`_convert_outlook`).
 OUTLOOK_CATEGORY = "outlook"
+# Áudio e vídeo (`midia`): fila própria, transcrita em fluxo neste processo (`_convert_media`).
+MEDIA_CATEGORY = "midia"
 # Extensões que já existiam antes da 2.0.0: o texto intermediário delas
 # continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
 # Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
@@ -805,23 +807,18 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         params = (pages, row["id"])
 
     else:
-        # Extension with no category ("all" rule), or audio/video chosen
-        # through `midia`. Audio and video have no transcriber yet: they stay
-        # in the index by name with no text, and are never read here (a film
-        # on Google Drive would be downloaded whole for nothing).
-        # For the rest, the scan already refused binary content by the first
+        # Extension with no category ("all" rule). Audio and video (`midia`)
+        # never get here: they have their own queue (`_convert_media`).
+        # The scan already refused binary content by the first
         # bytes; the check stays here for rows an older version left as
         # `discovered`, but only the start is read to decide — the whole
         # file is read only once it is known to be text.
-        if category == "midia":
+        with open(source_path, "rb") as source_file:
+            head = source_file.read(_BINARY_SNIFF_BYTES)
+        if looks_binary(head):
             text = ""
         else:
-            with open(source_path, "rb") as source_file:
-                head = source_file.read(_BINARY_SNIFF_BYTES)
-            if looks_binary(head):
-                text = ""
-            else:
-                text = decode_bytes(source_path.read_bytes())[0]
+            text = decode_bytes(source_path.read_bytes())[0]
         destination = _destination_path(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
         sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
@@ -1319,6 +1316,109 @@ def _convert_outlook(conn, config: ProjectConfig, rows, should_stop, result, lan
             writer.discard()
 
 
+def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, should_stop, on_estimate) -> dict | None:
+    """Transcreve um áudio ou vídeo; `None` quando Parar foi pedido (o
+    arquivo continua `discovered` e a conversão seguinte retoma do trecho em
+    que parou). Roda neste processo: a retomada depende de um único dono do
+    arquivo parcial."""
+    name = row["name"]
+    relative_path = row["relative_path"]
+    extension = row["extension"].lower()
+    output_dir = Path(config.output_folder)
+    source_path = Path(config.source_folder) / relative_path
+    destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
+    work = workdir.work_folder(output_dir) / "converted" / relative_path / "midia"
+    try:
+        outcome = media.transcribe(source_path, destination, work, tools, should_stop, on_estimate)
+    except media.Interrupted:
+        return None
+    events: list[tuple[str, str, str, dict]] = []
+    if outcome.no_audio:
+        events.append(("conversion", "warning", "log.conversion.media_no_audio", {"name": name}))
+    if outcome.language:
+        events.append((
+            "conversion", "info", "log.conversion.media_language",
+            {"name": name, "lang": outcome.language},
+        ))
+    if outcome.truncated:
+        events.append((
+            "conversion", "warning", "log.conversion.media_truncated",
+            {"name": name, "hours": media.MAX_AUDIO_SECONDS // 3600, "limit_mb": media.MAX_OUTPUT_BYTES // (1024 * 1024)},
+        ))
+    return {
+        "id": row["id"], "name": name, "events": events, "ocr_applied": False,
+        "sql": (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0,"
+            " ocr_failed = 0 WHERE id = ?"
+        ),
+        "params": (outcome.pages, row["id"]),
+    }
+
+
+def _convert_media(conn, config: ProjectConfig, rows, should_stop, result, language) -> None:
+    """Áudio e vídeo (`midia`) pelo ffmpeg e pelo whisper.cpp, um arquivo por
+    vez, neste processo, sem prazo fixo por arquivo (cada um tem o seu,
+    proporcional à duração; Parar vale a cada trecho).
+
+    Os componentes e o modelo escolhido pelo computador são baixados aqui,
+    só porque o acervo tem mídia selecionada. Sem eles (sem rede, download
+    recusado) ninguém falha: cada arquivo fica pendente, volta à fila na
+    próxima conversão e o log diz uma vez o que faltou."""
+    found, missing = media.prepare()
+    writer = BatchWriter(conn)
+    if found is None:
+        def mark(row):
+            return lambda c: c.execute(
+                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0, ocr_failed = 1"
+                " WHERE id = ?",
+                (REASON_COMPONENT_UNAVAILABLE, row["id"]),
+            )
+
+        try:
+            for row in rows:
+                writer.add(mark(row))
+            writer.add(_record_event_op(
+                "conversion", "warning", "log.conversion.media_component_unavailable",
+                {"component": ", ".join(missing), "count": len(rows)}, language,
+            ))
+            writer.flush()
+        except Exception:
+            writer.discard()
+        return
+
+    def announce(name):
+        def on_estimate(info: dict) -> None:
+            record_event(
+                conn, "conversion", "info", "log.conversion.media_estimate",
+                {
+                    "name": name, "model": info["model"], "device": "GPU (Vulkan)" if info["vulkan"] else "CPU",
+                    "duration": media.format_clock(info["duration"]),
+                    "minutes": max(1, round(info["estimate"] / 60)),
+                },
+                language=language,
+            )
+
+        return on_estimate
+
+    try:
+        for row in rows:
+            if should_stop is not None and should_stop():
+                break
+            try:
+                info = _process_media(config, dict(row), found, should_stop, announce(row["name"]))
+            except Exception as exc:
+                _record_failure(writer, result, row, str(exc) or exc.__class__.__name__, language=language)
+                continue
+            if info is None:
+                break
+            _apply_result(writer, result, info, language=language)
+    finally:
+        try:
+            writer.flush()
+        except Exception:
+            writer.discard()
+
+
 def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, language) -> None:
     """`.doc`, `.ppt`, `.wpd`… pelo LibreOffice, um por vez, neste processo.
 
@@ -1377,9 +1477,10 @@ def convert(
     # started first, it runs alongside the rest.
     heavy.sort(key=lambda row: row["size"] or 0, reverse=True)
     outlook_rows = [row for row in rows if category_of_extension("." + row["extension"]) == OUTLOOK_CATEGORY]
+    media_rows = [row for row in rows if category_of_extension("." + row["extension"]) == MEDIA_CATEGORY]
     light = [
         row for row in rows
-        if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES | {OUTLOOK_CATEGORY}
+        if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES | {OUTLOOK_CATEGORY, MEDIA_CATEGORY}
     ]
 
     heavy_config = config
@@ -1425,6 +1526,9 @@ def convert(
 
     if outlook_rows and not (should_stop is not None and should_stop()):
         _convert_outlook(conn, heavy_config, outlook_rows, should_stop, result, language)
+
+    if media_rows and not (should_stop is not None and should_stop()):
+        _convert_media(conn, heavy_config, media_rows, should_stop, result, language)
 
     if ocr_shortfall:
         # Read with only part of the languages: good enough for now,
