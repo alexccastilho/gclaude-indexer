@@ -423,12 +423,14 @@ def apply_pending_changes(
 ) -> InvalidationResult | None:
     """The update the Execution screen's run applies by itself (1.10.3).
 
-    The scan sends a changed document back to 'discovered' and nothing
-    more. Run from the Execution screen without "Update" first, that left
-    the document's old pages, search passages and windows in place, and
-    the next extraction stopped on `UNIQUE constraint failed: page.file_id,
-    page.number`. So the run applies the same invalidation the "Update"
-    button applies, just before the scan, to what is new or changed.
+    Up to 1.10.2 the scan sent a changed document back to 'discovered' and
+    nothing more. Run from the Execution screen without "Update" first,
+    that left the document's old pages, search passages and windows in
+    place, and the next extraction stopped on `UNIQUE constraint failed:
+    page.file_id, page.number`. So the run applies the same invalidation
+    the "Update" button applies, just before the scan, to what is new or
+    changed. What this misses (a file the plan could not read in time) the
+    scan now discards itself (`discard_changed_file`).
 
     Never to what was removed (`include_removed=False`): a document that
     vanished from the folder — a Drive that blinked, a disconnected disk —
