@@ -150,25 +150,11 @@ REASON_UNSUPPORTED = "unsupported"
 REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 
 
-# Gravado pela varredura: arquivo novo cuja leitura falhou (OSError). A linha
-# existe para a contagem de arquivos bater com a pasta; não tem hash nem
-# data (`mtime` NULL), então a varredura seguinte o lê de novo, e o plano o
-# trata como novo (`update_plan.detect_changes`).
-REASON_UNREADABLE = "unreadable"
-
-
 def is_waiting_component(status: str | None, error: str | None) -> bool:
     """O arquivo espera um componente (LibreOffice, ffmpeg/whisper) que
     faltava quando a conversão chegou a ele. Uma regra só para a varredura,
     a conversão e o plano de atualização."""
     return status == "skipped" and error == REASON_COMPONENT_UNAVAILABLE
-
-
-def is_unreadable_placeholder(status: str | None, error: str | None) -> bool:
-    """A linha que a varredura grava para um arquivo novo que não conseguiu
-    ler (`REASON_UNREADABLE`): para o plano e para a varredura seguinte ele
-    ainda é novo."""
-    return status == "skipped" and error == REASON_UNREADABLE
 
 
 # Categorias com páginas reais (o limite de caracteres por página do projeto
