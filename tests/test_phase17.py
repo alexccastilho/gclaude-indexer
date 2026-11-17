@@ -282,10 +282,40 @@ def test_arquivo_que_nao_abre_nao_derruba_o_plano(tmp_path, monkeypatch):
         raise OSError(22, "Invalid argument")
 
     monkeypatch.setattr(update_plan, "compute_hash", _sem_rede)
-    mudancas, inalterados, _ = detect_changes(conn, config)
+    nao_conferidos: list[str] = []
+    mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
 
+    # Fora dos alterados (um soluço do Drive não descarta janelas), mas não
+    # contado como inalterado: "não conferido" é outra coisa.
     assert mudancas == []
-    assert inalterados == 1
+    assert inalterados == 0
+    assert nao_conferidos == ["a.pdf"]
+
+
+def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
+    from gclaude_indexer import update_plan
+    from gclaude_indexer.events import list_events
+
+    conn, config = _plano_com_data_mexida(tmp_path)
+
+    def _sem_rede(_caminho):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(update_plan, "compute_hash", _sem_rede)
+
+    # A tela só olhando: nada é gravado, mas o plano diz quem ficou sem conferir.
+    plano = update_plan.build_update_plan(conn, config, record_warnings=False)
+    assert plano.is_empty and plano.unchanged_count == 0
+    assert plano.unverified == ("a.pdf",)
+    assert list_events(conn, language="pt-BR") == []
+
+    plano = update_plan.build_update_plan(conn, config, language="pt-BR")
+    assert plano.unverified == ("a.pdf",)
+    mensagens = [e["message"] for e in list_events(conn, language="pt-BR")]
+    assert any("a.pdf" in m and "conferid" in m for m in mensagens), mensagens
+    # Nada gravado no arquivo: a próxima execução o confere de novo.
+    linha = conn.execute("SELECT mtime FROM file WHERE relative_path = 'a.pdf'").fetchone()
+    assert linha["mtime"] == 1.0
 
 
 def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
@@ -304,13 +334,15 @@ def test_arquivo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch):
 
     monkeypatch.setattr(update_plan, "compute_hash", _travado)
     monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 0.2)
+    nao_conferidos: list[str] = []
     try:
-        mudancas, inalterados, _ = detect_changes(conn, config)
+        mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
     finally:
         solta.set()
 
     assert mudancas == []
-    assert inalterados == 1
+    assert inalterados == 0
+    assert nao_conferidos == ["a.pdf"]
 
 
 def test_novo_alterado_e_removido_sao_detectados(tmp_path):
