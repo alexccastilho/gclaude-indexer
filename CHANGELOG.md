@@ -147,6 +147,18 @@ what happens to projects created before 2.0.0 come first.
   inside the server; the form now shows them checked, so "ALL" is visible
   and behaves as the other boxes do.
 - Wording of the "ALL" help text, in the three languages.
+- A document edited after the last run that still had pages in the index
+  could be read again on top of its old pages when the update before the
+  scan had not run (folder briefly unreachable, Stop): the scan now discards
+  what it still had, and the group's windows from it onward, by itself.
+- A file waiting for a component stays waiting when edited, without
+  discarding windows while the component is missing.
+- A file the update could not read in time (a Drive placeholder still
+  downloading, a file locked by another program) no longer counts as
+  unchanged: the update notice and screen list it as **not verified**, and
+  the next run checks it again. Reading it has a deadline, stops after a few
+  stuck files in a row and obeys Stop; a file that fails to open no longer
+  stops the scan.
 
 ### Security
 

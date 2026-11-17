@@ -154,6 +154,19 @@ vêm primeiro.
   dentro do servidor; o formulário agora as mostra marcadas, e "TODOS" fica
   visível e se comporta como as outras caixas.
 - Redação do texto de ajuda de "TODOS", nos três idiomas.
+- Um documento editado depois da última execução que ainda tinha páginas no
+  índice podia ser lido de novo por cima das páginas antigas quando a
+  atualização antes da varredura não tinha rodado (pasta fora do ar por um
+  instante, Parar): a varredura agora descarta sozinha o que ele ainda tinha
+  e as janelas do grupo a partir dele.
+- Arquivo à espera de componente continua à espera quando editado, sem
+  descartar janelas enquanto o componente falta.
+- Arquivo que a atualização não conseguiu ler a tempo (marcador do Drive
+  ainda baixando, arquivo travado por outro programa) não conta mais como
+  inalterado: o aviso e a tela de atualização o listam como **não
+  conferido**, e a execução seguinte o confere de novo. A leitura tem prazo,
+  para depois de alguns arquivos travados seguidos e obedece ao Parar; um
+  arquivo que não abre não derruba mais a varredura.
 
 ### Segurança
 
