@@ -1,8 +1,13 @@
 <div class="notice">
+  {% if plan.has_changes %}
   {{ t('update.banner',
         new=plan.new | length,
         changed=plan.changed | length,
         removed=plan.removed | length) }}
+  {% endif %}
+  {% if plan.unverified %}
+  {{ t('update.banner_unverified', count=plan.unverified | length) }}
+  {% endif %}
   <a href="/projects/{{ project.id }}/update" class="button-primary">
     {{ t('update.title') }}
   </a>
