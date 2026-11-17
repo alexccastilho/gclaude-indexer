@@ -185,3 +185,37 @@ def test_grupo_sem_janelas_devolve_o_arquivo_a_fila(tmp_path, sem_componentes):
     convert(conn, config)
     assert sem_componentes.count("libreoffice") == 2
     conn.close()
+
+
+@pytest.mark.parametrize("desfecho", ["converte", "falha"])
+def test_depois_de_entrar_a_rodada_seguinte_fica_quieta(tmp_path, sem_componentes, monkeypatch, desfecho):
+    """Com o componente presente o arquivo entra uma vez só: convertido ou
+    falhado por outro motivo (`.doc` corrompido), a rodada seguinte não o
+    aponta de novo nem descarta janelas."""
+    _origem, _saida, config, conn = _projeto(tmp_path)
+    (_origem / "video.mp4").unlink()
+    _rodada(conn, config)
+    falso = tmp_path / "soffice.exe"
+    falso.write_bytes(b"MZ")
+    monkeypatch.setattr(legacy_office, "soffice_path", lambda: falso)
+
+    def _pdf_do_doc(_origem_doc, _soffice):
+        if desfecho == "falha":
+            raise legacy_office.LegacyOfficeError("documento corrompido")
+        documento = fitz.open()
+        documento.new_page().insert_text((72, 72), "Texto do documento antigo convertido.")
+        dados = documento.tobytes()
+        documento.close()
+        return dados
+
+    monkeypatch.setattr(legacy_office, "convert_to_pdf_bytes", _pdf_do_doc)
+    assert _rodada(conn, config) is not None  # entra: janelas do grupo refeitas
+    esperado = "extracted" if desfecho == "converte" else "failed"
+    assert _estado(conn, "a_antigo.doc")[0] == esperado
+    assert _estado(conn, "a_antigo.doc")[2] == 0
+    janelas = _janelas(conn)
+
+    assert _rodada(conn, config) is None
+    assert _janelas(conn) == janelas
+    assert build_update_plan(conn, config, record_warnings=False).is_empty
+    conn.close()
