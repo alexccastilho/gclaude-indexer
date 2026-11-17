@@ -1005,8 +1005,11 @@ def recover(output_folder, on_finalize=None) -> bool:
                 # se a pasta acima dela está lá. Sem ela, a unidade está fora
                 # do ar: concluir agora largaria os originais (até o
                 # `project.db`, numa cópia entre volumes) na origem para
-                # sempre. Fica para quando ela voltar.
-                if journal.get("mode") == "items" and not old.exists() and not old.parent.exists():
+                # sempre. Fica para quando ela voltar. Vale para toda mudança
+                # menos a troca de nome no mesmo volume, em que a pasta antiga
+                # some de propósito.
+                copies_or_items = journal.get("mode") == "items" or not journal.get("same_volume", True)
+                if copies_or_items and not old.exists() and not old.parent.exists():
                     return False
                 _finish(journal, on_finalize)
             else:
