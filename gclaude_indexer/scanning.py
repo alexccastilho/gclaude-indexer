@@ -737,7 +737,7 @@ def _record_scanned_file(
                 (size, file_hash, mtime, relative_path),
             )
             record_event(
-                c, "scan", "warning", "log.scan.content_changed", {"name": name},
+                c, "scan", "warning", "log.scan.content_changed_waiting", {"name": name},
                 language=language, commit=False,
             )
 
