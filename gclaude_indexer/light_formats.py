@@ -35,9 +35,51 @@ from .file_types import looks_binary
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
-# Teto do que se lê de dentro de um ZIP (OpenDocument, OOXML): um arquivo
-# compactado malicioso não pode estourar a memória.
-_MAX_ZIP_MEMBER_BYTES = 256 * 1024 * 1024
+# Tetos do que se lê de dentro de um ZIP (OpenDocument, OOXML, o conteúdo de um
+# `.p7m`): um pacote malicioso (bomba de descompressão, milhões de membros, um
+# `content.xml` que vira gigabytes de árvore) não pode estourar a memória.
+# Valem para todo leitor de ZIP deste módulo.
+_MAX_ZIP_MEMBER_BYTES = 64 * 1024 * 1024  # um membro qualquer
+_MAX_XML_BYTES = 32 * 1024 * 1024  # um XML que vira árvore (content.xml): a árvore é ~10x isso
+_MAX_ZIP_TOTAL_BYTES = 256 * 1024 * 1024  # tudo que o pacote descomprime
+_MAX_ZIP_MEMBERS = 10_000
+_MAX_COMPRESSION_RATIO = 1_000  # só olhado em membro grande: texto repetido chega a 100x
+_RATIO_MIN_BYTES = 1024 * 1024
+# Teto do texto extraído de um OpenDocument (caracteres) e da repetição de
+# espaços (`text:s`) que um único elemento pede.
+_MAX_TEXT_CHARS = 50_000_000
+_MAX_REPEATED_SPACES = 1_000
+
+
+def _check_package(archive: zipfile.ZipFile) -> None:
+    """Recusa, pelo que o diretório do ZIP declara e sem ler nada, o pacote
+    com membros demais ou grande demais. O diretório pode mentir; por isso
+    toda leitura de membro também é limitada (`_read_member`)."""
+    infos = archive.infolist()
+    if len(infos) > _MAX_ZIP_MEMBERS:
+        raise LightFormatError("pacote com membros demais")
+    if sum(info.file_size for info in infos) > _MAX_ZIP_TOTAL_BYTES:
+        raise LightFormatError("pacote grande demais depois de descompactado")
+
+
+def _read_member(archive: zipfile.ZipFile, name: str, limit: int | None = None) -> bytes:
+    """Lê um membro sem nunca passar de `limit` bytes: confere o tamanho e a
+    razão de compressão declarados e, como o declarado pode mentir, lê no
+    máximo `limit + 1`."""
+    limit = _MAX_ZIP_MEMBER_BYTES if limit is None else limit
+    info = archive.getinfo(name)
+    if info.file_size > limit:
+        raise LightFormatError("membro do pacote grande demais")
+    if (
+        info.file_size >= _RATIO_MIN_BYTES
+        and info.file_size > max(info.compress_size, 1) * _MAX_COMPRESSION_RATIO
+    ):
+        raise LightFormatError("membro do pacote com compressão suspeita")
+    with archive.open(info) as member:
+        data = member.read(limit + 1)
+    if len(data) > limit:
+        raise LightFormatError("membro do pacote grande demais")
+    return data
 # Separador das páginas no texto intermediário de uma caixa `.mbox`. O
 # form feed não aparece em e-mail de verdade; é tirado do corpo, por garantia.
 MBOX_PAGE_SEPARATOR = "\n\x0c\n"
@@ -75,12 +117,18 @@ def _with_plain_main_type(path: Path, kind: str) -> io.BytesIO:
     pelo comum. Os demais membros passam intactos."""
     replacements = _OOXML_MAIN_TYPES[kind]
     output = io.BytesIO()
-    with zipfile.ZipFile(path) as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+    try:
+        source_zip = zipfile.ZipFile(path)
+    except zipfile.BadZipFile as exc:
+        raise LightFormatError("pacote OOXML ilegível ou corrompido") from exc
+    total = 0
+    with source_zip as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+        _check_package(source)
         for info in source.infolist():
-            with source.open(info) as member:
-                data = member.read(_MAX_ZIP_MEMBER_BYTES + 1)
-            if len(data) > _MAX_ZIP_MEMBER_BYTES:
-                raise LightFormatError("membro do pacote grande demais")
+            data = _read_member(source, info.filename)
+            total += len(data)
+            if total > _MAX_ZIP_TOTAL_BYTES:
+                raise LightFormatError("pacote grande demais depois de descompactado")
             if info.filename == "[Content_Types].xml":
                 text = data.decode("utf-8", errors="replace")
                 for old, new in replacements.items():
@@ -135,9 +183,16 @@ _ODF_SKIPPED = {
 }
 
 
+class _OdfStyles(set):
+    """Os estilos que riscam o texto, e a conta de caracteres já extraídos
+    (o teto do texto de um OpenDocument)."""
+
+    chars = 0
+
+
 def _odf_struck_styles(root) -> set[str]:
     """Nomes dos estilos que riscam o texto (`text-line-through-style`)."""
-    names: set[str] = set()
+    names: set[str] = _OdfStyles()
     for style in root.iter(_q("style", "style")):
         properties = style.find(_q("style", "text-properties"))
         if properties is None:
@@ -153,16 +208,29 @@ def _odf_struck_styles(root) -> set[str]:
 def _odf_inline(element, struck_styles: set[str], struck: bool, segments: list, notes: list) -> None:
     """Texto corrido de um parágrafo, com o tachado marcado. Notas de rodapé
     saem do fluxo e entram depois do parágrafo, em `notes`."""
+
+    def emit(text: str) -> None:
+        struck_styles.chars += len(text)
+        if struck_styles.chars > _MAX_TEXT_CHARS:
+            raise LightFormatError("texto do OpenDocument grande demais")
+        segments.append((text, struck))
+
     if element.text:
-        segments.append((element.text, struck))
+        emit(element.text)
     for child in element:
         tag = child.tag
         if tag == _q("text", "s"):
-            segments.append((" " * int(child.get(_q("text", "c"), "1") or 1), struck))
+            try:
+                count = int(child.get(_q("text", "c"), "1") or 1)
+            except ValueError:
+                count = 1
+            # `text:c` é a repetição de espaços; sem teto, um elemento de 30
+            # bytes pede gigabytes.
+            emit(" " * min(max(count, 1), _MAX_REPEATED_SPACES))
         elif tag == _q("text", "tab"):
-            segments.append(("\t", struck))
+            emit("\t")
         elif tag == _q("text", "line-break"):
-            segments.append(("\n", struck))
+            emit("\n")
         elif tag == _q("text", "note"):
             body = child.find(_q("text", "note-body"))
             if body is not None:
@@ -175,7 +243,7 @@ def _odf_inline(element, struck_styles: set[str], struck: bool, segments: list, 
         else:
             _odf_inline(child, struck_styles, struck, segments, notes)
         if child.tail:
-            segments.append((child.tail, struck))
+            emit(child.tail)
 
 
 def _odf_paragraph(element, struck_styles: set[str]) -> list[str]:
@@ -235,16 +303,16 @@ def extract_text_opendocument(path: Path) -> str:
     """`.odt .ods .odp .odg` (ZIP com `content.xml`) e os planos `.fodt
     .fods .fodp` (um XML só)."""
     if path.suffix.lower().startswith(".f"):
+        if path.stat().st_size > _MAX_XML_BYTES:
+            raise LightFormatError("XML do OpenDocument grande demais")
         root = _odf_parse(path.read_bytes())
     else:
         try:
             with zipfile.ZipFile(path) as archive:
-                with archive.open("content.xml") as member:
-                    data = member.read(_MAX_ZIP_MEMBER_BYTES + 1)
+                _check_package(archive)
+                data = _read_member(archive, "content.xml", _MAX_XML_BYTES)
         except (zipfile.BadZipFile, KeyError) as exc:
             raise LightFormatError("OpenDocument ilegível ou corrompido") from exc
-        if len(data) > _MAX_ZIP_MEMBER_BYTES:
-            raise LightFormatError("content.xml grande demais")
         root = _odf_parse(data)
     struck_styles = _odf_struck_styles(root)
     return "\n".join(_odf_blocks(root, struck_styles))
@@ -683,9 +751,15 @@ def sniff_content_type(data: bytes) -> str:
     if head.startswith(b"PK\x03\x04"):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                _check_package(archive)
                 names = set(archive.namelist())
                 if "mimetype" in names:
-                    mimetype = archive.read("mimetype")[:100].decode("ascii", errors="ignore")
+                    # No máximo 100 bytes de um membro que pode declarar gigabytes.
+                    info = archive.getinfo("mimetype")
+                    if info.file_size > 1024:
+                        raise LightFormatError("membro mimetype grande demais")
+                    with archive.open(info) as member:
+                        mimetype = member.read(100).decode("ascii", errors="ignore")
                     if mimetype.startswith("application/vnd.oasis.opendocument"):
                         return "odf"
                     if mimetype.startswith("application/epub+zip"):
