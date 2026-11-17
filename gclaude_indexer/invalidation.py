@@ -470,17 +470,22 @@ def apply_pending_changes(
         conn, config, language=language, should_stop=should_stop,
         include_removed=False, listed=listed,
     )
-    # Uma vez por execução (revisão, achado 6): só a da etapa de varredura
-    # avisa; a da extração passa `warn_unverified=False`.
-    if warn_unverified:
-        _warn_unverified(conn, current, language)
     # Only a changed file or a touched group has anything to discard. A
     # document new to a group of its own needs no invalidation, and an
     # "update applied" line on every run that found one would only be noise.
-    if not (current.changed or current.groups or current.generated):
-        return None
-    checkpoint(should_stop)
-    return _apply(conn, config, current, language)
+    result = None
+    if current.changed or current.groups or current.generated:
+        checkpoint(should_stop)
+        result = _apply(conn, config, current, language)
+    # Uma vez por execução (revisão, achado 6): só a da etapa de varredura
+    # avisa; a da extração passa `warn_unverified=False`. Depois de `_apply`
+    # e protegido, como em `apply_update_plan`.
+    if warn_unverified:
+        try:
+            _warn_unverified(conn, current, language)
+        except (sqlite3.Error, OSError):
+            pass
+    return result
 
 
 def discard_changed_file(
