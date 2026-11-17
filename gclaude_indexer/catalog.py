@@ -330,3 +330,48 @@ def adopt_local_projects() -> int:
     if added:
         _write(_with_unique_ids(shared))
     return added
+
+
+def _write_atomic(path: Path, entries: list[CatalogEntry]) -> None:
+    """Grava num temporário ao lado e troca com `os.replace`: uma queda no
+    meio deixa o catálogo antigo inteiro, nunca um arquivo pela metade."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps([asdict(entry) for entry in entries], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
+def relocate_project(old_folder: str, new_folder: str) -> int:
+    """A pasta de saída de um projeto mudou de lugar (`relocation.py`).
+
+    Atualiza a entrada **no lugar**, nos dois catálogos (o compartilhado e o
+    local): o id não muda, porque os Conjuntos guardam o id do projeto.
+    Remover e registrar de novo daria outro id e quebraria o Conjunto.
+    Idempotente: sem entrada da pasta antiga, nada muda. Devolve quantas
+    entradas foram atualizadas."""
+    old_key = _folder_key(old_folder)
+    shared_folder = catalog_folder()
+    files: list[tuple[Path, Path | None]] = [(_local_catalog_path(), None)]
+    if shared_folder is not None:
+        files.insert(0, (shared_folder / CATALOG_FILE_NAME, shared_folder))
+
+    updated = 0
+    for path, folder in files:
+        if not path.exists():
+            continue
+        entries = _read(path)
+        changed = False
+        for entry in entries:
+            keys = {_folder_key(entry.output_folder), _folder_key(entry.resolved_output_folder(folder))}
+            if old_key not in keys:
+                continue
+            entry.output_folder = str(new_folder)
+            entry.relative_output_folder = _relative_to_catalog(str(new_folder), folder)
+            changed = True
+            updated += 1
+        if changed:
+            _write_atomic(path, entries)
+    return updated

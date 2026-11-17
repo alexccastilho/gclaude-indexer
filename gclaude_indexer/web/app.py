@@ -68,7 +68,7 @@ from ..windows_prep import cleanup_legacy_window_files
 from ..invalidation import PlanExpired, apply_update_plan
 from ..update_plan import SourceFolderUnavailable, UpdatePlan, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
-from .. import claude_package, combined_package
+from .. import claude_package, combined_package, relocation
 from ..claude_package import generate_claude_project_package
 from ..paths import (
     check_new_project_folders, ensure_writable_folder, resolve_within, suggest_output_folder,
@@ -76,7 +76,7 @@ from ..paths import (
 )
 from ..config import ConfigErrorMessage
 from ..run_control import OperationCancelled, StopSignal
-from ..project import load_project, create_project, save_project_config
+from ..project import describe_project, load_project, create_project, save_project_config
 from ..sets import SetEntry, SetMember, find_set, list_sets, propose_alias, remove_set, save_set
 from ..quality import compare_runs, quality_summary
 from ..resources import latest_sample
@@ -94,7 +94,8 @@ from ..fulltext import (
 from ..staleness import is_stale as source_is_stale, record_loaded_source
 from ..sync import check_sync, mark_synced
 from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, categories_by_family, normalize_categories
-from ..lock import LockManager, check_lock
+from ..lock import LockManager, check_lock, create_lock
+from . import step_state
 from .step_state import STEPS, last_known_status, next_pending_step, project_status, step_status
 from .background_runs import compute_progress, task_manager
 from .readers import reader_pool
@@ -145,7 +146,7 @@ LOG_LINES = 200
 # runs inside the classification step, not a step of its own) belongs there.
 # Without this set, `_log.html` falls back to showing the raw step key
 # instead of a translated label — see `import_items.py`'s module docstring.
-LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics", "update"}
+LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics", "update", "relocation"}
 
 # Presentation order of the engines in the form, from the simplest to use to
 # the one that demands the most from the user. `CLASSIFICATION_ENGINES`
@@ -370,6 +371,33 @@ class IncompleteSyncError(Exception):
         self.message_params = message_params
 
 
+class RelocationNeededError(Exception):
+    """2.0.0: a saída deste projeto está dentro da origem e o usuário ainda
+    não escolheu entre mover e adiar (nesta máquina)."""
+
+    def __init__(self, entry: CatalogEntry, source_folder: str):
+        self.entry = entry
+        self.source_folder = source_folder
+
+
+class RelocationBusyError(Exception):
+    """A pasta deste projeto está mudando de lugar agora."""
+
+
+@app.exception_handler(RelocationNeededError)
+def _handle_relocation_needed(request: Request, exc: RelocationNeededError):
+    return _render_relocation(request, exc.entry, exc.source_folder, status_code=409)
+
+
+@app.exception_handler(RelocationBusyError)
+def _handle_relocation_busy(request: Request, exc: RelocationBusyError):
+    # Mesma resposta de um banco ocupado: a sondagem guarda o que já mostra
+    # e pergunta de novo; uma página inteira explica e pede para esperar.
+    if request.headers.get("hx-request"):
+        return Response(status_code=204)
+    return render(request, "database_busy.html", {}, status_code=503)
+
+
 @app.exception_handler(LockBlockedError)
 def _handle_lock_blocked(request: Request, exc: LockBlockedError):
     return render(
@@ -437,6 +465,10 @@ def _open_project(project_id: int, timeout: float = WRITER_TIMEOUT_SECONDS):
     entry = find_project(project_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    # Antes de abrir o banco: depois de uma queda no meio da mudança de
+    # pasta, o `project.db` pode estar do outro lado, e abrir o caminho do
+    # catálogo criaria um banco vazio no lugar.
+    entry = _settle_relocation(project_id, entry)
     try:
         config, conn = load_project(entry.output_folder, timeout=timeout)
     except ConfigError as exc:
@@ -463,6 +495,10 @@ def _open_project(project_id: int, timeout: float = WRITER_TIMEOUT_SECONDS):
         if lock_result.status == "abandoned":
             conn.close()
             raise LockAbandonedError(entry, lock_result.message_key, lock_result.message_params)
+
+        if _relocation_due(config) and not relocation.is_postponed(entry.output_folder):
+            conn.close()
+            raise RelocationNeededError(entry, config.source_folder)
 
         lock_manager.open(entry.output_folder)
         mark_synced(entry.output_folder)
@@ -567,7 +603,11 @@ def projects_screen(request: Request):
         # mounted under a different letter (section 11.5).
         resolved = e.resolved_output_folder(folder)
         available = e.is_available(folder)
-        if available:
+        if available and (relocation.in_flight(resolved) or relocation.pending_for(resolved)):
+            # A pasta está mudando de lugar (ou a mudança parou no meio):
+            # ler o banco agora poderia achá-lo do outro lado.
+            key, variables = "unavailable", {}
+        elif available:
             key, variables = project_status(resolved)
         else:
             # Listed, not hidden: a shared catalog legitimately contains
@@ -915,6 +955,173 @@ def continue_anyway_route(project_id: int):
     return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
 
 
+# --- 2.0.0: mudança da pasta de saída que está dentro da origem ----------------
+
+
+def _relocation_due(config: ProjectConfig) -> bool:
+    """A saída está dentro da origem (ou é ela). A suíte desliga isto por
+    padrão (`conftest.py`): muitos testes antigos criam a saída dentro da
+    pasta temporária que serve de origem."""
+    return relocation.output_inside_source(config.source_folder, config.output_folder)
+
+
+def _after_relocation(old: str, new: str) -> None:
+    """O que a interface guarda pela pasta antiga e precisa esquecer."""
+    reader_pool.close(old)
+    lock_manager.forget(old)
+    _side_bar_cache.clear()
+    with step_state._status_cache_lock:
+        step_state._status_cache.clear()
+    with _idle_fragments_lock:
+        _idle_fragments.clear()
+    with _quality_cache_lock:
+        _quality_cache.clear()
+
+
+def _settle_relocation(project_id: int, entry: CatalogEntry) -> CatalogEntry:
+    """Conclui ou desfaz uma mudança de pasta interrompida (o diário fica na
+    pasta local da máquina) antes de qualquer acesso ao projeto."""
+    if relocation.in_flight(entry.output_folder):
+        raise RelocationBusyError()
+    if relocation.pending_for(entry.output_folder) is None:
+        return entry
+    if not relocation.recover(entry.output_folder, on_finalize=_after_relocation):
+        if relocation.in_flight(entry.output_folder):
+            raise RelocationBusyError()
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "A mudança de pasta deste projeto foi interrompida e não pôde ser concluída nem "
+                "desfeita agora (uma das pastas está inacessível). Conecte a unidade e abra de novo."
+            ),
+        )
+    refreshed = find_project(project_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    return refreshed
+
+
+def _render_relocation(
+    request: Request, entry: CatalogEntry, source_folder: str, *,
+    error_key: str = "", error_params: dict | None = None, status_code: int = 200,
+) -> HTMLResponse:
+    """A tela de interrupção (molde `lock_abandoned.html`): o que muda, para
+    onde, os avisos e os botões Mover agora / Adiar."""
+    plan = None
+    plan_error_key, plan_error_params = "", {}
+    try:
+        plan = relocation.build_plan(source_folder, entry.output_folder)
+    except relocation.RelocationError as exc:
+        plan_error_key, plan_error_params = exc.key, exc.params
+    except OSError as exc:
+        plan_error_key, plan_error_params = "relocation.error.failed", {"error": str(exc)}
+    destination = plan.new if plan is not None else (suggest_output_folder(source_folder) or "")
+    return render(
+        request, "relocation.html",
+        {
+            "project": entry,
+            "source_folder": source_folder,
+            "destination": destination,
+            "plan": plan,
+            "plan_size": relocation.megabytes(plan.total_bytes) if plan is not None else "",
+            "plan_error_key": plan_error_key,
+            "plan_error_params": plan_error_params,
+            "error_key": error_key,
+            "error_params": error_params or {},
+            "postponed": relocation.is_postponed(entry.output_folder),
+        },
+        status_code=status_code,
+    )
+
+
+def _relocation_source(entry: CatalogEntry) -> str | None:
+    """A origem gravada no projeto, lida sem abrir o banco para escrita
+    (`describe_project` não cria nada)."""
+    summary = describe_project(entry.output_folder)
+    return summary.source_folder if summary is not None else None
+
+
+@app.get("/projects/{project_id}/relocate", response_class=HTMLResponse)
+def relocation_screen(request: Request, project_id: int):
+    entry = find_project(project_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _settle_relocation(project_id, entry)
+    source = _relocation_source(entry)
+    if source is None or not relocation.output_inside_source(source, entry.output_folder):
+        return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
+    return _render_relocation(request, entry, source)
+
+
+@app.post("/projects/{project_id}/relocate/postpone")
+def postpone_relocation_route(project_id: int):
+    """"Adiar", sem prazo: guardado nesta máquina. A tela de interrupção não
+    volta; a Execução mostra o aviso a cada abertura até a mudança."""
+    entry = find_project(project_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    relocation.postpone(entry.output_folder)
+    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
+
+
+@app.post("/projects/{project_id}/relocate")
+def relocate_route(request: Request, project_id: int):
+    """"Mover agora". O pedido traz só o id: a origem vem do banco e o
+    destino é calculado aqui (`paths.suggest_output_folder`), nunca do
+    formulário. A proteção contra outro site é a mesma das outras rotas
+    que mudam algo (`_only_own_pages`)."""
+    entry = find_project(project_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _settle_relocation(project_id, entry)
+    source = _relocation_source(entry)
+    if source is None or not relocation.output_inside_source(source, entry.output_folder):
+        return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
+
+    def refuse(key: str, **params) -> HTMLResponse:
+        return _render_relocation(request, entry, source, error_key=key, error_params=params, status_code=409)
+
+    task = task_manager.latest_for_project(project_id)
+    if task is not None and task.running:
+        return refuse("relocation.error.step_running")
+    with _IMPORTS_IN_PROGRESS_LOCK:
+        if project_id in _IMPORTS_IN_PROGRESS:
+            return _operation_busy_response(request, project_id)
+    if not check_sync(entry.output_folder).ok:
+        return refuse("relocation.error.sync")
+    lock_result = check_lock(entry.output_folder)
+    if lock_result.status in ("blocked", "abandoned"):
+        return refuse("relocation.error.other_machine", machine=lock_result.message_params.get("machine", ""))
+    try:
+        plan = relocation.build_plan(source, entry.output_folder)
+    except relocation.RelocationError as exc:
+        return refuse(exc.key, **exc.params)
+    except OSError as exc:
+        return refuse("relocation.error.failed", error=str(exc))
+
+    old = entry.output_folder
+    run_url = f"/projects/{project_id}/run"
+
+    def work(should_stop):
+        try:
+            with relocation.flying(old, plan.new):
+                # Nenhuma conexão nossa pode ficar aberta: o Windows não
+                # deixa mudar de nome um arquivo aberto. A trava continua
+                # no arquivo (desta máquina) e vai junto com a pasta.
+                reader_pool.close(old)
+                lock_manager.forget(old)
+                create_lock(old)
+                relocation.execute(plan, should_stop=should_stop, on_finalize=_after_relocation)
+        except relocation.RelocationCancelled:
+            raise OperationCancelled()
+        except relocation.RelocationError as exc:
+            raise _OperationMessage(exc.key, next_url=f"/projects/{project_id}/relocate", **exc.params)
+        return run_url
+
+    operation = _start_operation(project_id, "relocation.move", work, next_url=run_url)
+    return _operation_response(request, operation, project_id, waiting_url="/projects")
+
+
 # --- screen: Execution ---------------------------------------------------------
 
 
@@ -932,6 +1139,9 @@ def run_screen(request: Request, project_id: int):
         events = list_events(conn, language=language, last=LOG_LINES)
         stale = _stale_context(_reports_to_regenerate(conn))
         instructions_dedup = _dedup_notice(conn, config)
+        relocation_banner = None
+        if _relocation_due(config):
+            relocation_banner = {"destination": suggest_output_folder(config.source_folder) or ""}
 
     return render(
         request, "run.html",
@@ -941,6 +1151,7 @@ def run_screen(request: Request, project_id: int):
             "known_steps": LOG_KNOWN_STEPS,
             "sensor_token": SENSOR_REQUEST_TOKEN,
             "instructions_dedup": instructions_dedup,
+            "relocation_banner": relocation_banner,
             **stale,
         },
     )

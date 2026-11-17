@@ -19,6 +19,7 @@ warns before letting it continue.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -90,3 +91,20 @@ def mark_synced(output_folder) -> None:
     registry = _read_registry()
     registry[_key(output_folder)] = db_path.stat().st_mtime
     _write_registry(registry)
+
+
+def rename_key(old_folder, new_folder) -> None:
+    """A pasta de saída mudou de lugar (`relocation.py`): a data conhecida
+    passa para a chave nova, para o aviso de sincronização incompleta
+    continuar valendo. Gravação por temporário e `os.replace`."""
+    registry = _read_registry()
+    old_key, new_key = _key(old_folder), _key(new_folder)
+    if old_key not in registry or old_key == new_key:
+        return
+    value = registry.pop(old_key)
+    registry.setdefault(new_key, value)
+    path = _registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)

@@ -175,7 +175,15 @@ def load_project(
 
     `timeout`: how long to wait for a locked database. The screens' polls pass
     `READER_TIMEOUT_SECONDS`; see `db.py`."""
-    conn = connect(Path(output_folder) / DB_NAME, timeout=timeout)
+    db_path = Path(output_folder) / DB_NAME
+    # Sem banco, sem projeto: `connect` criaria um `project.db` vazio na
+    # pasta pedida. Com a mudança de pasta (2.0.0), o caminho do catálogo
+    # pode estar, por um instante ou depois de uma queda, sem o banco — e um
+    # banco vazio deixado ali impediria a retomada de devolver o verdadeiro
+    # (ela nunca sobrescreve).
+    if not db_path.is_file():
+        raise FileNotFoundError(f"project.db não encontrado em {output_folder}")
+    conn = connect(db_path, timeout=timeout)
     # Phase 13 Task 15: projects created before a new table existed (here,
     # `execucao`) only get it if `init_schema` also runs on reopen,
     # not only on create — `CREATE TABLE IF NOT EXISTS` is idempotent, so

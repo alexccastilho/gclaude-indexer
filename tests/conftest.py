@@ -145,3 +145,19 @@ def _leitores_fechados_ao_fim_do_teste():
     step_state._status_cache.clear()
     yield
     reader_pool.close_all()
+
+
+@pytest.fixture(autouse=True)
+def _mudanca_de_pasta_isolada(tmp_path, monkeypatch):
+    """2.0.0 (Tarefa 13): a tela que oferece mover a saída para fora da
+    origem fica desligada por padrão — muitos testes antigos criam a saída
+    dentro da pasta temporária que serve de origem. O diário e o adiamento
+    vão para a pasta temporária do teste, nunca para a pasta local real.
+    Quem testa a mudança liga a detecção de novo (`test_mudanca_de_pasta.py`)."""
+    from gclaude_indexer import relocation
+    from gclaude_indexer.web import app as modulo_app
+
+    pasta = tmp_path / "_relocation_local"
+    monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
+    monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
+    monkeypatch.setattr(modulo_app, "_relocation_due", lambda config: False)

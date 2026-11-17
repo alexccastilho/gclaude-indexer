@@ -238,6 +238,15 @@ class LockManager:
                 del self._locks[key]
             self._last_use.pop(key, None)
 
+    def forget(self, output_folder) -> None:
+        """Para de cuidar da trava desta pasta **sem apagar o arquivo**: a
+        mudança de pasta (`relocation.py`) leva `project.lock` junto, e a
+        batida do coração não pode regravá-lo no lugar antigo no meio dela."""
+        key = self._key(output_folder)
+        with self._internal_lock:
+            self._locks.pop(key, None)
+            self._last_use.pop(key, None)
+
     def close_all(self) -> None:
         self._stop.set()
         with self._internal_lock:
@@ -277,7 +286,12 @@ class LockManager:
             snapshot = list(self._locks.items())
         for folder, lock in snapshot:
             if self._still_needed(folder, now):
-                refreshed = refresh_lock(folder, lock)
+                try:
+                    refreshed = refresh_lock(folder, lock)
+                except OSError:
+                    # A pasta sumiu (mudou de lugar, a unidade saiu): uma
+                    # falha aqui não pode matar a thread de todas as travas.
+                    continue
                 with self._internal_lock:
                     if self._locks.get(folder) is lock:
                         self._locks[folder] = refreshed
