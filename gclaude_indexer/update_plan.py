@@ -144,13 +144,14 @@ MAX_CONSECUTIVE_TIMEOUTS = 3
 _STOP_POLL_SECONDS = 0.25
 
 # Leituras deste processo, compartilhadas entre planos (cada abertura da tela
-# faz um): uma que ainda roda, abandonada pelo prazo de outro plano, não é
-# começada de novo sobre o mesmo arquivo — quem chega depois espera por ela,
-# até o próprio prazo (o inteiro, para quem aplica); as que terminaram valem
-# enquanto o tamanho e a data forem os mesmos, a mesma regra pela qual o
-# plano decide, sem ler, que um arquivo não mudou.
+# faz um): enquanto uma roda sobre um caminho, abandonada pelo prazo de outro
+# plano, nenhuma outra é começada sobre ele, nem se o tamanho ou a data
+# mudaram — quem chega depois espera por ela, até o próprio prazo (o inteiro,
+# para quem aplica), e só usa o resultado se leu os mesmos tamanho e data.
+# As que terminaram valem enquanto o tamanho e a data forem os mesmos, a
+# mesma regra pela qual o plano decide, sem ler, que um arquivo não mudou.
 _READS_LOCK = threading.Lock()
-_PENDING_READS: dict[tuple[str, int, float | None], Future] = {}
+_PENDING_READS: dict[str, tuple[int, float | None, Future]] = {}
 _READ_RESULTS: dict[tuple[str, int, float], str] = {}
 _MAX_READ_RESULTS = 4096
 
@@ -175,8 +176,8 @@ class _PlanReader:
 
     def hash(self, path: Path, size: int, mtime: float | None = None) -> str | None:
         checkpoint(self.should_stop)
-        pending_key = (os.path.normcase(str(path)), size, mtime)
-        result_key = pending_key if mtime is not None else None
+        pending_key = os.path.normcase(str(path))
+        result_key = (pending_key, size, mtime) if mtime is not None else None
 
         def read() -> str:
             try:
@@ -196,12 +197,13 @@ class _PlanReader:
                 return _READ_RESULTS[result_key]
             if self.consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
                 return None
-            future = _PENDING_READS.get(pending_key)
-            if future is None:
+            pending = _PENDING_READS.get(pending_key)
+            if pending is None:
                 # Registrada ainda sob a trava: o `finally` de `read`, que a
                 # tira daqui, só roda depois.
-                future = DaemonThreadExecutor().submit(read)
-                _PENDING_READS[pending_key] = future
+                pending = (size, mtime, DaemonThreadExecutor().submit(read))
+                _PENDING_READS[pending_key] = pending
+        read_size, read_mtime, future = pending
 
         deadline = deadline_for_size(size)
         if self.deadline_cap is not None:
@@ -214,6 +216,8 @@ class _PlanReader:
         except OSError:
             return None
         self.consecutive_timeouts = 0
+        if (read_size, read_mtime) != (size, mtime):
+            return None  # leu outros bytes: não decide nada sobre estes
         return value
 
     def _wait(self, future: Future, deadline: float) -> str:

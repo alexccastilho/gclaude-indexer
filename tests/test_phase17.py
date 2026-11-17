@@ -500,6 +500,24 @@ def test_leitura_ainda_pendente_nao_e_repetida(tmp_path, leituras):
     assert leituras["chamadas"] == ["d0.pdf"]
 
 
+def test_leitura_pendente_nao_e_repetida_mesmo_com_outro_tamanho(tmp_path, leituras):
+    """Rodada final, item 1: o arquivo preso mudou de tamanho entre uma
+    caminhada e outra. A leitura pendente é por caminho: nenhuma segunda
+    thread sobre ele, e o resultado da primeira (de outros bytes) não
+    decide nada; o arquivo fica não conferido."""
+    conn, config = _plano_com_varios_mexidos(tmp_path, 1)
+    nao_conferidos: list[str] = []
+    detect_changes(conn, config, unverified=nao_conferidos)
+    assert nao_conferidos == ["d0.pdf"]
+
+    with open(Path(config.source_folder) / "d0.pdf", "ab") as arquivo:
+        arquivo.write(b" mais bytes")
+    nao_conferidos = []
+    detect_changes(conn, config, unverified=nao_conferidos)
+    assert nao_conferidos == ["d0.pdf"]
+    assert leituras["chamadas"] == ["d0.pdf"]
+
+
 def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path, leituras):
     """O resultado da leitura abandonada é guardado por caminho, tamanho e
     data: o plano seguinte não lê de novo. Sem isso, um arquivo que leva
