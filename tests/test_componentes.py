@@ -313,6 +313,7 @@ def _imagem(caminho: Path):
 def _sem_idioma(monkeypatch, usaveis: list[str]):
     monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: ["por"])
     monkeypatch.setattr(ocr_languages, "usable", lambda _lang, _exe: usaveis)
+    monkeypatch.setattr(ocr_languages, "active_folder", lambda _exe: Path("C:/tesseract/tessdata"))
     real_find = tools.find
     monkeypatch.setattr(tools, "find", lambda nome: "C:/tesseract/tesseract.exe" if nome == "tesseract" else real_find(nome))
 
@@ -368,6 +369,24 @@ def test_com_parte_dos_idiomas_le_com_o_que_tem_e_refaz_depois(tmp_path, monkeyp
     monkeypatch.setattr(ocr_languages, "ensure", lambda _lang, _exe, download=True: [])
     convert(conn, config, language="pt-BR")
     assert pedidos == ["eng", "por+eng"]
+    linha = conn.execute("SELECT * FROM file WHERE name = 'foto.png'").fetchone()
+    assert linha["status"] == "converted" and linha["ocr_failed"] == 0
+    conn.close()
+
+
+def test_sem_saber_a_pasta_do_tesseract_o_ocr_segue_como_antes(tmp_path, monkeypatch):
+    origem, _saida, config, conn = _preparar_projeto(tmp_path)
+    config = replace(config, parallelism="economy")
+    _imagem(origem / "foto.png")
+    scan(conn, config)
+    _sem_idioma(monkeypatch, [])
+    monkeypatch.setattr(ocr_languages, "active_folder", lambda _exe: None)
+    pedidos = []
+    monkeypatch.setattr(conversion, "_extract_text_image", lambda _p, lang: pedidos.append(lang) or "texto")
+
+    convert(conn, config, language="pt-BR")
+
+    assert pedidos == [config.ocr_language]
     linha = conn.execute("SELECT * FROM file WHERE name = 'foto.png'").fetchone()
     assert linha["status"] == "converted" and linha["ocr_failed"] == 0
     conn.close()
