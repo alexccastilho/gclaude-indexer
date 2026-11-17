@@ -1363,18 +1363,7 @@ html[data-theme="toga"] h1::after {
   background: linear-gradient(90deg, #b8913f, transparent);
 }
 
-/* Settings proposal (New project) and Search screen ------------------------ */
-.settings-proposal .proposal {
-  background: var(--color-accent-weak);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius);
-  padding: 0.9rem 1.1rem;
-  margin-bottom: 0.75rem;
-}
-html[data-theme="dark"] .settings-proposal .proposal { background: var(--color-surface-alt); }
-.proposal-values dt { margin-top: 0.5rem; }
-.proposal-values dd { margin: 0.15rem 0 0 0; color: var(--color-text-weak); font-size: 0.88rem; }
-
+/* Search screen ------------------------------------------------------------- */
 .search-results { padding-left: 1.4rem; }
 .search-result { margin: 0 0 1.1rem; }
 .search-result-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }

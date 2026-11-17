@@ -15,7 +15,7 @@ see [README.md](../README.md).
 The user points at a folder — commonly, but not necessarily, one synced by
 Google Drive — containing documents of any type and quantity. The system
 scans it, converts what needs converting, applies OCR where necessary,
-slices oversized PDFs, indexes the content, and produces:
+indexes the content, and produces:
 
 - `index.md` — a catalog of items with origin, type, date, author and
   summary
@@ -350,9 +350,9 @@ one group.
 > Since 1.5.9 the OCR queue starts with the largest file: in path order a
 > PDF with hundreds of pages could start last and run alone for minutes.
 
-**3. Slicing.** A PDF with more pages than the configured limit (default 80)
-is cut into chunks, written into the local work folder, with the original
-page numbering preserved.
+**3. No slicing (2.0.0).** PDFs are no longer cut into chunks: extraction reads
+the pages straight from the PDF. `blocks/` is only cleaned up (leftovers of
+projects made before 2.0.0).
 
 > **Intermediate files (1.5.8).** `converted/` and `blocks/` live in
 > `%LOCALAPPDATA%\GClaudeIndexer\work\<name>-<hash of the output folder>\`,
@@ -613,11 +613,11 @@ also the HTTP form field names, so the two never drift apart.
 | `group_mode` | choice | `subfolder` | subfolder, name pattern, or everything together |
 | `group_pattern` | regex | empty | used when grouping is by name pattern |
 | `extensions` | multiple, grouped by family (Documents, Images, Text and data, Messages) | `pdf`, `docx`, `imagens` | what enters the scan — the family grouping is presentation only, see `categories_by_family()` in `file_types.py` |
-| `pages_per_block` | number | 80 | slicing limit for the auxiliary `blocks/` files; **does not affect the index** — extraction reads the whole PDF, not the slices |
-| `pages_per_window` | number | 16 | pages per request to the model, and the setting that decides classification quality: the reply carries one line per page, and a window too wide truncates it (8 is the measured recommendation) |
-| `overlap` | number | 2 | pages repeated between windows |
-| `chars_per_page` | number | 2000 | how much text goes into classification |
-| `ocr_language` | choice | `por` | Tesseract language code |
+| `pages_per_block` | — | 80 | inert since 2.0.0: nothing is sliced; the key stays so old projects still open |
+| `pages_per_window` | — (automatic) | 8 with the local engine, 16 with rules | not a form field since 2.0.0: resolved after the scan from the engine that will run (`auto_settings.py`); pages per request to the model — the reply carries one line per page, and a window too wide truncates it |
+| `overlap` | — (automatic) | 2 (window of 8 or more), 1 (6 or fewer), 0 when there are almost only whole documents | not a form field since 2.0.0; pages repeated between windows |
+| `chars_per_page` | — (automatic) | 2000 | not a form field since 2.0.0: 75th percentile of the text of the PDF pages sampled, rounded to 500, between 1500 and 4000; applies to PDF and image pages (`extraction.chars_limit_for`) — whole documents (DOCX, PPTX, XLSX, HTML, TXT, e-mail) are cut at 4000 |
+| `ocr_language` | — (automatic) | `por` | not a form field since 2.0.0: language detected in the sampled text; Tesseract language code |
 | `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
 | `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `qwen3.5:4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
 | `processing_mode` | choice | `automatic` | `automatic`/`gpu` use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
@@ -956,7 +956,6 @@ machine, one at a time.
 | the shared project catalog, when configured (a Drive folder of the user's choosing) | `settings.json`, which names that folder — it is the pointer *into* the synced world and so cannot itself be synced |
 | — | `tools.json`: the absolute path of each installed program, recorded by `install.ps1` so a fresh install does not depend on `PATH` having reached the running processes |
 | generated artifacts: index, timeline, review, instructions | downloaded Ollama models |
-| sliced PDFs | — |
 | execution logs (`<output_folder>/logs/execution.log`, written alongside the `event` table) | — |
 
 Default local path: `%LOCALAPPDATA%\GClaudeIndexer`. Never create a virtual

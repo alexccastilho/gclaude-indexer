@@ -116,14 +116,16 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
     campos_esperados = [
         'name="name"', 'name="subject"', 'name="source_folder"', 'name="output_folder"',
         'name="collection_type"', 'name="group_mode"', 'name="group_pattern"',
-        'name="extensions"', 'name="pages_per_block"', 'name="pages_per_window"',
-        'name="overlap"', 'name="chars_per_page"', 'name="ocr_language"',
-        'name="classification_engine"', 'name="role_instructions"',
+        'name="extensions"', 'name="classification_engine"', 'name="role_instructions"',
     ]
     # Saíram do formulário de criação (2.0.0): sem repassagem de confiança
     # baixa e com as regras extras editadas na tela Instruções.
     assert 'name="review_low_confidence"' not in corpo
     assert 'name="extra_rules"' not in corpo
+    # Fatiamento, janelas e OCR saíram do formulário (2.0.0): são resolvidos
+    # sozinhos depois da varredura.
+    for campo_automatico in ("pages_per_block", "pages_per_window", "overlap", "chars_per_page", "ocr_language"):
+        assert f'name="{campo_automatico}"' not in corpo
     for campo in campos_esperados:
         assert campo in corpo, f"campo ausente do formulário: {campo}"
 
@@ -145,11 +147,6 @@ def _checkbox_marcado(corpo: str, valor: str) -> bool:
 
 def test_formulario_novo_projeto_tem_os_padroes_da_secao_6(cliente):
     corpo = cliente.get("/projects/new").text
-    assert 'value="80"' in corpo  # páginas por bloco
-    assert 'value="16"' in corpo  # páginas por janela
-    assert 'value="2"' in corpo  # sobreposição
-    assert 'value="2000"' in corpo  # caracteres por página
-    assert 'value="por"' in corpo  # idioma OCR
     assert '<option value="processo" selected' in corpo
     assert '<option value="subfolder" selected' in corpo
     assert '<option value="automatic" selected' in corpo

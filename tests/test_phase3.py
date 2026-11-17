@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 
 from gclaude_indexer import workdir
 from gclaude_indexer.config import load_config
-from gclaude_indexer.conversion import convert, slice_pdf
+from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.scanning import scan
@@ -286,38 +286,22 @@ def test_falha_no_ocr_de_pdf_todo_escaneado_continua_sendo_falha(tmp_path, monke
     conn.close()
 
 
-# --- fatiamento --------------------------------------------------------
+# --- sem fatiamento (2.0.0) ----------------------------------------------
 
 
-def test_fatiar_pdf_gera_blocos_com_numeracao_real(tmp_path):
-    origem = tmp_path / "origem.pdf"
-    _criar_pdf_nativo(origem, n_paginas=5)
-
-    pasta_destino = tmp_path / "blocks"
-    blocos = slice_pdf(origem, pasta_destino, "documento", pages_per_block=2)
-
-    nomes = sorted(b.name for b in blocos)
-    assert nomes == ["documento_p1-2.pdf", "documento_p3-4.pdf", "documento_p5-5.pdf"]
-
-    doc_bloco_final = fitz.open(pasta_destino / "documento_p5-5.pdf")
-    assert doc_bloco_final.page_count == 1
-    doc_bloco_final.close()
-
-
-def test_pdf_grande_e_fatiado_durante_a_conversao(tmp_path):
+def test_pdf_longo_nao_e_fatiado_nem_gera_blocks(tmp_path):
     origem, saida, config, conn = _preparar_projeto(tmp_path)
-    config.pages_per_block = 2
+    config.pages_per_block = 2  # inerte: o campo só existe para abrir projetos antigos
     _criar_pdf_nativo(origem / "processo_longo.pdf", n_paginas=5)
 
     scan(conn, config)
     resultado = convert(conn, config)
 
-    assert resultado.sliced == 1
-    assert resultado.blocks_generated == 3
-
-    pasta_blocos = workdir.work_folder(saida) / "blocks"
-    nomes = sorted(p.name for p in pasta_blocos.glob("*.pdf"))
-    assert nomes == ["processo_longo_p1-2.pdf", "processo_longo_p3-4.pdf", "processo_longo_p5-5.pdf"]
+    assert resultado.converted == 1
+    assert not (workdir.work_folder(saida) / "blocks").exists()
+    linha = conn.execute("SELECT page_count, status FROM file WHERE name = 'processo_longo.pdf'").fetchone()
+    assert (linha["page_count"], linha["status"]) == (5, "converted")
+    assert not hasattr(resultado, "sliced")
 
     conn.close()
 
