@@ -421,8 +421,11 @@ def _divergence_page(
 
 def _always_one_page(relative_path: str) -> bool:
     """Extraction gives exactly one page to every file that is not a PDF
-    (`extraction._extract_file_pages`): its text, whatever its length."""
-    return category_of_extension(Path(relative_path).suffix) != "pdf"
+    (`extraction._extract_file_pages`): its text, whatever its length. The
+    exceptions are the formats with pages of their own: PDF, the paged ones
+    (EPUB, XPS…), a signed file (it may hold a PDF) and the mailbox (a page
+    per message)."""
+    return category_of_extension(Path(relative_path).suffix) not in ("pdf", "paginados", "assinados", "mbox")
 
 
 def _in_place_windows(

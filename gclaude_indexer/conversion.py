@@ -31,7 +31,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import no_window, tools, workdir
+from . import light_formats, no_window, tools, workdir
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -41,7 +41,7 @@ from .worker_pool import (
     deadline_for_size,
 )
 from .parallelism import _physical_cores, io_workers_for, workers_for
-from .file_types import category_of_extension, looks_binary
+from .file_types import REASON_BINARY, REASON_SIGNATURE_DETACHED, category_of_extension, looks_binary
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
@@ -49,7 +49,18 @@ MIN_AVG_CHARS_PER_PAGE = 100
 # How much of an unknown-extension file is checked for a NUL byte.
 _BINARY_SNIFF_BYTES = 8192
 # Categories whose conversion may run OCR — the CPU-bound queue.
-OCR_CATEGORIES = frozenset({"pdf", "imagens"})
+# Os paginados e os assinados (`.p7m` com PDF dentro) passam pelo mesmo OCR
+# do PDF.
+OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados"})
+# Extensões que já existiam antes da 2.0.0: o texto intermediário delas
+# continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
+# Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
+# `IMG_1.HEIC` e `IMG_1.JPG` não podem disputar o mesmo arquivo.
+_ORIGINAL_EXTENSIONS = frozenset({
+    "docx", "xlsx", "pptx", "jpg", "jpeg", "png", "tif", "tiff", "bmp", "gif", "webp",
+    "txt", "md", "log", "csv", "html", "htm", "xhtml", "xht", "shtml", "mht", "mhtml", "xml", "json",
+    "eml", "msg",
+})
 ERROR_MESSAGE_CHAR_LIMIT = 500
 
 
@@ -102,12 +113,31 @@ def converted_artifact_path(
     extraction opens the original, so there is nothing `cleanup.py` could
     have taken away.
     """
-    category = category_of_extension("." + extension.lstrip("."))
+    extension = extension.lstrip(".").lower()
+    category = category_of_extension("." + extension)
     if category == "pdf":
         if not needs_ocr:
             return None
         return workdir.intermediate_path(output_folder, "converted", relative_path, ".pdf")
-    return workdir.intermediate_path(output_folder, "converted", relative_path, ".txt")
+    if category == "paginados":
+        # Sempre há um PDF intermediário (o original não é PDF).
+        return workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
+    if category == "assinados":
+        # Só o conteúdo envelopado diz qual: PDF dentro, PDF aqui; qualquer
+        # outro tipo vira texto. Quem converte apaga o outro.
+        as_pdf = workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
+        if as_pdf.exists():
+            return as_pdf
+        return workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.txt")
+    return workdir.intermediate_path(output_folder, "converted", relative_path, text_suffix(extension))
+
+
+def text_suffix(extension: str) -> str:
+    """Sufixo do `.txt` intermediário de uma extensão."""
+    extension = extension.lstrip(".").lower()
+    if category_of_extension("." + extension) is not None and extension not in _ORIGINAL_EXTENSIONS:
+        return f".{extension}.txt"
+    return ".txt"
 
 
 def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
@@ -257,9 +287,7 @@ def _docx_paragraph_text(paragraph) -> str:
 
 
 def _extract_text_docx(path: Path) -> str:
-    from docx import Document
-
-    document = Document(path)
+    document = light_formats.open_docx(path)
     parts = [text for text in map(_docx_paragraph_text, document.paragraphs) if text.strip()]
     for table in document.tables:
         for row in table.rows:
@@ -296,9 +324,7 @@ def _pptx_run_struck(run) -> bool:
 
 
 def _extract_text_pptx(path: Path) -> str:
-    from pptx import Presentation
-
-    presentation = Presentation(path)
+    presentation = light_formats.open_pptx(path)
     parts = []
     for slide in presentation.slides:
         for shape in slide.shapes:
@@ -312,16 +338,8 @@ def _extract_text_pptx(path: Path) -> str:
     return "\n".join(parts)
 
 
-def _message_part_text(part) -> str:
-    """Text of one MIME part. Decodes the bytes itself instead of calling
-    `get_content()`, which raises `LookupError` on a charset label Python
-    does not know — a common sight in old mail — and would fail the file."""
-    payload = part.get_payload(decode=True) or b""
-    charset = part.get_content_charset()
-    if part.get_content_type() == "text/html":
-        text, _ = decode_markup(payload, charset)
-        return html_to_text(text)
-    return decode_bytes(payload, charset)[0]
+# Mora em `light_formats` (a caixa `.mbox` lê mensagens do mesmo jeito).
+_message_part_text = light_formats.message_part_text
 
 
 def _extract_text_eml(path: Path) -> str:
@@ -385,13 +403,287 @@ def _extract_text_web(path: Path, extension: str) -> str:
     return text
 
 
+def _register_heif() -> None:
+    """Ensina o Pillow a abrir `.heic`/`.heif` (`pillow-heif`). Idempotente.
+    Sem a biblioteca, o arquivo falha ao abrir, como qualquer imagem corrompida."""
+    try:
+        from pillow_heif import register_heif_opener
+    except ImportError:
+        return
+    register_heif_opener()
+
+
 def _extract_text_image(path: Path, ocr_language: str) -> str:
     from PIL import Image
     import pytesseract
 
+    _register_heif()
     with Image.open(path) as image:
         image.load()
         return pytesseract.image_to_string(image, lang=ocr_language)
+
+
+_TEXT_CATEGORIES = frozenset({
+    "docx", "xlsx", "pptx", "text", "web_dados", "email", "opendocument", "rtf", "mbox", "cad", "legendas",
+})
+
+
+def _extract_light_text(category: str, extension: str, source_path: Path) -> str:
+    """O texto de um arquivo que vira uma página (ou, na caixa `.mbox`, uma
+    página por mensagem, separadas por `MBOX_PAGE_SEPARATOR`)."""
+    if category == "docx":
+        return _extract_text_docx(source_path)
+    if category == "xlsx":
+        if extension == "xls":
+            return light_formats.extract_text_xls(source_path)
+        return _extract_text_xlsx(source_path)
+    if category == "pptx":
+        return _extract_text_pptx(source_path)
+    if category == "web_dados":
+        return _extract_text_web(source_path, extension)
+    if category == "text":
+        return decode_bytes(source_path.read_bytes())[0]
+    if category == "opendocument":
+        return light_formats.extract_text_opendocument(source_path)
+    if category == "rtf":
+        return light_formats.extract_text_rtf(source_path)
+    if category == "mbox":
+        return light_formats.extract_text_mbox(source_path)
+    if category == "cad":
+        return light_formats.extract_text_dxf(source_path)
+    if category == "legendas":
+        return light_formats.extract_text_subtitles(source_path)
+    if extension == "msg":
+        return _extract_text_msg(source_path)
+    return _extract_text_eml(source_path)
+
+
+def _ocr_pdf_pages(
+    config: ProjectConfig, name: str, source_pdf: Path, destination: Path, ocrmypdf_jobs: int, events: list,
+) -> tuple[bool, bool, bool, int]:
+    """Decide e faz o OCR das páginas sem texto de um PDF. Devolve
+    `(needs_ocr, ocr_failed, ocr_applied, page_count)`. Com OCR feito, o
+    resultado está em `destination`; sem ele, nada é escrito lá."""
+    ocr_failed = False
+    ocr_applied = False
+    ocr_pages, page_count = _pdf_pages_needing_ocr(source_pdf)
+    needs_ocr = bool(ocr_pages)
+
+    if needs_ocr and not config.ocr_language:
+        # Task 7: no OCR language could be had (no network, download
+        # refused) — `convert` already warned which one. The native
+        # text is read as it is and `ocr_failed` brings the file back
+        # once the language is there; the file is never failed for it.
+        needs_ocr = False
+        ocr_failed = True
+    elif needs_ocr:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        partial = len(ocr_pages) < page_count
+        try:
+            _run_ocrmypdf(
+                source_pdf, destination, config.ocr_language, jobs=ocrmypdf_jobs, pages=ocr_pages
+            )
+        except OcrError as exc:
+            # A file with native text used to skip OCR altogether; one
+            # failed scanned page must not cost the rest of it. Read the
+            # original, as before, and say which pages stayed blank.
+            # `ocr_failed` brings it back on the next conversion.
+            if not partial:
+                raise
+            needs_ocr = False
+            ocr_failed = True
+            events.append((
+                "conversion", "warning", "log.conversion.ocr_pages_failed",
+                {"name": name, "pages": len(ocr_pages), "total": page_count,
+                 "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
+            ))
+        else:
+            ocr_applied = True
+            if partial:
+                events.append((
+                    "conversion", "info", "log.conversion.ocr_applied_pages",
+                    {"name": name, "pages": len(ocr_pages), "total": page_count,
+                     "ocr_language": config.ocr_language},
+                ))
+            else:
+                events.append((
+                    "conversion", "info", "log.conversion.ocr_applied",
+                    {"name": name, "ocr_language": config.ocr_language},
+                ))
+    return needs_ocr, ocr_failed, ocr_applied, page_count
+
+
+def _store_pdf_intermediate(
+    config: ProjectConfig, name: str, pdf_bytes: bytes, output_dir: Path, relative_path: str,
+    extension: str, ocrmypdf_jobs: int, events: list,
+) -> tuple[bool, bool, bool, int]:
+    """Grava o PDF de um formato que não é PDF em `converted/<nome>.<ext>.pdf`
+    (com o OCR das páginas sem texto) e devolve o mesmo que `_ocr_pdf_pages`.
+
+    Passa por um arquivo `.raw.pdf` ao lado, porque o `ocrmypdf` não lê e
+    escreve o mesmo arquivo; sem OCR, o `.raw.pdf` vira o destino."""
+    extension = extension.lstrip(".").lower()
+    destination = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.pdf")
+    raw = workdir.destination(output_dir, "converted", relative_path, f".{extension}.raw.pdf")
+    raw.write_bytes(pdf_bytes)
+    try:
+        result = _ocr_pdf_pages(config, name, raw, destination, ocrmypdf_jobs, events)
+        if not result[2]:  # sem OCR aplicado, o PDF convertido é o intermediário
+            os.replace(raw, destination)
+        return result
+    finally:
+        raw.unlink(missing_ok=True)
+
+
+def _detached_sibling(source_path: Path, relative_path: str) -> str | None:
+    """O arquivo que uma assinatura destacada assina: `X.pdf.p7s` assina
+    `X.pdf`; `X.p7s` assina o único outro arquivo de nome `X.*` na pasta.
+    Devolve o caminho relativo dele (com `/`), ou `None`."""
+    try:
+        entries = [entry for entry in source_path.parent.iterdir() if entry.is_file()]
+    except OSError:
+        return None
+    stem = source_path.stem.lower()
+    chosen = [entry for entry in entries if entry.name.lower() == stem and entry != source_path]
+    if not chosen:
+        chosen = [
+            entry for entry in entries
+            if entry != source_path and entry.suffix.lower() not in (".p7s", ".p7m")
+            and entry.stem.lower() == stem
+        ]
+        if len(chosen) != 1:
+            return None
+    folder = relative_path.rpartition("/")[0]
+    return f"{folder}/{chosen[0].name}" if folder else chosen[0].name
+
+
+def _signed_content_text(kind: str, content: bytes, config: ProjectConfig) -> tuple[str, bool]:
+    """Texto do conteúdo envelopado de um tipo que não é PDF, e se o OCR
+    ficou pendente (imagem sem idioma de OCR)."""
+    import tempfile
+
+    if kind == "text":
+        text, _ = decode_markup(content)
+        return (html_to_text(text) if looks_like_html(text) else decode_bytes(content)[0]), False
+    suffixes = {
+        "docx": ".docx", "xlsx": ".xlsx", "pptx": ".pptx", "odf": ".odt", "rtf": ".rtf", "xls": ".xls",
+        "image": ".img",
+    }
+    # Pasta temporária do sistema: o conteúdo é de terceiros e nunca fica no
+    # projeto (que o Google Drive sincroniza).
+    with tempfile.TemporaryDirectory(prefix="gclaude-p7m-") as folder:
+        inner = Path(folder) / ("conteudo" + suffixes[kind])
+        inner.write_bytes(content)
+        if kind == "docx":
+            return _extract_text_docx(inner), False
+        if kind == "xlsx":
+            return _extract_text_xlsx(inner), False
+        if kind == "pptx":
+            return _extract_text_pptx(inner), False
+        if kind == "odf":
+            return light_formats.extract_text_opendocument(inner), False
+        if kind == "rtf":
+            return light_formats.extract_text_rtf(inner), False
+        if kind == "xls":
+            return light_formats.extract_text_xls(inner), False
+        if config.ocr_language:
+            return _extract_text_image(inner, config.ocr_language), False
+        return "", True
+
+
+def _convert_signed(
+    config: ProjectConfig, row: dict, source_path: Path, output_dir: Path, ocrmypdf_jobs: int, events: list,
+) -> dict:
+    """`.p7m`/`.p7s` (ICP-Brasil): o conteúdo envelopado é indexado pelo tipo
+    real (detectado pelos bytes) e quem assinou vai para `file_signature`.
+    Uma assinatura destacada não tem conteúdo: ela é registrada no arquivo
+    irmão e o `.p7s` em si sai do índice."""
+    relative_path = row["relative_path"]
+    extension = row["extension"].lower()
+    signed = light_formats.signed_content_of(source_path.read_bytes())
+
+    def signatures_for(target: str, source: str) -> list[dict]:
+        return [
+            {"relative_path": target, "source": source, "signer": item.signer,
+             "holder_document": item.holder_document, "signed_at": item.signed_at}
+            for item in signed.signatures
+        ]
+
+    skipped_sql = (
+        "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0, ocr_failed = 0"
+        " WHERE id = ?"
+    )
+    if signed.content is None:
+        sibling = _detached_sibling(source_path, relative_path)
+        return {
+            "sql": skipped_sql, "params": (REASON_SIGNATURE_DETACHED, row["id"]), "ocr_applied": False,
+            "signatures": signatures_for(sibling, f"detached:{row['name']}") if sibling else [],
+        }
+
+    signatures = signatures_for(relative_path, "embedded")
+    kind = light_formats.sniff_content_type(signed.content)
+    content = signed.content
+    if kind == "epub":
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="gclaude-p7m-") as folder:
+            inner = Path(folder) / "conteudo.epub"
+            inner.write_bytes(content)
+            content = light_formats.convert_to_pdf_bytes(inner)
+        kind = "pdf"
+
+    pdf_path = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.pdf")
+    text_path = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.txt")
+    if kind == "binary":
+        for stale in (pdf_path, text_path):
+            stale.unlink(missing_ok=True)
+        return {
+            "sql": skipped_sql, "params": (REASON_BINARY, row["id"]), "ocr_applied": False,
+            "signatures": signatures,
+        }
+    if kind == "pdf":
+        text_path.unlink(missing_ok=True)
+        needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
+            config, row["name"], content, output_dir, relative_path, extension, ocrmypdf_jobs, events
+        )
+        sql = (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
+            " ocr_failed = ? WHERE id = ?"
+        )
+        return {
+            "sql": sql, "params": (page_count, int(needs_ocr), int(ocr_failed), row["id"]),
+            "ocr_applied": ocr_applied, "signatures": signatures,
+        }
+
+    try:
+        text, ocr_pending = _signed_content_text(kind, content, config)
+    except light_formats.LightFormatError:
+        if kind != "xls":
+            raise
+        # OLE que não é planilha (um `.doc`, um `.ppt`): sem leitor aqui.
+        for stale in (pdf_path, text_path):
+            stale.unlink(missing_ok=True)
+        return {
+            "sql": skipped_sql, "params": (REASON_BINARY, row["id"]), "ocr_applied": False,
+            "signatures": signatures,
+        }
+    pdf_path.unlink(missing_ok=True)
+    destination = workdir.destination(output_dir, "converted", relative_path, f".{extension}.txt")
+    destination.write_text(text, encoding="utf-8")
+    is_image = kind == "image"
+    if is_image and not ocr_pending:
+        events.append((
+            "conversion", "info", "log.conversion.ocr_applied",
+            {"name": row["name"], "ocr_language": config.ocr_language},
+        ))
+    sql = (
+        "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = ?,"
+        " ocr_failed = ? WHERE id = ?"
+    )
+    return {
+        "sql": sql, "params": (int(is_image), int(ocr_pending), row["id"]),
+        "ocr_applied": is_image and not ocr_pending, "signatures": signatures,
+    }
 
 
 def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
@@ -420,56 +712,35 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     ocr_failed = False
 
     if category == "pdf":
-        ocr_pages, page_count = _pdf_pages_needing_ocr(source_path)
-        needs_ocr = bool(ocr_pages)
-
-        if needs_ocr and not config.ocr_language:
-            # Task 7: no OCR language could be had (no network, download
-            # refused) — `convert` already warned which one. The native
-            # text is read as it is and `ocr_failed` brings the file back
-            # once the language is there; the file is never failed for it.
-            needs_ocr = False
-            ocr_failed = True
-        elif needs_ocr:
-            ocr_destination = _destination_path(output_dir, "converted", relative_path, ".pdf")
-            partial = len(ocr_pages) < page_count
-            try:
-                _run_ocrmypdf(
-                    source_path, ocr_destination, config.ocr_language, jobs=ocrmypdf_jobs, pages=ocr_pages
-                )
-            except OcrError as exc:
-                # A file with native text used to skip OCR altogether; one
-                # failed scanned page must not cost the rest of it. Read the
-                # original, as before, and say which pages stayed blank.
-                # `ocr_failed` brings it back on the next conversion.
-                if not partial:
-                    raise
-                needs_ocr = False
-                ocr_failed = True
-                events.append((
-                    "conversion", "warning", "log.conversion.ocr_pages_failed",
-                    {"name": name, "pages": len(ocr_pages), "total": page_count,
-                     "error": str(exc)[:ERROR_MESSAGE_CHAR_LIMIT]},
-                ))
-            else:
-                ocr_applied = True
-                if partial:
-                    events.append((
-                        "conversion", "info", "log.conversion.ocr_applied_pages",
-                        {"name": name, "pages": len(ocr_pages), "total": page_count,
-                         "ocr_language": config.ocr_language},
-                    ))
-                else:
-                    events.append((
-                        "conversion", "info", "log.conversion.ocr_applied",
-                        {"name": name, "ocr_language": config.ocr_language},
-                    ))
-
+        destination = workdir.local_path(output_dir, "converted", relative_path, ".pdf")
+        needs_ocr, ocr_failed, ocr_applied, page_count = _ocr_pdf_pages(
+            config, name, source_path, destination, ocrmypdf_jobs, events
+        )
         sql = (
             "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
             " ocr_failed = ? WHERE id = ?"
         )
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
+
+    elif category == "paginados":
+        # O PyMuPDF faz o PDF; dali em diante é o caminho do PDF (texto
+        # nativo, OCR das páginas sem texto).
+        needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
+            config, name, light_formats.convert_to_pdf_bytes(source_path), output_dir, relative_path,
+            row["extension"], ocrmypdf_jobs, events,
+        )
+        sql = (
+            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
+            " ocr_failed = ? WHERE id = ?"
+        )
+        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
+
+    elif category == "assinados":
+        signed = _convert_signed(config, row, source_path, output_dir, ocrmypdf_jobs, events)
+        return {
+            "id": row["id"], "name": name, "sql": signed["sql"], "params": signed["params"],
+            "events": events, "ocr_applied": signed["ocr_applied"], "signatures": signed["signatures"],
+        }
 
     elif category == "imagens":
         if config.ocr_language:
@@ -484,7 +755,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             # done again when the OCR language is there.
             text = ""
             ocr_failed = True
-        destination = _destination_path(output_dir, "converted", relative_path, ".txt")
+        destination = _destination_path(output_dir, "converted", relative_path, text_suffix(row["extension"]))
         destination.write_text(text, encoding="utf-8")
         sql = (
             "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 1,"
@@ -492,27 +763,15 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         )
         params = (int(ocr_failed), row["id"])
 
-    elif category in ("docx", "xlsx", "pptx", "text", "web_dados", "email"):
-        extension = row["extension"]
-        if category == "docx":
-            text = _extract_text_docx(source_path)
-        elif category == "xlsx":
-            text = _extract_text_xlsx(source_path)
-        elif category == "pptx":
-            text = _extract_text_pptx(source_path)
-        elif category == "web_dados":
-            text = _extract_text_web(source_path, extension)
-        elif category == "text":
-            text = decode_bytes(source_path.read_bytes())[0]
-        elif extension == "msg":
-            text = _extract_text_msg(source_path)
-        else:
-            text = _extract_text_eml(source_path)
-
-        destination = _destination_path(output_dir, "converted", relative_path, ".txt")
+    elif category in _TEXT_CATEGORIES:
+        extension = row["extension"].lower()
+        text = _extract_light_text(category, extension, source_path)
+        destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
         destination.write_text(text, encoding="utf-8")
-        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
-        params = (row["id"],)
+        # A caixa `.mbox` tem uma página por mensagem.
+        pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == "mbox" else 1
+        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0 WHERE id = ?"
+        params = (pages, row["id"])
 
     else:
         # Extension with no category ("all" rule), or audio/video chosen
@@ -547,9 +806,39 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     }
 
 
+def _store_signatures(conn, signatures) -> None:
+    """Grava os signatários lidos de um `.p7m`/`.p7s` em `file_signature`,
+    no arquivo assinado. Refazer a conversão substitui o que a mesma origem
+    gravou antes (cada `.p7s` destacado tem a sua)."""
+    if not signatures:
+        return
+    ids: dict[str, int | None] = {}
+    for item in signatures:
+        path = item["relative_path"]
+        if path not in ids:
+            found = conn.execute("SELECT id FROM file WHERE relative_path = ?", (path,)).fetchone()
+            ids[path] = found["id"] if found is not None else None
+    cleared: set[tuple[int, str]] = set()
+    for item in signatures:
+        file_id = ids[item["relative_path"]]
+        if file_id is None:
+            continue
+        if (file_id, item["source"]) not in cleared:
+            conn.execute(
+                "DELETE FROM file_signature WHERE file_id = ? AND source = ?", (file_id, item["source"])
+            )
+            cleared.add((file_id, item["source"]))
+        conn.execute(
+            "INSERT INTO file_signature (file_id, signer, holder_document, signed_at, source)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (file_id, item["signer"], item["holder_document"], item["signed_at"], item["source"]),
+        )
+
+
 def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, language: str | None = None) -> None:
     def op(conn) -> None:
         conn.execute(info["sql"], info["params"])
+        _store_signatures(conn, info.get("signatures", ()))
         for step, level, key, params in info["events"]:
             record_event(conn, step, level, key, params, language=language, commit=False)
 

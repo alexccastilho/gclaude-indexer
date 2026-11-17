@@ -44,7 +44,7 @@ _TEXT_BYTES = 64 * 1024
 # The rule `conversion.py` uses to decide a PDF needs OCR.
 _MIN_AVG_CHARS_PER_PAGE = 100
 
-_MULTI_PAGE_CATEGORIES = {"pdf", "imagens"}
+_MULTI_PAGE_CATEGORIES = {"pdf", "imagens", "paginados"}
 
 # A few hundred of the most frequent function words is enough to tell
 # Portuguese, Spanish and English apart on a page of text.

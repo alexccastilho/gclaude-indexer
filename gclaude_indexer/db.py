@@ -335,6 +335,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_file_group_key_index(conn)
     _ensure_fulltext_file_range_columns(conn)
     _ensure_file_ocr_failed_index(conn)
+    _ensure_file_signature_table(conn)
     conn.commit()
 
 
@@ -444,3 +445,27 @@ def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:
             " AND status IN ('converted', 'extracted')",
             (name,),
         )
+
+
+def _ensure_file_signature_table(conn: sqlite3.Connection) -> None:
+    """Cria `file_signature`: quem assinou um arquivo `.p7m`/`.p7s`
+    (ICP-Brasil), o documento do titular quando o certificado traz, a data
+    da assinatura e de onde veio (`embedded`, ou `detached:<nome do .p7s>`).
+
+    Uma tabela à parte, não colunas em `file`: um arquivo pode ter mais de um
+    signatário, e a assinatura destacada pertence ao arquivo irmão, não ao
+    `.p7s`. `ON DELETE CASCADE`: sair do inventário leva a assinatura junto.
+    O certificado nunca é validado (nada de cadeia, nada de rede): o que está
+    aqui é o que o arquivo declara."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS file_signature (
+            file_id         INTEGER NOT NULL REFERENCES file(id) ON DELETE CASCADE,
+            signer          TEXT,
+            holder_document TEXT,
+            signed_at       TEXT,
+            source          TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_file_signature_file_id ON file_signature(file_id)")

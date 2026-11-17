@@ -40,6 +40,23 @@ extract-msg==0.54.1
 # imagens de terceiros para OCR, então isso não é teórico.
 pillow==13.0.0
 
+# HEIC/HEIF (fotos de iPhone) e formatos leves da 2.0.0. Licenças, todas
+# compatíveis com a GPL-3.0:
+# - pillow-heif 1.8.1: BSD-3-Clause no código; as rodas binárias do Windows
+#   embutem libheif e libde265 (LGPL-3.0), x265 (GPL-2.0-ou-posterior: o cabeçalho do código-fonte do x265 diz "either version 2 of the License, or (at your option) any later version") e o
+#   runtime MinGW-w64 (GPL-3.0 com exceção do GCC). O programa só lê HEIC; a
+#   combinação segue sendo distribuível sob GPL-3.0.
+# - asn1crypto 1.5.1: MIT (assinaturas ICP-Brasil, `.p7s`/`.p7m`).
+# - striprtf 0.0.35: BSD-3-Clause (`.rtf`).
+# - xlrd 2.0.2: BSD-3-Clause (`.xls`).
+# - ezdxf 1.4.5: MIT (`.dxf`); traz numpy (BSD-3-Clause), fonttools (MIT),
+#   pyparsing (MIT) e typing_extensions (PSF).
+pillow-heif==1.8.1
+asn1crypto==1.5.1
+striprtf==0.0.35
+xlrd==2.0.2
+ezdxf==1.4.5
+
 # Monitoramento de recursos (CPU/RAM na tela de Execução)
 psutil==6.0.0
 

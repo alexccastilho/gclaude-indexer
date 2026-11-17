@@ -195,12 +195,26 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]) -> li
     intermediate = converted_artifact_path(
         config.output_folder, relative, row["extension"], bool(row["needs_ocr"])
     )
-    if category == "pdf":
+    if category == "assinados":
+        # O que veio dentro decide: PDF (páginas de verdade) ou texto.
+        category = "pdf" if intermediate.suffix.lower() == ".pdf" else "text"
+    if category in ("pdf", "paginados"):
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative
         with _PDF_LOCK:
             return _pdf_passages(pdf_path, references)
 
     text = intermediate.read_text(encoding="utf-8")
+    if category == "mbox":
+        # Cada mensagem é uma página, com a referência dela.
+        from .light_formats import MBOX_PAGE_SEPARATOR
+
+        found: list[Passage] = []
+        for number, message in enumerate(text.split(MBOX_PAGE_SEPARATOR), start=1):
+            reference = references.get(number, f"p. {number}")
+            for passage in split_document(message):
+                passage.locator = " · ".join(part for part in (reference, passage.locator) if part)
+                found.append(passage)
+        return found
     if not is_whole_document_file(row["name"]):
         # A single image: one page, its OCR text.
         body = text.strip()

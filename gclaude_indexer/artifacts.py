@@ -209,6 +209,49 @@ def _unique_name(nome: str, group: str, usados: set[str], reservados: set[str] =
     return nome
 
 
+SIGNERS_SHOWN = 2
+
+
+def _signature_notes(conn, t) -> dict[str, str]:
+    """Por nome de arquivo, o texto curto de quem o assinou (`.p7m`/`.p7s`):
+    `assinado por Fulano (CPF …), 2026-01-02 10:00`. Só nomes que existem uma
+    vez no acervo: com dois arquivos de mesmo nome o índice não saberia de
+    qual é a assinatura. Vazio, e sem custo, num acervo sem assinaturas."""
+    try:
+        rows = conn.execute(
+            "SELECT f.name AS name, s.signer AS signer, s.holder_document AS document,"
+            " s.signed_at AS signed_at FROM file_signature s JOIN file f ON f.id = s.file_id"
+            " ORDER BY f.relative_path, s.rowid"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    if not rows:
+        return {}
+    names = {row["name"] for row in rows}
+    placeholders = ", ".join("?" for _ in names)
+    ambiguous = {
+        row[0] for row in conn.execute(
+            f"SELECT name FROM file WHERE name IN ({placeholders}) GROUP BY name HAVING COUNT(*) > 1",
+            tuple(names),
+        )
+    }
+    by_name: dict[str, list[str]] = {}
+    for row in rows:
+        if row["name"] in ambiguous or not (row["signer"] or row["document"]):
+            continue
+        by_name.setdefault(row["name"], []).append(t(
+            "artifact.index.signed_by",
+            signer=row["signer"] or row["document"],
+            holder=f" ({row['document']})" if row["signer"] and row["document"] else "",
+            date=f", {row['signed_at']}" if row["signed_at"] else "",
+        ))
+    notes: dict[str, str] = {}
+    for name, texts in by_name.items():
+        extra = len(texts) - SIGNERS_SHOWN
+        notes[name] = "; ".join(texts[:SIGNERS_SHOWN]) + (f" (+{extra})" if extra > 0 else "")
+    return notes
+
+
 def _first_file(files: str | None) -> str:
     return (files or "").split(";")[0].strip()
 
@@ -644,6 +687,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
     # de legislação, era `high` em quase todas as linhas. Decidido pelo projeto inteiro, porque
     # `project_instructions.md` descreve as colunas uma vez só.
     show_confidence = _show_confidence(conn, config)
+    assinaturas = _signature_notes(conn, t)
     colunas = ["table_range", "table_type", "table_date", "table_author"]
     if show_confidence:
         colunas.append("table_confidence")
@@ -662,6 +706,14 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
 
     cabecalho = [header, "|" + "---|" * len(colunas)]
 
+    def origem_com_assinatura(item) -> str:
+        """A coluna Origem, com quem assinou o arquivo (só se for assinado)."""
+        arquivos = item["files"] or ""
+        notas = [
+            assinaturas[nome] for nome in (parte.strip() for parte in arquivos.split(";")) if nome in assinaturas
+        ]
+        return f"{arquivos} — {' / '.join(notas)}" if notas else arquivos
+
     def linha(item) -> str:
         origem = physical.get((item["group_key"], item["start_order"]))
         # O arquivo só entra no intervalo quando difere da coluna Origem:
@@ -671,7 +723,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
         valores = [span, item["type"], item["date"], item["author"]]
         if show_confidence:
             valores.append(item["confidence"])
-        valores += [item["files"], item["summary"]]
+        valores += [origem_com_assinatura(item), item["summary"]]
         return "| " + " | ".join(_cell(v) for v in valores) + " |"
 
     def faixa(pecas: list) -> str:
@@ -1109,7 +1161,8 @@ def project_instructions_sections(
     from .file_types import EXTENSION_CATEGORIES
 
     no_struck = sorted(
-        ext.lstrip(".") for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"]
+        ext.lstrip(".")
+        for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"] | EXTENSION_CATEGORIES["paginados"]
     )
     placeholders = ", ".join("?" for _ in no_struck)
     has_struck_text = conn.execute(
