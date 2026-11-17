@@ -43,6 +43,9 @@ class WindowPage:
     # group of many files that number repeats. 0 = unknown (a page built by
     # hand), and `page_order` falls back to the reference.
     order: int = 0
+    # The `file.id` of the page, for the full text kept in the search index
+    # (`fulltext.page_text`). 0 = unknown (a page built by hand).
+    file_id: int = 0
 
 
 def page_order(page: WindowPage) -> int:
@@ -157,6 +160,7 @@ class WindowPageLoader:
                 has_table=bool(by_id[page_id]["has_table"]),
                 image_count=by_id[page_id]["image_count"],
                 order=start + offset,
+                file_id=by_id[page_id]["file_id"],
             )
             for offset, page_id in enumerate(ids)
         ]
@@ -199,6 +203,7 @@ def load_window_pages(
             has_table=bool(row["has_table"]),
             image_count=row["image_count"],
             order=start + offset,
+            file_id=row["file_id"],
         )
         for offset, row in enumerate(block)
     ]

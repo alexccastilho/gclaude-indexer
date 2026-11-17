@@ -43,6 +43,9 @@ from .html_text import without_struck_text
 from .paths import app_root
 
 RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
+# Medido em `demo/acervo` (docs/QUALITY.md): só vale `True` enquanto o acerto
+# das peças `medium` continuar acima do das `low`.
+CONTINUATION_KEEPS_MEDIUM = True
 DEFAULT_RULES_PATH = app_root() / "config" / "classification_rules.json"
 
 
@@ -94,6 +97,10 @@ class _ItemInProgress:
     dates_per_page: list[str | None] = field(default_factory=list)
     has_low_confidence: bool = False
     has_marked_type: bool = False
+    # A peça nasceu de um marcador (tipo no cabeçalho ou carimbo de
+    # protocolo), e não de uma página em branco, de um cabeçalho que mudou
+    # ou de outro arquivo.
+    opened_by_marker: bool = False
 
 
 class RulesEngine:
@@ -138,7 +145,7 @@ class RulesEngine:
             if current_item is None or new_file or (any_signal and not blank_page):
                 if current_item is not None:
                     ready_items.append(current_item)
-                current_item = _ItemInProgress()
+                current_item = _ItemInProgress(opened_by_marker=bool(found_type or has_protocol))
 
             if not any_signal:
                 current_item.has_low_confidence = True
@@ -253,7 +260,10 @@ class RulesEngine:
         date_value = next((d for d in item.dates_per_page if d), None)
 
         if item.has_low_confidence:
-            confidence = "low"
+            # 2.0.0: a continuação de uma peça aberta por marcador (as folhas
+            # seguintes de um parecer, de um contrato) não rebaixa a peça
+            # inteira: o limite e o tipo vêm do marcador, só o fim é suposto.
+            confidence = "medium" if CONTINUATION_KEEPS_MEDIUM and item.opened_by_marker else "low"
         elif item.has_marked_type:
             confidence = "high"
         else:

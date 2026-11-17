@@ -496,6 +496,30 @@ def fts_query(text: str) -> str:
     return " ".join(terms)
 
 
+def page_text(conn: sqlite3.Connection, file_id: int, reference: str) -> str:
+    """The whole text of one page, untruncated, from the passages of the
+    search (2.0.0: the second attempt at a page the model left untyped reads
+    what the window had to cut). `""` when the file is not indexed.
+
+    A page of a PDF or image is one passage located by its reference; a
+    message of a mailbox has its passages located "reference · heading"; a
+    whole-document file is one page whose passages all start with the
+    reference. Read by the rowid range of the file, never by scanning the
+    table (`locator` is UNINDEXED)."""
+    found = conn.execute(
+        "SELECT first_rowid, last_rowid FROM fulltext_file WHERE file_id = ?", (file_id,)
+    ).fetchone()
+    if found is None or found[0] is None or found[1] is None or not reference:
+        return ""
+    escaped = reference.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    rows = conn.execute(
+        "SELECT text FROM fulltext WHERE rowid BETWEEN ? AND ?"
+        " AND (locator = ? OR locator LIKE ? ESCAPE '!') ORDER BY rowid",
+        (found[0], found[1], reference, escaped + " · %"),
+    ).fetchall()
+    return "\n".join(row[0] for row in rows)
+
+
 def search(conn: sqlite3.Connection, text: str, limit: int = 50, offset: int = 0) -> tuple[list[SearchHit], int]:
     """`(hits, total)` for the user's words, best match first."""
     if language_detect.has_unspaced(text):

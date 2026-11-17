@@ -501,3 +501,34 @@ def test_versao_e_documentos_da_fase_37():
         assert "QUALITY" in texto, registro
     especificacao = (_RAIZ / "docs" / "SPECIFICATION.md").read_text(encoding="utf-8")
     assert "QUALITY.md" in especificacao and "demo/gabarito.csv" in especificacao
+
+
+def test_acerto_por_nivel_de_confianca(tmp_path):
+    """2.0.0: o relatório reparte peças e acerto de tipo pelo nível que o
+    motor declarou, e a conta de cada nível soma o total."""
+    from gclaude_indexer.answer_key import KeyPiece, compare_with_answer_key, render_report
+
+    conn = _banco_com_indice(tmp_path, [("P/v1.pdf", "P", 6)], [
+        ("P", 1, 2, "OFICIO", None, None),
+        ("P", 3, 4, "PARECER", None, None),
+        ("P", 5, 6, "ATA", None, None),
+    ])
+    conn.execute("UPDATE item SET confidence = 'low' WHERE start_order = 3")
+    conn.execute("UPDATE item SET confidence = 'medium' WHERE start_order = 5")
+    conn.commit()
+    relatorio = compare_with_answer_key(conn, [
+        KeyPiece("P/v1.pdf", 1, 2, "OFÍCIO", "", ""),
+        KeyPiece("P/v1.pdf", 3, 4, "DESPACHO", "", ""),
+        KeyPiece("P/v1.pdf", 5, 6, "ATA", "", ""),
+    ])
+    niveis = relatorio.by_confidence
+    assert [(n, niveis[n].pieces, niveis[n].matched) for n in ("high", "medium", "low")] == [
+        ("high", 1, 1), ("medium", 1, 1), ("low", 1, 1),
+    ]
+    assert niveis["high"].type_score.rate == 1.0
+    assert niveis["medium"].type_score.rate == 1.0
+    assert niveis["low"].type_score.rate == 0.0  # PARECER onde o gabarito diz DESPACHO
+    assert sum(n.type_score.hits for n in niveis.values()) == relatorio.type_score.hits
+    texto = render_report(relatorio, {})
+    assert "## Por nível de confiança" in texto
+    assert "| low | 1 | 33,3% | 1/1 (100,0%) | 0,0% (0/1)" in texto
