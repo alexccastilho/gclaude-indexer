@@ -237,12 +237,6 @@
       <option value="maximum" {% if values.parallelism == "maximum" %}selected{% endif %}>{{ t('new_project.parallelism_maximum') }}</option>
     </select>
     <p class="help">{{ t('new_project.help_parallelism') }}</p>
-
-    <label class="checkbox-inline">
-      <input type="checkbox" name="review_low_confidence" {% if values.review_low_confidence %}checked{% endif %}>
-      {{ t('new_project.review_low_confidence') }}
-      {{ m.tooltip(t, 'hint.review_low_confidence') }}
-    </label>
   </fieldset>
 
   <fieldset>
@@ -255,9 +249,6 @@
     <label for="role_instructions">{{ t('new_project.instructions_role') }} {{ m.tooltip(t, 'hint.instructions_role') }}</label>
     <textarea id="role_instructions" name="role_instructions" rows="3"
               placeholder="{{ t('new_project.instructions_role_placeholder') }}">{{ values.role_instructions }}</textarea>
-
-    <label for="extra_rules">{{ t('new_project.extra_rules') }} {{ m.tooltip(t, 'hint.extra_rules') }}</label>
-    <textarea id="extra_rules" name="extra_rules" rows="3">{{ values.extra_rules }}</textarea>
   </fieldset>
 
   <button type="submit" class="button button-primary">{{ m.icon('check') }} {{ t('new_project.create') }}</button>

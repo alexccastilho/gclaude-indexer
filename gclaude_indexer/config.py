@@ -86,7 +86,6 @@ class ProjectConfig:
     local_model: str = "automatic"
     processing_mode: str = "automatic"
     parallelism: str = "automatic"
-    review_low_confidence: bool = False
     role_instructions: str = ""
     extra_rules: str = ""
     # Instruções que o usuário já usa no Projeto do Claude: entram acima do
@@ -203,7 +202,7 @@ def _validate(config: ProjectConfig) -> list[ConfigErrorMessage]:
     return errors
 
 
-_RETIRED_FIELDS = frozenset({"planalto_in_package"})
+_RETIRED_FIELDS = frozenset({"planalto_in_package", "review_low_confidence"})
 
 
 def load_config(data: dict) -> ProjectConfig:

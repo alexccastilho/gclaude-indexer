@@ -102,7 +102,7 @@ from .readers import reader_pool
 from .formatting import format_date, format_datetime
 from .i18n import DEFAULT_LANGUAGE, AVAILABLE_LANGUAGES, LANGUAGE_COOKIE_NAME, valid_language, translate
 from .layout import DEFAULT_LAYOUT, AVAILABLE_LAYOUTS, LAYOUT_COOKIE_NAME, valid_layout
-from ..engine_local import recommended_local_model
+from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT, recommended_local_model
 from .ollama_models import list_installed_models
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_theme
@@ -398,7 +398,7 @@ INTEGER_FIELDS = ("pages_per_block", "pages_per_window", "overlap", "chars_per_p
 TEXT_FIELDS = (
     "name", "subject", "source_folder", "output_folder", "collection_type", "group_mode",
     "group_pattern", "ocr_language", "classification_engine", "local_model", "processing_mode",
-    "parallelism", "role_instructions", "extra_rules", "existing_instructions",
+    "parallelism", "role_instructions", "existing_instructions",
 )
 
 
@@ -659,7 +659,6 @@ def _create_new_project_body(request: Request, form):
     # que só entram marcando `midia`): o servidor garante a regra que o
     # formulário só garante em JavaScript.
     data["extensions"] = normalize_categories([str(value) for value in form.getlist("extensions")])
-    data["review_low_confidence"] = "review_low_confidence" in form
 
     # Saída em branco (o campo deixou de ser `required`, ou o POST veio sem
     # ele): o servidor calcula a mesma sugestão `<origem>-AI` que a tela
@@ -1189,7 +1188,7 @@ def _dedup_view(report, language: str) -> dict | None:
 
 
 def _instructions_context(entry, config, language: str, *, message: str = "", saved: bool = False,
-                          user_text: str | None = None, conn=None) -> dict:
+                          user_text: str | None = None, conn=None, extra_rules: str | None = None) -> dict:
     path = Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME
     report = _dedup_report(config)
     return {
@@ -1198,6 +1197,9 @@ def _instructions_context(entry, config, language: str, *, message: str = "", sa
         "generated": generated_part(path),
         "exists": path.exists(),
         "message": message, "saved": saved,
+        "extra_rules": config.extra_rules if extra_rules is None else extra_rules,
+        "extra_rules_limit": EXTRA_RULES_MAX_LENGTH,
+        "extra_rules_prompt_limit": EXTRA_RULES_PROMPT_LIMIT,
         "dedup": _dedup_view(report, language),
         "dedup_kept": report is not None and conn is not None and _dedup_kept(conn, report.fingerprint),
     }
@@ -1313,6 +1315,48 @@ def _instructions_save_body(request: Request, project_id: int, form):
         return render(request, "instructions.html", _instructions_context(
             entry, config, language, message=translate(language, "instructions.unchanged"),
             user_text=pasted if pasted.strip() else None,
+        ))
+
+
+# Teto do que a caixa "Regras extras do projeto" aceita. O prompt do modelo
+# local usa só os primeiros `EXTRA_RULES_PROMPT_LIMIT` caracteres; o resto
+# continua indo para as instruções do Claude, por isso o teto é maior. Texto
+# acima do teto é recusado, nunca cortado em silêncio.
+EXTRA_RULES_MAX_LENGTH = 4000
+
+
+@app.post("/projects/{project_id}/instructions/extra-rules", response_class=HTMLResponse)
+async def instructions_extra_rules_save(request: Request, project_id: int):
+    form = await request.form()
+    return await run_in_threadpool(_instructions_extra_rules_body, request, project_id, form)
+
+
+def _instructions_extra_rules_body(request: Request, project_id: int, form):
+    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    text = str(form.get("extra_rules", "")).replace("\r\n", "\n").strip()
+    with _open_project(project_id) as (entry, config, conn):
+        if len(text) > EXTRA_RULES_MAX_LENGTH:
+            return render(
+                request, "instructions.html",
+                _instructions_context(
+                    entry, config, language, conn=conn, extra_rules=text,
+                    message=translate(
+                        language, "instructions.extra_rules.too_long",
+                        size=len(text), limit=EXTRA_RULES_MAX_LENGTH,
+                    ),
+                ),
+                status_code=422,
+            )
+        if text != config.extra_rules.strip():
+            config.extra_rules = text
+            save_project_config(conn, config)
+            # Reescreve a seção gerada agora, para a tela já mostrar as
+            # regras no bloco e o arquivo não esperar a próxima geração.
+            if (Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME).exists():
+                generate_project_instructions_md(conn, config, language)
+        return render(request, "instructions.html", _instructions_context(
+            entry, config, language, conn=conn, saved=True,
+            message=translate(language, "instructions.extra_rules.saved"),
         ))
 
 

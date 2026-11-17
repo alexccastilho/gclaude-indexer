@@ -28,7 +28,6 @@ from gclaude_indexer.fulltext import coverage, index_pending, remove_file, searc
 from gclaude_indexer.i18n import translate
 from gclaude_indexer.import_items import RAW_ITEMS_FILE_NAME
 from gclaude_indexer.quality import _coverage
-from gclaude_indexer.review import _low_confidence_windows
 from gclaude_indexer.web.background_runs import StepTask, _fulltext_progress, _fulltext_progress_dict
 from gclaude_indexer.web.step_state import step_status
 from gclaude_indexer.windows_prep import group_page_counts, pages_for_group, prepare_windows
@@ -261,17 +260,6 @@ def test_motor_de_regras_grava_em_lote_e_marca_todas_as_janelas(tmp_path):
     conn.close()
 
 
-def test_revisao_nao_reenvia_janela_ja_revisada(tmp_path):
-    jsonl = tmp_path / RAW_ITEMS_FILE_NAME
-    linhas = [
-        {"window": "g::000001-000003", "confidence": "low", "engine": "rules"},
-        {"window": "g::000003-000005", "confidence": "low", "engine": "rules"},
-        {"window": "g::000003-000005", "confidence": "high", "engine": "local"},
-    ]
-    jsonl.write_text("\n".join(json.dumps(l) for l in linhas), encoding="utf-8")
-    assert _low_confidence_windows(jsonl) == {"g::000001-000003"}
-
-
 # --- tela ---------------------------------------------------------------------------
 
 
@@ -299,15 +287,6 @@ def test_resumo_de_qualidade_fica_em_cache_ate_algo_mudar(tmp_path, monkeypatch)
     app_mod._cached_quality_summary(1, conn, config)
     assert len(chamadas) == 2
     conn.close()
-
-
-def test_jsonl_com_u0085_no_texto_nao_vira_linha_corrompida(tmp_path):
-    """Texto de HTML lido como latin-1 traz U+0085, que `json.dumps` não
-    escapa e `splitlines()` tratava como fim de linha."""
-    jsonl = tmp_path / RAW_ITEMS_FILE_NAME
-    peca = {"window": "g::000001-000003", "confidence": "low", "engine": "rules", "summary": "a\x85b\u2028c"}
-    jsonl.write_text(json.dumps(peca, ensure_ascii=False) + "\n", encoding="utf-8")
-    assert _low_confidence_windows(jsonl) == {"g::000001-000003"}
 
 
 def test_importacao_le_peca_com_u0085_inteira(tmp_path):
