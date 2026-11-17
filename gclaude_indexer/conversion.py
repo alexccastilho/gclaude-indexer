@@ -491,35 +491,53 @@ def _row_plan(config: ProjectConfig, row: dict | None) -> tuple[str, bool]:
 def _detect_in_worker(native: str, plan: str, short: bool, usable, notes: dict) -> tuple[str, bool]:
     """Os formatos que só viram PDF na conversão (paginados, assinados,
     antigos) não passam pela detecção anterior ao OCR: o texto nativo do PDF
-    convertido diz aqui a escrita. Só a escrita: o `py3langid` (~100 MB por
-    processo) não é carregado num processo do conjunto. Chinês, japonês e
-    coreano saem da própria escrita; as demais seguem o plano quando ele lê a
-    escrita, ou o modelo da escrita quando não lê. O idioma exato é decidido
-    no processo principal, pela amostra (`_resolve_language`), que manda o
-    arquivo refazer se o OCR leu com outro idioma. O que não está nesta
-    máquina não é baixado aqui: o arquivo fica marcado e a próxima conversão
-    baixa o que ele pediu (`file.ocr_lang`)."""
+    convertido diz aqui o idioma, e as páginas escaneadas já são lidas nele
+    (uma passada só). O `py3langid` carrega neste processo só por este
+    caminho, e só com texto nativo bastante; PDFs e imagens têm o idioma
+    decidido no processo principal, antes da fila. Sem idioma pelo texto, a
+    escrita: CJK por ela mesma; outra escrita que o plano não lê, o modelo
+    dela. O que não está nesta máquina não é baixado aqui: o arquivo fica
+    marcado e a próxima conversão baixa o que ele pediu (`file.ocr_lang`)."""
     if not ocr_detection.native_is_enough(native):
         return plan, short
-    script = language_detect.dominant_script(native)
-    if script is None:
-        return plan, short
-    notes["language_sample"] = native[:_GROUP_SAMPLE_CHARS]
-    if script in language_detect.CJK_SCRIPTS:
-        code = language_detect.east_asian_language(native)
-        wanted = "+".join(language_detect.tesseract_languages([code], native)) if code else ""
-    elif any(language_detect.model_script(model) == script for model in ocr_detection.plan_models(plan)):
-        return plan, short
+    sample = native[:_GROUP_SAMPLE_CHARS]
+    notes["language_sample"] = sample
+    found = language_detect.detect_languages(sample)
+    if found:
+        # Da mesma amostra que `_resolve_language` lê: simplificado e
+        # tradicional saem iguais nos dois processos.
+        wanted = "+".join(language_detect.tesseract_languages(found, sample))
+        notes["language"] = ",".join(found)
     else:
-        wanted = language_detect.script_model(script) or ""
+        script = language_detect.dominant_script(sample)
+        if script is None:
+            return plan, short
+        if script in language_detect.CJK_SCRIPTS:
+            code = language_detect.east_asian_language(sample)
+            wanted = "+".join(language_detect.tesseract_languages([code], sample)) if code else ""
+        elif any(language_detect.model_script(model) == script for model in ocr_detection.plan_models(plan)):
+            return plan, short
+        else:
+            wanted = language_detect.script_model(script) or ""
     if not wanted:
         return plan, short
+    notes["ocr_lang"] = wanted
     if usable is None:  # sem saber o que o Tesseract tem: como antes, tenta
         return wanted, False
     restricted, missing = ocr_detection.restrict_plan(wanted, set(usable))
+    if not missing:
+        return restricted, False
+    # Falta o modelo do idioma: o da escrita, se estiver aqui, lê por ora; o
+    # arquivo fica marcado e volta quando o modelo chegar.
+    scripts = {language_detect.model_script(model) for model in ocr_detection.plan_models(wanted)}
+    stand_ins = [
+        model for model in (language_detect.script_model(script) for script in scripts if script)
+        if model and model in set(usable)
+    ]
     if restricted:
-        return restricted, missing
-    notes["ocr_lang"] = wanted
+        return "+".join(dict.fromkeys(ocr_detection.plan_models(restricted) + stand_ins)), True
+    if stand_ins:
+        return "+".join(stand_ins), True
     return plan, True
 
 
@@ -992,9 +1010,23 @@ def _resolve_language(info: dict) -> tuple[tuple[str | None, str | None] | None,
     if not found:
         return update, False
     wanted = language_detect.tesseract_languages(found, sample)
-    used = set(ocr_detection.plan_models(info.get("ocr_used")))
-    redo = bool(info.get("ocr_applied")) and bool(wanted) and not set(wanted) <= used
+    used = ocr_detection.plan_models(info.get("ocr_used"))
+    redo = bool(info.get("ocr_applied")) and not _covers(used, wanted)
     return ("+".join(wanted) or None, ",".join(found)), redo
+
+
+def _covers(used: list[str], wanted: list[str]) -> bool:
+    """Se o OCR feito com `used` leu o que `wanted` pede: cada modelo pedido
+    está lá, ou está o modelo da escrita dele (posto quando o do idioma
+    faltava; aí o arquivo já voltou marcado pelo trabalhador)."""
+    present = set(used)
+    for model in wanted:
+        if model in present:
+            continue
+        script = language_detect.model_script(model)
+        if script is None or language_detect.script_model(script) not in present:
+            return False
+    return True
 
 
 def _store_signatures(conn, signatures) -> None:
