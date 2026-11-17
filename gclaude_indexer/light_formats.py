@@ -815,9 +815,11 @@ def signed_content_of(data: bytes, depth: int = 4) -> SignedFile:
 
 # --- tipo real do conteúdo envelopado -----------------------------------------------
 
+# Sem `RIFF` sozinho: WAV e AVI também começam assim. O WebP, único RIFF que
+# é imagem, é reconhecido pelo `WEBP` logo depois (`sniff_content_type`).
 _IMAGE_MAGIC = (
     b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"II*\x00", b"MM\x00*", b"GIF87a", b"GIF89a",
-    b"\xff\x4f\xff\x51", b"\x00\x00\x00\x0cjP  ", b"RIFF",
+    b"\xff\x4f\xff\x51", b"\x00\x00\x00\x0cjP  ",
 )
 
 

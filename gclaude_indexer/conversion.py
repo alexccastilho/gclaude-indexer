@@ -428,6 +428,14 @@ def _register_heif() -> None:
     register_heif_opener()
 
 
+# Teto do `tesseract` numa imagem inteira. Sem ele, uma imagem que trava o
+# Tesseract travava a conversão: as imagens comuns e as de dentro de um `.p7m`
+# rodam num processo do conjunto, mas os anexos de imagem de um PST rodam
+# neste processo, sem nenhum outro prazo por cima. Estourar levanta
+# `RuntimeError`: falha daquele arquivo (ou só daquele anexo), não da conversão.
+IMAGE_OCR_TIMEOUT_S = 300
+
+
 def _extract_text_image(path: Path, ocr_language: str, rotate: int = 0) -> str:
     """O OCR de uma imagem. `rotate`: graus no sentido horário que o OSD
     mandou girar (o `pytesseract` não endireita sozinho, como o `ocrmypdf`)."""
@@ -441,7 +449,7 @@ def _extract_text_image(path: Path, ocr_language: str, rotate: int = 0) -> str:
             if image.mode not in ("L", "RGB"):
                 image = image.convert("RGB")
             image = image.rotate(-rotate, expand=True, fillcolor="white")
-        return pytesseract.image_to_string(image, lang=ocr_language)
+        return pytesseract.image_to_string(image, lang=ocr_language, timeout=IMAGE_OCR_TIMEOUT_S)
 
 
 _TEXT_CATEGORIES = frozenset({

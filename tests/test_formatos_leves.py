@@ -543,7 +543,7 @@ def test_imagens_extras_abrem_para_o_ocr(tmp_path, monkeypatch, extensao):
         imagem.save(destino, format="JPEG")
     else:
         imagem.save(destino, format="JPEG2000")
-    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang: f"{img.width}x{img.height}:{lang}")
+    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang, **_k: f"{img.width}x{img.height}:{lang}")
 
     assert conversion._extract_text_image(destino, "por") == "64x48:por"
 
@@ -555,7 +555,7 @@ def test_heic_percorre_a_conversao_inteira(tmp_path, monkeypatch):
 
     origem, saida, config, conn = _projeto(tmp_path, ["imagens"])
     pillow_heif.from_pillow(Image.new("RGB", (32, 32), "white")).save(str(origem / "iphone.heic"))
-    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang: "texto lido da foto")
+    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang, **_k: "texto lido da foto")
 
     _processar(conn, config)
 
@@ -1073,7 +1073,7 @@ def test_extensoes_novas_nao_disputam_o_mesmo_intermediario(tmp_path, monkeypatc
     (origem / "X.docm").write_bytes(_com_outro_tipo(
         _docx_bytes(), _WORD, "application/vnd.ms-word.document.macroEnabled.main+xml"
     ))
-    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang: "ocr")
+    monkeypatch.setattr(pytesseract, "image_to_string", lambda img, lang, **_k: "ocr")
 
     _processar(conn, config)
 
@@ -1325,3 +1325,31 @@ def test_tabela_larga_e_rasa_legitima_continua_convertendo(tmp_path):
     texto = light_formats.extract_text_opendocument(arquivo)
 
     assert texto.count("\n") == 39 and texto.splitlines()[0].split("\t")[499] == "c499"
+
+
+def test_ocr_de_imagem_tem_tempo_limite(tmp_path, monkeypatch):
+    """Revisão final: o `pytesseract` rodava sem `timeout` — nos anexos de
+    imagem de um PST, no próprio processo da conversão, sem prazo nenhum."""
+    import pytesseract
+    from PIL import Image
+
+    destino = tmp_path / "foto.png"
+    Image.new("RGB", (20, 20), "white").save(destino)
+    vistos: list = []
+    monkeypatch.setattr(
+        pytesseract, "image_to_string", lambda img, lang, **k: vistos.append(k.get("timeout")) or "ok"
+    )
+    assert conversion._extract_text_image(destino, "por") == "ok"
+    assert vistos == [conversion.IMAGE_OCR_TIMEOUT_S] and 0 < conversion.IMAGE_OCR_TIMEOUT_S <= 600
+
+
+
+def test_wav_e_avi_nao_sao_farejados_como_imagem():
+    """Revisão final: `RIFF` sozinho em `_IMAGE_MAGIC` fazia um WAV ou AVI
+    (um anexo, o conteúdo de um `.p7m`) virar imagem e ir para o OCR."""
+    wav = b"RIFF\x24\x08\x00\x00WAVEfmt \x10\x00\x00\x00" + b"\x00" * 64
+    avi = b"RIFF\x24\x08\x00\x00AVI LIST" + b"\x00" * 64
+    webp = b"RIFF\x24\x08\x00\x00WEBPVP8 " + b"\x00" * 64
+    assert light_formats.sniff_content_type(wav) != "image"
+    assert light_formats.sniff_content_type(avi) != "image"
+    assert light_formats.sniff_content_type(webp) == "image"
