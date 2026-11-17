@@ -94,7 +94,7 @@ En toda pantalla, el botón **Ayuda** resume la pantalla y el **?** al lado de c
 
 ## Cuánto acierta
 
-El índice se mide contra la clave de respuestas del acervo de demostración en cada versión que toque el clasificador, y una prueba automática en GitHub repite la medición con cada cambio en el código. En la última medición (02/11/2026), ninguna página se perdió con ninguno de los dos motores. El motor de reglas encontró 36 de las 41 piezas en 4 segundos y acertó el tipo del 94% de ellas, pero la fecha de solo la mitad de ellas y el autor de solo una de cada cinco. El modelo local (`qwen3.5:9b`) tardó 4 minutos, acertó la fecha del 89% y el autor del 84% de las piezas encontradas, y cortó más piezas de las que debía.
+El índice se mide contra la clave de respuestas del acervo de demostración en cada versión que toque el clasificador, y una prueba automática en GitHub repite la medición con cada cambio en el código. En la última medición (02/11/2026), ninguna página se perdió con ninguno de los dos motores. El motor de reglas encontró 36 de las 41 piezas en 4 segundos y acertó el tipo del 94% de ellas, pero la fecha de solo la mitad de ellas y el autor de solo una de cada cinco. El modelo local (`qwen3.5:9b`) tardó 4 minutos, acertó la fecha del 89% y el autor del 84% de las piezas encontradas, y partió algunas piezas en dos.
 
 Lo que eso quiere decir en la práctica: toda página del acervo está en el índice, aunque el tipo o la fecha salgan mal, y Claude verifica el texto en el documento original antes de responder; así lo ordenan las instrucciones. Los números completos, lo que significa cada uno y lo que no dicen están en [docs/QUALITY.es.md](QUALITY.es.md).
 
@@ -105,7 +105,7 @@ Lo que eso quiere decir en la práctica: toda página del acervo está en el ín
 - El programa solo escucha en su propia máquina (`127.0.0.1`) y solo acepta pedidos de sus propias pantallas: un sitio abierto en el navegador no puede darle órdenes.
 - La carpeta de origen nunca se modifica. Todo lo que el programa produce va a la carpeta de salida.
 - La base del proyecto (`project.db`) guarda el texto de las páginas. Si el acervo tiene datos personales, proteja la carpeta de salida como protegería los documentos, también en Google Drive.
-- El contenido llega a Claude solo cuando usted lo envía: al subir los archivos del índice a un Project o al mandar un documento. La única consulta externa es la búsqueda en LexML, que envía solo el término que usted escribió: en la pantalla, solo con la casilla marcada; en `buscar.bat`, también cuando ninguna norma del acervo cita el término.
+- El contenido llega a Claude solo cuando usted lo envía: al subir los archivos del índice a un Project o al mandar un documento. La única consulta que lleva algo que usted escribió es la búsqueda en LexML, que envía solo el término: en la pantalla, solo con la casilla marcada; en `buscar.bat`, también cuando ninguna norma del acervo cita el término. El otro uso de la red es la descarga única de los componentes opcionales (LibreOffice, FFmpeg, whisper.cpp, datos del OCR), fijados por SHA-256, que no envía nada de sus documentos.
 
 ## Varios acervos en un Project
 

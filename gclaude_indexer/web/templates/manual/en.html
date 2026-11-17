@@ -135,7 +135,7 @@
 <h3>Components that are downloaded once</h3>
 <p>Some formats need programs or data that the installer does not bring. The program downloads each one by itself, once, the first time a document needs it:</p>
 <ul>
-  <li><strong>LibreOffice</strong> (about 370 MB), for the old formats. It runs without a window and without macros, links or updater.</li>
+  <li><strong>LibreOffice</strong> (about 370 MB), for the old formats. It runs without a window and without macros, links or updater. A LibreOffice 7.6 or newer already installed on the machine is also accepted; it is not covered by the SHA-256 pin.</li>
   <li><strong>FFmpeg and whisper.cpp</strong>, with a transcription model (from 148 MB to 1.5 GB, depending on the computer), for audio and video.</li>
   <li><strong>OCR languages and scripts</strong>, a few MB each, for scanned pages in languages the installer did not bring.</li>
 </ul>
@@ -389,7 +389,7 @@
   <dt>"Request refused" appears</dt><dd>Some website tried to send a command to the program and was blocked. Always use the GClaude Indexer shortcut or the address <code>http://127.0.0.1:8000</code>.</dd>
   <dt>LexML asked for a check</dt><dd>The Senate's portal answers programs with a verification page. Open the link shown and run the search in the browser.</dd>
   <dt>"Ignored" files on the Execution screen</dt><dd>The program leaves out, on purpose, what cannot or should not be indexed: archives, executables, databases, fonts, keys and passwords, binaries, media you did not check and Google Docs shortcuts. Each one appears with the reason. To index the content of an archive, extract it; for a Google shortcut, export the document to DOCX, XLSX or PDF.</dd>
-  <dt>"Waiting for a component downloaded on demand"</dt><dd>The document needs LibreOffice, FFmpeg and whisper.cpp or an OCR language that has not been downloaded yet, and the download was not possible (no internet, or refused). Nothing failed: the file goes back to the queue in the next run, when there is internet.</dd>
+  <dt>"Waiting for a component downloaded on demand"</dt><dd>The document needs a component that has not been downloaded yet (LibreOffice, FFmpeg with whisper.cpp, or an OCR language), and the download was not possible (no internet, or refused). Nothing failed: the file goes back to the queue in the next run, when there is internet.</dd>
   <dt>"Folder move" notice</dt><dd>The project has its output inside the source folder. Open the notice and confirm the move, or postpone it; see <a href="#mudanca-de-pasta">Moving the output folder</a>.</dd>
 </dl>
 </section>
@@ -401,7 +401,7 @@
   <li>The program only accepts commands from its own screens: a website open in the browser cannot give it orders.</li>
   <li>The source folder is never modified.</li>
   <li>The project database stores the text of the pages. If the collection contains personal data covered by data-protection law (e.g. Brazil's LGPD, GDPR), protect the output folder as you would protect the documents themselves, including on Google Drive.</li>
-  <li>The only query to an outside service is the LexML search, which sends only the term you typed: on the screen, only with the box checked; in <code>buscar.bat</code>, also when no act in the collection cites the term.</li>
+  <li>The only query that carries anything you typed is the LexML search, which sends only the term: on the screen, only with the box checked; in <code>buscar.bat</code>, also when no act in the collection cites the term. The other network use is the one-time download of the optional components (LibreOffice, FFmpeg, whisper.cpp, OCR data), pinned by SHA-256, which sends nothing from your documents.</li>
   <li>When you send files to Claude, then yes, the content you send goes through your Claude account, under the terms of your plan.</li>
   <li>The program downloads from the internet only what a document needs and the installer did not bring (LibreOffice, FFmpeg, whisper.cpp and its models, OCR languages), from a fixed list with the SHA-256 of every file. The request carries the name of the component, never the content of a document. Without internet, those documents are skipped with the reason.</li>
 </ul>

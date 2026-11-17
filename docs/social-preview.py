@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 RAIZ = Path(__file__).resolve().parent.parent
 DOCS = RAIZ / "docs" / "media"
 FONTES = RAIZ / "gclaude_indexer" / "web" / "static" / "fonts"
-VERSAO = "1.10"
+VERSAO = "2.0"
 
 LARGURA, ALTURA = 1280, 640
 
@@ -110,7 +110,7 @@ def compor(linhas: tuple[str, str], captura: str, saida: str) -> Path:
     # Selos em fonte mono, numa pílula discreta cada.
     selo = _mono(16, 600)
     x = X_TEXTO
-    for texto in ("WINDOWS", "OFFLINE", "GPL-3.0", VERSAO):
+    for texto in ("WINDOWS", "LOCAL", "GPL-3.0", VERSAO):
         largura = desenho.textlength(texto, font=selo) + 22
         desenho.rounded_rectangle([x, 520, x + largura, 550], 7, fill=SUPERFICIE, outline=BORDA)
         desenho.text((x + 11, 525), texto, font=selo, fill=DESTAQUE)
@@ -129,7 +129,7 @@ def compor(linhas: tuple[str, str], captura: str, saida: str) -> Path:
 
 def main() -> int:
     gerados = [
-        compor(("A folder of documents becomes an index", "Claude can read, offline on your PC."),
+        compor(("A folder of documents becomes an index", "Claude can read, locally on your PC."),
                "run-en.png", "social-preview.png"),
         compor(("Uma pasta de documentos vira um índice", "que o Claude lê, sem sair do seu PC."),
                "run-pt.png", "social-preview-pt-BR.png"),

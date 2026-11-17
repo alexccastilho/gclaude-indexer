@@ -135,7 +135,7 @@
 <h3>Componentes que se descargan una vez</h3>
 <p>Algunos formatos necesitan programas o datos que el instalador no trae. El programa descarga cada uno solo, una única vez, la primera vez que un documento lo necesita:</p>
 <ul>
-  <li><strong>LibreOffice</strong> (unos 370 MB), para los formatos antiguos. Corre sin ventana y sin macros, vínculos ni actualizador.</li>
+  <li><strong>LibreOffice</strong> (unos 370 MB), para los formatos antiguos. Corre sin ventana y sin macros, vínculos ni actualizador. Un LibreOffice 7.6 o más nuevo ya instalado en la máquina también se acepta; no lo cubre la fijación por SHA-256.</li>
   <li><strong>FFmpeg y whisper.cpp</strong>, con un modelo de transcripción (de 148 MB a 1,5 GB, según la computadora), para audio y vídeo.</li>
   <li><strong>Idiomas y escrituras del OCR</strong>, unos pocos MB cada uno, para páginas escaneadas en idiomas que el instalador no trajo.</li>
 </ul>
@@ -389,7 +389,7 @@
   <dt>Aparece "Solicitud rechazada"</dt><dd>Algún sitio web intentó enviar un comando al programa y fue bloqueado. Use siempre el acceso directo de GClaude Indexer o la dirección <code>http://127.0.0.1:8000</code>.</dd>
   <dt>LexML pidió verificación</dt><dd>El portal del Senado responde a los programas con una página de verificación. Abra el enlace mostrado y haga la búsqueda en el navegador.</dd>
   <dt>Archivos "ignorados" en la pantalla Ejecución</dt><dd>El programa deja fuera, a propósito, lo que no puede o no debe indexarse: comprimidos, ejecutables, bases de datos, fuentes, claves y contraseñas, binarios, medios que usted no marcó y accesos directos de Google Docs. Cada uno aparece con el motivo. Para indexar el contenido de un comprimido, extráigalo; para un acceso directo de Google, exporte el documento a DOCX, XLSX o PDF.</dd>
-  <dt>"Esperando un componente descargado bajo demanda"</dt><dd>El documento necesita LibreOffice, FFmpeg y whisper.cpp o un idioma del OCR que todavía no se descargó, y la descarga no fue posible (sin internet, o rechazada). Nada falló: el archivo vuelve a la cola en la próxima ejecución, cuando haya internet.</dd>
+  <dt>"Esperando un componente descargado bajo demanda"</dt><dd>El documento necesita un componente que todavía no se descargó (LibreOffice, FFmpeg con whisper.cpp o un idioma del OCR), y la descarga no fue posible (sin internet, o rechazada). Nada falló: el archivo vuelve a la cola en la próxima ejecución, cuando haya internet.</dd>
   <dt>Aviso de "Cambio de carpeta"</dt><dd>El proyecto tiene la salida dentro de la carpeta de origen. Abra el aviso y confirme el cambio, o aplácelo; vea <a href="#mudanca-de-pasta">Cambio de la carpeta de salida</a>.</dd>
 </dl>
 </section>
@@ -401,7 +401,7 @@
   <li>El programa solo acepta comandos de sus propias pantallas: un sitio web abierto en el navegador no puede darle órdenes.</li>
   <li>La carpeta de origen nunca se modifica.</li>
   <li>La base del proyecto guarda el texto de las páginas. Si el acervo contiene datos personales (LGPD), proteja la carpeta de salida como protegería los propios documentos, también en Google Drive.</li>
-  <li>La única consulta a un servicio externo es la búsqueda en LexML, que envía solo el término escrito: en la pantalla, solo con la casilla marcada; en <code>buscar.bat</code>, también cuando ninguna norma del acervo cita el término.</li>
+  <li>La única consulta que lleva algo que usted escribió es la búsqueda en LexML, que envía solo el término: en la pantalla, solo con la casilla marcada; en <code>buscar.bat</code>, también cuando ninguna norma del acervo cita el término. El otro uso de la red es la descarga única de los componentes opcionales (LibreOffice, FFmpeg, whisper.cpp, datos del OCR), fijados por SHA-256, que no envía nada de sus documentos.</li>
   <li>Al enviar archivos a Claude, entonces sí el contenido enviado pasa por su cuenta de Claude, según las condiciones de su plan.</li>
   <li>El programa solo descarga de internet lo que un documento necesita y el instalador no trajo (LibreOffice, FFmpeg, whisper.cpp y sus modelos, idiomas del OCR), de una lista fija con el SHA-256 de cada archivo. La solicitud lleva el nombre del componente, nunca el contenido de un documento. Sin internet, esos documentos se omiten con el motivo.</li>
 </ul>

@@ -43,7 +43,8 @@ output folders:
   Document Foundation and is unpacked by an administrative extraction
   (`msiexec /a`), without elevation and without installing anything in
   Windows. It runs headless, with a pre-seeded profile that turns off macros,
-  links and the updater.
+  links and the updater. A LibreOffice 7.6 or newer already installed on the
+  machine is also accepted; it is not covered by the SHA-256 pin.
 - **FFmpeg 8.1** (LGPL, shared build) and **whisper.cpp b5454**, with the
   whisper ggml models (`base`, `small`, `medium`), to transcribe audio and
   video locally.

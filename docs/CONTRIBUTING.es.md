@@ -10,12 +10,12 @@ GClaude Indexer funciona **solo en Windows**. No es una laguna de portabilidad q
 
 ## No necesita Claude Code
 
-El nombre del proyecto menciona a Claude, pero **Claude Code es opcional**, tanto para usar el programa como para contribuir. La clasificación de las piezas la hace uno de tres motores intercambiables (más un modo `automatic`, que elige entre los dos primeros según el hardware de la máquina):
+El nombre del proyecto menciona a Claude, pero **Claude Code es opcional**, tanto para usar el programa como para contribuir. La clasificación de las piezas la hace uno de dos motores intercambiables (más un modo `automatic`, que elige entre ellos según el hardware de la máquina):
 
 - `rules`: determinista, no exige ninguna herramienta externa.
 - `local`: usa un modelo de Ollama que corre localmente.
 
-Los motores `rules` y `local` bastan para ejecutar el flujo completo y trabajar en casi todo este repositorio. Solo necesita Claude Code si está tocando `gclaude_indexer/claude_package.py`, y aun así la suite de pruebas simula la llamada al subproceso. No hace falta tener Claude Code instalado para ejecutar las pruebas.
+Los motores `rules` y `local` bastan para ejecutar el flujo completo y trabajar en casi todo este repositorio. El programa nunca llama a Claude Code: `gclaude_indexer/claude_package.py` solo arma el `.zip` de un Project de Claude. No hace falta tener Claude Code instalado para trabajar en nada de esto ni para ejecutar las pruebas.
 
 ## Preparar el entorno
 
@@ -75,7 +75,7 @@ El código (identificadores, comentarios, docstrings, esquema de la base) está 
 
 Un comentario que explica una decisión no obvia dice qué se midió, dónde y cuándo ("flash attention duplicó el tiempo de lectura del prompt en la RX 6000 (12 GB) vía Vulkan, 02/11/2026"). Quien lea dos versiones después puede medir de nuevo en vez de adivinar si el motivo sigue valiendo.
 
-### El proyecto es offline
+### Sin red, salvo lo que se lista aquí
 
 Ninguna llamada de red en tiempo de ejecución, salvo a `http://127.0.0.1:11434` (el Ollama local, siempre loopback, nunca configurable hacia un servidor remoto) y el servicio de búsqueda de LexML (en la pantalla, solo con la casilla marcada; en `buscar.bat`, también cuando ninguna norma del acervo cita el término), que envía solo el término escrito y nunca nada del acervo. La única otra excepción son las descargas de componentes bajo demanda (`gclaude_indexer/components.py`: LibreOffice, FFmpeg, whisper.cpp y sus modelos, idiomas del OCR): solo desde un manifiesto en `gclaude_indexer/manifests/` que fija la URL, el tamaño y el SHA-256 de cada archivo, por HTTPS (redirecciones incluidas), llevando el nombre del componente y nunca nada del acervo. Un componente nuevo entra en el manifiesto, nunca en una URL escrita en el código, y un documento que necesita un componente ausente se omite con el motivo, nunca se marca como fallido. La suite de pruebas reemplaza `components._open_url`, así que ninguna prueba toca la red. No agregue dependencias que necesiten red para funcionar. El prompt del clasificador, el vocabulario de las reglas y el lector del Planalto son perillas de comportamiento: cambiarlos exige una nueva medición contra `demo/gabarito.csv` y la actualización de `docs/QUALITY.md`.
 
