@@ -853,8 +853,11 @@ def convert(
         # Tesseract has (none: no OCR), the files that needed it are marked
         # `ocr_failed` and come back on the next conversion, and the log
         # says what was missing. Without Tesseract at all nothing changes:
-        # that is an installation problem the About screen reports.
-        if missing and tesseract:
+        # that is an installation problem the About screen reports. Nor
+        # when the data folder Tesseract reads cannot be told (no
+        # `TESSDATA_PREFIX`, no `tessdata` beside the executable): then
+        # `usable` would find nothing and skip OCR that may well work.
+        if missing and tesseract and ocr_languages.active_folder(tesseract) is not None:
             ocr_shortfall = True
             usable = ocr_languages.usable(config.ocr_language, tesseract)
             heavy_config = replace(config, ocr_language="+".join(usable))
