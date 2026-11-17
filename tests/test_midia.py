@@ -521,7 +521,7 @@ def test_prepare_baixa_so_o_modelo_escolhido(tmp_path, monkeypatch):
     raiz = tmp_path / "componentes"
     monkeypatch.setattr(components, "private_root", lambda: raiz)
 
-    def ensure(nomes, download=True):
+    def ensure(nomes, download=True, **_k):
         pedidos.append(list(nomes))
         for nome in nomes:
             componente = components.get(nome)
@@ -610,7 +610,7 @@ def test_midia_entra_no_modelo_de_paginas_das_mensagens():
 def test_conversao_extracao_e_busca_de_um_audio(tmp_path, sim, monkeypatch):
     origem, saida, config, conn = _projeto(tmp_path)
     (origem / "reunião.mp3").write_bytes(b"ID3\x00\x00dados")
-    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (_tools(tmp_path), []))
     scan(conn, config)
 
     resultado = convert(conn, config, language="pt-BR")
@@ -638,7 +638,7 @@ def test_sem_componentes_fica_pendente_com_um_aviso_e_volta_a_fila(tmp_path, sim
     (origem / "a.mp3").write_bytes(b"ID3\x00\x00a")
     (origem / "b.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
     (origem / "nota.txt").write_text("texto comum", encoding="utf-8")
-    monkeypatch.setattr(media, "prepare", lambda download=True: (None, ["ffmpeg", "Whisper small"]))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (None, ["ffmpeg", "Whisper small"]))
     scan(conn, config)
 
     resultado = convert(conn, config, language="pt-BR")
@@ -652,7 +652,7 @@ def test_sem_componentes_fica_pendente_com_um_aviso_e_volta_a_fila(tmp_path, sim
     assert sim.ffmpeg_calls == []
 
     # Na conversão seguinte voltam à fila e, com os componentes, são transcritos.
-    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (_tools(tmp_path), []))
     assert requeue_ocr_failures(conn) == 2
     assert convert(conn, config).failed == 0
     for nome in ("a.mp3", "b.mp4"):
@@ -664,7 +664,7 @@ def test_sem_componentes_fica_pendente_com_um_aviso_e_volta_a_fila(tmp_path, sim
 def test_parar_deixa_o_arquivo_na_fila_e_a_conversao_seguinte_retoma(tmp_path, sim, monkeypatch):
     origem, saida, config, conn = _projeto(tmp_path)
     (origem / "aula.mp3").write_bytes(b"ID3\x00\x00dados")
-    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (_tools(tmp_path), []))
     scan(conn, config)
     parar = {"valor": False}
     sim.after_whisper = lambda: parar.update(valor=True)
@@ -683,7 +683,7 @@ def test_parar_deixa_o_arquivo_na_fila_e_a_conversao_seguinte_retoma(tmp_path, s
 def test_lista_de_reproducao_vira_ignorada_e_estouro_deixa_na_fila_com_aviso(tmp_path, sim, monkeypatch):
     origem, _saida, config, conn = _projeto(tmp_path)
     (origem / "lista.mp4").write_bytes(b"#EXTM3U\nhttp://x/y.ts\n")
-    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (_tools(tmp_path), []))
     sim.probe_format = "hls"
     scan(conn, config)
     assert convert(conn, config).failed == 0
@@ -709,7 +709,7 @@ def test_arquivo_de_midia_ilegivel_falha_sem_derrubar_os_demais(tmp_path, sim, m
     origem, _saida, config, conn = _projeto(tmp_path)
     (origem / "quebrado.mp3").write_bytes(b"lixo")
     (origem / "nota.txt").write_text("texto comum", encoding="utf-8")
-    monkeypatch.setattr(media, "prepare", lambda download=True: (_tools(tmp_path), []))
+    monkeypatch.setattr(media, "prepare", lambda download=True, **_k: (_tools(tmp_path), []))
     sim.ffmpeg_exit = 1
     sim.ffmpeg_log = "Error opening input files: Invalid data found when processing input"
     scan(conn, config)

@@ -252,13 +252,29 @@ def _open_url(url: str):
     return _opener.open(url, timeout=_DOWNLOAD_TIMEOUT_S)
 
 
-def _download_to(component: Component, partial: Path) -> None:
+class DownloadStopped(Exception):
+    """The person pressed Stop during a download. `ensure` turns it into
+    `unavailable`, like any other failure: the `.part` is deleted and the
+    file that needed the component stays pending."""
+
+
+def _stopped(should_stop) -> bool:
+    return should_stop is not None and should_stop()
+
+
+def _download_to(component: Component, partial: Path, should_stop=None) -> None:
     """Streams the file into `partial`, refusing it as soon as it passes the
-    manifest size, then checks size and SHA-256. Raises on any problem."""
+    manifest size, then checks size and SHA-256. Raises on any problem.
+
+    `should_stop` is asked before every block: the LibreOffice MSI has
+    hundreds of megabytes and a Whisper model up to 1.5 GB, and Stop used to
+    wait for the whole download to finish."""
     digest = hashlib.sha256()
     written = 0
     with _open_url(component.url) as answer, partial.open("wb") as handle:
         while True:
+            if _stopped(should_stop):
+                raise DownloadStopped(component.name)
             block = answer.read(_BLOCK)
             if not block:
                 break
@@ -417,14 +433,18 @@ def _extract_msi(component: Component, msi_path: Path, target: Path) -> None:
         package.unlink(missing_ok=True)
 
 
-def _install(component: Component) -> None:
+def _install(component: Component, should_stop=None) -> None:
     target = target_path(component)
     target.parent.mkdir(parents=True, exist_ok=True)
     # `name + ".part"`, not `with_suffix`: "script/Latin.traineddata" and a
     # future "model.v2.bin" keep their whole name.
     partial = target.parent / (target.name + ".part")
     try:
-        _download_to(component, partial)
+        _download_to(component, partial, should_stop)
+        # Parar logo depois do download não abre o pacote: o `msiexec` do
+        # LibreOffice leva minutos e não é interrompido no meio.
+        if _stopped(should_stop):
+            raise DownloadStopped(component.name)
         if component.kind == "zip":
             _extract(component, partial, target)
         elif component.kind == "msi":
@@ -445,10 +465,15 @@ def _changed() -> None:
         pass
 
 
-def ensure(names, download: bool = True) -> dict[str, str]:
+def ensure(names, download: bool = True, should_stop=None, on_download=None) -> dict[str, str]:
     """Makes each component available, downloading what is missing (when
     `download`), and returns `{name: status}` — `present`, `installed` or
-    `unavailable`. Never raises."""
+    `unavailable`. Never raises.
+
+    `on_download(component)` is called right before a download really
+    starts (never for what is already there), so the caller can say in the
+    log what is coming and how big it is. `should_stop` cuts a download
+    short; what was stopped is `unavailable`."""
     statuses: dict[str, str] = {}
     changed = False
     for name in dict.fromkeys(names):
@@ -462,11 +487,17 @@ def ensure(names, download: bool = True) -> dict[str, str]:
             if is_installed(component):
                 statuses[name] = STATUS_PRESENT
                 continue
-            if not download:
+            if not download or _stopped(should_stop):
                 statuses[name] = STATUS_UNAVAILABLE
                 continue
+            if on_download is not None:
+                try:
+                    on_download(component)
+                except Exception:
+                    # O aviso é só informação; não impede o download.
+                    pass
             try:
-                _install(component)
+                _install(component, should_stop)
             except Exception:
                 statuses[name] = STATUS_UNAVAILABLE
                 continue

@@ -144,14 +144,15 @@ def write_profile(profile: Path) -> Path:
     return target
 
 
-def ensure_available() -> Path | None:
+def ensure_available(should_stop=None, on_download=None) -> Path | None:
     """O `soffice`, baixando o componente se faltar. `None` quando não foi
-    possível (sem rede, download recusado): quem chama deixa o arquivo
-    pendente."""
+    possível (sem rede, download recusado, Parar no meio do download): quem
+    chama deixa o arquivo pendente. `should_stop` e `on_download` vão para
+    `components.ensure`."""
     found = soffice_path()
     if found is not None:
         return found
-    components.ensure([COMPONENT_NAME])
+    components.ensure([COMPONENT_NAME], should_stop=should_stop, on_download=on_download)
     return soffice_path()
 
 

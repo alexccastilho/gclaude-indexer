@@ -235,11 +235,13 @@ def tools_present() -> bool:
     return any(components.path_of(component) is not None for component in MODEL_COMPONENTS.values())
 
 
-def prepare(download: bool = True) -> tuple[Toolset | None, list[str]]:
+def prepare(download: bool = True, should_stop=None, on_download=None) -> tuple[Toolset | None, list[str]]:
     """Os três componentes (baixando o que falta): `(ferramentas, [])` ou
     `(None, nomes do que faltou)`. Nunca levanta; só o modelo escolhido é
-    baixado (um modelo já instalado serve quando o escolhido não vem)."""
-    components.ensure([COMPONENT_FFMPEG, COMPONENT_WHISPER], download=download)
+    baixado (um modelo já instalado serve quando o escolhido não vem).
+    `should_stop` e `on_download` vão para `components.ensure`."""
+    fetch = {"download": download, "should_stop": should_stop, "on_download": on_download}
+    components.ensure([COMPONENT_FFMPEG, COMPONENT_WHISPER], **fetch)
     ffmpeg = _executable(COMPONENT_FFMPEG)
     whisper = _executable(COMPONENT_WHISPER)
     missing = [DISPLAY_NAMES[name] for name, found in ((COMPONENT_FFMPEG, ffmpeg), (COMPONENT_WHISPER, whisper)) if found is None]
@@ -256,7 +258,7 @@ def prepare(download: bool = True) -> tuple[Toolset | None, list[str]]:
     for model in order:
         component = MODEL_COMPONENTS[model]
         if model == chosen:
-            components.ensure([component], download=download)
+            components.ensure([component], **fetch)
         path = components.path_of(component)
         if path is not None and path.is_file():
             model_path, model_name = path, model
