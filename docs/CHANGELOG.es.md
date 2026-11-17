@@ -119,7 +119,11 @@ la 2.0.0.
   y todo el conjunto `tessdata_fast` de idiomas del OCR. Cuando un componente
   no se puede obtener (sin internet, descarga rechazada), los documentos que
   dependen de él se omiten con un motivo claro, no se marcan como fallidos y
-  vuelven a la cola en la próxima ejecución.
+  cada conversión intenta obtener el componente de nuevo. En un grupo todavía
+  sin ventanas, vuelven a la cola en la próxima ejecución; en un grupo que ya
+  tiene ventanas, esperan, aunque se editen mientras tanto, hasta que el
+  componente esté en la máquina, y entonces la actualización los incorpora y
+  rehace las ventanas del grupo a partir de ellos.
 - **Temas Vidrio y Apple**, cada uno en un par claro y oscuro, con alternativas
   para navegadores sin desenfoque y para la transparencia reducida.
 - **Seguridad de carpetas en el escaneo.** El escaneo omite la propia salida

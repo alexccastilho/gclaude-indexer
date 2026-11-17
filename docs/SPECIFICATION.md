@@ -104,8 +104,13 @@ size and member count; no shell is used.
 | `tessdata_fast` (every language and script) | OCR in the language and script of each document | Apache-2.0 |
 
 A document that needs a component that cannot be obtained is skipped with a
-reason (`ignored.reason.component_unavailable`), never marked `failed`, and the
-next run puts it back in the queue. The test suite replaces
+reason (`ignored.reason.component_unavailable`), never marked `failed`, and
+every conversion tries to obtain the component again. In a group with no
+windows yet, the next run puts the document back in the queue. In a group that
+already has windows it waits out of the queue, even if edited meanwhile (the
+scan records the new bytes and keeps it waiting; the update plan neither reads
+it nor lists it), until the component is on this machine; the update then
+lists it as changed and redoes the group's windows from it. The test suite replaces
 `components._open_url`: no test touches the network.
 
 ## 4. Data model

@@ -108,7 +108,11 @@ what happens to projects created before 2.0.0 come first.
   whisper.cpp b5454, the whisper ggml models and the whole `tessdata_fast`
   set of OCR languages. When a component cannot be obtained (no internet,
   download refused), the documents that need it are skipped with a clear
-  reason, are not marked as failed, and go back to the queue in the next run.
+  reason, are not marked as failed, and every conversion tries to obtain the
+  component again. In a group with no windows yet they go back to the queue in
+  the next run; in a group that already has windows they wait, even if edited
+  meanwhile, until the component is on the machine, and the update then brings
+  them in and redoes the group's windows from them.
 - **Themes Glass ("Vidro") and Apple**, each in a light and a dark pair, with
   fallbacks for browsers without blur and for reduced transparency.
 - **Folder-level safety in the scan.** The scan skips the program's own
