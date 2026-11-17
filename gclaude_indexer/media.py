@@ -140,9 +140,18 @@ class Postponed(Exception):
     gravado e o arquivo continua na fila para a próxima conversão."""
 
 
-# Formatos que o ffprobe reconhece por conteúdo e que mandam o ffmpeg buscar
-# outros arquivos ou endereços (listas de reprodução, roteiros, descrições).
+# Só contêineres de áudio e vídeo de verdade são lidos (a lista cobre todas as
+# extensões da categoria `midia`: mp3, wav, m4a/mp4/mov/m4v/3gp, aac, ogg/opus,
+# flac, wma/wmv, mkv/webm, avi). O resto (listas de reprodução, roteiros,
+# descrições de sessão, imagens, texto…) é recusado: um denylist sempre perde
+# para o próximo demuxer que busca outros arquivos.
+ALLOWED_FORMATS = frozenset({
+    "mov", "mp4", "m4a", "3gp", "3g2", "mj2", "matroska", "webm", "mp3", "wav", "ogg", "flac", "aac", "asf", "avi",
+    "mpegts", "mpeg",
+})
+# Recusados mesmo quando vêm numa lista com um nome permitido (`mov,hls`).
 REFUSED_FORMATS = frozenset({"hls", "applehttp", "concat", "ffconcat", "dash", "sdp", "rtsp", "rtp"})
+_FORMAT_WHITELIST = ",".join(sorted(ALLOWED_FORMATS))
 
 
 @dataclass(frozen=True)
@@ -355,12 +364,15 @@ def _last_line(text: str) -> str:
 # --- áudio -------------------------------------------------------------------
 
 
-def ffmpeg_command(ffmpeg: Path, source: Path, target: Path) -> list[str]:
+def ffmpeg_command(ffmpeg: Path, source: Path, target: Path, container: str) -> list[str]:
     return [
         str(ffmpeg), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
         # O contêiner (uma lista de reprodução, um `concat`) nunca busca URL
         # nem lê outro arquivo.
         "-protocol_whitelist", "file",
+        # O demuxer é o que a sondagem conferiu (não o que o ffmpeg adivinharia
+        # ao reler o arquivo) e nenhum outro é aceito.
+        "-format_whitelist", _FORMAT_WHITELIST, "-f", container,
         "-i", str(source.resolve()),
         # Só a primeira faixa de áudio (se existir): sem vídeo, legenda ou dados.
         "-map", "0:a:0?", "-vn", "-sn", "-dn",
@@ -372,33 +384,41 @@ def ffmpeg_command(ffmpeg: Path, source: Path, target: Path) -> list[str]:
 def probe_command(tools: Toolset, source: Path) -> list[str]:
     ffprobe = tools.ffmpeg.with_name("ffprobe" + tools.ffmpeg.suffix)
     return [
-        str(ffprobe), "-v", "error", "-protocol_whitelist", "file",
+        str(ffprobe), "-v", "error", "-protocol_whitelist", "file", "-format_whitelist", _FORMAT_WHITELIST,
         "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", str(source.resolve()),
     ]
 
 
-def check_container(tools: Toolset, source: Path, process: _Process, work: Path) -> None:
-    """Recusa listas de reprodução e roteiros disfarçados de mídia (o
+def check_container(tools: Toolset, source: Path, process: _Process, work: Path) -> str:
+    """O demuxer do arquivo, conferido contra `ALLOWED_FORMATS` (o
     `-protocol_whitelist file` ainda deixaria um `concat` ou HLS ler outros
-    arquivos do disco). Levanta `MediaRefused` ou `MediaError`."""
+    arquivos do disco). Devolve o primeiro nome permitido da lista do
+    ffprobe, que o ffmpeg recebe em `-f`. Levanta `MediaRefused` para o que
+    não é mídia e `MediaError` para um arquivo ilegível."""
     result = work / "formato.txt"
     code, log = process.run(
         probe_command(tools, source), PROCESS_TIMEOUT_MIN_S, work / "ffprobe.log", stdout_to=result
     )
     try:
-        names = {item.strip().lower() for item in result.read_text(encoding="utf-8", errors="replace").split(",")}
+        result_order = [
+            item.strip().lower() for item in result.read_text(encoding="utf-8", errors="replace").split(",")
+        ]
     except OSError:
-        names = set()
+        result_order = []
     result.unlink(missing_ok=True)
-    names.discard("")
-    if names & REFUSED_FORMATS:
-        raise MediaRefused("o arquivo é uma lista de reprodução ou roteiro, não mídia")
+    result_order = [name for name in result_order if name]
+    names = set(result_order)
     if code != 0 or not names:
+        # Com `-format_whitelist`, um formato fora da lista também termina aqui.
         raise MediaError(f"o ffprobe não conseguiu ler o arquivo ({_last_line(log) or 'arquivo corrompido ou protegido'})")
+    allowed = [name for name in result_order if name in ALLOWED_FORMATS]
+    if names & REFUSED_FORMATS or not allowed:
+        raise MediaRefused("o arquivo não é áudio nem vídeo (lista de reprodução, roteiro ou outro formato)")
+    return allowed[0]
 
 
 def extract_audio(
-    tools: Toolset, source: Path, wav: Path, process: _Process, size: int | None = None
+    tools: Toolset, source: Path, wav: Path, process: _Process, container: str, size: int | None = None
 ) -> bool:
     """Grava o WAV de `source`; `False` quando o arquivo não tem faixa de
     áudio. Levanta `MediaError` para um arquivo ilegível."""
@@ -406,7 +426,7 @@ def extract_audio(
     partial.unlink(missing_ok=True)
     size = source.stat().st_size if size is None else size
     timeout = EXTRACT_TIMEOUT_MIN_S + size / EXTRACT_READ_BYTES_PER_S
-    code, log = process.run(ffmpeg_command(tools.ffmpeg, source, partial), timeout, wav.with_name("ffmpeg.log"))
+    code, log = process.run(ffmpeg_command(tools.ffmpeg, source, partial, container), timeout, wav.with_name("ffmpeg.log"))
     if code != 0 and "does not contain any stream" in log.lower():
         # `-map 0:a:0?` deixa a saída sem nenhuma faixa: o arquivo não tem áudio.
         partial.unlink(missing_ok=True)
@@ -582,8 +602,8 @@ def transcribe(
     runner = _Process(should_stop)
     try:
         if not wav.is_file():
-            check_container(tools, source, runner, work)
-            if not extract_audio(tools, source, wav, runner):
+            container = check_container(tools, source, runner, work)
+            if not extract_audio(tools, source, wav, runner, container):
                 return _finish_empty(destination, partial, progress, work, no_audio=True)
         return _transcribe_wav(source, destination, partial, progress, work, wav, tools, runner, saved, on_estimate)
     except (Interrupted, Postponed, MediaTimeout):

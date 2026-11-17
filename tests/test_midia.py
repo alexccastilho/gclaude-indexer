@@ -243,7 +243,7 @@ def test_arquivo_ilegivel_falha_e_nao_deixa_nada(tmp_path, sim):
 
 
 def test_playlist_ou_roteiro_disfarcado_de_midia_e_recusado_sem_transcrever(tmp_path, sim):
-    for formato in ("hls", "concat", "ffconcat", "mov,mp4,m4a,hls", "applehttp"):
+    for formato in ("hls", "concat", "ffconcat", "mov,mp4,m4a,hls", "applehttp", "image2", "tty", "foo,bar"):
         sim.probe_format = formato
         with pytest.raises(media.MediaRefused):
             _transcrever(tmp_path)
@@ -255,6 +255,35 @@ def test_playlist_ou_roteiro_disfarcado_de_midia_e_recusado_sem_transcrever(tmp_
     # Mídia de verdade passa.
     sim.probe_format = "mov,mp4,m4a,3gp,3g2,mj2"
     assert _transcrever(tmp_path)[3].pages == 3
+    # O ffmpeg recebe o demuxer conferido e só aceita os permitidos.
+    comando = sim.ffmpeg_calls[-1]
+    assert comando[comando.index("-f") + 1] == "mov"  # o `-f` de entrada, antes do `-i`
+    assert comando.index("-f") < comando.index("-i")
+    lista = comando[comando.index("-format_whitelist") + 1].split(",")
+    assert set(lista) == media.ALLOWED_FORMATS and comando[comando.index("-protocol_whitelist") + 1] == "file"
+    assert "-format_whitelist" in sim.probe_calls[-1]
+
+
+@pytest.mark.parametrize(
+    ("extensao", "formato"),
+    [
+        (".mp3", "mp3"), (".wav", "wav"), (".m4a", "mov,mp4,m4a,3gp,3g2,mj2"), (".mp4", "mov,mp4,m4a,3gp,3g2,mj2"),
+        (".mov", "mov,mp4,m4a,3gp,3g2,mj2"), (".m4v", "mov,mp4,m4a,3gp,3g2,mj2"), (".3gp", "mov,mp4,m4a,3gp,3g2,mj2"),
+        (".aac", "aac"), (".ogg", "ogg"), (".opus", "ogg"), (".flac", "flac"), (".wma", "asf"), (".wmv", "asf"),
+        (".mkv", "matroska,webm"), (".webm", "matroska,webm"), (".avi", "avi"),
+    ],
+)
+def test_toda_extensao_de_midia_tem_demuxer_permitido(extensao, formato):
+    from gclaude_indexer.file_types import EXTENSION_CATEGORIES
+
+    assert extensao in EXTENSION_CATEGORIES["midia"]
+    assert any(nome in media.ALLOWED_FORMATS for nome in formato.split(","))
+
+
+def test_toda_extensao_de_midia_esta_coberta_pelo_teste_acima():
+    from gclaude_indexer.file_types import EXTENSION_CATEGORIES
+
+    assert len(EXTENSION_CATEGORIES["midia"]) == 16
 
 
 def test_sondagem_que_falha_e_arquivo_ilegivel(tmp_path, sim):
