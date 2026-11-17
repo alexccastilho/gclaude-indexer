@@ -99,3 +99,21 @@ o link da norma. Sem nenhuma norma do acervo citando o termo, ou com
 como "fora do acervo". Desde o fim de 2026 o LexML responde a programas com a
 verificação de segurança do Senado: nesse caso a saída diz isso e dá o link
 para abrir no navegador.
+
+## `gerar_manifesto_tessdata.py`
+
+Gera `gclaude_indexer/manifests/tessdata_fast.json`, o manifesto de todos os
+idiomas e escritas (`script/<Escrita>`) do `tessdata_fast` no commit fixado,
+que o gerenciador de componentes (`gclaude_indexer/components.py`) usa para
+baixar o idioma do OCR que faltar. É o único lugar que acessa a rede para
+isso: baixa cada arquivo, confere tamanho e SHA-1 do git contra a árvore do
+commit e grava o SHA-256. Recusa o resultado se `por`, `eng`, `spa` ou `osd`
+mudarem de hash.
+
+```
+python tools/gerar_manifesto_tessdata.py
+```
+
+Baixa uns 700 MB (nada fica em disco além do manifesto e do progresso, que
+fica na pasta temporária e permite retomar). Só precisa rodar de novo se o
+commit fixado mudar.

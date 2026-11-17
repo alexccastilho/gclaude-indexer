@@ -35,26 +35,20 @@ essential ones written), and a folder without them is never "ready".
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 import threading
-import urllib.request
 from pathlib import Path
 
+from . import components
 from .paths import machine_local_folder
 
-# Same commit and hashes as `install.ps1` (tag 4.1.0, the build UB-Mannheim
-# ships). Only a pinned language is ever downloaded: the hash decides.
+# Same commit as `install.ps1` (tag 4.1.0, the build UB-Mannheim ships).
+# 2.0.0: every language and script of that commit is in the components
+# manifest (`manifests/tessdata_fast.json`, with its SHA-256), and the
+# download goes through `components.py`. Only a pinned file is ever
+# downloaded: the hash decides.
 TESSDATA_COMMIT = "65727574dfcd264acbb0c3e07860e4e9e9b22185"
-TESSDATA_URL = f"https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/{TESSDATA_COMMIT}/"
-PINNED_SHA256 = {
-    "por": "c4932b937207a9514b7514d518b931a99938c02a28a5a5a553f8599ed58b7deb",
-    "eng": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
-    "spa": "6f2e04d02774a18f01bed44b1111f2cd7f3ba7ac9dc4373cd3f898a40ea6b464",
-    "osd": "9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff",
-}
-_DOWNLOAD_TIMEOUT_S = 120
 _lock = threading.Lock()
 
 
@@ -151,31 +145,35 @@ def tesseract_folder(tesseract_path: str | None) -> Path | None:
     return folder if folder.is_dir() else None
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def component_name(language: str) -> str:
+    """The manifest name of a language or script ("por", "script/Latin")."""
+    return f"tessdata/{language}"
+
+
+def downloadable(language: str) -> bool:
+    return components.get(component_name(language)) is not None
 
 
 def _download(language: str, target: Path) -> bool:
-    expected = PINNED_SHA256.get(language)
-    if expected is None:
-        return False
-    partial = target.with_suffix(".part")
-    try:
-        with urllib.request.urlopen(f"{TESSDATA_URL}{language}.traineddata", timeout=_DOWNLOAD_TIMEOUT_S) as answer:
-            with partial.open("wb") as handle:
-                shutil.copyfileobj(answer, handle)
-        if _sha256(partial) != expected:
-            partial.unlink(missing_ok=True)
-            return False
-        partial.replace(target)
-        return True
-    except OSError:
-        partial.unlink(missing_ok=True)
-        return False
+    """Downloads one language through the components manager. `target` is
+    where `ensure` expects it; the manifest destination is the same file
+    (`tessdata/<language>.traineddata` in the private folder)."""
+    status = components.ensure([component_name(language)])[component_name(language)]
+    return status != components.STATUS_UNAVAILABLE and target.is_file()
+
+
+def active_folder(tesseract_path: str | None) -> Path | None:
+    """The folder Tesseract reads in this process: `TESSDATA_PREFIX` when
+    set, its own folder otherwise."""
+    current = os.environ.get("TESSDATA_PREFIX", "").strip()
+    return Path(current) if current else tesseract_folder(tesseract_path)
+
+
+def usable(ocr_language: str | None, tesseract_path: str | None) -> list[str]:
+    """The languages of `ocr_language` Tesseract can read right now — what
+    the conversion falls back to when `ensure` could not get them all."""
+    folder = active_folder(tesseract_path)
+    return [lang for lang in wanted(ocr_language) if _has(folder, lang)]
 
 
 def ensure(ocr_language: str | None, tesseract_path: str | None, download: bool = True) -> list[str]:

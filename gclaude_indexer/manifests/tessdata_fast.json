@@ -1,0 +1,1465 @@
+{
+ "format": 1,
+ "source": "https://github.com/tesseract-ocr/tessdata_fast/tree/65727574dfcd264acbb0c3e07860e4e9e9b22185",
+ "generated_by": "tools/gerar_manifesto_tessdata.py",
+ "components": [
+  {
+   "name": "tessdata/afr",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/afr.traineddata",
+   "sha256": "126d480bfae95be2a911ed4916465e27bde75fea2da631e21b96762e5f239646",
+   "size": 2652786,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/afr.traineddata"
+  },
+  {
+   "name": "tessdata/amh",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/amh.traineddata",
+   "sha256": "3ec3311833a108e07d58a1152b00c0cf1848752e4f85769d46e8ca2b718a2ccc",
+   "size": 5470094,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/amh.traineddata"
+  },
+  {
+   "name": "tessdata/ara",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ara.traineddata",
+   "sha256": "e3206d3dc87fd50c24a0fb9f01838615911d25168f4e64415244b67d2bb3e729",
+   "size": 1432056,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ara.traineddata"
+  },
+  {
+   "name": "tessdata/asm",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/asm.traineddata",
+   "sha256": "299c7f6135ac72ca4820d4c39e3cf65b32b24127fc78c4938d11153adbb9fa77",
+   "size": 2045427,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/asm.traineddata"
+  },
+  {
+   "name": "tessdata/aze",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/aze.traineddata",
+   "sha256": "a365310848aecb739f19369cb3831d4660fcd9345d798e91a3042455f9ccc9f0",
+   "size": 3524799,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/aze.traineddata"
+  },
+  {
+   "name": "tessdata/aze_cyrl",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/aze_cyrl.traineddata",
+   "sha256": "2e96ab67817819e14a3a2d6250261130457c8e78dde3077841ab391fe003551c",
+   "size": 1943672,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/aze_cyrl.traineddata"
+  },
+  {
+   "name": "tessdata/bel",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/bel.traineddata",
+   "sha256": "9c6668a0b202f3dcfe074b64620d108e1902ca7498a40b5a11b4a3da6112d58f",
+   "size": 3692098,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/bel.traineddata"
+  },
+  {
+   "name": "tessdata/ben",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ben.traineddata",
+   "sha256": "31163084c279aaebd376216f0c3d5c17ad4b5fee8db49dae79c20000b5de5964",
+   "size": 855841,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ben.traineddata"
+  },
+  {
+   "name": "tessdata/bod",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/bod.traineddata",
+   "sha256": "1aab1db8dae337dfc8fa0f94a1c137c47e4c7857c3e6b30093ec726cef912a0b",
+   "size": 1966440,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/bod.traineddata"
+  },
+  {
+   "name": "tessdata/bos",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/bos.traineddata",
+   "sha256": "6cc8cc87cf1afbfa6a41febb725dbadb14bed96a46685906440a6eb8a7892f04",
+   "size": 2498242,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/bos.traineddata"
+  },
+  {
+   "name": "tessdata/bre",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/bre.traineddata",
+   "sha256": "db8b31f76b986d63b82dfff9e84e252bf5f7dc53d9128167aaab18b3ec96dd49",
+   "size": 6335007,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/bre.traineddata"
+  },
+  {
+   "name": "tessdata/bul",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/bul.traineddata",
+   "sha256": "aebc9b0fcc8cfaf8a9f38a02bb7b85052bd850744696a2c11cf0081820e5b21e",
+   "size": 1675212,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/bul.traineddata"
+  },
+  {
+   "name": "tessdata/cat",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/cat.traineddata",
+   "sha256": "250db73cd5b380d2798581295dc12f20d0828cdb335a65d833d12dfdbf57117d",
+   "size": 1146012,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/cat.traineddata"
+  },
+  {
+   "name": "tessdata/ceb",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ceb.traineddata",
+   "sha256": "346a39de801495c93ece6656d018d7d19d298af7db42d82ebae99dfe8ee14961",
+   "size": 716214,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ceb.traineddata"
+  },
+  {
+   "name": "tessdata/ces",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ces.traineddata",
+   "sha256": "934bcaf97ef3348413263331131c9fa7f55f30db333c711929c124fb635f7e1b",
+   "size": 3795684,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ces.traineddata"
+  },
+  {
+   "name": "tessdata/chi_sim",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/chi_sim.traineddata",
+   "sha256": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730",
+   "size": 2469156,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/chi_sim.traineddata"
+  },
+  {
+   "name": "tessdata/chi_sim_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/chi_sim_vert.traineddata",
+   "sha256": "20590de84725bab69cde93bd6e8ed360a13cc5421a7e7364ddeb93e9af53d6da",
+   "size": 1927902,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/chi_sim_vert.traineddata"
+  },
+  {
+   "name": "tessdata/chi_tra",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/chi_tra.traineddata",
+   "sha256": "529c5b5797d64b126065cd55f2bb4c7fd7b15790798091b1ff259941a829330b",
+   "size": 2366642,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/chi_tra.traineddata"
+  },
+  {
+   "name": "tessdata/chi_tra_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/chi_tra_vert.traineddata",
+   "sha256": "1df02a4b210e5c217b783819538b63e9dfe6904e2b5e53b62664f1b9f7a989d0",
+   "size": 1824756,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/chi_tra_vert.traineddata"
+  },
+  {
+   "name": "tessdata/chr",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/chr.traineddata",
+   "sha256": "a4da60d844ebb9dbaeb8843a92290083c1fd275b167fc9c9686d790ccd311fab",
+   "size": 374944,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/chr.traineddata"
+  },
+  {
+   "name": "tessdata/cos",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/cos.traineddata",
+   "sha256": "018952d1b4b3d4fd6ee5ebbacf90603c9cef6221951359937c274fe1f190f8d3",
+   "size": 2299099,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/cos.traineddata"
+  },
+  {
+   "name": "tessdata/cym",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/cym.traineddata",
+   "sha256": "7f6ee3374749645a7c92dfe773f5c3d6492194d371712ecfd775edc53c363fb4",
+   "size": 2208919,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/cym.traineddata"
+  },
+  {
+   "name": "tessdata/dan",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/dan.traineddata",
+   "sha256": "acb1fd074487a31d1294fcdfd7d7c673467ffd8aeacb2ccd61ebcbf04eb4e2fa",
+   "size": 2580059,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/dan.traineddata"
+  },
+  {
+   "name": "tessdata/deu",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/deu.traineddata",
+   "sha256": "19d219bbb6672c869d20a9636c6816a81eb9a71796cb93ebe0cb1530e2cdb22d",
+   "size": 1525436,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/deu.traineddata"
+  },
+  {
+   "name": "tessdata/div",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/div.traineddata",
+   "sha256": "06051412588963b34b663cc59a468dbf10753329f015ccd574ee711e8c6b84c3",
+   "size": 1774535,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/div.traineddata"
+  },
+  {
+   "name": "tessdata/dzo",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/dzo.traineddata",
+   "sha256": "364d244fad3f8d4438c9f7ee7642b9b876a4620cf76c0115619b979d6bfef1fa",
+   "size": 449596,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/dzo.traineddata"
+  },
+  {
+   "name": "tessdata/ell",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ell.traineddata",
+   "sha256": "4fba8a0b461038d51f1c20d043d4f2ac38c4e778f1b90830847f7bd8fa3ba726",
+   "size": 1419514,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ell.traineddata"
+  },
+  {
+   "name": "tessdata/eng",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/eng.traineddata",
+   "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+   "size": 4113088,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/eng.traineddata"
+  },
+  {
+   "name": "tessdata/enm",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/enm.traineddata",
+   "sha256": "d312ab5aafc9f99a78082c75e035b0873d2da6cb6d95cde03e219c1b26750034",
+   "size": 3101551,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/enm.traineddata"
+  },
+  {
+   "name": "tessdata/epo",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/epo.traineddata",
+   "sha256": "71181a6a07af3812aeedfa1aa993623424f4b8a6aac3e271b36ec11774e674d9",
+   "size": 4728393,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/epo.traineddata"
+  },
+  {
+   "name": "tessdata/equ",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/equ.traineddata",
+   "sha256": "8f660323d8a7b7a0e8d2fae1a3439e6e470222bfbb990b2ab7fe9e1fb4791c0b",
+   "size": 2251950,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/equ.traineddata"
+  },
+  {
+   "name": "tessdata/est",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/est.traineddata",
+   "sha256": "515d4a773682b286369511e83fe412bcff16a92a886f99c761c1d760a7e30456",
+   "size": 4458101,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/est.traineddata"
+  },
+  {
+   "name": "tessdata/eus",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/eus.traineddata",
+   "sha256": "40e7418296c355d9fd9ca843d115c51e740089e576e887443e61704823cd6624",
+   "size": 5175921,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/eus.traineddata"
+  },
+  {
+   "name": "tessdata/fao",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fao.traineddata",
+   "sha256": "0ed46203c283c952b7de0530d1c6e6ac9a25a79773fb89cadd149275ffea9a80",
+   "size": 3439772,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fao.traineddata"
+  },
+  {
+   "name": "tessdata/fas",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fas.traineddata",
+   "sha256": "db1c0a91208aff00d3cf1ed2c1d23f76419afd5f024688b4f71adc3f2ce4a505",
+   "size": 431500,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fas.traineddata"
+  },
+  {
+   "name": "tessdata/fil",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fil.traineddata",
+   "sha256": "2b17f68014ab44b88b5e2334ebcd0ce0090d9af7c6fbef6fab22e0bbd9a934dd",
+   "size": 1841715,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fil.traineddata"
+  },
+  {
+   "name": "tessdata/fin",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fin.traineddata",
+   "sha256": "61a04cd62b507c3d9ae0e1cda399e6715ebf49dea9df47897c8acdcd3bd3e13c",
+   "size": 7865732,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fin.traineddata"
+  },
+  {
+   "name": "tessdata/fra",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fra.traineddata",
+   "sha256": "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca",
+   "size": 1130365,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fra.traineddata"
+  },
+  {
+   "name": "tessdata/frk",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/frk.traineddata",
+   "sha256": "7cd1b541e9d3884b9546a7d292c4f349cdb45ff646b4b43166dfc5099a8ad1a1",
+   "size": 6423052,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/frk.traineddata"
+  },
+  {
+   "name": "tessdata/frm",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/frm.traineddata",
+   "sha256": "3fe6eed7108136a85dbbf53baf23d9fb435afe1262323f5fba7711b6c6048728",
+   "size": 2024948,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/frm.traineddata"
+  },
+  {
+   "name": "tessdata/fry",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/fry.traineddata",
+   "sha256": "7c9dbc47ef3848e33b623d1b927dd4d998ed39ff750fbc0f14aeb0f627b5da15",
+   "size": 1906018,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/fry.traineddata"
+  },
+  {
+   "name": "tessdata/gla",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/gla.traineddata",
+   "sha256": "cb7b206d9f56b601d1666683ea8a516c8bb9c04362dbb874fc9665b339b72adf",
+   "size": 3068307,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/gla.traineddata"
+  },
+  {
+   "name": "tessdata/gle",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/gle.traineddata",
+   "sha256": "2fe9ba6119aac7e2a20d6cfb69ed91afe9520f41bc7e3a903f84280f2663858d",
+   "size": 1181824,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/gle.traineddata"
+  },
+  {
+   "name": "tessdata/glg",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/glg.traineddata",
+   "sha256": "7947619c5544d86849f563bd737ad90dbea9f5319fbd838c4747a7a1cd40b260",
+   "size": 2554555,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/glg.traineddata"
+  },
+  {
+   "name": "tessdata/grc",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/grc.traineddata",
+   "sha256": "57b735557eeb67503803cf9f99786dd0b62417931352601952a0b1a23b6c4759",
+   "size": 2246328,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/grc.traineddata"
+  },
+  {
+   "name": "tessdata/guj",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/guj.traineddata",
+   "sha256": "fa69658614b4946a9afae8853d67e0689838803dfa3d12c2e35ec53ee6f8df34",
+   "size": 1418394,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/guj.traineddata"
+  },
+  {
+   "name": "tessdata/hat",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/hat.traineddata",
+   "sha256": "842e489a0e0eb12c72b5cb12e9e6624aae5928de1d097d76445474c263ce8b5a",
+   "size": 1976902,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/hat.traineddata"
+  },
+  {
+   "name": "tessdata/heb",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/heb.traineddata",
+   "sha256": "11f9e43ab227f786352a50f75c94c2e9906f1baba86d93276da19da7ce0904db",
+   "size": 961404,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/heb.traineddata"
+  },
+  {
+   "name": "tessdata/hin",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/hin.traineddata",
+   "sha256": "4c73ffc59d497c186b19d1e90f5d721d678ea6b2e277b719bee4e2af12271825",
+   "size": 1122751,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/hin.traineddata"
+  },
+  {
+   "name": "tessdata/hrv",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/hrv.traineddata",
+   "sha256": "9e515d9832ce259dbab550b1cc6b998f8b929faf2edacaaca981b05adb130571",
+   "size": 4103348,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/hrv.traineddata"
+  },
+  {
+   "name": "tessdata/hun",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/hun.traineddata",
+   "sha256": "35067e7cfe102dcdc953f9a758fdfaa6296b17a1ee6d874ee780fa306430b9fb",
+   "size": 5296273,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/hun.traineddata"
+  },
+  {
+   "name": "tessdata/hye",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/hye.traineddata",
+   "sha256": "b701d0d95799a716143dedb0197504e56f27a1bb133d6607ff5778c6988cb67c",
+   "size": 3463717,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/hye.traineddata"
+  },
+  {
+   "name": "tessdata/iku",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/iku.traineddata",
+   "sha256": "81ef16ee0fa0a3548c8a2d1ff10786e3278b6720e51cefd9a81a506f52660223",
+   "size": 2802266,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/iku.traineddata"
+  },
+  {
+   "name": "tessdata/ind",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ind.traineddata",
+   "sha256": "69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88",
+   "size": 1122661,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ind.traineddata"
+  },
+  {
+   "name": "tessdata/isl",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/isl.traineddata",
+   "sha256": "5ec828c363f3f0062c3caf08216677cf5f3c0c981b05fab445123a16b98f10a9",
+   "size": 2278973,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/isl.traineddata"
+  },
+  {
+   "name": "tessdata/ita",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ita.traineddata",
+   "sha256": "b8f89e1e785118dac4d51ae042c029a64edb5c3ee42ef73027a6d412748d8827",
+   "size": 2701314,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ita.traineddata"
+  },
+  {
+   "name": "tessdata/ita_old",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ita_old.traineddata",
+   "sha256": "ee85de25acf70d5eeefdb3012424814a18ab368183099cc2c3f2fe2d3dce3b02",
+   "size": 3286123,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ita_old.traineddata"
+  },
+  {
+   "name": "tessdata/jav",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/jav.traineddata",
+   "sha256": "46107b6bed3bf2d9617e5e192e52524e368242543fead1a7175c363dddd400f2",
+   "size": 2982741,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/jav.traineddata"
+  },
+  {
+   "name": "tessdata/jpn",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/jpn.traineddata",
+   "sha256": "1f5de9236d2e85f5fdf4b3c500f2d4926f8d9449f28f5394472d9e8d83b91b4d",
+   "size": 2471260,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/jpn.traineddata"
+  },
+  {
+   "name": "tessdata/jpn_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/jpn_vert.traineddata",
+   "sha256": "bf1e2640954691797e2dc14f38533e601b59ee37958698ae0f0b81dc6f09c71b",
+   "size": 3037480,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/jpn_vert.traineddata"
+  },
+  {
+   "name": "tessdata/kan",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kan.traineddata",
+   "sha256": "bd31e6b6ae93271e3bcf5383d306d8eefbb91542937cd6d735a5930c970e61d8",
+   "size": 3608331,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kan.traineddata"
+  },
+  {
+   "name": "tessdata/kat",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kat.traineddata",
+   "sha256": "557abb6f1c68bc1b286f1bdd00bb6b82f85a427a91899807dab6c2f6c7986731",
+   "size": 2524769,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kat.traineddata"
+  },
+  {
+   "name": "tessdata/kat_old",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kat_old.traineddata",
+   "sha256": "7b77290303d5d88db6adc5b679d1eb876e3c62f64c8999e919bcb4608af379bc",
+   "size": 423167,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kat_old.traineddata"
+  },
+  {
+   "name": "tessdata/kaz",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kaz.traineddata",
+   "sha256": "fcc01eed3815a42b9c6321c4c9d3606f39b166cbf95ade98b7d8d12063eae53d",
+   "size": 4734644,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kaz.traineddata"
+  },
+  {
+   "name": "tessdata/khm",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/khm.traineddata",
+   "sha256": "47f110575341b322052f3becbefee61a3ecf1ef549352b5d4d33d28afe30d099",
+   "size": 1446926,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/khm.traineddata"
+  },
+  {
+   "name": "tessdata/kir",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kir.traineddata",
+   "sha256": "9777956300900b528d26932cf80693f95e75143433fb851d567194bcc38a31ae",
+   "size": 9928497,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kir.traineddata"
+  },
+  {
+   "name": "tessdata/kmr",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kmr.traineddata",
+   "sha256": "a3ef2daa828399ca8d6ae69edfa21ed21aa5abb3f868e2024d3235406312e7b6",
+   "size": 3568615,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kmr.traineddata"
+  },
+  {
+   "name": "tessdata/kor",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kor.traineddata",
+   "sha256": "6b85e11d9bbf07863b97b3523b1b112844c43e713df8b66418a081fd1060b3b2",
+   "size": 1677415,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kor.traineddata"
+  },
+  {
+   "name": "tessdata/kor_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/kor_vert.traineddata",
+   "sha256": "c28f19dee36927baba5215fb793a3c00fff3ef2cfbcaa100122401d8f4374869",
+   "size": 1113715,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/kor_vert.traineddata"
+  },
+  {
+   "name": "tessdata/lao",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/lao.traineddata",
+   "sha256": "20124962e93e68121e02c49a949d1f9df5db87dd62e5e4aa578362ca532444f8",
+   "size": 6386744,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/lao.traineddata"
+  },
+  {
+   "name": "tessdata/lat",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/lat.traineddata",
+   "sha256": "3859d8ba60404f4b79830622625bbc76fb4ee2808eac1ad360ffa77f0a533328",
+   "size": 3187463,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/lat.traineddata"
+  },
+  {
+   "name": "tessdata/lav",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/lav.traineddata",
+   "sha256": "7d9eaf22254b381f18b806cd6cb647862a397a7221adbce3e22cc421793a8847",
+   "size": 2717247,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/lav.traineddata"
+  },
+  {
+   "name": "tessdata/lit",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/lit.traineddata",
+   "sha256": "1e383df5b055583bc01cb5764ecdf74c540753f2cb3f8205e7105361da4bc989",
+   "size": 3154896,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/lit.traineddata"
+  },
+  {
+   "name": "tessdata/ltz",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ltz.traineddata",
+   "sha256": "5516a78efa30c050da7eb0727fec3de59670c19735c00678a67fdad98e4b3ec1",
+   "size": 2606426,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ltz.traineddata"
+  },
+  {
+   "name": "tessdata/mal",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mal.traineddata",
+   "sha256": "bd05cbf1b197e7810d2903419aedb06f9ef77bfedf50b358673c1d18d707cdb4",
+   "size": 5275996,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mal.traineddata"
+  },
+  {
+   "name": "tessdata/mar",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mar.traineddata",
+   "sha256": "0ba3f2d116972e72fe9e176bc84c38e81dfb6670f4ed1f7f6c8e16a27da7cb61",
+   "size": 2118233,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mar.traineddata"
+  },
+  {
+   "name": "tessdata/mkd",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mkd.traineddata",
+   "sha256": "58622bf154830fa62103359938564aeb8112b929759e22a48224f3ecfaac34c6",
+   "size": 1600188,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mkd.traineddata"
+  },
+  {
+   "name": "tessdata/mlt",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mlt.traineddata",
+   "sha256": "3040b443d5d49e4183da0eaaf58d1033c3a616153d35d2342a56777f9bbb31c7",
+   "size": 2308796,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mlt.traineddata"
+  },
+  {
+   "name": "tessdata/mon",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mon.traineddata",
+   "sha256": "a151a3806d61ac43619cd383896d551ba5c3b07388ffec6fc83c8c604d677570",
+   "size": 2137042,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mon.traineddata"
+  },
+  {
+   "name": "tessdata/mri",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mri.traineddata",
+   "sha256": "8552be985e8fa0210d6d815d736151d645089b590a56f2d92391fb864e8bf9c9",
+   "size": 862973,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mri.traineddata"
+  },
+  {
+   "name": "tessdata/msa",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/msa.traineddata",
+   "sha256": "e41a3e5febfec50c90371eb1cbb17a48b10cad387900e3420b1f134c1b766cba",
+   "size": 1747801,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/msa.traineddata"
+  },
+  {
+   "name": "tessdata/mya",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/mya.traineddata",
+   "sha256": "02aa6c25cfe9e583fa7b5d4131eac948f962308983f0f397df077dea58212b03",
+   "size": 4640561,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/mya.traineddata"
+  },
+  {
+   "name": "tessdata/nep",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/nep.traineddata",
+   "sha256": "280ba9450b4f21afbf5985e0de87857b75a972577c50ef0603c141ddde4f1cb8",
+   "size": 1002911,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/nep.traineddata"
+  },
+  {
+   "name": "tessdata/nld",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/nld.traineddata",
+   "sha256": "ced0e5e046a84c908a6aa7accbef9a232c4a5d9a8276691b81c6ee64d02963f6",
+   "size": 6050296,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/nld.traineddata"
+  },
+  {
+   "name": "tessdata/nor",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/nor.traineddata",
+   "sha256": "0451eb4f8049ae78196806bf878a389a2f40f1386fe038568cf4441226ba6ef2",
+   "size": 3610079,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/nor.traineddata"
+  },
+  {
+   "name": "tessdata/oci",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/oci.traineddata",
+   "sha256": "747b9be4c5b80b4c730ce4f426a3b85060a1bb0de54cd566fcbdcb7f407940c9",
+   "size": 6322087,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/oci.traineddata"
+  },
+  {
+   "name": "tessdata/ori",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ori.traineddata",
+   "sha256": "36f3135e61d501a3acfad41f5fe60b8e791274fff4c5375c969fdcca980cdbac",
+   "size": 1480066,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ori.traineddata"
+  },
+  {
+   "name": "tessdata/osd",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/osd.traineddata",
+   "sha256": "9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff",
+   "size": 10562727,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/osd.traineddata"
+  },
+  {
+   "name": "tessdata/pan",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/pan.traineddata",
+   "sha256": "1ec0907fc3534065ea9ae190c6bb7ec9e5c74fd9d2fa996aaec7407f11ad8131",
+   "size": 497721,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/pan.traineddata"
+  },
+  {
+   "name": "tessdata/pol",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/pol.traineddata",
+   "sha256": "c4476cdbc0e33d898d32345122b7be1cbf85ace15f920f06c7714756e1ef79b2",
+   "size": 4765518,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/pol.traineddata"
+  },
+  {
+   "name": "tessdata/por",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/por.traineddata",
+   "sha256": "c4932b937207a9514b7514d518b931a99938c02a28a5a5a553f8599ed58b7deb",
+   "size": 1982756,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/por.traineddata"
+  },
+  {
+   "name": "tessdata/pus",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/pus.traineddata",
+   "sha256": "f15550bfe3a20ca781cf5afb7b2af6ee769c6521cf4bb990848e72856b484600",
+   "size": 1772087,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/pus.traineddata"
+  },
+  {
+   "name": "tessdata/que",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/que.traineddata",
+   "sha256": "9a3f78b010254ae237a7ca89e65e6d0c349221e437ac1575df1877e63a76bf57",
+   "size": 5026336,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/que.traineddata"
+  },
+  {
+   "name": "tessdata/ron",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ron.traineddata",
+   "sha256": "9adfde6b51ba4b97efd10ea37c3070fd3fc2bad7815e81f5c3c198cd96216cc9",
+   "size": 2376323,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ron.traineddata"
+  },
+  {
+   "name": "tessdata/rus",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/rus.traineddata",
+   "sha256": "e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225",
+   "size": 3861738,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/rus.traineddata"
+  },
+  {
+   "name": "tessdata/san",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/san.traineddata",
+   "sha256": "a399958921c64e7d2319369ade1e74b4db2577744ac5bfeabd16663cf743b91c",
+   "size": 12404677,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/san.traineddata"
+  },
+  {
+   "name": "tessdata/script/Arabic",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Arabic.traineddata",
+   "sha256": "47c262ac4e843c024df87ffa1363b77a821a843c069c71ef7650f4d2ecfea1e8",
+   "size": 9311038,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Arabic.traineddata"
+  },
+  {
+   "name": "tessdata/script/Armenian",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Armenian.traineddata",
+   "sha256": "e94e3cfcb79dc6bc24b819ce01340b690f2aabe4c5ac295545ae1bca5d7472f4",
+   "size": 7879909,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Armenian.traineddata"
+  },
+  {
+   "name": "tessdata/script/Bengali",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Bengali.traineddata",
+   "sha256": "d04c2064bd0ffcd18488c4048d40d88ab056185f3462c2337b52f9e6c51158e5",
+   "size": 5712242,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Bengali.traineddata"
+  },
+  {
+   "name": "tessdata/script/Canadian_Aboriginal",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Canadian_Aboriginal.traineddata",
+   "sha256": "ec11e31e65541a2040982ee8a08514278f850127908df71553f0958cd02609f8",
+   "size": 7180795,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Canadian_Aboriginal.traineddata"
+  },
+  {
+   "name": "tessdata/script/Cherokee",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Cherokee.traineddata",
+   "sha256": "76df30145426bde13c7ab07a2cb9a27b415a7d703472424801b35c3c3da3aab7",
+   "size": 4231619,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Cherokee.traineddata"
+  },
+  {
+   "name": "tessdata/script/Cyrillic",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Cyrillic.traineddata",
+   "sha256": "a80325ebb1c7aa2dca5002ec05b15052a51dcb2e9e65373c264a3df7ac284358",
+   "size": 29252466,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Cyrillic.traineddata"
+  },
+  {
+   "name": "tessdata/script/Devanagari",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Devanagari.traineddata",
+   "sha256": "3bbb87c1de2a6a2ef0a97dc041e6eea2723a1c22d638f5e38157a5cd441c12b7",
+   "size": 17943870,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Devanagari.traineddata"
+  },
+  {
+   "name": "tessdata/script/Ethiopic",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Ethiopic.traineddata",
+   "sha256": "4856c53285f9dd28dd130228316cdd506a5172505c99f367d63d84e6467c15f4",
+   "size": 9074416,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Ethiopic.traineddata"
+  },
+  {
+   "name": "tessdata/script/Fraktur",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Fraktur.traineddata",
+   "sha256": "ac985c3020e42986f8a19e07f1c1b501d47ed7d8e96de69f685bb907aa8db55c",
+   "size": 10915632,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Fraktur.traineddata"
+  },
+  {
+   "name": "tessdata/script/Georgian",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Georgian.traineddata",
+   "sha256": "8da5cc7e2af2c8da04d126ab1f2604904305e548bc3fc20d3c0bae6d519ca013",
+   "size": 6949865,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Georgian.traineddata"
+  },
+  {
+   "name": "tessdata/script/Greek",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Greek.traineddata",
+   "sha256": "52e201e4a22336d89ee202b579aca04f15ffd6e5e6af1fe164498f2c7de898e6",
+   "size": 3041556,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Greek.traineddata"
+  },
+  {
+   "name": "tessdata/script/Gujarati",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Gujarati.traineddata",
+   "sha256": "94643022c1dc06a6b1a96f7dbc3bcc77f455b38e6843cc115a4c9c460b0b32aa",
+   "size": 5017100,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Gujarati.traineddata"
+  },
+  {
+   "name": "tessdata/script/Gurmukhi",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Gurmukhi.traineddata",
+   "sha256": "34c36da0fc59198f009ebbe8646708255fa3ca2553e62645a7b584cbceca8b24",
+   "size": 4213597,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Gurmukhi.traineddata"
+  },
+  {
+   "name": "tessdata/script/HanS",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/HanS.traineddata",
+   "sha256": "d03c250faaa48015bfde2213f3d7d5bda82bcee93422fceac5906a32073d9152",
+   "size": 5972903,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/HanS.traineddata"
+  },
+  {
+   "name": "tessdata/script/HanS_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/HanS_vert.traineddata",
+   "sha256": "b555a9a60c88e5e27ddd34541d055200c05492d1f184732518a721faf1db979b",
+   "size": 5429738,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/HanS_vert.traineddata"
+  },
+  {
+   "name": "tessdata/script/HanT",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/HanT.traineddata",
+   "sha256": "29588327f0d830b5c112209045d826b9be014138266b20f2b08843aac2730fbb",
+   "size": 5448070,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/HanT.traineddata"
+  },
+  {
+   "name": "tessdata/script/HanT_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/HanT_vert.traineddata",
+   "sha256": "ec4e31daec478e61216b1d9f34e0441fc1fcefacfe4fb28f1ea8bcfcc97ba302",
+   "size": 5448267,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/HanT_vert.traineddata"
+  },
+  {
+   "name": "tessdata/script/Hangul",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Hangul.traineddata",
+   "sha256": "cae2d12b8cdac6b62643b65915bec347e80970adc55228ca42ac1ec8909b198a",
+   "size": 4845849,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Hangul.traineddata"
+  },
+  {
+   "name": "tessdata/script/Hangul_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Hangul_vert.traineddata",
+   "sha256": "8fbbd6366654e043038bbcf78b2b8e031c64c2b65f133593d097edee6c7e2ea8",
+   "size": 4725034,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Hangul_vert.traineddata"
+  },
+  {
+   "name": "tessdata/script/Hebrew",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Hebrew.traineddata",
+   "sha256": "4f4f3405404a61e21e5c16316ed5c3052ddb3572a75e0b3dc3fe118b12dea76e",
+   "size": 4866337,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Hebrew.traineddata"
+  },
+  {
+   "name": "tessdata/script/Japanese",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Japanese.traineddata",
+   "sha256": "c176cdca0c17e9be97bda854ac91baea90b92e2813b45749ad05e409477ba8b2",
+   "size": 5877645,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Japanese.traineddata"
+  },
+  {
+   "name": "tessdata/script/Japanese_vert",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Japanese_vert.traineddata",
+   "sha256": "1d463a4811f3ae174e11b3f87773e07130c1c6aca042f31f7a90c41d939f1538",
+   "size": 6445356,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Japanese_vert.traineddata"
+  },
+  {
+   "name": "tessdata/script/Kannada",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Kannada.traineddata",
+   "sha256": "1252172cbbe99d27e5e52009a0e79444d555329b82e0b88d6e1f2a601a1b7d86",
+   "size": 6777791,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Kannada.traineddata"
+  },
+  {
+   "name": "tessdata/script/Khmer",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Khmer.traineddata",
+   "sha256": "330366535d1155974af0f99630df3060c9a98c657b1e4b29f458125f1d10e44a",
+   "size": 4476365,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Khmer.traineddata"
+  },
+  {
+   "name": "tessdata/script/Lao",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Lao.traineddata",
+   "sha256": "6bdca344c3ed9ecf405e2f8b5eb0af9832c1de7d92af2f4891867549c1d1fb63",
+   "size": 10103937,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Lao.traineddata"
+  },
+  {
+   "name": "tessdata/script/Latin",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Latin.traineddata",
+   "sha256": "6dbdaf8ecc6c40f025c2648bf3b3f3fbffe073e1fd2df2047fde2e2b2f020d53",
+   "size": 89384811,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Latin.traineddata"
+  },
+  {
+   "name": "tessdata/script/Malayalam",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Malayalam.traineddata",
+   "sha256": "822ad7ed9fb2eba0b0da5c788ed8710eba651d91777fc659ce0d700cfb99be06",
+   "size": 9007302,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Malayalam.traineddata"
+  },
+  {
+   "name": "tessdata/script/Myanmar",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Myanmar.traineddata",
+   "sha256": "78f95e6033824b7c197a099e9fdef55e0742146619d822c9b8d81f933f2b27df",
+   "size": 7840489,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Myanmar.traineddata"
+  },
+  {
+   "name": "tessdata/script/Oriya",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Oriya.traineddata",
+   "sha256": "39fc17f9e30eee261ac08b2d9d3c82bf28e69cff7c38d0a3aea19f1023410ade",
+   "size": 5744929,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Oriya.traineddata"
+  },
+  {
+   "name": "tessdata/script/Sinhala",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Sinhala.traineddata",
+   "sha256": "ce202bfbdc65e677abd76f5349f4765296b3d2b01c87608f49154ad7fa12ec4a",
+   "size": 4782577,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Sinhala.traineddata"
+  },
+  {
+   "name": "tessdata/script/Syriac",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Syriac.traineddata",
+   "sha256": "a89964433928a74de707e6fb61df1e933660de19c969f5301e8195e0219ea9bc",
+   "size": 5803220,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Syriac.traineddata"
+  },
+  {
+   "name": "tessdata/script/Tamil",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Tamil.traineddata",
+   "sha256": "6857e222c6977986915bd073f669c2cde33039dedde26603ed6be87b0a8d62bb",
+   "size": 7089032,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Tamil.traineddata"
+  },
+  {
+   "name": "tessdata/script/Telugu",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Telugu.traineddata",
+   "sha256": "615dd18355098058d77a45ee3bacc5d36aca574880c1b6099011f2aca09f2d1c",
+   "size": 6485174,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Telugu.traineddata"
+  },
+  {
+   "name": "tessdata/script/Thaana",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Thaana.traineddata",
+   "sha256": "aae14e808cc783e00fe37af8afa67ff09c8d01b454065b7633e014eb2b5b6e2d",
+   "size": 6048323,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Thaana.traineddata"
+  },
+  {
+   "name": "tessdata/script/Thai",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Thai.traineddata",
+   "sha256": "d9e34be94556ddb65fd7e04892ff606e1a5b696d0eb422b5a7efc6859943702d",
+   "size": 4249016,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Thai.traineddata"
+  },
+  {
+   "name": "tessdata/script/Tibetan",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Tibetan.traineddata",
+   "sha256": "0c869d52597d5b03eb6f52c5d0c217514e883259ead05765c0329e5a536538ae",
+   "size": 5699531,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Tibetan.traineddata"
+  },
+  {
+   "name": "tessdata/script/Vietnamese",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/script/Vietnamese.traineddata",
+   "sha256": "30546eea618459e79761f962391e6879778b026ad7b4459a11664a1b654758bd",
+   "size": 1667794,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/script/Vietnamese.traineddata"
+  },
+  {
+   "name": "tessdata/sin",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/sin.traineddata",
+   "sha256": "bc75c6df2375a30c9f7e759fa7d4b58ae3ecf9ce72668a702d01acb13e551422",
+   "size": 1727413,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/sin.traineddata"
+  },
+  {
+   "name": "tessdata/slk",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/slk.traineddata",
+   "sha256": "fbcc400a9c74c6a13d922fcb1211b655d1b165387b675ed75cd2dbd756b974a5",
+   "size": 4427661,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/slk.traineddata"
+  },
+  {
+   "name": "tessdata/slv",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/slv.traineddata",
+   "sha256": "b937632c17ce5fdf20535d25feec044da10a0c4c8234f4302d5606fd671cf60d",
+   "size": 3003829,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/slv.traineddata"
+  },
+  {
+   "name": "tessdata/snd",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/snd.traineddata",
+   "sha256": "f25cae3b325b0a6dc4dd5d8aeb3ac40b129a18bdd92666317022ee198f7878a7",
+   "size": 1694035,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/snd.traineddata"
+  },
+  {
+   "name": "tessdata/spa",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/spa.traineddata",
+   "sha256": "6f2e04d02774a18f01bed44b1111f2cd7f3ba7ac9dc4373cd3f898a40ea6b464",
+   "size": 2294433,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/spa.traineddata"
+  },
+  {
+   "name": "tessdata/spa_old",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/spa_old.traineddata",
+   "sha256": "11d89a6763ff134ef8f7e41b995974d36fba5d1a807156d3202d7bf991bb1823",
+   "size": 2894755,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/spa_old.traineddata"
+  },
+  {
+   "name": "tessdata/sqi",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/sqi.traineddata",
+   "sha256": "1d89621d9afe8ddf35b403ecf8951edea52c3a960d241f287b1a7b2c5ba8daac",
+   "size": 1874705,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/sqi.traineddata"
+  },
+  {
+   "name": "tessdata/srp",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/srp.traineddata",
+   "sha256": "aa41ae3d9cc705e60d398ab38a5c3cc8b772c0d420c7d4f0859beb13d0e321b6",
+   "size": 2149931,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/srp.traineddata"
+  },
+  {
+   "name": "tessdata/srp_latn",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/srp_latn.traineddata",
+   "sha256": "54b2e001bd8a336bdffc249c1487b8b7cb712f0a031f2551930ba050ebefa2a0",
+   "size": 3281787,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/srp_latn.traineddata"
+  },
+  {
+   "name": "tessdata/sun",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/sun.traineddata",
+   "sha256": "fa939213b005b3477a1032b7222f63cd0b0ac486f83fd9554caf653d6e6c6ffe",
+   "size": 1369500,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/sun.traineddata"
+  },
+  {
+   "name": "tessdata/swa",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/swa.traineddata",
+   "sha256": "395439d1ec308535066cbaea9b15e0e4cc81f8609170af76ab7e7e8d3ec42f3e",
+   "size": 2167651,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/swa.traineddata"
+  },
+  {
+   "name": "tessdata/swe",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/swe.traineddata",
+   "sha256": "f7304988d41f833efebcc2d529df54b1903ecebbc3da1faabd19a0fddd4fe586",
+   "size": 4167034,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/swe.traineddata"
+  },
+  {
+   "name": "tessdata/syr",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/syr.traineddata",
+   "sha256": "7435b43466da8343619bdc43c4da8dc8581f21aab3337fa1bd22ed8a8c10af04",
+   "size": 2207208,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/syr.traineddata"
+  },
+  {
+   "name": "tessdata/tam",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tam.traineddata",
+   "sha256": "d02fbec24be4b07e32e80d0ccfc3b6b67a3c5d61c9d0a7c8532677990912c6ec",
+   "size": 3237963,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tam.traineddata"
+  },
+  {
+   "name": "tessdata/tat",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tat.traineddata",
+   "sha256": "7ad946d753f4b9688e4e4bcf525a931f486da4aaa9020e32b6a7262718bdf093",
+   "size": 1072896,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tat.traineddata"
+  },
+  {
+   "name": "tessdata/tel",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tel.traineddata",
+   "sha256": "d10691fddd5b67802e1c12800ebb321d3b8bcd8d24a2ac3ff206f93188c04ab5",
+   "size": 2769654,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tel.traineddata"
+  },
+  {
+   "name": "tessdata/tgk",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tgk.traineddata",
+   "sha256": "7b32ed1374649b9b44b9a20ed07f1e86c1e1004c3bd11ce182496a47a18cb321",
+   "size": 2602685,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tgk.traineddata"
+  },
+  {
+   "name": "tessdata/tha",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tha.traineddata",
+   "sha256": "294227cc2d1292b0acb28d61d4115c88252b96d466ca90b417cf4cf0c67bf07c",
+   "size": 1072600,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tha.traineddata"
+  },
+  {
+   "name": "tessdata/tir",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tir.traineddata",
+   "sha256": "73d7430c22a062b061f603a2c1d70c4ea4aa092f7a932a97921926e15b4fdb3d",
+   "size": 378822,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tir.traineddata"
+  },
+  {
+   "name": "tessdata/ton",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ton.traineddata",
+   "sha256": "23d36448a3c59499da59502419ffcaa279056fa369a0fa2c798e066321d01bd1",
+   "size": 947249,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ton.traineddata"
+  },
+  {
+   "name": "tessdata/tur",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/tur.traineddata",
+   "sha256": "7393381111e1152420fc4092cb44eef4237580d21b92bf30d7d221aad192c6b7",
+   "size": 4550554,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/tur.traineddata"
+  },
+  {
+   "name": "tessdata/uig",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/uig.traineddata",
+   "sha256": "163b360268c39fc69e0c0dc9299c06dfe7a6c51ef8f33766da75022217b69b22",
+   "size": 2794272,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/uig.traineddata"
+  },
+  {
+   "name": "tessdata/ukr",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/ukr.traineddata",
+   "sha256": "d59e53e2bded32f4445f124b4b00240fcac7e8044c003ab822ccb94f0b3db59b",
+   "size": 3825102,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/ukr.traineddata"
+  },
+  {
+   "name": "tessdata/urd",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/urd.traineddata",
+   "sha256": "62e8250ce2a994106e313a82e26a516a39e2cf159d0ce3c5b5008387fd0d555f",
+   "size": 1398718,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/urd.traineddata"
+  },
+  {
+   "name": "tessdata/uzb",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/uzb.traineddata",
+   "sha256": "0e39021eefe692906b50d9bd22e580fa57fe43fa35db6846ad8b6369ddc21ea8",
+   "size": 6470703,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/uzb.traineddata"
+  },
+  {
+   "name": "tessdata/uzb_cyrl",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/uzb_cyrl.traineddata",
+   "sha256": "a2fe0b3f0eb4a5e46252470160ad51cc5f3c4c0f390ba67d1911beb0dbe80cc8",
+   "size": 1563501,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/uzb_cyrl.traineddata"
+  },
+  {
+   "name": "tessdata/vie",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/vie.traineddata",
+   "sha256": "79df64caf7bcfb2a27df5042ecb6121e196eada34da774956995747636d5bfa1",
+   "size": 531275,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/vie.traineddata"
+  },
+  {
+   "name": "tessdata/yid",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/yid.traineddata",
+   "sha256": "f9a3d74076460a505dc0c6b59a0f5bd1108c6436d570954223b3695988d1666d",
+   "size": 545606,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/yid.traineddata"
+  },
+  {
+   "name": "tessdata/yor",
+   "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/65727574dfcd264acbb0c3e07860e4e9e9b22185/yor.traineddata",
+   "sha256": "17ab3855f1ba9056183759a84e4c11cebf417a7d3c8c2cdcc37537d7fbffba3d",
+   "size": 963400,
+   "license": "Apache-2.0",
+   "kind": "file",
+   "target": "tessdata/yor.traineddata"
+  }
+ ]
+}

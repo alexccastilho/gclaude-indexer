@@ -34,9 +34,16 @@ def _placa_pequena_por_padrao(monkeypatch):
 def _idioma_do_ocr_sem_internet(monkeypatch):
     """1.5.19: o programa baixa o idioma do OCR que faltar. Nos testes,
     nada sai para a internet e `TESSDATA_PREFIX` volta ao que era."""
-    from gclaude_indexer import ocr_languages
+    from gclaude_indexer import components, ocr_languages
 
     monkeypatch.setattr(ocr_languages, "_download", lambda _lang, _target: False)
+
+    # 2.0.0: todo download passa pelo gerenciador de componentes; a rede
+    # dele também fica fechada (um teste que precise simula a resposta).
+    def _sem_rede(url):
+        raise OSError(f"teste sem rede: {url}")
+
+    monkeypatch.setattr(components, "_open_url", _sem_rede)
     atual = os.environ.get("TESSDATA_PREFIX")
     if atual is None:
         # setenv first: it records "absent" so the teardown removes a value

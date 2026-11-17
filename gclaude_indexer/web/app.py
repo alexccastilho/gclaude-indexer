@@ -2555,9 +2555,42 @@ def about_screen(request: Request):
     # Portuguese, shown as-is regardless of the interface's language — see
     # `install_diagnostics.py`'s module docstring.
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    from .. import components
+
+    # Task 7: the downloaded components, read fresh on every visit (outside
+    # `_about_cache`: a removal must show at once). A name in the query
+    # string is only echoed when it is a manifest entry.
+    removed = request.query_params.get("removed")
+    remove_failed = request.query_params.get("remove_failed")
     return render(
-        request, "about.html", {"autor": SYSTEM_AUTHOR, "diagnostico": _installation_report(language)}
+        request,
+        "about.html",
+        {
+            "autor": SYSTEM_AUTHOR,
+            "diagnostico": _installation_report(language),
+            "componentes": components.installed_components(),
+            "componente_removido": removed if removed and components.get(removed) else None,
+            "componente_nao_removido": remove_failed if remove_failed and components.get(remove_failed) else None,
+        },
     )
+
+
+@app.post("/about/components/remove")
+async def remove_component(request: Request):
+    """Deletes one downloaded component from this machine's private folder.
+    The name travels in the form (it has `/`, "tessdata/script/Latin"), and
+    only a manifest entry is ever touched (`components.remove`). Covered by
+    `_only_own_pages` like every other POST."""
+    from urllib.parse import quote
+
+    from .. import components
+
+    form = await request.form()
+    name = str(form.get("name", ""))
+    if components.get(name) is None:
+        return RedirectResponse("/about", status_code=303)
+    outcome = "removed" if components.remove(name) else "remove_failed"
+    return RedirectResponse(f"/about?{outcome}={quote(name, safe='')}#components", status_code=303)
 
 
 # The installation check asks Windows for every tool and the graphics
