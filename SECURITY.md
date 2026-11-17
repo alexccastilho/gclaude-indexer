@@ -44,7 +44,12 @@ about things like:
 - or a way for the program to send data off the machine. The only outbound
   call is the LexML search (on the screen, only with its box checked; in
   `buscar.bat`, also when no act in the collection cites the term), which
-  sends the typed term and nothing else; anything beyond that is in scope,
+  sends the typed term and nothing else; the other outbound requests are
+  the on-demand component downloads (OCR language and script models, and
+  the other components a document needs), fetched only from the pinned
+  manifests in `gclaude_indexer/manifests/` and refused unless the SHA-256
+  matches, carrying the component's name and no document content; anything
+  beyond that is in scope,
 
 are all very welcome. A report that "the interface has no login" is not a
 vulnerability on its own: that is intentional for this application's

@@ -34,7 +34,8 @@ def test_dicionario_de_regras_vem_de_arquivo_editavel_fora_do_codigo():
     regras = load_rules()
     assert "OFÍCIO" in regras.types
     assert "MEMORANDO" in regras.types
-    assert len(regras.date_patterns) == 3
+    # 2.0.0: mais as datas ISO, DD-MM-AAAA e as do Leste Asiático (年月日).
+    assert len(regras.date_patterns) == 6
 
 
 # --- datas -----------------------------------------------------------------

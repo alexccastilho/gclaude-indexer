@@ -93,6 +93,7 @@ Lo que eso quiere decir en la práctica: toda página del acervo está en el ín
 ## Privacidad
 
 - Los documentos se leen, pasan por el OCR y se clasifican solo en su computadora. Durante el procesamiento, ningún documento, página ni nombre de archivo se envía por la red. El modelo local habla únicamente con el Ollama de la misma máquina.
+- El idioma de cada documento se detecta en su computadora. Cuando un documento necesita un idioma o un modelo de escritura del OCR que esta computadora todavía no tiene, el programa descarga solo ese modelo, bajo demanda, de una lista fija con el SHA-256 de cada archivo (lo que no coincide se rechaza); el pedido lleva el nombre del modelo, nunca el contenido de un documento. Sin internet, el documento se lee con lo que ya está aquí y se rehace cuando llega el modelo.
 - El programa solo escucha en su propia máquina (`127.0.0.1`) y solo acepta pedidos de sus propias pantallas: un sitio abierto en el navegador no puede darle órdenes.
 - La carpeta de origen nunca se modifica. Todo lo que el programa produce va a la carpeta de salida.
 - La base del proyecto (`project.db`) guarda el texto de las páginas. Si el acervo tiene datos personales, proteja la carpeta de salida como protegería los documentos, también en Google Drive.

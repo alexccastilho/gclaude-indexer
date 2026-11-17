@@ -55,6 +55,12 @@ WINDOW_LOCAL = 8
 WINDOW_RULES = 16
 MIN_CHARS = 1500
 MAX_CHARS = 4000
+# Página escrita em chinês, japonês ou coreano (`language_detect.CJK_SCRIPTS`):
+# um caractere ali vale perto de um token do modelo, contra uns três numa
+# escrita alfabética, então cerca de 800 caracteres ocupam na janela o que
+# 2400 ocupam em português. Aplicado página a página na extração
+# (`extraction.capped_text`), por cima do limite do projeto.
+CJK_CHARS_PER_PAGE = 800
 # Abaixo desta fatia de páginas de PDF e imagem o acervo é, na prática, de
 # documentos inteiros e a sobreposição só repete páginas: não há peça partida
 # na borda de duas janelas.
@@ -140,15 +146,25 @@ def _effective_engine(conn: sqlite3.Connection, config: ProjectConfig, language:
 
 
 def _language_from_survey(survey: FolderSurvey) -> str | None:
-    """Idioma do OCR pela detecção atual (palavras frequentes). A detecção
-    por documento é da Tarefa 12; aqui só o último recurso do acervo."""
+    """Idioma do projeto pela amostra (`language_detect`, qualquer idioma).
+    Desde a 2.0.0 cada documento escaneado tem o idioma detectado na
+    conversão (`ocr_detection`); este é só o último recurso, para o
+    escaneado de pouco texto num grupo sem idioma conhecido.
+
+    Fica de fora só o idioma que o Tesseract não tem e que também não se
+    baixa (fora do manifesto): o resto é baixado na conversão, sob demanda."""
+    from . import ocr_languages
+
     counts: Counter = survey.language_counts
     total = sum(counts.values())
     if not total:
         return None
     ranked = [code for code, _ in counts.most_common() if counts[code] / total >= 0.25][:2]
     installed = installed_ocr_languages()
-    ranked = [code for code in ranked if installed is None or code in installed]
+    ranked = [
+        code for code in ranked
+        if installed is None or code in installed or ocr_languages.downloadable(code)
+    ]
     return "+".join(ranked) if ranked else None
 
 

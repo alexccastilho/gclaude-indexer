@@ -199,6 +199,18 @@ def test_arquivos_ignorados_nao_entram_em_nenhuma_estatistica(tmp_path):
     assert gravado.chars_per_page == 2000  # nem foram abertos para medir texto
 
 
+def test_idioma_que_se_baixa_entra_mesmo_sem_estar_no_tesseract(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto_settings, "installed_ocr_languages", lambda: frozenset({"por", "eng"}))
+    origem, abrir = _projeto(tmp_path)
+    for n in range(5):
+        (origem / f"doc{n}.txt").write_text(ES * 2, encoding="utf-8")
+    config, conn = abrir()
+
+    auto_settings.resolve_auto_settings(conn, config)
+
+    assert _do_banco(conn).ocr_language == "spa"
+
+
 def test_idioma_espanhol_e_detectado(tmp_path):
     origem, abrir = _projeto(tmp_path)
     for n in range(5):
@@ -211,7 +223,12 @@ def test_idioma_espanhol_e_detectado(tmp_path):
 
 
 def test_idioma_sem_dados_no_tesseract_fica_de_fora(tmp_path, monkeypatch):
+    # 2.0.0: o idioma que o Tesseract não tem mas que se baixa (manifesto)
+    # entra; fica de fora só o que nem se baixa.
+    from gclaude_indexer import ocr_languages
+
     monkeypatch.setattr(auto_settings, "installed_ocr_languages", lambda: frozenset({"por", "eng"}))
+    monkeypatch.setattr(ocr_languages, "downloadable", lambda _code: False)
     origem, abrir = _projeto(tmp_path)
     for n in range(5):
         (origem / f"doc{n}.txt").write_text(ES * 2, encoding="utf-8")

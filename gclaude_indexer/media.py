@@ -31,8 +31,10 @@ Como cada arquivo é transcrito:
   modelo usado. Ao retomar depois de Parar (ou de uma queda) o parcial é
   cortado nesse ponto e os trechos feitos não são refeitos.
 
-O idioma detectado (o que mais tempo de fala teve) vai para o log e para um
-arquivo ao lado do intermediário (`<intermediário>.idioma`).
+O idioma detectado (o que mais tempo de fala teve) vai para o log e para a
+coluna `file.language` (gravada pela conversão, como o idioma de qualquer
+documento). Até a Tarefa 12 ia para um arquivo ao lado do intermediário
+(`<intermediário>.idioma`); o que sobrou de lá é apagado na transcrição.
 """
 
 from __future__ import annotations
@@ -110,6 +112,7 @@ LOW_RAM_MB = 8192
 
 PROGRESS_SUFFIX = ".progress"
 PARTIAL_SUFFIX = ".partial"
+# Só para apagar a sobra da versão anterior (ver o começo do módulo).
 LANGUAGE_SUFFIX = ".idioma"
 WORK_WAV = "audio.wav"
 
@@ -698,12 +701,10 @@ def _transcribe_wav(
         partial.write_text("", encoding="utf-8")
         pages = 1
     os.replace(partial, destination)
-    sidecar = destination.with_name(destination.name + LANGUAGE_SUFFIX)
-    if language:
-        sidecar.write_text(language, encoding="utf-8")
-    else:
-        # Sem idioma (nenhuma fala): nada de um `.idioma` de transcrição anterior.
-        sidecar.unlink(missing_ok=True)
+    try:
+        destination.with_name(destination.name + LANGUAGE_SUFFIX).unlink(missing_ok=True)
+    except OSError:
+        pass  # sobra antiga presa (Drive): inofensiva, ninguém mais a lê
     progress.unlink(missing_ok=True)
     shutil.rmtree(work, ignore_errors=True)
     return MediaResult(pages=pages, language=language, duration=duration, truncated=truncated)

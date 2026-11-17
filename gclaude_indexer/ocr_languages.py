@@ -176,6 +176,17 @@ def usable(ocr_language: str | None, tesseract_path: str | None) -> list[str]:
     return [lang for lang in wanted(ocr_language) if _has(folder, lang)]
 
 
+def present_models(tesseract_path: str | None) -> frozenset[str]:
+    """Os modelos que o Tesseract lê agora neste processo ("eng", "osd",
+    "script/Cyrillic"…): o que a detecção de idioma pode usar sem baixar."""
+    folder = active_folder(tesseract_path)
+    if folder is None or not folder.is_dir():
+        return frozenset()
+    found = {item.stem for item in folder.glob("*.traineddata")}
+    found |= {f"script/{item.stem}" for item in (folder / "script").glob("*.traineddata")}
+    return frozenset(found)
+
+
 def ensure(ocr_language: str | None, tesseract_path: str | None, download: bool = True) -> list[str]:
     """Makes every language of `ocr_language` readable by Tesseract in this
     process, and returns the ones still missing (empty: all set).

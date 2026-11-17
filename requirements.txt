@@ -61,6 +61,12 @@ xlrd==2.0.2
 ezdxf==1.4.5
 libpff-python==20261030
 
+# Idioma de cada documento (2.0.0, `language_detect.py`): py3langid 0.4.0,
+# BSD-3-Clause, roda pura (py3-none-any, ~4,5 MB com o modelo de 142 idiomas
+# embutido; nada é baixado ao usar). Traz numpy (BSD-3-Clause), que já vinha
+# pelo ezdxf.
+py3langid==0.4.0
+
 # Monitoramento de recursos (CPU/RAM na tela de Execução)
 psutil==6.0.0
 

@@ -336,6 +336,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_fulltext_file_range_columns(conn)
     _ensure_file_ocr_failed_index(conn)
     _ensure_file_signature_table(conn)
+    _ensure_file_language_columns(conn)
+    _ensure_fulltext_trigram_table(conn)
     conn.commit()
 
 
@@ -469,3 +471,79 @@ def _ensure_file_signature_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_file_signature_file_id ON file_signature(file_id)")
+
+
+def _ensure_file_language_columns(conn: sqlite3.Connection) -> None:
+    """Cria `file.ocr_lang` e `file.language` (2.0.0, idioma por documento).
+
+    Duas colunas porque são dois vocabulários, e misturá-los numa só
+    confundiria quem lê:
+
+    - `ocr_lang`: o **plano do OCR** em modelos do Tesseract, o que o
+      arquivo pediu (não o que foi usado quando faltou algum): `"deu+eng"`
+      para o arquivo todo, ou `"1-3:chi_sim|4-9:deu"` por grupo de páginas
+      (`ocr_detection.parse_plan`). A conversão seguinte baixa o que ele
+      pediu. `NULL`: sem plano próprio (sem OCR, ou pouco texto para dizer),
+      e vale a maioria do grupo, a do projeto e por fim
+      `config.ocr_language`, que vira o último recurso.
+    - `language`: os **idiomas detectados**, códigos ISO 639 separados por
+      vírgula, do mais presente ao menos (`"de,en"`), do texto (nativo ou da
+      amostra do OCR) ou da fala (whisper, em áudio e vídeo).
+
+    Projetos antigos ficam com as duas `NULL` e continuam como antes. A
+    varredura e a atualização as zeram quando o conteúdo do arquivo muda."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
+    if "ocr_lang" not in columns:
+        conn.execute("ALTER TABLE file ADD COLUMN ocr_lang TEXT")
+    if "language" not in columns:
+        conn.execute("ALTER TABLE file ADD COLUMN language TEXT")
+
+
+def trigram_available(conn: sqlite3.Connection) -> bool:
+    """Se o banco tem a tabela `fulltext_trigram` (SQLite com o tokenizador
+    `trigram`, 3.34 ou mais novo)."""
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fulltext_trigram'"
+    ).fetchone() is not None
+
+
+def _ensure_fulltext_trigram_table(conn: sqlite3.Connection) -> None:
+    """Cria `fulltext_trigram`, a segunda tabela da busca (2.0.0).
+
+    A `fulltext` (`unicode61`) parte o texto nos espaços. Chinês, japonês,
+    coreano e tailandês não têm espaço entre as palavras: um parágrafo
+    inteiro vira uma "palavra" e a busca por um termo dentro dele não acha
+    nada. Os trechos de escrita sem espaço vão também para esta tabela, com o
+    **mesmo rowid** da `fulltext` (a faixa de `fulltext_file` vale para as
+    duas, e o texto continua inteiro na `fulltext`), e a busca consulta as
+    duas (`fulltext.search`).
+
+    O `trigram` existe desde o SQLite 3.34 (o Python 3.12 do instalador traz
+    o 3.49). Num SQLite mais velho a criação falha, a tabela não existe e a
+    busca em escritas sem espaço cai para `LIKE` na `fulltext`, mais lenta.
+
+    Um projeto que já tinha trechos indexados recebe a tabela vazia e um
+    marcador em `fulltext_trigram_state`: a etapa de extração (ou a tela de
+    busca) copia os trechos de escrita sem espaço uma vez
+    (`fulltext.backfill_trigram`), nunca a abertura do projeto, que tem de
+    ser rápida."""
+    if trigram_available(conn):
+        return
+    # `remove_diacritics` no `trigram` só existe desde o 3.45; antes dele, a
+    # tabela sem a opção ainda serve (o japonês e o chinês não têm acento).
+    for options in ("trigram remove_diacritics 1", "trigram"):
+        try:
+            conn.execute(f"CREATE VIRTUAL TABLE fulltext_trigram USING fts5(text, tokenize = '{options}')")
+            break
+        except sqlite3.OperationalError:
+            continue
+    else:
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS fulltext_trigram_state ("
+        " id INTEGER PRIMARY KEY CHECK (id = 1), backfilled INTEGER NOT NULL)"
+    )
+    has_passages = conn.execute("SELECT 1 FROM fulltext LIMIT 1").fetchone() is not None
+    conn.execute(
+        "INSERT OR REPLACE INTO fulltext_trigram_state (id, backfilled) VALUES (1, ?)", (0 if has_passages else 1,)
+    )
