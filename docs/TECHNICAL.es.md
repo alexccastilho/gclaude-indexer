@@ -324,7 +324,7 @@ Si está contribuyendo con cambios, o quiere confirmar que todo funciona despué
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest -q
 ```
 
-Una ejecución correcta termina con una línea como `1197 passed, ... warnings in ...s` y ninguna falla. El número de pruebas crece con el tiempo; los avisos vienen de bibliotecas de terceros, y la cuenta puede variar entre máquinas. La suite no habla con el Ollama real ni con la red, y nunca detiene el Ollama de la máquina. Vea [CONTRIBUTING.es.md](CONTRIBUTING.es.md) (original en inglés: [CONTRIBUTING.md](../CONTRIBUTING.md)) para la preparación completa de un entorno de desarrollo. El CI de GitHub ejecuta la suite e indexa el acervo de demostración en cada push, adjuntando el informe de acierto a la corrida.
+Una ejecución correcta termina con una línea como `1783 passed, ... warnings in ...s` y ninguna falla. El número de pruebas crece con el tiempo; los avisos vienen de bibliotecas de terceros, y la cuenta puede variar entre máquinas. La suite no habla con el Ollama real ni con la red, y nunca detiene el Ollama de la máquina. Vea [CONTRIBUTING.es.md](CONTRIBUTING.es.md) (original en inglés: [CONTRIBUTING.md](../CONTRIBUTING.md)) para la preparación completa de un entorno de desarrollo. El CI de GitHub ejecuta la suite e indexa el acervo de demostración en cada push, adjuntando el informe de acierto a la corrida.
 
 ## Solución de problemas
 

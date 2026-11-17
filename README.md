@@ -94,7 +94,7 @@ On every screen, the **Help** button summarizes the screen and the **?** next to
 
 ## How accurate it is
 
-The index is measured against the demo collection's answer key at every version that touches the classifier, and an automatic test on GitHub repeats the measurement at every code change. In the last measurement (02/11/2026), no page was lost with either engine. The rules engine found 36 of the 41 items in 4 seconds and got the type right for 94% of them, but the date for only half of them and the author for only one in five. The local model (`qwen3.5:9b`) took 4 minutes, got the date right for 89% and the author for 84% of the items found, and sliced more items than it should.
+The index is measured against the demo collection's answer key at every version that touches the classifier, and an automatic test on GitHub repeats the measurement at every code change. In the last measurement (02/11/2026), no page was lost with either engine. The rules engine found 36 of the 41 items in 4 seconds and got the type right for 94% of them, but the date for only half of them and the author for only one in five. The local model (`qwen3.5:9b`) took 4 minutes, got the date right for 89% and the author for 84% of the items found, and split some items in two.
 
 What that means in practice: every page of the collection is in the index, even when the type or the date come out wrong, and Claude checks the text in the original document before answering; that is what the instructions tell it to do. The full numbers, what each one means and what they do not say are in [docs/QUALITY.md](docs/QUALITY.md).
 
@@ -105,7 +105,7 @@ What that means in practice: every page of the collection is in the index, even 
 - The program listens only on your own machine (`127.0.0.1`) and accepts requests only from its own screens: a website open in the browser cannot give it orders.
 - The source folder is never changed. Everything the program produces goes to the output folder.
 - The project database (`project.db`) holds the text of the pages. If the collection has personal data, protect the output folder as you would protect the documents, including on Google Drive.
-- Content reaches Claude only when you send it: when you upload the index files to a Project, or when you send a document. The only external query is the LexML search, which sends only the term you typed: on the screen, only with the box checked; in `buscar.bat`, also when no act in the collection cites the term.
+- Content reaches Claude only when you send it: when you upload the index files to a Project, or when you send a document. The only query that carries anything you typed is the LexML search, which sends only the term: on the screen, only with the box checked; in `buscar.bat`, also when no act in the collection cites the term. The other network use is the one-time download of the optional components (LibreOffice, FFmpeg, whisper.cpp, OCR data), pinned by SHA-256, which sends nothing from your documents.
 
 ## Several collections in one Project
 

@@ -324,7 +324,7 @@ If you are contributing changes, or want to confirm everything works after insta
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest -q
 ```
 
-A correct run ends with a line like `1197 passed, ... warnings in ...s` and no failures. The number of tests grows over time; the warnings come from third-party libraries, and the count may vary between machines. The suite does not talk to the real Ollama or to the network, and never stops the machine's Ollama. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full setup of a development environment. The GitHub CI runs the suite and indexes the demo collection at every push, attaching the accuracy report to the run.
+A correct run ends with a line like `1783 passed, ... warnings in ...s` and no failures. The number of tests grows over time; the warnings come from third-party libraries, and the count may vary between machines. The suite does not talk to the real Ollama or to the network, and never stops the machine's Ollama. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full setup of a development environment. The GitHub CI runs the suite and indexes the demo collection at every push, attaching the accuracy report to the run.
 
 ## Troubleshooting
 

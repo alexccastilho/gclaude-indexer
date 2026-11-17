@@ -10,12 +10,12 @@ GClaude Indexer runs on **Windows only**. It is not a portability gap to be fixe
 
 ## You do not need Claude Code
 
-The project name mentions Claude, but **Claude Code is optional**, both to use the software and to contribute to it. Classification of collection items is done by one of three interchangeable engines (plus an `automatic` mode that picks between the first two based on the machine's hardware):
+The project name mentions Claude, but **Claude Code is optional**, both to use the software and to contribute to it. Classification of collection items is done by one of two interchangeable engines (plus an `automatic` mode that picks between them based on the machine's hardware):
 
 - `rules`: deterministic, no external tool required.
 - `local`: uses a local Ollama model.
 
-The `rules` and `local` engines are enough to run the full pipeline end to end and to work on almost anything in this repository. You only need Claude Code if you are working on `gclaude_indexer/claude_package.py`, and even then the test suite mocks the subprocess call. You do not need Claude Code installed to run the tests.
+The `rules` and `local` engines are enough to run the full pipeline end to end and to work on almost anything in this repository. The program never calls Claude Code: `gclaude_indexer/claude_package.py` only builds the `.zip` for a Claude Project. You do not need Claude Code installed to work on any of it or to run the tests.
 
 ## Setting up the environment
 
@@ -75,7 +75,7 @@ The codebase (identifiers, comments, docstrings, database schema) is in English;
 
 A comment that explains a non-obvious decision states what was measured, where and when ("flash attention doubled prompt reading time on the RX 6700 XT via Vulkan, 02/11/2026"). A reader two versions later can then re-measure instead of guessing whether the reason still holds.
 
-### The project is offline
+### No network, except what is listed here
 
 No runtime network calls, except to `http://127.0.0.1:11434` (the local Ollama instance, always loopback, never configurable to a remote host) and the LexML search service (opt-in on the screen; in `buscar.bat`, also when no act in the collection cites the term), which sends only the term the user typed and never anything from the collection. The one other exception is the on-demand component downloads (`gclaude_indexer/components.py`: LibreOffice, FFmpeg, whisper.cpp and its models, OCR languages): only from a manifest in `gclaude_indexer/manifests/` that pins the URL, the size and the SHA-256 of every file, over HTTPS (redirects included), carrying the component's name and never anything from the collection. A new component goes into the manifest, never into a URL written in the code, and a document that needs a missing component is skipped with a reason, never failed. The test suite replaces `components._open_url`, so no test touches the network. Do not add a dependency that requires network access to function. The classifier prompt, the rules vocabulary and the Planalto reader are behavior knobs: changes to them need a new measurement against `demo/gabarito.csv` and an update to `docs/QUALITY.md`.
 

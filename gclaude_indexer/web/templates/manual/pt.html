@@ -135,7 +135,7 @@
 <h3>Componentes que são baixados uma vez</h3>
 <p>Alguns formatos precisam de programas ou dados que não vêm no instalador. O programa baixa cada um sozinho, uma única vez, na primeira vez que um documento precisa dele:</p>
 <ul>
-  <li><strong>LibreOffice</strong> (cerca de 370 MB), para os formatos antigos. Roda sem janela e sem macros, vínculos nem atualizador.</li>
+  <li><strong>LibreOffice</strong> (cerca de 370 MB), para os formatos antigos. Roda sem janela e sem macros, vínculos nem atualizador. Um LibreOffice 7.6 ou mais novo já instalado na máquina também é aceito; ele não é coberto pela fixação por SHA-256.</li>
   <li><strong>FFmpeg e whisper.cpp</strong>, com um modelo de transcrição (de 148 MB a 1,5 GB, conforme o computador), para áudio e vídeo.</li>
   <li><strong>Idiomas e escritas do OCR</strong>, alguns MB cada um, para páginas digitalizadas em idiomas que o instalador não trouxe.</li>
 </ul>
@@ -389,7 +389,7 @@
   <dt>Aparece "Pedido recusado"</dt><dd>Algum site tentou enviar um comando ao programa e foi bloqueado. Use sempre o atalho do GClaude Indexer ou o endereço <code>http://127.0.0.1:8000</code>.</dd>
   <dt>O LexML pediu verificação</dt><dd>O portal do Senado responde a programas com uma página de verificação. Abra o link mostrado e faça a busca no navegador.</dd>
   <dt>Arquivos "ignorados" na tela Execução</dt><dd>O programa deixa de fora, de propósito, o que não pode ou não deve ser indexado: compactados, executáveis, bancos de dados, fontes, chaves e senhas, binários, mídia que você não marcou e atalhos do Google Docs. Cada um aparece com o motivo. Para indexar o conteúdo de um compactado, extraia-o; para um atalho do Google, exporte o documento para DOCX, XLSX ou PDF.</dd>
-  <dt>"Aguardando um componente baixado sob demanda"</dt><dd>O documento precisa do LibreOffice, do FFmpeg e do whisper.cpp ou de um idioma do OCR que ainda não foi baixado, e o download não foi possível (sem internet, ou recusado). Nada falhou: o arquivo volta para a fila na próxima execução, quando houver internet.</dd>
+  <dt>"Aguardando um componente baixado sob demanda"</dt><dd>O documento precisa de um componente que ainda não foi baixado (LibreOffice, FFmpeg com whisper.cpp ou um idioma do OCR), e o download não foi possível (sem internet, ou recusado). Nada falhou: o arquivo volta para a fila na próxima execução, quando houver internet.</dd>
   <dt>Aviso de "Mudança de pasta"</dt><dd>O projeto tem a saída dentro da pasta de origem. Abra o aviso e confirme a mudança, ou adie; veja <a href="#mudanca-de-pasta">Mudança da pasta de saída</a>.</dd>
 </dl>
 </section>
@@ -401,7 +401,7 @@
   <li>O programa só aceita comandos das próprias telas: um site aberto no navegador não consegue mandar ordens a ele.</li>
   <li>A pasta de origem nunca é modificada.</li>
   <li>O banco do projeto guarda o texto das páginas. Se o acervo tiver dados pessoais (LGPD), proteja a pasta de saída como protegeria os próprios documentos, inclusive no Google Drive.</li>
-  <li>A única consulta a um serviço externo é a busca no LexML, que envia só o termo digitado: na tela, só com a caixa marcada; no <code>buscar.bat</code>, também quando nenhuma norma do acervo cita o termo.</li>
+  <li>A única consulta que leva algo que você digitou é a busca no LexML, que envia só o termo: na tela, só com a caixa marcada; no <code>buscar.bat</code>, também quando nenhuma norma do acervo cita o termo. O outro uso da rede é o download único dos componentes opcionais (LibreOffice, FFmpeg, whisper.cpp, dados do OCR), fixados por SHA-256, que não envia nada dos seus documentos.</li>
   <li>Ao enviar arquivos ao Claude, aí sim o conteúdo enviado passa pela sua conta do Claude, nas condições do seu plano.</li>
   <li>O programa só baixa da internet o que um documento precisa e não veio no instalador (LibreOffice, FFmpeg, whisper.cpp e seus modelos, idiomas do OCR), de uma lista fixa com o SHA-256 de cada arquivo. O pedido leva o nome do componente, nunca o conteúdo de um documento. Sem internet, esses documentos são pulados com o motivo.</li>
 </ul>

@@ -65,7 +65,7 @@ original file.
 | Language | Python 3.12 | mature document libraries; newer interpreters (3.13/3.14) are known to break this project's pinned dependency versions |
 | Interface | FastAPI + Jinja2 + HTMX | forms and progress updates with no separate front-end build |
 | Database | SQLite via the standard library's `sqlite3` | one file per project, zero installation |
-| PDF | PyMuPDF | reading, page counting, slicing, image detection |
+| PDF | PyMuPDF | reading, page counting, image detection, page rendering for OCR |
 | OCR | ocrmypdf + Tesseract | text layer without altering the original image |
 | DOCX | python-docx | text and tables |
 | XLSX | openpyxl | cells as tabulated text |
@@ -713,16 +713,16 @@ the **last** import, because `import_and_consolidate` recreates the whole
 `None` score, never a number computed over items that no longer belong to
 that engine/model.
 
-A language selector and a theme selector (four color themes: light, dark,
-sepia, high-contrast) sit in the header of every screen, in a `<select>`
-each, persisted in a cookie. A separate layout selector (four layouts:
-standard, technical, editorial, compact — `web/layout.py` +
-`static/layouts.css`) is orthogonal to the theme: 4 layouts × 4 palettes,
+A language selector and a theme selector (14 color themes, among them light, dark,
+sepia, high-contrast, Studio, Glass and Apple) sit in the header of every screen, in a `<select>`
+each, persisted in a cookie. A separate layout selector (five layouts:
+workspace, standard, technical, editorial, compact — `web/layout.py` +
+`static/layouts.css`) is orthogonal to the theme: 5 layouts × 14 palettes,
 same Jinja2 templates for all of them, varying only via `data-layout` and
 CSS rules. All fonts used across every layout (Segoe UI, Cascadia Mono,
 Constantia, Corbel and equivalents) ship with Windows itself — never Google
 Fonts nor any font loaded from outside the machine, keeping the interface
-consistent with the project's offline design.
+consistent with the project's rule of loading nothing from outside the machine.
 
 Step status (`step_state.py`) is always a stable ASCII key
 (`"done"`, `"scan"`, ...), never screen text — the template translates the
