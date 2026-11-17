@@ -9,7 +9,9 @@ labels: bug
 
 **Windows version** (Settings > System > About, or run `winver`):
 
-**Classification engine you were using** (`rules` / `local` / `claude_code` / `automatic`), and the local model if any:
+**Classification engine you were using** (`rules` / `local` / `automatic`), and the local model if any:
+
+**File type involved**, if it matters (for example `.pst`, `.doc`, an audio file or a HEIC photo). If the log says a component could not be downloaded, say which one:
 
 ## What happened
 

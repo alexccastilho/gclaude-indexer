@@ -269,10 +269,15 @@ def test_revisao_da_parte_b_corrigiu_as_afirmacoes_falsas():
                       "Planalto link;", "enlace canónico del Planalto", "enlace del Planalto"):
             assert frase not in novo, (registro, frase)
         assert "1.6.0" in novo[novo.index("INDEX_PART_BYTES") - 400: novo.index("INDEX_PART_BYTES") + 50], registro
-    # Achado 4 (técnico): a frase-gatilho do Claude Code é traduzida
-    # (`engine_claude_code.USER_COMMANDS`); o TECHNICAL en/es citava a portuguesa.
-    assert "`process the windows`" in _texto("docs/TECHNICAL.md")
-    assert "`procese las ventanas`" in _texto("docs/TECHNICAL.es.md")
+    # Achado 4 (técnico): a frase-gatilho do Claude Code era traduzida
+    # (`engine_claude_code.USER_COMMANDS`). Na 2.0.0 o motor saiu, e as frases
+    # saíram junto dos documentos: nenhum deles pode voltar a ensinar o gatilho.
+    for documento, frase in (
+        ("docs/TECHNICAL.md", "process the windows"),
+        ("docs/TECHNICAL.pt-BR.md", "processe as janelas"),
+        ("docs/TECHNICAL.es.md", "procese las ventanas"),
+    ):
+        assert frase not in _texto(documento), (documento, frase)
     # Achados leigos 3, 4, 5 e 12: o instalador, o que é um Project e um token,
     # e como baixar o ZIP do acervo de demonstração.
     for leiame, trechos in {

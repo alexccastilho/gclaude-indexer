@@ -21,6 +21,7 @@ Sumário:
 - [Vários acervos num Project: conjuntos](#vários-acervos-num-project-conjuntos)
 - [Busca por tema e LexML](#busca-por-tema-e-lexml)
 - [OCR e idioma dos documentos](#ocr-e-idioma-dos-documentos)
+- [Formatos e componentes opcionais](#formatos-e-componentes-opcionais)
 - [Rodando a suíte de testes](#rodando-a-suíte-de-testes)
 - [Solução de problemas](#solução-de-problemas)
 - [Documentação](#documentação)
@@ -147,14 +148,14 @@ A interface tem sete telas, mais **Manual** e **Sobre**:
    - **Catálogo compartilhado**: aponte-o para uma pasta dentro do Google Drive e todo computador conectado a esse Drive passa a ver, abrir, editar e excluir os mesmos projetos. Sem ele, a lista de projetos fica só nesta máquina, mesmo com os projetos sincronizados. Projetos guardados no disco local de outro computador aparecem marcados como fora de alcance.
    - **Abrir projeto existente** recebe uma pasta que você aponta e reabre o projeto que estiver nela: depois de uma reinstalação, numa máquina nova, para uma pasta movida ou que alguém lhe mandou. Nada é recriado; a pasta de saída já guarda o projeto inteiro.
    - **Excluir** oferece duas escolhas: só tirar o projeto da lista ou também apagar os arquivos gerados. Nesse caso o programa apaga só o que ele mesmo criou (banco, relatórios, `buscar.bat`, a pasta de trabalho local). Os seus arquivos na pasta de saída ficam, e a pasta só some se ficar vazia. Em `project_instructions.md` e `CLAUDE.md` sai só o bloco gerado. A pasta de origem nunca é tocada.
-2. **Novo projeto**: pasta de origem, pasta de saída, quais tipos de arquivo incluir, como agrupar os documentos e qual motor usar. Ao escolher a pasta de origem, o programa propõe uma configuração a partir do que encontra nela (tipos de arquivo, agrupamento, idioma). Todo campo tem um padrão e uma dica "?".
+2. **Novo projeto**: pasta de origem, pasta de saída, quais tipos de arquivo incluir, como agrupar os documentos e qual motor usar. A pasta de saída é sugerida ao lado da origem (`<origem>-AI`) e criada por você; ela nunca pode ser a pasta de origem, ficar dentro dela nem acima dela. Todas as categorias de tipo de arquivo vêm marcadas, menos áudio e vídeo. Fatiamento, janelas e OCR não são campos: o programa os escolhe depois da varredura. Todo campo tem um valor padrão e uma dica com "?". Um projeto criado por uma versão anterior com a saída dentro da origem mostra um aviso que leva a uma tela **Mudança de pasta** (veja [Mantendo um acervo atualizado](#mantendo-um-acervo-atualizado)).
 3. **Execução**: uma linha por etapa (varredura, conversão, extração por página, preparação de janelas, classificação), cada uma com um botão para rodá-la, uma barra de progresso com estimativa de tempo e os botões **Pausar** e **Continuar**. Pausar responde na hora ("parando") e a retomada continua de onde parou. Abaixo, um log ao vivo em linguagem simples e os gráficos de CPU, RAM e GPU, com os sensores. Enquanto a pasta é percorrida, um contador mostra quantos arquivos já foram vistos. Um botão separado, **Importar e gerar relatórios**, transforma os itens classificados nos arquivos de saída. Toda operação longa aparece numa barra de atividade com nome e cronômetro, que sobrevive a um F5; pedir outra operação sobre um projeto ocupado leva a uma página "em andamento", sem perder nada. Se a pasta de origem mudou desde a última execução, um aviso aparece no topo pouco depois que a página carrega.
 4. **Atualizar acervo**: alcançada a partir desse aviso. Lista os documentos novos, editados e removidos, nomeia os que serão reprocessados e informa o custo: quantos arquivos passam pelo OCR de novo (inclusive os cujo OCR falhou da última vez), quantas janelas são reclassificadas, quantas mantêm a classificação, e quais documentos terão a numeração das folhas alterada. Nada muda até você confirmar. Se a pasta de origem não puder ser lida (disco desconectado, pasta movida), a tela avisa e não oferece nada: uma pasta inacessível nunca é confundida com um acervo cujos documentos foram apagados.
 5. **Resultado**: a nota de qualidade, as pendências, uma prévia de cada arquivo gerado, o pacote para o Claude com o orçamento de tokens e a lista do que ficou de fora por tamanho, um botão para abrir a pasta de saída e **Liberar espaço**, que apaga os arquivos intermediários da pasta de trabalho local (PDFs com OCR e fatias de texto). O banco, os relatórios e os logs nunca são tocados por isso.
 6. **Buscar no acervo**: busca de texto completo nas páginas do projeto, com o trecho e a página de cada resultado. Uma caixa opcional consulta também o LexML do Senado (veja [Busca por tema e LexML](#busca-por-tema-e-lexml)).
 7. **Conjuntos**: vários acervos num único Claude Project (veja [Vários acervos num Project](#vários-acervos-num-project-conjuntos)).
 
-O cabeçalho de toda tela tem um seletor de idioma, um seletor de tema (Claro, Escuro, Sépia, Alto contraste, Aurora, Toga, Grafite e Oceano) e um seletor de layout (Padrão, Técnico, Editorial e Compacto). As escolhas ficam guardadas no seu navegador. O movimento entre as telas é desligado quando o Windows pede menos movimento.
+O cabeçalho de toda tela tem um seletor de idioma, um seletor de tema (Estúdio, Estúdio escuro, Claro, Escuro, Sépia, Alto contraste, Aurora, Toga, Grafite, Oceano, Vidro, Vidro escuro, Apple e Apple escuro) e um seletor de layout (Área de trabalho, Padrão, Técnico, Editorial e Compacto). As escolhas ficam guardadas no seu navegador. O movimento entre as telas é desligado quando o Windows pede menos movimento.
 
 ## Mantendo um acervo atualizado
 
@@ -182,7 +183,7 @@ Documentos que só precisam de renumeração não passam pelo OCR de novo: os ar
 
 Duas coisas decidem mais sobre o resultado do que qualquer outra.
 
-**Preencha o Tema do acervo e o Tipo de acervo no Novo projeto.** O motor `local` mostra esses campos ao modelo, e são eles que dizem que tipo de documento ele está lendo. Um acervo descrito só com os padrões acaba classificado contra exemplos genéricos, e o modelo responde "não sei" para quase todo tipo. Uma frase sobre o acervo (o que é, de onde veio, que documentos tem) é a coisa mais eficaz que você pode fazer pelo resultado. **Papel nas instruções** e **Regras extras** também são repassados, como contexto.
+**Preencha o Tema do acervo e o Tipo de acervo no Novo projeto.** O motor `local` mostra esses campos ao modelo, e são eles que dizem que tipo de documento ele está lendo. Um acervo descrito só com os padrões acaba classificado contra exemplos genéricos, e o modelo responde "não sei" para quase todo tipo. Uma frase sobre o acervo (o que é, de onde veio, que documentos tem) é a coisa mais eficaz que você pode fazer pelo resultado. **Papel nas instruções** (Novo projeto) e **Regras extras** (tela Instruções) também são repassados, como contexto.
 
 **Qual modelo usar.** Medido neste projeto, sobre as mesmas janelas de um mesmo documento, com todos os modelos rodando inteiramente numa placa de 8 GB:
 
@@ -232,16 +233,15 @@ A classificação (decidir o que cada página é, quem escreveu e quando) é a �
 |---|---|---|---|
 | `rules` | gratuito | não | nada: roda em qualquer máquina Windows |
 | `local` | gratuito | não | Ollama, instalado automaticamente; mais rápido com GPU, funciona sem uma |
-| `claude_code` | sua assinatura do Claude já existente | **sim** | Claude Code já instalado nesta máquina |
-| `automatic` | | | escolhe `local` se o hardware aguentar, senão `rules`; nunca escolhe `claude_code` sozinho |
+| `automatic` | | | escolhe `local` se o hardware aguentar, senão `rules` |
 
-**O `claude_code` é inteiramente opcional.** O programa funciona do início ao fim sem ele. Escolha-o só se você já usa o Claude Code e quer que ele faça a classificação. O programa então grava um `CLAUDE.md` na pasta de saída e mostra uma frase para dizer ao Claude Code (`processe as janelas`); abra o Claude Code na pasta de saída, diga a frase e, quando ele terminar, clique em **Reverificar se as janelas acabaram**. Esse `CLAUDE.md` manda o Claude Code tratar o texto dos documentos como dado não confiável, nunca como instrução.
+**O motor `claude_code` não existe mais (2.0.0).** Ele pedia que você rodasse um comando no Claude Code. Um projeto salvo com ele abre como `automatic`, com um único aviso, e as peças que ele já tinha produzido continuam importando. O `CLAUDE.md` que o programa grava na pasta de saída agora é só de consulta: ensina o Claude Code a ler o índice e a usar o `buscar.bat`, e manda tratar o texto dos documentos como dado não confiável, nunca como instrução. O Claude Code continua sendo um bom jeito de usar o índice; só não classifica mais.
 
 O `rules` é determinístico: procura marcadores conhecidos de tipo de documento, padrões de data e blocos de assinatura, sem nenhum modelo de aprendizado de máquina, então o resultado é reproduzível e não precisa de instalação. O `local` usa um modelo aberto servido pelo [Ollama](https://ollama.com) na sua própria máquina (`http://127.0.0.1:11434`, nunca um endereço remoto, nunca por proxy) e em geral dá resultados melhores que o `rules`, ao custo do espaço em disco, do download e (opcionalmente) da GPU listados em Requisitos. Com placa de vídeo, o motor local espera o Ollama voltar em vez de cair para as regras; sem placa, cai e volta ao modelo quando ele responder.
 
 **Legislação do Planalto.** Páginas `.htm`/`.html` salvas do site do Planalto (leis, decretos, medidas provisórias, portarias, resoluções, atos do Império) são lidas pela estrutura da própria página, sem modelo: tipo, número, data, autor e ementa saem da epígrafe e do cabeçalho. Nenhum motor é consultado para elas, e o resultado alimenta o `normas-citadas.md`.
 
-**Revisar confiança baixa**, no Novo projeto, roda o `rules` em tudo e manda só as peças de confiança baixa para um segundo motor à sua escolha: um meio-termo entre o custo zero do `rules` e a precisão de um motor mais forte nas páginas que precisam. A tela Resultado tem uma tabela para comparar motores e modelos rodados sobre o mesmo acervo.
+**A confiança baixa** é reduzida enquanto a classificação roda; não há segunda passada nem opção para ligar. Uma página em branco é classificada sem o modelo. Uma página com imagem e menos de 100 caracteres de OCR é lida de novo uma vez, e o texto novo só substitui a página quando é maior. Uma página que o modelo pulou ou respondeu sem tipo ganha uma segunda tentativa, limitada a 15% dos pedidos. No motor de regras, as páginas de continuação continuam `low`: a medição não sustentou subi-las. A tela Resultado tem uma tabela para comparar motores e modelos rodados sobre o mesmo acervo, e o [QUALITY.pt-BR.md](QUALITY.pt-BR.md) traz o acerto por nível de confiança.
 
 ## Arquivos de saída
 
@@ -255,7 +255,7 @@ Gravados na pasta de saída que você escolheu, no idioma em que a interface est
 - `project_instructions.md`: instruções para um Project do Claude, montadas com os campos que você preencheu no Novo projeto, incluindo como usar o índice, como achar uma norma no `normas-citadas.md` e a regra de sempre conferir valores no documento original.
 - `buscar.bat`: a busca por tema para o Claude Code, descrita em [Busca por tema e LexML](#busca-por-tema-e-lexml).
 - `project.db`: o banco do projeto. Guarda tudo, inclusive o texto de cada página e o índice da busca.
-- `CLAUDE.md`: só quando você usa o motor `claude_code` ou grava um conjunto numa pasta.
+- `CLAUDE.md`: só de consulta. Ensina o Claude Code a ler o índice e a usar o `buscar.bat`, e lembra que o texto dos documentos é dado, nunca instrução. Gravado junto dos relatórios e também quando você grava um conjunto numa pasta.
 
 Os arquivos intermediários (PDFs com OCR em `converted/`, fatias de texto em `blocks/`) ficam em `%LOCALAPPDATA%\GClaudeIndexer\work\<projeto>\`, fora da pasta de saída, desde a 1.5.8: uma pasta de saída no Drive não sincroniza gigabytes que só esta máquina usa. Um projeto antigo que ainda tenha essas pastas na saída continua sendo lido de lá.
 
@@ -283,17 +283,38 @@ Ao fim da extração, o texto de todas as páginas entra num índice de busca (S
 
 ## OCR e idioma dos documentos
 
-Projetos novos usam OCR em português (`por`) por padrão, já que o projeto nasceu para acervos em português do Brasil.
+O idioma de cada documento é detectado neste computador, um a um, com o `py3langid` (BSD-3-Clause; o modelo de 142 idiomas vem dentro do pacote, então nada é baixado para detectar). As escritas são distinguidas pelos blocos Unicode, e as escritas do Leste Asiático decidem sozinhas: com kana o documento é japonês, com han e sem kana é chinês, e hangul quer dizer coreano.
 
-O pacote do Tesseract para Windows traz apenas `eng` e `osd`, então o `install.ps1` baixa os dados do idioma que o projeto usa (`por`, por padrão), com o SHA-256 conferido. Quando a pasta `tessdata` do Tesseract exige administrador (o caso comum), os dados vão para a pasta desta máquina (`%LOCALAPPDATA%\GClaudeIndexer\tessdata`), e o programa aponta o Tesseract para ela só no próprio processo, sem pedir administrador. O programa também faz isso ao abrir, então um idioma que falte é corrigido assim que a máquina estiver na internet.
+Desde a 2.0.0 não existe campo de idioma do OCR. Depois da varredura, o programa examina uma amostra do acervo, escolhe o idioma do OCR e registra a escolha e o motivo no log. As páginas digitalizadas são lidas no idioma e na escrita certos, mesmo quando não é nenhum dos três da interface. O pacote do Tesseract para Windows traz `eng` e `osd`, e o instalador fixa `por`, `eng`, `spa` e `osd` (`install.ps1 -OcrLanguage <código>` instala um à mão). Todo outro idioma ou modelo de escrita vem do manifesto `tessdata_fast`, baixado sob demanda com o SHA-256 conferido (veja [Formatos e componentes opcionais](#formatos-e-componentes-opcionais)). Sem internet, o documento é lido com o que está instalado e refeito quando o modelo chegar.
 
-Se o seu acervo estiver em outro idioma, mude o **Idioma do OCR** no Novo projeto para o código do Tesseract (por exemplo `eng` para inglês, `spa` para espanhol, ou `por+eng` para os dois no mesmo acervo) e instale os dados desse idioma:
+O tipo e o resumo de cada peça saem no idioma do próprio documento; as colunas do índice e as instruções geradas ficam no idioma da interface. A busca acha texto em escritas sem espaço (chinês, japonês) por um índice de trigramas.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -OcrLanguage spa
-```
+## Formatos e componentes opcionais
 
-O instalador só instala idiomas cujo SHA-256 ele tem fixado: hoje `por`, `eng`, `spa` e `osd`. Ele nunca baixa um arquivo que não consegue conferir; para qualquer outro idioma, mostra onde pegar o arquivo e onde colocá-lo.
+**O que é lido**, por família no Novo projeto:
+
+- Documentos: PDF; Word (`.docx`, `.docm`, `.dotx`, `.dotm`); Excel (`.xlsx` e variantes, e o antigo `.xls`); PowerPoint (`.pptx` e variantes); OpenDocument (`.odt`, `.ods`, `.odp`, `.odg` e os planos `.fodt`, `.fods`, `.fodp`); RTF; livros e formatos paginados (`.epub`, `.mobi`, `.fb2`, `.xps`, `.oxps`, `.svg`, `.cbz`); e, pelo LibreOffice, os formatos antigos (`.doc`, `.dot`, `.ppt`, `.pps`, `.pot`, `.pub`, `.vsd`, `.vsdx`, `.wpd`, `.wps`, `.sdw`, `.sxw`, `.sxc`, `.sxi`, `.123`, `.wk1`, `.wb2`).
+- Imagens, todas com OCR: PNG, JPEG (`.jpg`, `.jpeg`, `.jfif`), TIFF, BMP, GIF, WebP, JPEG 2000 (`.jp2`, `.j2k`, `.jpx`) e HEIC/HEIF.
+- Texto e dados: `.txt`, `.md`, `.csv`, `.log`, páginas web e dados (`.html`, `.htm`, `.mht`, `.xml`, `.json`) e as legendas `.srt` e `.vtt`.
+- Mensagens: `.eml`, `.msg`, `.mbox` e `.pst` e `.ost` do Outlook. Uma caixa de e-mail é lida em fluxo, uma página por mensagem, com os anexos lidos pelo tipo real e passando pelos mesmos filtros da varredura (inclusive a regra de segredos).
+- Técnicos e assinaturas: desenhos DXF, e `.p7s` e `.p7m` assinados no padrão ICP-Brasil (o signatário e a data entram na página). Desenhos DWG são ignorados.
+- Áudio e vídeo, opcionais (nunca vêm com "TODOS"): `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.opus`, `.wma`, `.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`, `.wmv`, `.m4v` e `.3gp`.
+
+**O que fica de fora**, sempre listado na tela Execução com o motivo: arquivos compactados (nunca abertos, então o conteúdo de um `.zip` não é indexado até você extraí-lo), executáveis, bancos de dados, fontes, chaves e senhas, conteúdo binário, mídia não selecionada e os atalhos do Google Docs (`.gdoc`, `.gsheet`, `.gslides`, `.gdraw`, `.gform`, `.gmap`, `.gsite`, `.gjam`), que têm aviso próprio porque são só um link para a nuvem: exporte-os para DOCX, XLSX ou PDF.
+
+**Componentes opcionais.** O que não vem no instalador é baixado uma vez, na primeira vez que um documento precisa dele, para a pasta privada `%LOCALAPPDATA%\GClaudeIndexer` (nunca para a pasta de origem nem para a de saída, e nunca com direitos de administrador):
+
+| Componente | Serve para | Download | Licença |
+|---|---|---|---|
+| LibreOffice 26.2.7 (MSI oficial, aberto por `msiexec /a`) | formatos antigos, convertidos para PDF | cerca de 370 MB | MPL-2.0 |
+| FFmpeg 8.1 (LGPL, build compartilhada) | decodificar áudio e vídeo | cerca de 80 MB | LGPL-2.1 ou posterior |
+| whisper.cpp b5454 | transcrição, só CPU | cerca de 9 MB | MIT |
+| modelos do whisper `base`, `small`, `medium` | transcrição, um escolhido pelo computador | 148 MB, 488 MB, 1,5 GB | MIT |
+| idiomas e escritas do OCR (`tessdata_fast`) | páginas digitalizadas em outros idiomas | alguns MB cada | Apache-2.0 |
+
+Todo download vem de um manifesto em `gclaude_indexer/manifests/` que fixa a URL, o tamanho e o SHA-256 de cada arquivo; um arquivo que não confere é recusado e apagado. Os redirecionamentos só são seguidos por HTTPS, um ZIP ou um MSI é aberto sob tetos de tamanho e de número de membros, e nada passa por um shell. Quando um componente não pode ser obtido (sem internet, download recusado), os documentos que dependem dele são pulados com um motivo claro, nunca marcados como falha, e voltam para a fila na próxima execução. Todo o resto funciona sem internet. O `libpff-python`, que lê os arquivos do Outlook, não é baixado: é uma dependência fixada, instalada com as outras.
+
+**O LibreOffice roda sem janela**, com um perfil pré-preparado que desliga macros, vínculos e o atualizador. **Áudio e vídeo** são decodificados pelo FFmpeg, cortados nos silêncios e transcritos pelo whisper.cpp em trechos de cerca de 5 minutos, uma página por trecho, com Parar e retomada; o modelo (`base`, `small` ou `medium`) é escolhido pelo computador. O whisper.cpp vem só para CPU, porque não há build oficial com Vulkan para Windows. As fotos **HEIC** dependem do HEVC, que tem patentes em alguns países (veja o [SECURITY.md](../SECURITY.md)).
 
 ## Rodando a suíte de testes
 

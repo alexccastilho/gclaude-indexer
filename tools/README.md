@@ -58,7 +58,10 @@ Existe porque o CI precisa indexar o acervo de demonstração numa máquina
 sem ninguém na frente, e porque a medida de acerto precisa saber com que
 motor e modelo o índice foi feito. Não toca em `projects.json`: o projeto
 não aparece na interface. Os tipos de arquivo são fixos em PDF, Word,
-Excel, imagens e e-mail, que é o que o acervo de demonstração tem.
+Excel, imagens e e-mail, que é o que o acervo de demonstração tem. Janela,
+sobreposição e idioma do OCR não são ajustes do aplicativo desde a 2.0.0
+(são escolhidos depois da varredura); o script usa o padrão (16 páginas,
+sobreposição 2) ou os valores que você passar, para a medição ser repetível.
 
 ## `medir_acerto.py`
 

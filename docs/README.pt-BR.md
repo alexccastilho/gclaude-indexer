@@ -8,7 +8,7 @@ O GClaude Indexer lê uma pasta cheia de documentos no seu computador com Window
 
 ![GClaude Indexer em uso](media/demo-pt.gif)
 
-*Um passeio pelo layout Área de trabalho (1.10.0): os projetos na barra lateral, as abas de um projeto, a paleta de comandos (Ctrl+K) levando à busca e o tema Estúdio escuro.*
+*Um passeio pelo layout Área de trabalho (2.0.0): os projetos na barra lateral, as abas de um projeto, a paleta de comandos (Ctrl+K) levando à busca e o tema Estúdio escuro.*
 
 ## Três pessoas que usam
 
@@ -59,16 +59,24 @@ E um pacote `.zip` com os arquivos de índice, medido antes de baixar: o program
 
 *Manual: cada tela e cada opção explicadas dentro do programa.*
 
+## O que ele lê
+
+Além de PDFs, digitalizações, Word, Excel e e-mails, a versão 2.0.0 lê as variantes novas do Office, OpenDocument (`.odt`, `.ods`, `.odp`), RTF, `.xls` antigo, livros e formatos paginados (EPUB, MOBI, FB2, XPS, SVG, CBZ), fotos em HEIC e JPEG 2000, legendas, caixas de e-mail (MBOX e PST e OST do Outlook), desenhos DXF e documentos assinados no padrão ICP-Brasil (`.p7s` e `.p7m`, com o signatário e a data). Os formatos antigos (`.doc`, `.ppt`, `.wpd`, `.wps`, `.pub`, `.vsd` e outros) passam pelo LibreOffice, e áudio e vídeo são transcritos no seu computador. Áudio e vídeo são opcionais: vêm desmarcados em Novo projeto.
+
+Arquivos compactados (`.zip`, `.rar` e parecidos) nunca são abertos, e os atalhos do Google Docs (`.gdoc`, `.gsheet` e parecidos) são ignorados com um aviso, porque são só um link para a nuvem: exporte-os para DOCX, XLSX ou PDF. Tudo o que o programa deixa de fora aparece numa lista, com o motivo.
+
+O idioma de cada documento é detectado um a um, qualquer que seja, e o tipo e o resumo de cada peça saem no idioma do próprio documento. Nada disso precisa de internet, com uma exceção: os componentes opcionais. Os formatos antigos (LibreOffice), a transcrição de áudio e vídeo (FFmpeg e whisper.cpp) e os idiomas extras do OCR não vêm no instalador. O programa baixa cada um uma única vez, na primeira vez que um documento precisa dele, de uma lista fixa com o SHA-256 de cada arquivo. Sem internet, esses documentos são pulados com um motivo claro e voltam para a fila quando o componente chega; todo o resto continua funcionando. As fotos em HEIC dependem de um codec de vídeo (HEVC) que tem patentes em alguns países; veja o [SECURITY.md](../SECURITY.md).
+
 ## O que você precisa ter
 
 - Windows 10 ou 11.
 - Alguns gigabytes livres em disco.
-- Não precisa instalar nada antes. O instalador traz o Python, o OCR (Tesseract e Ghostscript, que leem páginas digitalizadas), o Ollama, que é o programa que roda o modelo local, e o próprio modelo; o que é opcional, ele mostra numa lista antes de baixar. A internet só é usada nessa hora.
+- Não precisa instalar nada antes. O instalador traz o Python, o OCR (Tesseract e Ghostscript, que leem páginas digitalizadas), o Ollama, que é o programa que roda o modelo local, e o próprio modelo; o que é opcional, ele mostra numa lista antes de baixar. A internet só é usada nessa hora e, depois, para os componentes opcionais descritos acima.
 - Uma placa de vídeo com 6 GB ou mais deixa o modelo local bem mais rápido. Sem placa, ele roda devagar na memória comum, e o motor de regras faz o serviço em segundos.
 
 O programa classifica as peças de dois jeitos. O motor de regras reconhece cada peça por padrões do texto, como os títulos das peças, e termina em segundos. O modelo local é um programa de inteligência artificial que lê cada trecho, acerta mais a data e o autor, e demora mais. A opção padrão, Automático, usa o modelo local quando o computador aguenta e as regras quando não.
 
-Para instalar, baixe o `GClaude-Indexer-Setup-1.10.4.exe` na [versão mais recente](https://github.com/alexccastilho/gclaude-indexer/releases/latest) e dê dois cliques. O Windows vai mostrar um aviso do SmartScreen, porque o instalador não tem assinatura digital paga: clique em "Mais informações" e depois em "Executar assim mesmo". Na tela Dependências, o instalador lista o que vai baixar e instalar junto; deixe tudo marcado. O maior item é o modelo local, com cerca de 3 GB, baixado uma vez só. O item do leitor de temperatura da CPU pede permissão de administrador do Windows; pode aceitar. Ao terminar, o programa abre uma página no seu navegador, no endereço `http://127.0.0.1:8000`, e o atalho na área de trabalho faz o mesmo nas próximas vezes. Para atualizar, instale a versão nova por cima; os seus projetos ficam onde estão. Para desinstalar, use Configurações > Aplicativos: ele pergunta o que tirar e nunca apaga os seus projetos.
+Para instalar, baixe o `GClaude-Indexer-Setup-2.0.0.exe` na [versão mais recente](https://github.com/alexccastilho/gclaude-indexer/releases/latest) e dê dois cliques. O Windows vai mostrar um aviso do SmartScreen, porque o instalador não tem assinatura digital paga: clique em "Mais informações" e depois em "Executar assim mesmo". Na tela Dependências, o instalador lista o que vai baixar e instalar junto; deixe tudo marcado. O maior item é o modelo local, com cerca de 3 GB, baixado uma vez só. O item do leitor de temperatura da CPU pede permissão de administrador do Windows; pode aceitar. Ao terminar, o programa abre uma página no seu navegador, no endereço `http://127.0.0.1:8000`, e o atalho na área de trabalho faz o mesmo nas próximas vezes. Para atualizar, instale a versão nova por cima; os seus projetos ficam onde estão. Para desinstalar, use Configurações > Aplicativos: ele pergunta o que tirar e nunca apaga os seus projetos.
 
 Quem não pode instalar programas na máquina, ou quer rodar a partir do código, tem o caminho completo em [docs/TECHNICAL.pt-BR.md](TECHNICAL.pt-BR.md).
 
@@ -76,7 +84,7 @@ Quem não pode instalar programas na máquina, ou quer rodar a partir do código
 
 Não precisa de um acervo próprio. A pasta `demo/acervo` do repositório é um acervo pequeno e inteiramente inventado: 72 páginas e 41 peças, com dois volumes de um processo em PDF, um contrato, um memorando em Word, uma planilha, um ofício digitalizado e um e-mail. O arquivo `demo/gabarito.csv` diz o que cada página é. O instalador não traz essa pasta: na página do projeto no GitHub, clique no botão verde **Code**, depois em **Download ZIP**, e descompacte o arquivo numa pasta sua.
 
-1. Abra o programa e clique em **Novo projeto**. Dê um nome e aponte a pasta de origem para `demo/acervo`. Em **Extensões incluídas**, marque PDF, Word, Excel, imagens e e-mail. Clique em **Criar projeto**.
+1. Abra o programa e clique em **Novo projeto**. Dê um nome e aponte a pasta de origem para `demo/acervo`. Em **Extensões incluídas**, deixe as categorias como vêm (todas marcadas, menos áudio e vídeo). Clique em **Criar projeto**.
 2. Na tela Execução, clique em **Rodar tudo até a classificação**. Com o motor de regras leva segundos; com o modelo local, alguns minutos.
 3. Quando terminar, clique em **Importar e gerar relatórios** e abra a tela **Resultado**.
 4. Clique em **Baixar pacote (.zip)**. Em claude.ai, crie um Project, cole o conteúdo inteiro de `project_instructions.md` no campo de instruções e envie os outros arquivos como conhecimento do projeto. O `.zip` traz um guia passo a passo com essas etapas.
@@ -93,11 +101,11 @@ O que isso quer dizer na prática: toda página do acervo está no índice, mesm
 ## Privacidade
 
 - Os documentos são lidos, passam pelo OCR e são classificados só no seu computador. Durante o processamento, nenhum documento, página ou nome de arquivo é enviado pela rede. O modelo local conversa apenas com o Ollama da mesma máquina.
-- O idioma de cada documento é detectado no seu computador. Quando um documento precisa de um idioma ou de um modelo de escrita do OCR que este computador ainda não tem, o programa baixa só esse modelo, sob demanda, de uma lista fixa com o SHA-256 de cada arquivo (o que não confere é recusado); o pedido leva o nome do modelo, nunca o conteúdo de um documento. Sem internet, o documento é lido com o que já está aqui e refeito quando o modelo chegar.
+- O idioma de cada documento é detectado no seu computador. Quando um documento precisa de um idioma ou de um modelo de escrita do OCR que este computador ainda não tem, o programa baixa só esse modelo, sob demanda, de uma lista fixa com o SHA-256 de cada arquivo (o que não confere é recusado); o pedido leva o nome do modelo, nunca o conteúdo de um documento. Sem internet, o documento é lido com o que já está aqui e refeito quando o modelo chegar. O mesmo vale para os outros componentes opcionais (LibreOffice para os formatos antigos, FFmpeg e whisper.cpp para áudio e vídeo): vêm só de uma lista fixa com SHA-256, e um documento que precisa de um componente ausente é pulado, com o motivo.
 - O programa só escuta na sua própria máquina (`127.0.0.1`) e só aceita pedidos das próprias telas: um site aberto no navegador não consegue dar ordens a ele.
 - A pasta de origem nunca é alterada. Tudo o que o programa produz vai para a pasta de saída.
 - O banco do projeto (`project.db`) guarda o texto das páginas. Se o acervo tiver dados pessoais, proteja a pasta de saída como protegeria os documentos, inclusive no Google Drive.
-- O conteúdo chega ao Claude só quando você envia: ao subir os arquivos do índice num Project, ao mandar um documento, ou ao escolher o motor opcional `claude_code`. A única consulta externa é a busca no LexML, que envia só o termo que você digitou: na tela, só com a caixa marcada; no `buscar.bat`, também quando nenhuma norma do acervo cita o termo.
+- O conteúdo chega ao Claude só quando você envia: ao subir os arquivos do índice num Project ou ao mandar um documento. A única consulta externa é a busca no LexML, que envia só o termo que você digitou: na tela, só com a caixa marcada; no `buscar.bat`, também quando nenhuma norma do acervo cita o termo.
 
 ## Vários acervos num Project
 
