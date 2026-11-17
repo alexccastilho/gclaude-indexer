@@ -77,6 +77,9 @@ class FileChange:
     kind: str  # "new" | "changed" | "removed" | "generated"
     name: str
     size: int
+    # A data da caminhada, quando houve: com ela a leitura de um arquivo novo
+    # (conferência de cópia) usa os resultados guardados (`_READ_RESULTS`).
+    mtime: float | None = None
 
 
 def _fingerprint(entries: list[tuple[str, int, float]], unverified=()) -> str:
@@ -307,7 +310,7 @@ def detect_changes(
         # (`REASON_UNREADABLE`) só existe para a contagem: para o plano ele
         # continua novo, como se a linha não existisse.
         if row is None or is_unreadable_placeholder(row["status"], row["error"]):
-            changes.append(FileChange(relative_path, "new", path.name, size))
+            changes.append(FileChange(relative_path, "new", path.name, size, mtime))
             continue
 
         # Revisão final da 2.0.0 (I1): arquivo à espera de um componente
@@ -833,7 +836,7 @@ def _intended_membership(
     # files already indexed come from the table, and those of new files
     # are computed only when a later new file of the same size needs them.
     hashes_by_size: dict[int, set[str]] = {}
-    unhashed_by_size: dict[int, list[str]] = {}
+    unhashed_by_size: dict[int, list[FileChange]] = {}
 
     # One read of the table for both the groups and the hashes.
     for row in conn.execute(
@@ -857,10 +860,10 @@ def _intended_membership(
     # no window layout accounted for. Renaming a file to a name that
     # sorts earlier shifted every sheet number after it, silently.
 
-    def _hash(relative_path: str, size: int) -> str | None:
+    def _hash(change: FileChange) -> str | None:
         # Unreadable, already gone between the walk and this read, or never
         # answering in time (`_PlanReader`). `None`.
-        return reader.hash(source_dir / relative_path, size)
+        return reader.hash(source_dir / change.relative_path, change.size, change.mtime)
 
     for change in new_files:
         # Same name-level decision the scan makes before hashing (archive,
@@ -879,14 +882,14 @@ def _intended_membership(
         if size not in hashes_by_size and size not in unhashed_by_size:
             # No file of this size: cannot be a duplicate. Remember it in
             # case a later new file has the same size.
-            unhashed_by_size[size] = [change.relative_path]
+            unhashed_by_size[size] = [change]
         else:
             known = hashes_by_size.setdefault(size, set())
             for earlier in unhashed_by_size.pop(size, []):
-                earlier_hash = _hash(earlier, size)
+                earlier_hash = _hash(earlier)
                 if earlier_hash is not None:
                     known.add(earlier_hash)
-            file_hash = _hash(change.relative_path, size)
+            file_hash = _hash(change)
             # Sem o hash não se sabe se é cópia, e ele conta como membro do
             # grupo (revisão de 7c0c04c..HEAD). Deixá-lo de fora parecia o
             # lado seguro, mas a varredura, logo depois, costuma lê-lo: ele
