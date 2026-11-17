@@ -150,6 +150,13 @@ REASON_UNSUPPORTED = "unsupported"
 REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 
 
+def is_waiting_component(status: str | None, error: str | None) -> bool:
+    """O arquivo espera um componente (LibreOffice, ffmpeg/whisper) que
+    faltava quando a conversão chegou a ele. Uma regra só para a varredura,
+    a conversão e o plano de atualização."""
+    return status == "skipped" and error == REASON_COMPONENT_UNAVAILABLE
+
+
 # Categorias com páginas reais (o limite de caracteres por página do projeto
 # vale para elas, e o documento pode continuar no arquivo seguinte).
 PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")

@@ -31,6 +31,7 @@ from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, ocr_retry_count
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
+from gclaude_indexer.file_types import is_waiting_component
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.invalidation import apply_pending_changes
 from gclaude_indexer.scanning import scan
@@ -390,7 +391,14 @@ def test_varredura_sem_a_atualizacao_antes_mantem_o_arquivo_em_espera(tmp_path, 
     hash_antigo = conn.execute("SELECT sha256 FROM file WHERE name = 'a_antigo.doc'").fetchone()[0]
 
     (origem / "a_antigo.doc").write_bytes(b"\xd0\xcf\x11\xe0documento antigo EDITADO com mais bytes")
-    scan(conn, config, language="pt-BR")  # sem `apply_pending_changes` antes
+    varredura = scan(conn, config, language="pt-BR")  # sem `apply_pending_changes` antes
+    # Continua em espera: não é "atualizado" (não volta à fila), mas o log
+    # diz que o conteúdo mudou, como para qualquer documento.
+    assert varredura.updated == 0 and varredura.waiting_updated == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM event WHERE message_key = 'log.scan.content_changed'"
+        " AND message LIKE '%a_antigo.doc%'"
+    ).fetchone()[0] == 1
     linha = conn.execute("SELECT sha256, size FROM file WHERE name = 'a_antigo.doc'").fetchone()
     assert linha["sha256"] != hash_antigo
     assert linha["size"] == (origem / "a_antigo.doc").stat().st_size
@@ -410,3 +418,10 @@ def test_varredura_sem_a_atualizacao_antes_mantem_o_arquivo_em_espera(tmp_path, 
     assert _estado(conn, "a_antigo.doc")[0] == "extracted"
     assert all(status != "done" for _key, status in _janelas(conn)), _janelas(conn)
     conn.close()
+
+
+def test_predicado_unico_do_arquivo_em_espera():
+    assert is_waiting_component("skipped", "component_unavailable")
+    assert not is_waiting_component("skipped", "secret")
+    assert not is_waiting_component("discovered", "component_unavailable")
+    assert not is_waiting_component("extracted", None)

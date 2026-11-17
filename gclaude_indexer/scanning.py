@@ -35,10 +35,10 @@ from .db import BatchWriter
 from .events import record_event
 from .file_types import (
     HEAD_BYTES,
-    REASON_COMPONENT_UNAVAILABLE,
     REASON_NOT_SELECTED,
     index_decision,
     is_extension_allowed,
+    is_waiting_component,
     name_decision,
     needs_head,
 )
@@ -56,6 +56,9 @@ class ScanResult:
     updated: int = 0
     ignored: int = 0
     skipped: int = 0
+    # Em espera de componente, editados: bytes novos gravados, sem voltar à
+    # fila (não contam em `updated`).
+    waiting_updated: int = 0
     # Ignorados desta execução, por motivo (`file_types.REASON_*`).
     ignored_by_reason: dict[str, int] = field(default_factory=dict)
 
@@ -555,14 +558,10 @@ def _is_indexed_row(row) -> bool:
 
 
 def _is_waiting_component(row) -> bool:
-    """The stored row waits for a component (LibreOffice, ffmpeg/whisper)
-    that was missing when the conversion reached it (`conversion.py`)."""
+    """The stored row waits for a component (`file_types.is_waiting_component`).
+    Rows the scan itself added to `known_paths` may carry no status."""
     try:
-        return (
-            row is not None
-            and row["status"] == "skipped"
-            and row["error"] == REASON_COMPONENT_UNAVAILABLE
-        )
+        return row is not None and is_waiting_component(row["status"], row["error"])
     except (KeyError, IndexError):
         return False
 
@@ -711,11 +710,18 @@ def _record_scanned_file(
         # instante, Parar). Quem o devolve à fila é a conversão, se o grupo
         # não tem janelas (`requeue_ocr_failures`), ou o plano de
         # atualização, com o componente presente, junto com as janelas.
-        writer.add(lambda c: c.execute(
-            "UPDATE file SET size = ?, sha256 = ?, mtime = ? WHERE relative_path = ?",
-            (size, file_hash, mtime, relative_path),
-        ))
-        result.updated += 1
+        def waiting_op(c) -> None:
+            c.execute(
+                "UPDATE file SET size = ?, sha256 = ?, mtime = ? WHERE relative_path = ?",
+                (size, file_hash, mtime, relative_path),
+            )
+            record_event(
+                c, "scan", "warning", "log.scan.content_changed", {"name": name},
+                language=language, commit=False,
+            )
+
+        writer.add(waiting_op)
+        result.waiting_updated += 1
         known_hashes.add(file_hash)
         known_paths[relative_path] = {
             "relative_path": relative_path, "size": size, "sha256": file_hash, "mtime": mtime,
