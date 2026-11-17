@@ -49,6 +49,11 @@ _RATIO_MIN_BYTES = 1024 * 1024
 # espaços (`text:s`) que um único elemento pede.
 _MAX_TEXT_CHARS = 50_000_000
 _MAX_REPEATED_SPACES = 1_000
+# Trabalho, não só texto: nós visitados e profundidade de aninhamento. Um
+# `content.xml` de 32 MB cheio de elementos vazios ou de tabelas dentro de
+# tabelas não emite texto, mas custa tempo e pilha.
+_MAX_ODF_NODES = 5_000_000
+_MAX_ODF_DEPTH = 32
 
 
 def _check_package(archive: zipfile.ZipFile) -> None:
@@ -188,6 +193,19 @@ class _OdfStyles(set):
     (o teto do texto de um OpenDocument)."""
 
     chars = 0
+    visits = 0
+    depth = 0
+
+
+def _odf_enter(context) -> None:
+    """Conta uma visita e um nível de aninhamento (quem chama desce com
+    `context.depth -= 1` ao sair)."""
+    context.visits += 1
+    if context.visits > _MAX_ODF_NODES:
+        raise LightFormatError("OpenDocument com elementos demais")
+    context.depth += 1
+    if context.depth > _MAX_ODF_DEPTH:
+        raise LightFormatError("OpenDocument aninhado demais")
 
 
 def _odf_struck_styles(root) -> set[str]:
@@ -215,9 +233,20 @@ def _odf_inline(element, struck_styles: set[str], struck: bool, segments: list, 
             raise LightFormatError("texto do OpenDocument grande demais")
         segments.append((text, struck))
 
+    _odf_enter(struck_styles)
+    try:
+        _odf_inline_children(element, struck_styles, struck, segments, notes, emit)
+    finally:
+        struck_styles.depth -= 1
+
+
+def _odf_inline_children(element, struck_styles, struck, segments, notes, emit) -> None:
     if element.text:
         emit(element.text)
     for child in element:
+        struck_styles.visits += 1
+        if struck_styles.visits > _MAX_ODF_NODES:
+            raise LightFormatError("OpenDocument com elementos demais")
         tag = child.tag
         if tag == _q("text", "s"):
             try:
@@ -256,9 +285,32 @@ def _odf_paragraph(element, struck_styles: set[str]) -> list[str]:
     return lines + notes
 
 
+_ODF_ROW_GROUPS = (
+    _q("table", "table-header-rows"), _q("table", "table-rows"), _q("table", "table-row-group"),
+)
+
+
+def _odf_rows(container, context):
+    """As linhas da própria tabela: filhas diretas e as dos grupos
+    (`table-header-rows`, `table-rows`, `table-row-group`). Nunca as de uma
+    tabela aninhada: essa é lida uma vez só, dentro da célula que a contém."""
+    for child in container:
+        context.visits += 1
+        if context.visits > _MAX_ODF_NODES:
+            raise LightFormatError("OpenDocument com elementos demais")
+        if child.tag == _q("table", "table-row"):
+            yield child
+        elif child.tag in _ODF_ROW_GROUPS:
+            _odf_enter(context)
+            try:
+                yield from _odf_rows(child, context)
+            finally:
+                context.depth -= 1
+
+
 def _odf_table(table, struck_styles: set[str]) -> list[str]:
     rows: list[str] = []
-    for row in table.iter(_q("table", "table-row")):
+    for row in _odf_rows(table, struck_styles):
         cells = []
         for cell in row:
             if cell.tag == _q("table", "table-cell"):
@@ -272,8 +324,19 @@ def _odf_table(table, struck_styles: set[str]) -> list[str]:
 
 
 def _odf_blocks(element, struck_styles: set[str]) -> list[str]:
+    _odf_enter(struck_styles)
+    try:
+        return _odf_blocks_of(element, struck_styles)
+    finally:
+        struck_styles.depth -= 1
+
+
+def _odf_blocks_of(element, struck_styles: set[str]) -> list[str]:
     lines: list[str] = []
     for child in element:
+        struck_styles.visits += 1
+        if struck_styles.visits > _MAX_ODF_NODES:
+            raise LightFormatError("OpenDocument com elementos demais")
         tag = child.tag
         if tag in _ODF_SKIPPED:
             continue
