@@ -558,6 +558,32 @@ def test_telas_usam_prazo_curto(tmp_path, leituras, monkeypatch):
     assert update_plan.SCREEN_READ_DEADLINE_SECONDS <= 30
 
 
+def test_nao_conferido_na_tela_e_inalterado_na_hora_de_aplicar_nao_expira(tmp_path, monkeypatch):
+    """Achado 2 da revisão seguinte: o arquivo só não pôde ser lido na tela
+    (prazo curto, rede); na hora de aplicar foi lido e é igual ao do índice.
+    Nada do que a pessoa viu mudou: não expira."""
+    from gclaude_indexer import update_plan
+    from gclaude_indexer.invalidation import apply_update_plan
+
+    update_plan._forget_reads()
+    conn, config = _plano_com_data_mexida(tmp_path)  # mesmo conteúdo, data nova
+    hash_real = update_plan.compute_hash
+    estado = {"sem_rede": True}
+
+    def _hash(caminho):
+        if estado["sem_rede"]:
+            raise OSError(22, "Invalid argument")
+        return hash_real(caminho)
+
+    monkeypatch.setattr(update_plan, "compute_hash", _hash)
+    visto = update_plan.build_update_plan(conn, config, record_warnings=False)
+    assert visto.unverified == ("a.pdf",)
+
+    estado["sem_rede"] = False
+    apply_update_plan(conn, config, update_plan.UpdatePlan.witness(visto.fingerprint))
+    update_plan._forget_reads()
+
+
 def test_nao_conferido_na_tela_e_alterado_na_hora_de_aplicar_expira_o_plano(tmp_path, monkeypatch):
     """Achado 2: a pessoa viu o arquivo como "não conferido" e confirmou;
     na hora de aplicar ele foi lido e mudou. Aplicar descartaria janelas que
