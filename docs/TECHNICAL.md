@@ -21,6 +21,7 @@ Contents:
 - [Several collections in one Project: sets](#several-collections-in-one-project-sets)
 - [Topic search and LexML](#topic-search-and-lexml)
 - [OCR and document languages](#ocr-and-document-languages)
+- [Formats and optional components](#formats-and-optional-components)
 - [Running the test suite](#running-the-test-suite)
 - [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
@@ -147,14 +148,14 @@ The interface has seven screens, plus **Manual** and **About**:
    - **Shared catalog**: point it at a folder inside Google Drive and every computer connected to that Drive sees, opens, edits and deletes the same projects. Without it, the list of projects stays on this machine only, even with the projects synced. Projects stored on another computer's local disk appear marked as out of reach.
    - **Open existing project** takes a folder you point at and reopens the project in it: after a reinstall, on a new machine, for a folder you moved or someone sent you. Nothing is recreated; the output folder already holds the whole project.
    - **Delete** offers two choices: only remove the project from the list, or also delete the generated files. In that case the program deletes only what it created itself (database, reports, `buscar.bat`, the local work folder). Your files in the output folder stay, and the folder only disappears if it ends up empty. In `project_instructions.md` and `CLAUDE.md` only the generated block goes. The source folder is never touched.
-2. **New project**: source folder, output folder, which file types to include, how to group the documents and which engine to use. When you choose the source folder, the program proposes a configuration from what it finds there (file types, grouping, language). Every field has a default and a "?" hint.
+2. **New project**: source folder, output folder, which file types to include, how to group the documents and which engine to use. The output folder is suggested next to the source (`<source>-AI`) and created for you; it can never be the source folder, inside it or above it. Every category of file type comes checked, except audio and video. Slicing, windows and OCR are not fields: the program chooses them after the scan. Every field has a default and a "?" hint. A project created by an earlier version with its output inside the source shows a notice that leads to a **Folder move** screen (see [Keeping a collection up to date](#keeping-a-collection-up-to-date)).
 3. **Run**: one line per step (scan, conversion, per-page extraction, window preparation, classification), each with a button to run it, a progress bar with a time estimate, and the **Pause** and **Resume** buttons. Pause answers right away ("stopping") and resuming continues from where it stopped. Below, a live log in plain language and the CPU, RAM and GPU charts, with the sensors. While the folder is being walked, a counter shows how many files have been seen. A separate button, **Import and generate reports**, turns the classified items into the output files. Every long operation shows up in an activity bar with a name and a stopwatch, which survives an F5; asking for another operation on a busy project leads to an "in progress" page, with nothing lost. If the source folder changed since the last run, a notice appears at the top shortly after the page loads.
 4. **Update collection**: reached from that notice. It lists the new, edited and removed documents, names the ones that will be reprocessed and states the cost: how many files go through OCR again (including those whose OCR failed last time), how many windows are reclassified, how many keep their classification, and which documents will have their sheet numbering changed. Nothing changes until you confirm. If the source folder cannot be read (disk disconnected, folder moved), the screen says so and offers nothing: an unreachable folder is never mistaken for a collection whose documents were all deleted.
 5. **Result**: the quality score, the pending items, a preview of each generated file, the package for Claude with the token budget and the list of what was left out for size, a button to open the output folder and **Free up space**, which deletes the intermediate files in the local work folder (OCR'd PDFs and text slices). The database, the reports and the logs are never touched by it.
 6. **Search the collection**: full-text search over the project's pages, with the excerpt and the page of each result. An optional box also queries the Senate's LexML (see [Topic search and LexML](#topic-search-and-lexml)).
 7. **Sets**: several collections in a single Claude Project (see [Several collections in one Project](#several-collections-in-one-project-sets)).
 
-The header of every screen has a language selector, a theme selector (Light, Dark, Sepia, High contrast, Aurora, Toga, Graphite and Ocean) and a layout selector (Standard, Technical, Editorial and Compact). The choices are stored in your browser. Motion between screens is turned off when Windows asks for less motion.
+The header of every screen has a language selector, a theme selector (Studio, Studio dark, Light, Dark, Sepia, High contrast, Aurora, Gown, Graphite, Ocean, Glass, Glass dark, Apple and Apple dark) and a layout selector (Workspace, Default, Technical, Editorial and Compact). The choices are stored in your browser. Motion between screens is turned off when Windows asks for less motion.
 
 ## Keeping a collection up to date
 
@@ -182,7 +183,7 @@ Documents that only need renumbering do not go through OCR again: the converted 
 
 Two things decide more about the result than anything else.
 
-**Fill in the collection's Subject and Collection type in New project.** The `local` engine shows those fields to the model, and they are what tells it what kind of document it is reading. A collection described only with the defaults ends up classified against generic examples, and the model answers "don't know" for almost every type. One sentence about the collection (what it is, where it came from, what documents it has) is the most effective thing you can do for the result. **Role in the instructions** and **Extra rules** are also passed along, as context.
+**Fill in the collection's Subject and Collection type in New project.** The `local` engine shows those fields to the model, and they are what tells it what kind of document it is reading. A collection described only with the defaults ends up classified against generic examples, and the model answers "don't know" for almost every type. One sentence about the collection (what it is, where it came from, what documents it has) is the most effective thing you can do for the result. **Role in the instructions** (New project) and **Extra rules** (Instructions screen) are also passed along, as context.
 
 **Which model to use.** Measured in this project, over the same windows of one document, with every model running entirely on an 8 GB card:
 
@@ -232,16 +233,15 @@ Classification (deciding what each page is, who wrote it and when) is the only s
 |---|---|---|---|
 | `rules` | free | no | nothing: runs on any Windows machine |
 | `local` | free | no | Ollama, installed automatically; faster with a GPU, works without one |
-| `claude_code` | your existing Claude subscription | **yes** | Claude Code already installed on this machine |
-| `automatic` | | | picks `local` if the hardware can take it, otherwise `rules`; never picks `claude_code` on its own |
+| `automatic` | | | picks `local` if the hardware can take it, otherwise `rules` |
 
-**`claude_code` is entirely optional.** The program works from start to finish without it. Choose it only if you already use Claude Code and want it to do the classification. The program then writes a `CLAUDE.md` in the output folder and shows a sentence to say to Claude Code (`process the windows`); open Claude Code in the output folder, say the sentence and, when it finishes, click **Recheck if the windows are done**. That `CLAUDE.md` tells Claude Code to treat the documents' text as untrusted data, never as instructions.
+**The `claude_code` engine no longer exists (2.0.0).** It asked you to run a command in Claude Code. A project saved with it opens as `automatic`, with a single notice, and the items it had already produced still import. The `CLAUDE.md` the program writes in the output folder is now consultation-only: it teaches Claude Code how to read the index and use `buscar.bat`, and tells it to treat the documents' text as untrusted data, never as instructions. Claude Code is still a good way to use the index; it just does not classify anymore.
 
 `rules` is deterministic: it looks for known document-type markers, date patterns and signature blocks, with no machine-learning model, so the result is reproducible and needs no installation. `local` uses an open model served by [Ollama](https://ollama.com) on your own machine (`http://127.0.0.1:11434`, never a remote address, never through a proxy) and generally gives better results than `rules`, at the cost of the disk space, the download and (optionally) the GPU listed under Requirements. With a graphics card, the local engine waits for Ollama to come back instead of falling back to the rules; without one, it falls back and returns to the model when it answers.
 
 **Planalto legislation.** `.htm`/`.html` pages saved from the Planalto site (laws, decrees, provisional measures, ordinances, resolutions, acts of the Empire) are read from the page's own structure, with no model: type, number, date, author and summary come from the heading and the header. No engine is consulted for them, and the result feeds `normas-citadas.md`.
 
-**Review low confidence**, in New project, runs `rules` on everything and sends only the low-confidence items to a second engine of your choice: a middle ground between the zero cost of `rules` and the accuracy of a stronger engine on the pages that need it. The Result screen has a table to compare engines and models run over the same collection.
+**Low confidence** is reduced while the classification runs; there is no second pass and no option to set. A blank page is classified without the model. A page with an image and under 100 characters of OCR text is read again once, and the new text replaces the page only when it is longer. A page the model skipped or answered without a type gets one extra attempt, capped at 15% of the requests. In the rules engine, continuation pages stay `low`: the measurement did not support raising them. The Result screen has a table to compare engines and models run over the same collection, and [QUALITY.md](QUALITY.md) has the hit rate by confidence level.
 
 ## Output files
 
@@ -255,7 +255,7 @@ Written to the output folder you chose, in the language the interface is in when
 - `project_instructions.md`: instructions for a Claude Project, built from the fields you filled in New project, including how to use the index, how to find a norm in `normas-citadas.md` and the rule of always checking values in the original document.
 - `buscar.bat`: the topic search for Claude Code, described in [Topic search and LexML](#topic-search-and-lexml).
 - `project.db`: the project database. It holds everything, including the text of every page and the search index.
-- `CLAUDE.md`: only when you use the `claude_code` engine or write a set to a folder.
+- `CLAUDE.md`: consultation-only. It teaches Claude Code how to read the index and use `buscar.bat`, and reminds it that the text of the documents is data, never instructions. Written with the reports, and also when you write a set to a folder.
 
 The intermediate files (OCR'd PDFs in `converted/`, text slices in `blocks/`) live in `%LOCALAPPDATA%\GClaudeIndexer\work\<project>\`, outside the output folder, since 1.5.8: an output folder on Drive does not sync gigabytes that only this machine uses. An old project that still has those folders in the output is still read from there.
 
@@ -283,17 +283,38 @@ At the end of extraction, the text of every page goes into a search index (SQLit
 
 ## OCR and document languages
 
-New projects use OCR in Portuguese (`por`) by default, since the project was born for collections in Brazilian Portuguese.
+The language of each document is detected on this computer, one by one, with `py3langid` (BSD-3-Clause; its 142-language model ships inside the package, so nothing is downloaded to detect). Writing systems are told apart by their Unicode blocks, and the East Asian scripts decide on their own: with kana the document is Japanese, with Han and no kana it is Chinese, and Hangul means Korean.
 
-The Tesseract package for Windows ships only `eng` and `osd`, so `install.ps1` downloads the data for the language the project uses (`por`, by default), with the SHA-256 verified. When Tesseract's `tessdata` folder requires administrator (the common case), the data goes to this machine's folder (`%LOCALAPPDATA%\GClaudeIndexer\tessdata`), and the program points Tesseract at it only in its own process, without asking for administrator. The program also does that when it opens, so a missing language is fixed as soon as the machine is online.
+Since 2.0.0 there is no OCR language field. After the scan the program samples the collection, picks the OCR language and records the choice and its reason in the log. Scanned pages are read in the right language and script, even when it is none of the three of the interface. The Tesseract package for Windows ships `eng` and `osd`, and the installer pins `por`, `eng`, `spa` and `osd` (`install.ps1 -OcrLanguage <code>` installs one by hand). Every other language and script model comes from the `tessdata_fast` manifest, downloaded on demand with its SHA-256 (see [Formats and optional components](#formats-and-optional-components)). Without internet, the document is read with what is installed and redone when the model arrives.
 
-If your collection is in another language, change the **OCR language** in New project to the Tesseract code (for example `eng` for English, `spa` for Spanish, or `por+eng` for both in the same collection) and install that language's data:
+The type and the summary of each item are written in the document's own language; the columns of the index and the generated instructions stay in the interface's language. Search finds text in scripts written without spaces (Chinese, Japanese) through a trigram index.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1 -OcrLanguage spa
-```
+## Formats and optional components
 
-The installer only installs languages whose SHA-256 it has pinned: today `por`, `eng`, `spa` and `osd`. It never downloads a file it cannot verify; for any other language, it shows where to get the file and where to put it.
+**What is read**, by family in New project:
+
+- Documents: PDF; Word (`.docx`, `.docm`, `.dotx`, `.dotm`); Excel (`.xlsx` and its variants, and the old `.xls`); PowerPoint (`.pptx` and variants); OpenDocument (`.odt`, `.ods`, `.odp`, `.odg` and the flat `.fodt`, `.fods`, `.fodp`); RTF; books and paged formats (`.epub`, `.mobi`, `.fb2`, `.xps`, `.oxps`, `.svg`, `.cbz`); and, through LibreOffice, the old formats (`.doc`, `.dot`, `.ppt`, `.pps`, `.pot`, `.pub`, `.vsd`, `.vsdx`, `.wpd`, `.wps`, `.sdw`, `.sxw`, `.sxc`, `.sxi`, `.123`, `.wk1`, `.wb2`).
+- Images, all with OCR: PNG, JPEG (`.jpg`, `.jpeg`, `.jfif`), TIFF, BMP, GIF, WebP, JPEG 2000 (`.jp2`, `.j2k`, `.jpx`) and HEIC/HEIF.
+- Text and data: `.txt`, `.md`, `.csv`, `.log`, web pages and data (`.html`, `.htm`, `.mht`, `.xml`, `.json`) and the subtitles `.srt` and `.vtt`.
+- Messages: `.eml`, `.msg`, `.mbox` and Outlook `.pst` and `.ost`. A mailbox is read as a stream, one page per message, with the attachments read by their real type and passed through the same filters as the scan (including the secrets rule).
+- Technical and signatures: DXF drawings, and `.p7s` and `.p7m` signed under ICP-Brasil (the signer and the date go into the page). DWG drawings are ignored.
+- Audio and video, opt-in (they never come with "ALL"): `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.opus`, `.wma`, `.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`, `.wmv`, `.m4v` and `.3gp`.
+
+**What is left out**, always listed on the Run screen with the reason: compressed files (never opened, so the content of a `.zip` is not indexed until you extract it), executables, databases, fonts, keys and passwords, binary content, media that was not selected, and the Google Docs shortcuts (`.gdoc`, `.gsheet`, `.gslides`, `.gdraw`, `.gform`, `.gmap`, `.gsite`, `.gjam`), which have their own notice because they are only a link to the cloud: export them to DOCX, XLSX or PDF.
+
+**Optional components.** What is not in the installer is downloaded once, the first time a document needs it, into the private folder `%LOCALAPPDATA%\GClaudeIndexer` (never into the source or the output folder, and never with administrator rights):
+
+| Component | Used for | Download | Licence |
+|---|---|---|---|
+| LibreOffice 26.2.7 (official MSI, unpacked by `msiexec /a`) | old formats, converted to PDF | about 370 MB | MPL-2.0 |
+| FFmpeg 8.1 (LGPL, shared build) | decoding audio and video | about 80 MB | LGPL-2.1 or later |
+| whisper.cpp b5454 | transcription, CPU only | about 9 MB | MIT |
+| whisper models `base`, `small`, `medium` | transcription, one chosen by the computer | 148 MB, 488 MB, 1.5 GB | MIT |
+| OCR languages and scripts (`tessdata_fast`) | scanned pages in other languages | a few MB each | Apache-2.0 |
+
+Every download comes from a manifest in `gclaude_indexer/manifests/` that pins the URL, the size and the SHA-256 of each file; a file that does not match is refused and deleted. Redirects are followed only over HTTPS, a ZIP or an MSI is unpacked under ceilings of size and number of members, and nothing goes through a shell. When a component cannot be obtained (no internet, download refused), the documents that need it are skipped with a clear reason, never marked as failed, and go back to the queue in the next run. Everything else works without internet. `libpff-python`, which reads Outlook files, is not downloaded: it is a pinned dependency, installed with the others.
+
+**LibreOffice runs headless**, with a pre-seeded profile that turns off macros, links and the updater. **Audio and video** are decoded by FFmpeg, cut at silences and transcribed by whisper.cpp in segments of about 5 minutes, one page per segment, with Stop and resume; the model (`base`, `small` or `medium`) is chosen by the computer. The whisper.cpp build is CPU-only, because there is no official Vulkan build for Windows. **HEIC** photos rely on HEVC, which is under patents in some countries (see [SECURITY.md](../SECURITY.md)).
 
 ## Running the test suite
 

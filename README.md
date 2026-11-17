@@ -8,7 +8,7 @@ GClaude Indexer reads a folder full of documents on your Windows PC (PDFs, scans
 
 ![GClaude Indexer in use](docs/media/demo-en.gif)
 
-*A short tour of the Workspace layout (1.10.0): the projects in the side bar, the tabs of a project, the command palette (Ctrl+K) taking you to the search, and the dark Studio theme.*
+*A short tour of the Workspace layout (2.0.0): the projects in the side bar, the tabs of a project, the command palette (Ctrl+K) taking you to the search, and the dark Studio theme.*
 
 ## Three people who use it
 
@@ -37,7 +37,7 @@ And a `.zip` package with the index files, measured before you download: the pro
 
 ![New project form](docs/media/new-en.png)
 
-*New project: usually the name and the source folder are enough; the program proposes the rest from what it finds in the folder.*
+*New project: usually the name and the source folder are enough. The output folder is suggested next to the source (`<source>-AI`), and the slicing, windows and OCR settings are chosen by the program after the scan.*
 
 ![Run screen](docs/media/run-en.png)
 
@@ -59,16 +59,24 @@ And a `.zip` package with the index files, measured before you download: the pro
 
 *Manual: every screen and every option explained inside the program.*
 
+## What it reads
+
+Besides PDFs, scans, Word, Excel and e-mails, version 2.0.0 reads the newer Office variants, OpenDocument (`.odt`, `.ods`, `.odp`), RTF, old `.xls`, books and paged formats (EPUB, MOBI, FB2, XPS, SVG, CBZ), photos in HEIC and JPEG 2000, subtitles, mailboxes (MBOX and Outlook PST and OST), DXF drawings and documents signed under ICP-Brasil (`.p7s` and `.p7m`, with the signer and the date). Old formats (`.doc`, `.ppt`, `.wpd`, `.wps`, `.pub`, `.vsd` and others) go through LibreOffice, and audio and video are transcribed on your computer. Audio and video are opt-in: they come unchecked in New project.
+
+Compressed files (`.zip`, `.rar` and the like) are never opened, and Google Docs shortcuts (`.gdoc`, `.gsheet` and the like) are ignored with a notice, because they are only a link to the cloud: export them to DOCX, XLSX or PDF. Everything the program leaves out is listed with the reason.
+
+The language of each document is detected one by one, whatever it is, and the type and the summary of each item are written in the document's own language. The program does not need internet for any of this, with one exception: the optional components. Legacy formats (LibreOffice), audio and video transcription (FFmpeg and whisper.cpp) and extra OCR languages are not in the installer. The program downloads each one once, the first time a document needs it, from a pinned list with the SHA-256 of every file. Without internet, those documents are skipped with a clear reason and go back to the queue when the component arrives; everything else keeps working. HEIC photos depend on a video codec (HEVC) that is under patents in some countries; see [SECURITY.md](SECURITY.md).
+
 ## What you need to have
 
 - Windows 10 or 11.
 - A few gigabytes of free disk.
-- Nothing to install beforehand. The installer brings Python, the OCR (Tesseract and Ghostscript, which read scanned pages), Ollama, the program that runs the local model, and the model itself; what is optional, it shows in a list before downloading. The internet is used only then.
+- Nothing to install beforehand. The installer brings Python, the OCR (Tesseract and Ghostscript, which read scanned pages), Ollama, the program that runs the local model, and the model itself; what is optional, it shows in a list before downloading. The internet is used only then, and later for the optional components described above.
 - A graphics card with 6 GB or more makes the local model much faster. Without a card, it runs slowly in ordinary memory, and the rules engine does the job in seconds.
 
 The program classifies the items in two ways. The rules engine recognizes each item by patterns in the text, such as the titles of the items, and finishes in seconds. The local model is an artificial intelligence program that reads each passage, gets the date and the author right more often, and takes longer. The default option, Automatic, uses the local model when the computer can handle it and the rules when it cannot.
 
-To install, download `GClaude-Indexer-Setup-1.10.4.exe` from the [latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest) and double-click it. Windows will show a SmartScreen warning, because the installer has no paid digital signature: click "More info" and then "Run anyway". On the Dependencies page, the installer lists what it will download and install alongside; leave everything checked. The largest item is the local model, about 3 GB, downloaded once only. The CPU temperature reader item asks for Windows administrator permission; you can accept. When it finishes, the program opens a page in your browser, at `http://127.0.0.1:8000`, and the desktop shortcut does the same the next times. To update, install the new version on top; your projects stay where they are. To uninstall, use Settings > Apps: it asks what to remove and never deletes your projects.
+To install, download `GClaude-Indexer-Setup-2.0.0.exe` from the [latest release](https://github.com/alexccastilho/gclaude-indexer/releases/latest) and double-click it. Windows will show a SmartScreen warning, because the installer has no paid digital signature: click "More info" and then "Run anyway". On the Dependencies page, the installer lists what it will download and install alongside; leave everything checked. The largest item is the local model, about 3 GB, downloaded once only. The CPU temperature reader item asks for Windows administrator permission; you can accept. When it finishes, the program opens a page in your browser, at `http://127.0.0.1:8000`, and the desktop shortcut does the same the next times. To update, install the new version on top; your projects stay where they are. To uninstall, use Settings > Apps: it asks what to remove and never deletes your projects.
 
 Whoever cannot install programs on the machine, or wants to run from the source code, has the full path in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
@@ -76,7 +84,7 @@ Whoever cannot install programs on the machine, or wants to run from the source 
 
 You do not need a collection of your own. The repository's `demo/acervo` folder is a small, entirely made-up collection: 72 pages and 41 items, with two volumes of a case file in PDF, a contract, a memo in Word, a spreadsheet, a scanned letter and an e-mail. The file `demo/gabarito.csv` says what each page is. The installer does not bring that folder: on the project's GitHub page, click the green **Code** button, then **Download ZIP**, and unpack the file into a folder of yours.
 
-1. Open the program and click **New project**. Give it a name and point the source folder at `demo/acervo`. Under **Included extensions**, check PDF, Word, Excel, images and e-mail. Click **Create project**.
+1. Open the program and click **New project**. Give it a name and point the source folder at `demo/acervo`. Under **Included extensions**, leave the categories as they come (all checked, audio and video unchecked). Click **Create project**.
 2. On the Run screen, click **Run everything up to classification**. With the rules engine it takes seconds; with the local model, a few minutes.
 3. When it finishes, click **Import and generate reports** and open the **Result** screen.
 4. Click **Download package (.zip)**. In claude.ai, create a Project, paste the whole content of `project_instructions.md` into the instructions field and upload the other files as project knowledge. The `.zip` brings a step-by-step guide with these steps.
@@ -93,11 +101,11 @@ What that means in practice: every page of the collection is in the index, even 
 ## Privacy
 
 - The documents are read, go through OCR and are classified only on your computer. During processing, no document, page or file name is sent over the network. The local model talks only to the Ollama on the same machine.
-- The language of each document is detected on your computer. When a document needs an OCR language or script model this computer does not have yet, the program downloads only that model, on demand, from a pinned list with the SHA-256 of every file (a file that does not match is refused); the request carries the name of the model, never document content. Without internet, the document is read with what is already here and redone once the model arrives.
+- The language of each document is detected on your computer. When a document needs an OCR language or script model this computer does not have yet, the program downloads only that model, on demand, from a pinned list with the SHA-256 of every file (a file that does not match is refused); the request carries the name of the model, never document content. Without internet, the document is read with what is already here and redone once the model arrives. The same goes for the other optional components (LibreOffice for old formats, FFmpeg and whisper.cpp for audio and video): they come only from a pinned list with SHA-256, and a document that needs one that is missing is skipped with the reason.
 - The program listens only on your own machine (`127.0.0.1`) and accepts requests only from its own screens: a website open in the browser cannot give it orders.
 - The source folder is never changed. Everything the program produces goes to the output folder.
 - The project database (`project.db`) holds the text of the pages. If the collection has personal data, protect the output folder as you would protect the documents, including on Google Drive.
-- Content reaches Claude only when you send it: when you upload the index files to a Project, when you send a document, or when you choose the optional `claude_code` engine. The only external query is the LexML search, which sends only the term you typed: on the screen, only with the box checked; in `buscar.bat`, also when no act in the collection cites the term.
+- Content reaches Claude only when you send it: when you upload the index files to a Project, or when you send a document. The only external query is the LexML search, which sends only the term you typed: on the screen, only with the box checked; in `buscar.bat`, also when no act in the collection cites the term.
 
 ## Several collections in one Project
 

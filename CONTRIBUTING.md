@@ -45,7 +45,7 @@ Always use the venv interpreter, not whatever `python` resolves to on `PATH` (a 
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest -q
 ```
 
-The suite must pass in full before and after your change; it takes about five minutes and never talks to a real Ollama or to the network. If you are working on a single test file during development:
+The suite must pass in full before and after your change; it takes about eight minutes and never talks to a real Ollama or to the network. If you are working on a single test file during development:
 
 ```powershell
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest tests/test_something.py -v
@@ -77,7 +77,7 @@ A comment that explains a non-obvious decision states what was measured, where a
 
 ### The project is offline
 
-No runtime network calls, except to `http://127.0.0.1:11434` (the local Ollama instance, always loopback, never configurable to a remote host) and the LexML search service (opt-in on the screen; in `buscar.bat`, also when no act in the collection cites the term), which sends only the term the user typed and never anything from the collection. Do not add a dependency that requires network access to function. The classifier prompt, the rules vocabulary and the Planalto reader are behavior knobs: changes to them need a new measurement against `demo/gabarito.csv` and an update to `docs/QUALITY.md`.
+No runtime network calls, except to `http://127.0.0.1:11434` (the local Ollama instance, always loopback, never configurable to a remote host) and the LexML search service (opt-in on the screen; in `buscar.bat`, also when no act in the collection cites the term), which sends only the term the user typed and never anything from the collection. The one other exception is the on-demand component downloads (`gclaude_indexer/components.py`: LibreOffice, FFmpeg, whisper.cpp and its models, OCR languages): only from a manifest in `gclaude_indexer/manifests/` that pins the URL, the size and the SHA-256 of every file, over HTTPS (redirects included), carrying the component's name and never anything from the collection. A new component goes into the manifest, never into a URL written in the code, and a document that needs a missing component is skipped with a reason, never failed. The test suite replaces `components._open_url`, so no test touches the network. Do not add a dependency that requires network access to function. The classifier prompt, the rules vocabulary and the Planalto reader are behavior knobs: changes to them need a new measurement against `demo/gabarito.csv` and an update to `docs/QUALITY.md`.
 
 ### The documentation reads like a person wrote it
 

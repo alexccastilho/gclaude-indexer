@@ -45,7 +45,7 @@ Use sempre o interpretador do venv, não o `python` que o `PATH` encontrar (um P
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest -q
 ```
 
-A suíte precisa passar inteira antes e depois da sua mudança; leva uns cinco minutos e nunca fala com um Ollama real nem com a rede. Para trabalhar num único arquivo de teste durante o desenvolvimento:
+A suíte precisa passar inteira antes e depois da sua mudança; leva uns oito minutos e nunca fala com um Ollama real nem com a rede. Para trabalhar num único arquivo de teste durante o desenvolvimento:
 
 ```powershell
 & "$env:LOCALAPPDATA\GClaudeIndexer\venv\Scripts\python.exe" -B -m pytest tests/test_algo.py -v
@@ -77,7 +77,7 @@ Um comentário que explica uma decisão não óbvia diz o que foi medido, onde e
 
 ### O projeto é offline
 
-Nenhuma chamada de rede em tempo de execução, exceto para `http://127.0.0.1:11434` (o Ollama local, sempre loopback, nunca configurável para um servidor remoto) e o serviço de busca do LexML (na tela, só com a caixa marcada; no `buscar.bat`, também quando nenhuma norma do acervo cita o termo), que envia só o termo digitado e nunca nada do acervo. Não acrescente dependência que precise de rede para funcionar. O prompt do classificador, o vocabulário das regras e o leitor do Planalto são botões de comportamento: mudanças neles exigem uma nova medição contra `demo/gabarito.csv` e a atualização de `docs/QUALITY.md`.
+Nenhuma chamada de rede em tempo de execução, exceto para `http://127.0.0.1:11434` (o Ollama local, sempre loopback, nunca configurável para um servidor remoto) e o serviço de busca do LexML (na tela, só com a caixa marcada; no `buscar.bat`, também quando nenhuma norma do acervo cita o termo), que envia só o termo digitado e nunca nada do acervo. A única outra exceção são os downloads de componentes sob demanda (`gclaude_indexer/components.py`: LibreOffice, FFmpeg, whisper.cpp e seus modelos, idiomas do OCR): só de um manifesto em `gclaude_indexer/manifests/` que fixa a URL, o tamanho e o SHA-256 de cada arquivo, por HTTPS (redirecionamentos inclusive), levando o nome do componente e nunca nada do acervo. Um componente novo entra no manifesto, nunca numa URL escrita no código, e um documento que precisa de um componente ausente é pulado com o motivo, nunca marcado como falha. A suíte de testes substitui `components._open_url`, então nenhum teste toca a rede. Não acrescente dependência que precise de rede para funcionar. O prompt do classificador, o vocabulário das regras e o leitor do Planalto são botões de comportamento: mudanças neles exigem uma nova medição contra `demo/gabarito.csv` e a atualização de `docs/QUALITY.md`.
 
 ### A documentação se lê como escrita por uma pessoa
 

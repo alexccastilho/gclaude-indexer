@@ -60,9 +60,9 @@ Processo 2026-0001/volume_1.pdf,2,3,OFÍCIO,2026-01-10,Maria Souza
    releases) ou rode do código-fonte. O instalador **não** traz esta pasta:
    baixe o repositório como ZIP ou clone-o.
 2. Abra o programa, crie um projeto e aponte a pasta de origem para
-   `demo/acervo`. Nos tipos de arquivo, marque "PDF", "Word (.docx)",
-   "Excel (.xlsx)", "Imagens (foto/scan)" e "E-mail (.eml, .msg)"; o padrão
-   deixa Excel e e-mail de fora, e a planilha e o e-mail ficariam sem indexar.
+   `demo/acervo`. Nas extensões incluídas, deixe as categorias como vêm: desde
+   a 2.0.0 todas vêm marcadas, menos áudio e vídeo, e o acervo de demonstração
+   não tem nenhum dos dois.
 3. Escolha o motor: **Regras** roda em segundos sem nada instalado além do
    Tesseract (para o PNG); **Local** usa o Ollama e o modelo configurado, e
    leva alguns minutos conforme a placa de vídeo.

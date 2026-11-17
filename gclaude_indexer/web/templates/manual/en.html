@@ -6,6 +6,8 @@
     <li><a href="#demonstracao">Try it with the demo collection</a></li>
     <li><a href="#projetos">Projects screen</a></li>
     <li><a href="#novo-projeto">New project: every field</a></li>
+    <li><a href="#formatos">Accepted formats and optional components</a></li>
+    <li><a href="#idiomas">Document languages</a></li>
     <li><a href="#motores">Classification engines: which one to choose</a></li>
     <li><a href="#acerto">What accuracy to expect</a></li>
     <li><a href="#execucao">Execution screen: the steps</a></li>
@@ -17,6 +19,7 @@
     <li><a href="#conjuntos">Sets: several collections in one Project</a></li>
     <li><a href="#instrucoes">Your instructions are preserved</a></li>
     <li><a href="#atualizar">Updating the collection</a></li>
+    <li><a href="#mudanca-de-pasta">Moving the output folder (older projects)</a></li>
     <li><a href="#atualizar-programa">Updating the program</a></li>
     <li><a href="#outro-computador">Another computer and team use</a></li>
     <li><a href="#aparencia">Themes and layouts</a></li>
@@ -35,7 +38,7 @@
 <ol>
   <li><strong>Saves your Claude subscription.</strong> Instead of sending the whole collection for Claude to read, you hand over just the index. Claude looks at the index, finds which document and which page matter, and opens only that.</li>
   <li><strong>Collections far larger than Claude can handle.</strong> Claude has a limit on how much text it considers at once. A compact index, split by group, fits within that limit even when the collection has thousands of pages.</li>
-  <li><strong>Confidentiality.</strong> Reading, text recognition (OCR) and classification happen on this machine. No document is sent to the internet during processing. The database lives in a folder of yours. If that folder is on Google Drive, you can use it from any computer.</li>
+  <li><strong>Confidentiality.</strong> Reading, text recognition (OCR) and classification happen on this machine. No document is sent to the internet during processing. The database lives in a folder of yours. If that folder is on Google Drive, you can use it from any computer. The optional components (old formats, audio and video, extra OCR languages) are downloaded once, on demand; see <a href="#formatos">Accepted formats and optional components</a>.</li>
   <li><strong>Updates without starting over.</strong> When you add, change or remove documents, the program redoes only what changed.</li>
   <li><strong>Personal or team use.</strong> It works for a single person or for a team sharing the same folder on Drive or on a file server.</li>
 </ol>
@@ -58,7 +61,7 @@
 <h2>3. Try it with the demo collection</h2>
 <p>You do not need a collection of your own to see what the program produces. The <code>demo/acervo</code> folder in the GitHub repository is a small, entirely made-up collection: 72 pages and 41 items, with two volumes of a case file in PDF, a contract, a memo in Word, a spreadsheet, a scanned official letter and an e-mail. The file <code>demo/gabarito.csv</code> says what each page is. The installer does not include this folder: download the repository as a ZIP (the <em>Code</em> button, then <em>Download ZIP</em>) or clone it.</p>
 <ol>
-  <li>Create a project with the source folder pointing to <code>demo/acervo</code>. Check PDF, Word, Excel, images and e-mail under the extensions.</li>
+  <li>Create a project pointing the source folder at <code>demo/acervo</code>. The extension categories already come checked (except audio and video, which the collection does not have): leave them as they are.</li>
   <li>Run everything up to classification. With the rules engine it takes seconds; with the local model, a few minutes.</li>
   <li>Generate the reports and open <code>index.md</code> in the output folder. Compare it with <code>gabarito.csv</code>, or measure the accuracy with the tool described in <a href="#acerto">What accuracy to expect</a>.</li>
 </ol>
@@ -79,7 +82,7 @@
 
 <section id="novo-projeto">
 <h2>5. New project: every field</h2>
-<p>In most cases you only need to fill in <em>Name</em> and <em>Source folder</em>. The other fields already come with values that work well.</p>
+<p>In most cases you only need to fill in <em>Name</em> and <em>Source folder</em>. The other fields already come with values that work well. Slicing, windows and OCR do not appear here: the program chooses all of that by itself, after the scan (see <a href="#execucao">Execution screen</a>).</p>
 
 <h3>Identification</h3>
 <dl>
@@ -90,7 +93,7 @@
 <h3>Folders</h3>
 <dl>
   <dt>Source folder</dt><dd>Where the original documents are. <strong>It is never changed</strong>: the program only reads it.</dd>
-  <dt>Output folder</dt><dd>Where the reports and the database are saved. The default is a folder next to the source folder, with <code>-AI</code> added to its name; it can never be inside the source. It can be on Google Drive or on a file server so it can be used from other computers. The intermediate files (PDFs with OCR, text slices) go to a local work folder on this machine, not here, so that gigabytes are not synced.</dd>
+  <dt>Output folder</dt><dd>Where the reports and the database are saved. The program suggests a folder next to the source folder, with <code>-AI</code> added to its name, and creates it by itself if you do not change anything; if it already exists and is not empty, it suggests <code>-AI-2</code>, <code>-AI-3</code> and so on. The output can never be the source folder, inside it or above it. It can be on Google Drive or on a file server so it can be used from other computers. The intermediate files (OCR'd and converted PDFs) go to a local work folder on this machine, not here, so that gigabytes are not synced.</dd>
 </dl>
 
 <h3>Collection</h3>
@@ -98,18 +101,7 @@
   <dt>Collection type</dt><dd><em>case file</em> numbers by sheet (f. 1, f. 2...), like an administrative or court case file; the numbering carries on from one volume to the next. <em>library</em> numbers by page (p. 1, p. 2...), like books and reports.</dd>
   <dt>How to group</dt><dd>A "group" is a set of files that form a unit (a case file with several volumes, for example). <em>by subfolder</em> uses the name of the first subfolder, the most common case; <em>by name pattern</em> groups by the beginning of the file name, using the next field; <em>all together</em> treats the whole folder as a single group.</dd>
   <dt>Grouping pattern</dt><dd>Only for <em>by name pattern</em>. It is a regular expression, an advanced option: if you do not know what that is, leave it blank. Example: <code>^(\d{4}-\d+)</code> puts <code>2024-001 - petição.pdf</code> and <code>2024-001 - despacho.pdf</code> into the group "2024-001".</dd>
-  <dt>Included extensions</dt><dd>Which file types are included. Check <em>ALL</em> to accept any text or document format (executables, databases, fonts, keys and <code>.ini</code> files are never included; neither are archives such as <code>.zip</code>, because they are never opened: they appear as ignored, and to index their content extract the files first). Audio and video stay out of <em>ALL</em> and have their own box. Google Drive shortcuts (<code>.gdoc</code>, <code>.gsheet</code>, etc.) are only a link, not the document: export them to DOCX, XLSX or PDF. Web pages (<code>.htm</code>, <code>.html</code>, <code>.mht</code>) are read as clean text, without the markup, and the encoding of every text file is worked out automatically (UTF-8, Windows-1252, ISO-8859-1), with nothing to configure. Text struck through in the original, in HTML, DOCX, PPTX or XLSX, appears as <code>~~text~~</code>: in legislation, that is a revoked provision.</dd>
-</dl>
-
-<h3>Slicing, windows and OCR</h3>
-<p>A <strong>window</strong> is a run of consecutive pages that the classifier reads at once to figure out where each item starts and ends.</p>
-<p><strong>Automatic proposal.</strong> When you choose the source folder, the program surveys a sample of it (up to 6 seconds): how many PDFs, scanned or not, how many whole documents (HTML, DOCX, TXT), page sizes and language. From that it proposes the five values below, each with its reason. Click <em>Apply these settings</em> to use them; nothing changes otherwise. The <em>Analyse the folder and propose</em> button runs the analysis again after you change the extensions.</p>
-<dl>
-  <dt>Pages per block (80)</dt><dd>PDFs larger than this are cut into parts before processing, so huge files do not get stuck. It does not change the index.</dd>
-  <dt>Pages per window (16)</dt><dd>Smaller windows make fewer mistakes when many short documents are mixed together, but take longer. Larger windows are faster, but may merge two items into one.</dd>
-  <dt>Overlap (2)</dt><dd>How many pages from the end of one window are repeated at the start of the next, so an item is not cut in half. It must be smaller than <em>Pages per window</em>.</dd>
-  <dt>Characters per page (2000)</dt><dd>The limit of text from each page sent to the classifier. It keeps a page with a gigantic table from taking up the whole window. The collection search sees the whole text, without this limit.</dd>
-  <dt>OCR language</dt><dd>The language used to recognize the text of scanned pages: <code>por</code> (Portuguese), <code>eng</code> (English) or <code>por+eng</code> for both in the same collection. OCR only runs on pages that have no text; a PDF with text and a few scanned sheets in the middle gets OCR only on those sheets.</dd>
+  <dt>Included extensions</dt><dd>Which file types are included. Every category already comes checked, except audio and video, which are optional and have their own box. Checking or unchecking <em>ALL</em> checks or unchecks every category at once; unchecking a single category leaves only the boxes that are still checked. With <em>ALL</em> checked, any text or document format is included; left out, with the reason on the Execution screen, are executables, databases, fonts, keys and passwords, binary content and archives (<code>.zip</code>, <code>.rar</code>, <code>.7z</code> and the like), which are never opened: to index the content of one, extract the files first. Google Drive shortcuts (<code>.gdoc</code>, <code>.gsheet</code> and the others) are only a link to the cloud, not the document: the program ignores them with a notice of their own, and to index them you export the document to DOCX, XLSX or PDF. The accepted formats are in <a href="#formatos">Accepted formats and optional components</a>. Web pages (<code>.htm</code>, <code>.html</code>, <code>.mht</code>) are read as clean text, without the markup, and the encoding of every text file is worked out automatically (UTF-8, Windows-1252, ISO-8859-1), with nothing to configure. Text struck through in the original, in HTML, DOCX, PPTX or XLSX, appears as <code>~~text~~</code>: in legislation, that is a revoked provision.</dd>
 </dl>
 
 <h3>Classification</h3>
@@ -118,19 +110,51 @@
   <dt>Local model</dt><dd>Which Ollama model the local engine uses. <em>automatic</em> chooses by the graphics card: <code>qwen3.5:9b</code> on a card with 8 GB of memory or more, <code>qwen3.5:4b</code> on smaller ones. Choosing another one is useful for comparing quality.</dd>
   <dt>Processing</dt><dd>Whether the local engine uses the graphics card (GPU). <em>automatic</em> and <em>force GPU</em> use as much of it as possible, much faster. <em>CPU/RAM only</em> leaves the card free for other programs, but is slower.</dd>
   <dt>Parallelism</dt><dd>How many files conversion and reading process at the same time. <em>economical</em>: one at a time; <em>automatic</em>: uses the processor cores and leaves one free so you can keep using the computer (recommended); <em>maximum</em>: finishes sooner, but the computer gets slow in the meantime.</dd>
-  <dt>Review low confidence</dt><dd>First runs the rules engine (instant) on everything and sends to the chosen engine only the passages where the rules were unsure. Saves time when the collection has many standardized documents.</dd>
 </dl>
 
 <h3>Project instructions</h3>
 <dl>
   <dt>Instructions you already use</dt><dd>If your Claude Project already has instructions, paste them here. They stay at the top of the generated instructions file and are never deleted. See <a href="#instrucoes">Your instructions are preserved</a>.</dd>
   <dt>Role in the instructions</dt><dd>Replaces the default paragraph that tells Claude what its role is in this collection (e.g. "you are a legal assistant..."). If left blank, the default text is used.</dd>
-  <dt>Extra rules</dt><dd>Rules specific to the collection, added at the end of the instructions (e.g. "always cite the case number", a glossary of acronyms).</dd>
 </dl>
+<p><strong>Extra rules</strong> left the creation form: they live in an edit box on the project's <em>Instructions</em> screen, which you open after creating it (see <a href="#instrucoes">Your instructions are preserved</a>). The value an older project already had was kept. And <em>Review low confidence</em> no longer exists: low confidence is reduced during classification (see <a href="#acerto">What accuracy to expect</a>).</p>
+</section>
+
+<section id="formatos">
+<h2>6. Accepted formats and optional components</h2>
+<p>Version 2.0.0 reads much more than PDFs and Word. Under <em>Included extensions</em>, the categories are:</p>
+<ul>
+  <li><strong>Documents</strong>: PDF; Word (<code>.docx</code> and the variants <code>.docm</code>, <code>.dotx</code>, <code>.dotm</code>); Excel (<code>.xlsx</code> and variants, and the old <code>.xls</code>); PowerPoint (<code>.pptx</code> and variants); OpenDocument (<code>.odt</code>, <code>.ods</code>, <code>.odp</code> and the like); RTF; books and paged formats (<code>.epub</code>, <code>.mobi</code>, <code>.fb2</code>, <code>.xps</code>, <code>.svg</code>, <code>.cbz</code>); and the old formats (<code>.doc</code>, <code>.ppt</code>, <code>.wpd</code>, <code>.wps</code>, <code>.pub</code>, <code>.vsd</code>, <code>.vsdx</code> and others), which go through LibreOffice.</li>
+  <li><strong>Images</strong>, all with OCR: PNG, JPEG (including <code>.jfif</code>), TIFF, BMP, GIF, WebP, JPEG 2000 and iPhone HEIC photos.</li>
+  <li><strong>Text and data</strong>: plain text, web pages and the subtitles <code>.srt</code> and <code>.vtt</code>.</li>
+  <li><strong>Messages</strong>: <code>.eml</code>, <code>.msg</code>, <code>.mbox</code> and Outlook mailboxes (<code>.pst</code> and <code>.ost</code>). An Outlook mailbox is read message by message, one page per message, and the attachments are read by their real type.</li>
+  <li><strong>Technical and signatures</strong>: <code>.dxf</code> drawings and documents signed under ICP-Brasil (<code>.p7s</code> and <code>.p7m</code>), with the signer and the date on the page. <code>.dwg</code> drawings are ignored.</li>
+  <li><strong>Audio and video</strong> (<code>.mp3</code>, <code>.wav</code>, <code>.m4a</code>, <code>.mp4</code>, <code>.mkv</code> and others), transcribed on this computer. They come unchecked and never enter <em>ALL</em>: check their own box if you want them. Transcription produces one page per segment of about 5 minutes, has <em>Stop</em> and resume, and is slow, because it uses only the processor.</li>
+</ul>
+<p>What is left out appears on the Execution screen as <em>ignored</em>, with the reason: archives (never opened), executables, databases, fonts, keys and passwords, binaries, media that was not selected and Google Docs shortcuts.</p>
+<h3>Components that are downloaded once</h3>
+<p>Some formats need programs or data that the installer does not bring. The program downloads each one by itself, once, the first time a document needs it:</p>
+<ul>
+  <li><strong>LibreOffice</strong> (about 370 MB), for the old formats. It runs without a window and without macros, links or updater.</li>
+  <li><strong>FFmpeg and whisper.cpp</strong>, with a transcription model (from 148 MB to 1.5 GB, depending on the computer), for audio and video.</li>
+  <li><strong>OCR languages and scripts</strong>, a few MB each, for scanned pages in languages the installer did not bring.</li>
+</ul>
+<p>Everything comes from a fixed list that carries the SHA-256 of every file (a file that does not match is refused), over a secure connection, and the request carries only the name of the component, never the content of a document. <strong>Without internet, these components do not arrive</strong>: the documents that depend on them are skipped with a clear reason on the Execution screen, are not marked as failed and go back to the queue in the next run, when there is internet. Everything else (PDFs, Word, spreadsheets, images with OCR in the languages already installed, e-mails, classification and search) works without internet.</p>
+<p class="manual-tip">HEIC photos depend on a video codec (HEVC) that is under patents in some countries. The program only reads that format; if this matters to you, leave the <em>Images</em> category unchecked. More details in the repository's <code>SECURITY.md</code>.</p>
+</section>
+
+<section id="idiomas">
+<h2>7. Document languages</h2>
+<p>The program detects the language of each document, one by one, on this computer, whatever the language (including those that are not among the three of the interface). You choose nothing: there is no OCR language field anymore.</p>
+<ul>
+  <li><strong>OCR in the right language.</strong> Scanned pages are read in the language and script of the document itself. The installer brings some languages; for the others and for other scripts, the program downloads only that model, once (see <a href="#formatos">Accepted formats and optional components</a>). Without internet, the document is read with what is already installed and redone when the model arrives.</li>
+  <li><strong>Type and summary in the document's language.</strong> In a mixed collection, an item in French comes out with the type and the summary in French, and one in Portuguese comes out in Portuguese. The columns of the index and the instructions for Claude stay in the interface language.</li>
+  <li><strong>Search in any script.</strong> The collection search also finds text in scripts that do not separate words with spaces, such as Chinese and Japanese.</li>
+</ul>
 </section>
 
 <section id="motores">
-<h2>6. Classification engines: which one to choose</h2>
+<h2>8. Classification engines: which one to choose</h2>
 <div class="manual-table-wrap">
 <table class="manual-table">
   <thead><tr><th>Engine</th><th>Speed</th><th>Quality</th><th>Needs</th><th>When to use</th></tr></thead>
@@ -138,17 +162,17 @@
     <tr><td><strong>Automatic</strong> (recommended)</td><td>that of the engine it picks</td><td>that of the engine it picks</td><td>nothing</td><td>When in doubt. It uses the local model if the computer can handle it; otherwise, the rules.</td></tr>
     <tr><td><strong>Rules</strong></td><td>seconds</td><td>good on the item type, weak on date and author</td><td>nothing</td><td>Very large, standardized collections (official letters, orders), or to get a first result right now.</td></tr>
     <tr><td><strong>Local model (Ollama)</strong></td><td>from seconds to half a minute per window, depending on the graphics card</td><td>good on date and author; sometimes slices one item into two</td><td>Ollama installed; a graphics card helps a lot</td><td>The best balance: no internet and no use of your Claude subscription.</td></tr>
-    <tr><td><strong>Claude Code (manual)</strong></td><td>depends on you and on Claude</td><td>the best</td><td>Claude Code installed and a Claude subscription</td><td>Smaller or critical collections, where accuracy is worth the subscription usage. It does not finish on its own: you run a command.</td></tr>
   </tbody>
 </table>
 </div>
+<p>The <em>Claude Code (manual)</em> engine no longer exists in 2.0.0. A project that used it opens with the <em>Automatic</em> engine, with a notice, and the items that had already been classified stay valid. Claude Code still works for consulting the index: the <code>CLAUDE.md</code> in the output folder teaches it to read the index and use <code>buscar.bat</code>.</p>
 <p>To give you an idea of time, on the demo collection (72 pages): 4 seconds with the rules, 4 minutes with <code>qwen3.5:9b</code> on a 12 GB card. A collection of thousands of pages takes hours with the local model and minutes with the rules.</p>
 <p>Pages of laws, decrees and ordinances saved from the Planalto website do not go through any engine: the program reads them from the structure of the page itself and knows the type, number, date and summary. See <a href="#normas-e-busca">Cited acts and searching the collection</a>.</p>
 <p class="manual-tip">Tip: the Result screen has the <em>Compare engines and models</em> table. Run the same collection with different engines and compare time and score before deciding.</p>
 </section>
 
 <section id="acerto">
-<h2>7. What accuracy to expect</h2>
+<h2>9. What accuracy to expect</h2>
 <p>The quality score on the Result screen says how much confidence the engine itself declared and how many fields it filled in. It does not say whether the item is right. For that, the index is measured against a hand-checked answer key on the demo collection, in every version that touches the classifier. In the latest measurement (02/11/2026):</p>
 <ul>
   <li><strong>No page was lost</strong>, with either engine. The program guarantees this: every page of the collection lands in some item of the index.</li>
@@ -156,14 +180,15 @@
   <li><strong>Local model (<code>qwen3.5:9b</code>)</strong>: got the date right for 89% and the author for 84% of the items found, but sliced items (65 in the index for 41 in the answer key). In 4 minutes.</li>
 </ul>
 <p>In practice: the index takes Claude to the right page, and Claude checks the text in the original document before answering, as the generated instructions tell it to. Whoever programs can measure accuracy on their own machine with the <code>tools/medir_acerto.py</code> tool, over the demo collection's output folder. The full numbers, what each one means and what they do not say are in <code>docs/QUALITY.md</code> in the repository.</p>
+<p><strong>Low confidence.</strong> There is no "review" step afterwards anymore: the program reduces low confidence during classification itself. A blank page is classified without consulting the model. A page with an image and almost no OCR text is read again once, and the new text counts only if it is longer. And a page that the model skipped or answered without a type gets a second attempt, capped at 15% of the requests. The hit rate by confidence level is in <code>docs/QUALITY.md</code>.</p>
 </section>
 
 <section id="execucao">
-<h2>8. Execution screen: the steps</h2>
+<h2>10. Execution screen: the steps</h2>
 <p>Processing always follows this order. Each step can be interrupted and resumed: pausing, closing the program or even turning off the computer midway does not break anything. When you run it again, it picks up where it left off.</p>
 <ul class="manual-stages">
-  <li><strong>1. Scan</strong>: finds the files in the source folder and identifies duplicate copies (a document identical to another is included only once). A counter shows how many files have been seen so far; on a second scan, unchanged files are not read again.</li>
-  <li><strong>2 and 3. Conversion, OCR and slicing</strong>: turns each file into text. Scanned pages go through text recognition (OCR); huge PDFs are cut into blocks. This is the slowest step for scanned collections. A file whose OCR failed is redone the next time, and the step stays "pending" while there is one.</li>
+  <li><strong>1. Scan</strong>: finds the files in the source folder and identifies duplicate copies (a document identical to another is included only once). A counter shows how many files have been seen so far; on a second scan, unchanged files are not read again. Right after the scan, the program chooses by itself the settings that used to be form fields (pages per window, overlap, characters read per page and OCR language), from what it found in the folder, and writes each choice and its reason in the log. There is nothing to configure, and a project that already has windows is never changed.</li>
+  <li><strong>2 and 3. Conversion and OCR</strong>: turns each file into text. Scanned pages go through text recognition (OCR), in the language of each document, and the old formats go through LibreOffice. PDFs are no longer cut into blocks: reading goes straight to the pages. This is the slowest step for scanned collections. A file whose OCR failed is redone the next time, and the step stays "pending" while there is one. If an optional component cannot be downloaded, the files that depend on it are skipped with the reason and go back to the queue in the next run.</li>
   <li><strong>4. Per-page extraction</strong>: stores the text of each page with its numbering (f. N or p. N) and builds the search index. The step only finishes when the search is ready.</li>
   <li><strong>5. Window preparation</strong>: splits the pages into passages for classification.</li>
   <li><strong>6. Classification</strong>: the chosen engine identifies each item: type, date, author, summary and page range.</li>
@@ -174,18 +199,17 @@
   <li><strong>Import and generate reports</strong>: after classification, puts the items together and writes the files for Claude. It is not part of "Run everything"; the program tells you when the time comes.</li>
   <li><strong>Activity bar</strong>: every long operation shows up in a bar with its name and a timer, which stays there if you reload the page (F5). If you ask for another operation on the same project while one is running, an "in progress" page appears; nothing is lost, just wait.</li>
   <li><strong>Live log</strong>: tells you what is happening, in plain language. The filter shows only warnings or only errors; <em>copy</em> copies the log so you can send it to someone. With the local model, the log says which graphics card is in use, whether the model fit in it and when the model's answer came back incomplete and was requested again.</li>
-  <li><strong>Claude Code engine</strong>: a box appears with the phrase to say to Claude Code (<code>process the windows</code>). Open Claude Code in the output folder, say the phrase and, when it finishes, click <em>Recheck if the windows are done</em>.</li>
 </ul>
 </section>
 
 <section id="pausa">
-<h2>9. Pausing and resuming</h2>
+<h2>11. Pausing and resuming</h2>
 <p>The <em>Pause</em> button answers right away: the bar switches to "stopping" and the step ends at its next safe point (in the classification, when the current window is done, which can take a few seconds with the local model). Nothing already done is lost.</p>
 <p>To carry on, click <em>Resume</em>: the step continues from where it stopped. Closing the program or turning off the computer in the middle of a step has the same effect as a pause; when you open it again, just run the step or <em>Run everything</em>.</p>
 </section>
 
 <section id="sensores">
-<h2>10. Machine sensors and the administrator prompt</h2>
+<h2>12. Machine sensors and the administrator prompt</h2>
 <p>This section is only for whoever wants to follow how hard the machine is working during a run; you can skip it without missing anything.</p>
 <p>The Execution screen shows, in real time, the use of the processor, the memory and the graphics card, with temperature, power, frequency and fans. With the local model running, it also shows the card's memory in use and which model is loaded in it: that is how you see whether the model fit entirely.</p>
 <p>The CPU sensors (temperature, power and the fan, which lives on the motherboard chip) can only be read with administrator rights. The <em>Read CPU sensors and fans</em> button asks for those rights whenever you want, for a small, separate reader; the program itself and your documents stay unprivileged. Answering <em>No</em> is safe: everything else keeps working, and the button stays available to try again. The installer also offers a shortcut that asks for this at startup, and a small optional component, PawnIO, which reads the temperature of the most recent processors.</p>
@@ -193,11 +217,11 @@
 </section>
 
 <section id="resultado">
-<h2>11. Result screen: what gets generated</h2>
+<h2>13. Result screen: what gets generated</h2>
 <p>All the files are saved in the output folder:</p>
 <dl>
   <dt><code>index.md</code></dt><dd>The table of contents: lists the groups and says which index file to open for each one; counts the legislation pages and points to <code>normas-citadas.md</code>.</dd>
-  <dt><code>index-&lt;grupo&gt;.md</code></dt><dd>One index per group: each item with its sheets, type, date, author, source file and page within it, plus a summary. The Confidence column appears only when some item is below <code>high</code> (high confidence) or low-confidence review is on. An index above 25 MB comes out in parts <code>index-&lt;grupo&gt;-1.md</code>, <code>-2.md</code>, split only between source files.</dd>
+  <dt><code>index-&lt;grupo&gt;.md</code></dt><dd>One index per group: each item with its sheets, type, date, author, source file and page within it, plus a summary. The Confidence column appears only when some item is below <code>high</code> (high confidence). An index above 25 MB comes out in parts <code>index-&lt;grupo&gt;-1.md</code>, <code>-2.md</code>, split only between source files.</dd>
   <dt><code>normas-citadas.md</code></dt><dd>One line per act recognized in the collection (law, decree, provisional measure, ordinance): type, number, date, summary, which groups and pages it appears in, and a link to the text on LexML. It only exists when there is at least one act. See <a href="#normas-e-busca">Cited acts and searching the collection</a>.</dd>
   <dt><code>timeline.md</code></dt><dd>The chronology: the dated items, in order, without the Planalto acts. A group with more than 2,000 dated items gets its own <code>timeline-&lt;grupo&gt;.md</code>, and <code>timeline.md</code> points to it; that file stays outside the Claude package, because it repeats the group's index by date.</dd>
   <dt><code>review.md</code></dt><dd>The check report: what was read, what failed, numbering gaps and removed documents.</dd>
@@ -213,7 +237,7 @@
 </section>
 
 <section id="normas-e-busca">
-<h2>12. Cited acts and searching the collection</h2>
+<h2>14. Cited acts and searching the collection</h2>
 <h3>Cited acts</h3>
 <p>Pages of laws, decrees, provisional measures, ordinances and resolutions saved from the Planalto website are read from the structure of the page itself, without a model: type, number, date, author and summary come from the heading. Each act becomes a line in <code>normas-citadas.md</code>, with the groups and pages it appears in and a link to the text on LexML (the Senate's legislation portal). The text of the acts does not go into the Claude package: Claude opens the link when it needs it, and the instructions tell it so.</p>
 <h3>Search the collection</h3>
@@ -225,7 +249,7 @@
 </section>
 
 <section id="usar-com-claude">
-<h2>13. Using it with Claude</h2>
+<h2>15. Using it with Claude</h2>
 <h3>On claude.ai (Projects)</h3>
 <ol>
   <li>Create a new Project (or open the one for this collection).</li>
@@ -239,7 +263,7 @@
 </section>
 
 <section id="conjuntos">
-<h2>14. Sets: several collections in one Project</h2>
+<h2>16. Sets: several collections in one Project</h2>
 <p>Each project is one collection. When a question spans several ("what do we have on supplier X in contracts and in minutes?"), the <em>Sets</em> screen joins two or more projects into a single package, for a single Claude Project.</p>
 <ul>
   <li><strong>Creating a set</strong>: give it a name, check the projects and review each one's <em>alias</em>. The alias is proposed from the name ("Diretoria / Região Sul" becomes <code>diretoria-regiao-sul</code>) and goes at the start of every file name in the package: <code>diretoria-regiao-sul__index.md</code> and, for a project called "Contratos", <code>contratos__index-Processo.md</code>. That way no name collides, even when two projects have the same group. The <em>Instructions you already use in the Project</em> field goes to the top of the set's instructions.</li>
@@ -251,7 +275,7 @@
 </section>
 
 <section id="instrucoes">
-<h2>15. Your instructions are preserved</h2>
+<h2>17. Your instructions are preserved</h2>
 <p>The text that GClaude Indexer writes in <code>project_instructions.md</code> and in the output folder's <code>CLAUDE.md</code> sits between two invisible markers (<code>GCLAUDE-INDEXER:BEGIN</code> and <code>GCLAUDE-INDEXER:END</code>).</p>
 <ul>
   <li>Everything <strong>outside</strong> the markers is yours and is <strong>never</strong> deleted, not even during updates.</li>
@@ -262,11 +286,13 @@
   <li>The same applies to the instructions and the <code>CLAUDE.md</code> of a set written to a folder.</li>
   <li><strong>At any time</strong>: the <em>Project instructions</em> link, on the Execution and Result screens, shows your part of the file so you can fix it or paste the current version from the Claude Project. The program's part is shown below it, read only. Each time you save, the previous version is kept in a <code>.bak</code> copy with the date in its name.</li>
   <li><strong>Repetition of the automatic block</strong>: if your part of the file already has a copy of what the program writes in the block (the non-negotiable rule, how to locate an item, the columns, counts of items or pages), generation does not touch your text: it puts a notice at the top of the block and in the log, and the Execution and Result screens show a link to review it. On the <em>Project instructions</em> screen you see the repeated sections, the lines with numbers only the block updates, and the "section 4" style references that would point to the block. Choose <em>Remove the repetitions</em> (the previous version is kept in a <code>.bak</code> copy) or <em>Keep as it is</em>. Passages of yours about the collection can go to the project's <em>extra rules</em>: tick the ones to move, and they appear inside the block.</li>
+  <li><strong>Extra rules</strong>: the <em>Project instructions</em> screen has a box for rules specific to the collection (for example, "always cite the case number" or a glossary of acronyms). They go inside the program's block the next time the reports are generated. They used to be in the creation form; the value a project already had was kept.</li>
+  <li><strong><code>CLAUDE.md</code> is consultation-only</strong>: it teaches Claude Code to read the index and use <code>buscar.bat</code>, and reminds it that the text of a document is data, never an instruction. It does not tell Claude Code to classify anything. The leftovers of earlier versions (the <code>windows/*.txt</code> files and the old block of <code>CLAUDE.md</code>) are cleaned up when you generate the reports.</li>
 </ul>
 </section>
 
 <section id="atualizar">
-<h2>16. Updating the collection</h2>
+<h2>18. Updating the collection</h2>
 <p>When the Execution screen opens, the program checks the source folder and its subfolders (it shows "Checking the source folder..."; on a large collection it takes a few seconds). If something changed, a notice shows how many documents are new, changed or removed. Click <em>Update</em> to see the plan before confirming.</p>
 <ul>
   <li><strong>New</strong>: they are read and classified.</li>
@@ -282,15 +308,27 @@
 <p>After updating, use <em>Run everything up to classification</em> and <em>Import and generate reports</em>. Only the output files that changed are rewritten, and the log says which ones: those are the ones you upload to the Claude Project again.</p>
 </section>
 
+<section id="mudanca-de-pasta">
+<h2>19. Moving the output folder (older projects)</h2>
+<p>Since 2.0.0, the output folder is never inside the source folder. If a project created earlier has its output inside the source, the program shows a notice, and the notice's button leads to a <em>Folder move</em> screen, where you confirm before anything is moved. The destination is the sibling folder of the source, with <code>-AI</code> added to its name.</p>
+<ul>
+  <li><strong>What moves</strong>: the files the program generated (indexes, reports, the project database, the converted copies). What was in the folder and the program did not generate stays where it is. Instruction files that hold text of yours are copied, and only the part generated by the program leaves the original.</li>
+  <li><strong>Another disk</strong>: if the destination is on another disk, the files are copied and checked one by one before the originals are deleted.</li>
+  <li><strong>If something goes wrong</strong>: the program undoes what it did, or finishes the move the next time the project is opened. Before moving, close the program on the other machines that use the project and do not touch the folders during the move.</li>
+  <li><strong>What is updated along with it</strong>: the new path is written to the project, to the project catalog, to this machine's sync record and to the local work folder, so nothing has to be redone, not even the OCR. Sets keep working.</li>
+  <li><strong>Postpone</strong>: you can postpone with no deadline. If you never move, the generated files (indexes, summaries and the database with the text of every document) stay inside the source folder: anyone with access to the source sees them too, and other projects or tools that read the same folder may index them as if they were documents. The confirmation screen explains the full risk.</li>
+</ul>
+</section>
+
 <section id="atualizar-programa">
-<h2>17. Updating the program</h2>
+<h2>20. Updating the program</h2>
 <p>Download the installer of the new version and install it over the old one, without uninstalling: the installer closes the old version if it is open, and your projects stay where they are. If the program is opened while the old version is still open, the new one replaces it and says so.</p>
 <p>When the program is updated while it is open, a notice appears saying the system was updated: close the program and open it again from the shortcut. The <em>About</em> screen shows the installed version and the installation diagnostics.</p>
 <p>After updating, generate the reports again in the projects you use: that is how they gain what the new version produces (for example, <code>normas-citadas.md</code> and <code>buscar.bat</code>) and lose what it no longer produces.</p>
 </section>
 
 <section id="outro-computador">
-<h2>18. Another computer and team use</h2>
+<h2>21. Another computer and team use</h2>
 <ul>
   <li><strong>Output folder on Google Drive</strong> (or on a file server): the project can be opened from any computer that has access to it.</li>
   <li><strong>Shared catalog</strong>: on the Projects screen, point to a folder inside Drive to keep the list of projects. All computers with the same Drive will then see the same projects.</li>
@@ -302,7 +340,7 @@
 </section>
 
 <section id="aparencia">
-<h2>19. Themes and layouts</h2>
+<h2>22. Themes and layouts</h2>
 <p>There are two independent choices, under <strong>Preferences</strong> (at the foot of the side bar) or at the top of the screen, depending on the layout:</p>
 <ul>
   <li><strong>Theme</strong> (the colors): Studio, Studio dark, Light, Dark, Sepia, High contrast, Aurora, Toga, Graphite, Ocean, Glass, Glass dark, Apple and Apple dark.</li>
@@ -315,18 +353,18 @@
 </section>
 
 <section id="dicas">
-<h2>20. Tips: faster or better quality</h2>
+<h2>23. Tips: faster or better quality</h2>
 <div class="manual-table-wrap">
 <table class="manual-table">
   <thead><tr><th>If you want...</th><th>Do this</th></tr></thead>
   <tbody>
-    <tr><td>The fastest possible result</td><td><em>Rules</em> engine, Parallelism <em>maximum</em>.</td></tr>
-    <tr><td>Fast, without giving up quality</td><td><em>Local model</em> engine with <em>Review low confidence</em> checked.</td></tr>
-    <tr><td>The best quality</td><td><em>Claude Code</em> engine, windows of 12 to 16 pages.</td></tr>
-    <tr><td>To use the computer while it processes</td><td>Parallelism <em>automatic</em> or <em>economical</em>; Processing <em>CPU/RAM only</em> if you need the graphics card.</td></tr>
-    <tr><td>A collection with many short documents</td><td>Lower <em>Pages per window</em> (e.g. 8 or 10).</td></tr>
-    <tr><td>A collection with long, standardized documents</td><td>Raise <em>Pages per window</em> (e.g. 24).</td></tr>
-    <tr><td>To save your Claude subscription</td><td>Use the index in the Project and send only the originals needed for each question.</td></tr>
+    <tr><td>The fastest possible result</td><td><em>Rules</em> engine, <em>maximum</em> Parallelism.</td></tr>
+    <tr><td>Fast, but without giving up quality</td><td><em>Automatic</em> or <em>Local model</em> engine: low confidence is already reduced during classification, with no extra step.</td></tr>
+    <tr><td>The best quality</td><td><em>Local model</em> engine on a graphics card where the model fits, and a well-filled <em>Collection theme</em>.</td></tr>
+    <tr><td>Use the computer while it processes</td><td><em>automatic</em> or <em>economical</em> Parallelism; Processing <em>CPU/RAM only</em> if you need the graphics card.</td></tr>
+    <tr><td>A collection with audio or video</td><td>Check the audio and video box only when you need it: transcription uses the processor, is slow and downloads the model the first time.</td></tr>
+    <tr><td>A collection with old formats (<code>.doc</code>, <code>.ppt</code>)</td><td>Leave the category checked. The first use downloads LibreOffice, once only, and needs internet.</td></tr>
+    <tr><td>Save your Claude subscription</td><td>Use the index in the Project and send only the originals needed for each question.</td></tr>
   </tbody>
 </table>
 </div>
@@ -339,7 +377,7 @@
 </section>
 
 <section id="problemas">
-<h2>21. Common problems</h2>
+<h2>24. Common problems</h2>
 <dl>
   <dt>"Project in use on another machine"</dt><dd>Close the program on the other computer. If it froze or was shut down, wait for the lock to expire or choose <em>Take over anyway</em>, only if you are sure the other one is not using it.</dd>
   <dt>"Possible incomplete sync"</dt><dd>Google Drive has not finished downloading the project yet. Wait for the Drive icon to show that it is done.</dd>
@@ -350,18 +388,22 @@
   <dt>Sheet gaps</dt><dd>Sheets with no classified item. Run the classification again on those passages or check whether the PDF has blank pages.</dd>
   <dt>"Request refused" appears</dt><dd>Some website tried to send a command to the program and was blocked. Always use the GClaude Indexer shortcut or the address <code>http://127.0.0.1:8000</code>.</dd>
   <dt>LexML asked for a check</dt><dd>The Senate's portal answers programs with a verification page. Open the link shown and run the search in the browser.</dd>
+  <dt>"Ignored" files on the Execution screen</dt><dd>The program leaves out, on purpose, what cannot or should not be indexed: archives, executables, databases, fonts, keys and passwords, binaries, media you did not check and Google Docs shortcuts. Each one appears with the reason. To index the content of an archive, extract it; for a Google shortcut, export the document to DOCX, XLSX or PDF.</dd>
+  <dt>"Waiting for a component downloaded on demand"</dt><dd>The document needs LibreOffice, FFmpeg and whisper.cpp or an OCR language that has not been downloaded yet, and the download was not possible (no internet, or refused). Nothing failed: the file goes back to the queue in the next run, when there is internet.</dd>
+  <dt>"Folder move" notice</dt><dd>The project has its output inside the source folder. Open the notice and confirm the move, or postpone it; see <a href="#mudanca-de-pasta">Moving the output folder</a>.</dd>
 </dl>
 </section>
 
 <section id="privacidade">
-<h2>22. Privacy and security</h2>
+<h2>25. Privacy and security</h2>
 <ul>
   <li>Documents are read and classified <strong>only on this computer</strong>. The local engine talks only to the Ollama on this machine, never through the internet.</li>
   <li>The program only accepts commands from its own screens: a website open in the browser cannot give it orders.</li>
   <li>The source folder is never modified.</li>
   <li>The project database stores the text of the pages. If the collection contains personal data covered by data-protection law (e.g. Brazil's LGPD, GDPR), protect the output folder as you would protect the documents themselves, including on Google Drive.</li>
   <li>The only query to an outside service is the LexML search, which sends only the term you typed: on the screen, only with the box checked; in <code>buscar.bat</code>, also when no act in the collection cites the term.</li>
-  <li>When you use the Claude Code engine or send files to Claude, then yes, the content you send goes through your Claude account, under the terms of your plan.</li>
+  <li>When you send files to Claude, then yes, the content you send goes through your Claude account, under the terms of your plan.</li>
+  <li>The program downloads from the internet only what a document needs and the installer did not bring (LibreOffice, FFmpeg, whisper.cpp and its models, OCR languages), from a fixed list with the SHA-256 of every file. The request carries the name of the component, never the content of a document. Without internet, those documents are skipped with the reason.</li>
 </ul>
 </section>
 
