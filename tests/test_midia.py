@@ -745,3 +745,13 @@ def test_manifesto_traz_os_cinco_componentes_de_midia_com_licenca_e_modelos_fixa
     for modelo in media.MODEL_COMPONENTS.values():
         assert "/resolve/main/" not in manifesto[modelo].url and manifesto[modelo].license == "MIT"
     assert manifesto["ffmpeg"].check and manifesto["whisper-cpp"].check
+
+
+def test_estimativa_usa_o_nome_do_modelo_e_nao_o_caminho(tmp_path, sim):
+    """Revisão final: `estimate_seconds` recebia `tools.model` (o caminho do
+    `.bin`), nunca achava o modelo na tabela e caía sempre no `small`."""
+    vistos: list = []
+    ferramentas = _tools(tmp_path, vulkan=True, model="medium")
+    _transcrever(tmp_path, ferramentas, on_estimate=vistos.append)
+    assert media.REALTIME_FACTOR[True]["medium"] != media.REALTIME_FACTOR[True]["small"]
+    assert vistos[0]["estimate"] == pytest.approx(25.0 * media.REALTIME_FACTOR[True]["medium"])
