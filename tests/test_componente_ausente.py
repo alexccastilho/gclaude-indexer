@@ -13,8 +13,10 @@ Sem rede, o `.doc` e o vídeo ficam `skipped`/`component_unavailable` com
 `ocr_failed = 1`. Antes da correção, o plano de atualização via essa marca
 como "alterado" e a execução descartava as janelas do grupo inteiro em toda
 rodada, e o aviso de "Atualizar" nunca sumia. Agora o plano só os aponta
-quando o componente está nesta máquina; até lá eles esperam fora da fila
-enquanto o grupo tem janelas (como os `extracted` cujo OCR falhou).
+quando o componente está nesta máquina, sem ler os bytes; até lá eles
+esperam fora da fila enquanto o grupo tem janelas (como os `extracted` cujo
+OCR falhou), mesmo editados: o plano os deixa quietos e a varredura grava o
+hash novo sem tirá-los da espera.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from dataclasses import replace
 import fitz
 import pytest
 
-from gclaude_indexer import legacy_office, media
+from gclaude_indexer import legacy_office, media, update_plan
 from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, ocr_retry_count
 from gclaude_indexer.db import connect, init_schema
@@ -221,42 +223,42 @@ def test_depois_de_entrar_a_rodada_seguinte_fica_quieta(tmp_path, sem_componente
     conn.close()
 
 
-def test_arquivo_em_espera_editado_e_alterado_mesmo_sem_o_componente(tmp_path, sem_componentes, monkeypatch):
-    """Rodada extra da revisão (I1): o `.doc` em espera foi editado enquanto
-    o LibreOffice faltava, e a rede voltou. Ele precisa sair como alterado:
-    senão a varredura o devolve à fila sem invalidar nada, a conversão baixa
-    o componente na mesma rodada, e as páginas novas caem no meio do grupo
-    por cima das janelas já classificadas."""
+def _sem_ler_bytes(monkeypatch):
+    """O plano não pode ler o arquivo em espera: no Drive, cada leitura é
+    um download, e um vídeo de 2 GB seria baixado a cada abertura da tela."""
+    def _proibido(caminho):
+        raise AssertionError(f"o plano leu {caminho}")
+
+    monkeypatch.setattr(update_plan, "compute_hash", _proibido)
+
+
+def test_arquivo_em_espera_editado_sem_o_componente_nao_mexe_nas_janelas(tmp_path, sem_componentes, monkeypatch):
+    """O `.doc` em espera foi editado enquanto o LibreOffice faltava. Sem o
+    componente ele continua com zero páginas e o grupo sai idêntico: o plano
+    o deixa quieto, sem ler os bytes, e a varredura só grava o hash novo,
+    mantendo-o em espera. A rede volta e a conversão desta rodada obtém o
+    LibreOffice, mas não o converte (as páginas cairiam por cima das janelas
+    já classificadas); a rodada seguinte o aponta como alterado e refaz as
+    janelas do grupo junto."""
     origem, _saida, config, conn = _projeto(tmp_path)
     (origem / "video.mp4").unlink()
     _rodada(conn, config)
     conn.execute("UPDATE window SET status = 'done'")
     conn.commit()
+    classificadas = _janelas(conn)
 
     (origem / "a_antigo.doc").write_bytes(b"\xd0\xcf\x11\xe0documento antigo EDITADO com mais bytes")
+    with monkeypatch.context() as m:
+        _sem_ler_bytes(m)
+        assert build_update_plan(conn, config, record_warnings=False).is_empty
+
+    _libreoffice_chega_na_conversao(tmp_path, monkeypatch)
+    assert _rodada(conn, config) is None
+    assert _estado(conn, "a_antigo.doc") == ("skipped", "component_unavailable", 1)
+    assert _janelas(conn) == classificadas
+
     plano = build_update_plan(conn, config, record_warnings=False)
     assert [c.relative_path for c in plano.changed] == ["a_antigo.doc"]
-
-    # A rede voltou: a conversão desta rodada obtém o LibreOffice.
-    falso = tmp_path / "soffice.exe"
-    falso.write_bytes(b"MZ")
-    estado = {"tem": False}
-    monkeypatch.setattr(legacy_office, "soffice_path", lambda: falso if estado["tem"] else None)
-
-    def _obtem(**_k):
-        estado["tem"] = True
-        return falso
-
-    def _pdf_do_doc(_origem_doc, _soffice):
-        documento = fitz.open()
-        documento.new_page().insert_text((72, 72), "Texto do documento antigo editado.")
-        dados = documento.tobytes()
-        documento.close()
-        return dados
-
-    monkeypatch.setattr(legacy_office, "ensure_available", _obtem)
-    monkeypatch.setattr(legacy_office, "convert_to_pdf_bytes", _pdf_do_doc)
-
     resultado = _rodada(conn, config)
     assert resultado is not None and resultado.windows_deleted > 0
     assert _estado(conn, "a_antigo.doc")[0] == "extracted"
@@ -265,11 +267,70 @@ def test_arquivo_em_espera_editado_e_alterado_mesmo_sem_o_componente(tmp_path, s
     conn.close()
 
 
-def test_video_em_espera_editado_tambem_e_alterado(tmp_path, sem_componentes):
+def test_edicao_sem_o_componente_atravessa_varias_rodadas_sem_descartar(tmp_path, sem_componentes):
     origem, _saida, config, conn = _projeto(tmp_path)
     _rodada(conn, config)
-    assert build_update_plan(conn, config, record_warnings=False).changed == ()
+    conn.execute("UPDATE window SET status = 'done'")
+    conn.commit()
+    classificadas = _janelas(conn)
+
+    (origem / "a_antigo.doc").write_bytes(b"\xd0\xcf\x11\xe0documento antigo EDITADO com mais bytes")
     (origem / "video.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42video editado e maior")
+    for _ in range(3):
+        assert _rodada(conn, config) is None
+        assert _janelas(conn) == classificadas
+        assert build_update_plan(conn, config, record_warnings=False).is_empty
+        for nome in ("a_antigo.doc", "video.mp4"):
+            assert _estado(conn, nome) == ("skipped", "component_unavailable", 1)
+    # A varredura gravou os bytes novos: a próxima não lê nada de novo.
+    for nome in ("a_antigo.doc", "video.mp4"):
+        linha = conn.execute("SELECT size FROM file WHERE name = ?", (nome,)).fetchone()
+        assert linha["size"] == (origem / nome).stat().st_size
+    conn.close()
+
+
+def test_edicao_do_mesmo_tamanho_grava_o_hash_novo_e_continua_em_espera(tmp_path, sem_componentes, monkeypatch):
+    import os
+
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _rodada(conn, config)
+    conn.execute("UPDATE window SET status = 'done'")
+    conn.commit()
+    classificadas = _janelas(conn)
+    caminho = origem / "a_antigo.doc"
+    antes = caminho.stat()
+    hash_antigo = conn.execute("SELECT sha256 FROM file WHERE name = 'a_antigo.doc'").fetchone()[0]
+
+    caminho.write_bytes(b"\xd0\xcf\x11\xe0DOCUMENTO ANTIGO")  # mesmo tamanho, bytes outros
+    assert caminho.stat().st_size == antes.st_size
+    os.utime(caminho, (antes.st_atime, antes.st_mtime + 60))
+    with monkeypatch.context() as m:
+        _sem_ler_bytes(m)
+        assert build_update_plan(conn, config, record_warnings=False).is_empty
+
+    assert _rodada(conn, config) is None
+    assert _janelas(conn) == classificadas
+    assert _estado(conn, "a_antigo.doc") == ("skipped", "component_unavailable", 1)
+    assert conn.execute("SELECT sha256 FROM file WHERE name = 'a_antigo.doc'").fetchone()[0] != hash_antigo
+
+    # Com o componente, sai como alterado (sem ler os bytes: o que falta é a
+    # conversão, não a comparação).
+    falso = tmp_path / "soffice.exe"
+    falso.write_bytes(b"MZ")
+    monkeypatch.setattr(legacy_office, "soffice_path", lambda: falso)
+    _sem_ler_bytes(monkeypatch)
+    plano = build_update_plan(conn, config, record_warnings=False)
+    assert [c.relative_path for c in plano.changed] == ["a_antigo.doc"]
+    conn.close()
+
+
+def test_video_em_espera_editado_so_sai_como_alterado_com_o_componente(tmp_path, sem_componentes, monkeypatch):
+    origem, _saida, config, conn = _projeto(tmp_path)
+    _rodada(conn, config)
+    (origem / "video.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42video editado e maior")
+    _sem_ler_bytes(monkeypatch)
+    assert build_update_plan(conn, config, record_warnings=False).is_empty
+    monkeypatch.setattr(media, "tools_present", lambda: True)
     plano = build_update_plan(conn, config, record_warnings=False)
     assert [c.relative_path for c in plano.changed] == ["video.mp4"]
     conn.close()
