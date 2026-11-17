@@ -380,6 +380,118 @@ def test_arquivo_novo_que_nunca_responde_nao_trava_o_plano(tmp_path, monkeypatch
     assert [c.relative_path for c in plano.new] == ["b.pdf"]
 
 
+def _plano_com_varios_mexidos(tmp_path, quantidade):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    for i in range(quantidade):
+        nome = f"d{i}.pdf"
+        (origem / nome).write_text(nome, encoding="utf-8")
+        _registrar(conn, nome, nome, 1.0)  # data antiga: o plano precisa ler
+    return conn, _config(origem, saida)
+
+
+@pytest.fixture
+def leituras(monkeypatch):
+    """`update_plan.compute_hash` controlado: conta as chamadas e trava
+    até `solta`. O registro de leituras pendentes e o de resultados são do
+    processo: limpos antes e depois."""
+    import threading
+
+    from gclaude_indexer import update_plan
+
+    update_plan._forget_reads()
+    estado = {"chamadas": [], "solta": threading.Event(), "espera": None}
+
+    def _hash(caminho):
+        estado["chamadas"].append(caminho.name)
+        if estado["espera"] is not None:
+            import time
+            time.sleep(estado["espera"])
+        else:
+            estado["solta"].wait(30)
+        import hashlib
+        return hashlib.sha256(caminho.read_bytes()).hexdigest()
+
+    monkeypatch.setattr(update_plan, "compute_hash", _hash)
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 0.2)
+    yield estado
+    estado["solta"].set()
+    update_plan._forget_reads()
+
+
+def test_depois_de_tres_travadas_seguidas_o_plano_nao_tenta_mais_ler(tmp_path, leituras):
+    """Achado 3: como a varredura (`MAX_CONSECUTIVE_TIMEOUTS`). Sem o corte,
+    cada arquivo mexido custava o prazo inteiro, e o plano levava horas."""
+    conn, config = _plano_com_varios_mexidos(tmp_path, 6)
+    nao_conferidos: list[str] = []
+    mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
+
+    assert len(leituras["chamadas"]) == 3
+    assert sorted(nao_conferidos) == [f"d{i}.pdf" for i in range(6)]
+    assert mudancas == [] and inalterados == 0
+
+
+def test_parar_interrompe_o_plano_no_meio_de_uma_leitura(tmp_path, leituras, monkeypatch):
+    import time
+
+    from gclaude_indexer import update_plan
+    from gclaude_indexer.run_control import OperationCancelled
+
+    conn, config = _plano_com_varios_mexidos(tmp_path, 2)
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 600.0)
+    inicio = time.monotonic()
+    with pytest.raises(OperationCancelled):
+        detect_changes(conn, config, should_stop=lambda: time.monotonic() - inicio > 0.3)
+    assert time.monotonic() - inicio < 5
+
+
+def test_leitura_ainda_pendente_nao_e_repetida(tmp_path, leituras):
+    """Achado 4: a leitura abandonada pelo prazo continua na thread; abrir a
+    tela de novo não começa outra sobre o mesmo arquivo."""
+    conn, config = _plano_com_varios_mexidos(tmp_path, 1)
+    for _ in range(3):
+        nao_conferidos: list[str] = []
+        detect_changes(conn, config, unverified=nao_conferidos)
+        assert nao_conferidos == ["d0.pdf"]
+    assert leituras["chamadas"] == ["d0.pdf"]
+
+
+def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path, leituras):
+    """O resultado da leitura abandonada é guardado por caminho, tamanho e
+    data: o plano seguinte não lê de novo. Sem isso, um arquivo que leva
+    mais que o prazo curto das telas nunca seria conferido por elas."""
+    import time
+
+    conn, config = _plano_com_varios_mexidos(tmp_path, 1)
+    leituras["espera"] = 0.5
+    nao_conferidos: list[str] = []
+    detect_changes(conn, config, unverified=nao_conferidos)
+    assert nao_conferidos == ["d0.pdf"]
+    time.sleep(1.0)
+
+    nao_conferidos = []
+    mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
+    assert nao_conferidos == [] and mudancas == [] and inalterados == 1
+    assert leituras["chamadas"] == ["d0.pdf"]
+
+
+def test_telas_usam_prazo_curto(tmp_path, leituras, monkeypatch):
+    import time
+
+    from gclaude_indexer import update_plan
+
+    conn, config = _plano_com_varios_mexidos(tmp_path, 1)
+    monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 600.0)
+    inicio = time.monotonic()
+    plano = update_plan.build_update_plan(conn, config, record_warnings=False, read_deadline=0.2)
+    assert time.monotonic() - inicio < 5
+    assert plano.unverified == ("d0.pdf",)
+    assert update_plan.SCREEN_READ_DEADLINE_SECONDS <= 30
+
+
 def test_novo_alterado_e_removido_sao_detectados(tmp_path):
     origem = tmp_path / "origem"
     origem.mkdir()

@@ -42,6 +42,9 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import threading
+import time
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,7 +57,7 @@ from .paths import natural_sort_key
 from .run_control import checkpoint
 from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
 from .windows_prep import sanitize_group_name, window_key, window_spans
-from .worker_pool import CallTimedOut, call_with_deadline, deadline_for_size
+from .worker_pool import CallTimedOut, DaemonThreadExecutor, deadline_for_size
 
 
 class SourceFolderUnavailable(RuntimeError):
@@ -113,16 +116,98 @@ def stale_page_paths(conn: sqlite3.Connection) -> set[str]:
     }
 
 
-def _hash_or_none(path: Path, size: int) -> str | None:
-    """`compute_hash` com o prazo que a varredura dá à mesma leitura
-    (`scanning._scan_files`). `None` quando o arquivo não pode ser lido a
-    tempo: um placeholder do Drive só na nuvem, numa máquina sem rede, nunca
-    responde ou lança `OSError`. Sem o prazo, ele travava para sempre a
-    varredura da tela de execução e a tela de atualização."""
-    try:
-        return call_with_deadline(compute_hash, path, deadline=deadline_for_size(size))
-    except (OSError, CallTimedOut):
-        return None
+# Prazo de cada leitura nas rotas GET (aviso da tela de execução e tela de
+# atualização). O prazo da varredura (`deadline_for_size`: 10 min + 2 min/MB)
+# deixaria a tela pendurada por minutos ou horas num arquivo que o Drive não
+# entrega. Com 15 s e o corte de travamentos seguidos, o pior caso fica perto
+# de 45 s; a leitura abandonada continua na thread e o resultado vale para a
+# próxima abertura (`_READ_RESULTS`), então um arquivo grande que leva mais
+# que isso é conferido na tela seguinte, não nunca. Quem aplica (a execução,
+# o botão Atualizar) usa o prazo inteiro.
+SCREEN_READ_DEADLINE_SECONDS = 15.0
+# Como a varredura (`scanning.MAX_CONSECUTIVE_TIMEOUTS`): várias travadas
+# seguidas são o disco ou o Drive, não o arquivo.
+MAX_CONSECUTIVE_TIMEOUTS = 3
+# Espera de uma leitura em fatias, para Parar valer no meio dela.
+_STOP_POLL_SECONDS = 0.25
+
+# Leituras deste processo, compartilhadas entre planos (cada abertura da tela
+# faz um): as que ainda rodam, abandonadas pelo prazo, não são começadas de
+# novo sobre o mesmo arquivo; as que terminaram valem enquanto o tamanho e a
+# data forem os mesmos — a mesma regra pela qual o plano decide, sem ler, que
+# um arquivo não mudou.
+_READS_LOCK = threading.Lock()
+_PENDING_READS: set[str] = set()
+_READ_RESULTS: dict[tuple[str, int, float], str] = {}
+_MAX_READ_RESULTS = 4096
+
+
+def _forget_reads() -> None:
+    """Esquece os resultados guardados (os testes começam do zero)."""
+    with _READS_LOCK:
+        _READ_RESULTS.clear()
+
+
+class _PlanReader:
+    """As leituras de um plano: o prazo de cada uma (o da varredura, ou o
+    teto das telas), o corte por travamentos seguidos e Parar entre
+    arquivos e durante a espera. `None`: não foi possível ler agora — um
+    placeholder do Drive só na nuvem, numa máquina sem rede, nunca responde
+    ou lança `OSError`."""
+
+    def __init__(self, should_stop=None, deadline_cap: float | None = None):
+        self.should_stop = should_stop
+        self.deadline_cap = deadline_cap
+        self.consecutive_timeouts = 0
+
+    def hash(self, path: Path, size: int, mtime: float | None = None) -> str | None:
+        checkpoint(self.should_stop)
+        key = os.path.normcase(str(path))
+        result_key = (key, size, mtime) if mtime is not None else None
+        with _READS_LOCK:
+            if result_key is not None and result_key in _READ_RESULTS:
+                return _READ_RESULTS[result_key]
+            if self.consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS or key in _PENDING_READS:
+                return None
+            _PENDING_READS.add(key)
+
+        def read() -> str:
+            try:
+                value = compute_hash(path)
+                if result_key is not None:
+                    with _READS_LOCK:
+                        if len(_READ_RESULTS) >= _MAX_READ_RESULTS:
+                            _READ_RESULTS.pop(next(iter(_READ_RESULTS)))
+                        _READ_RESULTS[result_key] = value
+                return value
+            finally:
+                with _READS_LOCK:
+                    _PENDING_READS.discard(key)
+
+        deadline = deadline_for_size(size)
+        if self.deadline_cap is not None:
+            deadline = min(deadline, self.deadline_cap)
+        try:
+            value = self._wait(read, deadline)
+        except CallTimedOut:
+            self.consecutive_timeouts += 1
+            return None
+        except OSError:
+            return None
+        self.consecutive_timeouts = 0
+        return value
+
+    def _wait(self, read, deadline: float) -> str:
+        future = DaemonThreadExecutor().submit(read)
+        limit = time.monotonic() + deadline
+        while True:
+            remaining = limit - time.monotonic()
+            if remaining <= 0:
+                raise CallTimedOut(deadline)
+            try:
+                return future.result(timeout=min(_STOP_POLL_SECONDS, remaining))
+            except FutureTimeoutError:
+                checkpoint(self.should_stop)
 
 
 def detect_changes(
@@ -132,6 +217,7 @@ def detect_changes(
     include_removed: bool = True,
     listed=None,
     unverified: list[str] | None = None,
+    reader: "_PlanReader | None" = None,
 ) -> tuple[list[FileChange], int, str]:
     """New, changed and removed files; how many are unchanged; and the
     folder's fingerprint.
@@ -146,11 +232,16 @@ def detect_changes(
     (`scanning.walk_source_stats`), so the folder is not walked twice.
 
     `unverified`: recebe o caminho de cada arquivo cujo tamanho ou data
-    mudou mas que não pôde ser lido a tempo (`_hash_or_none`). Ele não é
+    mudou mas que não pôde ser lido a tempo (`_PlanReader`). Ele não é
     alterado (um soluço do Drive não descarta janelas) nem inalterado: não
     entra na contagem de inalterados, e nada é gravado, então a próxima
     execução o confere de novo.
+
+    `reader`: as leituras do plano (prazo, corte, Parar); por padrão, o
+    prazo da varredura com `should_stop`.
     """
+    if reader is None:
+        reader = _PlanReader(should_stop)
     source_dir = Path(config.source_folder)
     if not source_dir.is_dir():
         raise SourceFolderUnavailable(str(source_dir))
@@ -271,7 +362,7 @@ def detect_changes(
         # arquivo intocado e o olha de novo na próxima vez: chamá-lo de
         # alterado apagaria as páginas de um documento que ninguém leu. Mas
         # também não é "inalterado": sai à parte, para o aviso.
-        file_hash = _hash_or_none(path, size)
+        file_hash = reader.hash(path, size, mtime)
         if file_hash is None:
             if unverified is not None:
                 unverified.append(relative_path)
@@ -687,6 +778,7 @@ def _intended_membership(
     source_dir: Path,
     new_files: list[FileChange],
     removed_paths: set[str],
+    reader: _PlanReader | None = None,
 ) -> list[tuple[str, str]]:
     """`(relative_path, group_key)` the collection will have after the update.
 
@@ -716,6 +808,8 @@ def _intended_membership(
     duplicate; both walk the paths in the same sorted order, so both pick
     the same original.
     """
+    if reader is None:
+        reader = _PlanReader()
     members: list[tuple[str, str]] = []
     # Content of the index after the apply, by size: two files can only be
     # duplicates if they have the same size, so a new file is hashed only
@@ -751,11 +845,11 @@ def _intended_membership(
 
     def _hash(relative_path: str, size: int) -> str | None:
         # Unreadable, already gone between the walk and this read, or never
-        # answering in time (`_hash_or_none`, the scan's deadline). Leaving
+        # answering in time (`_PlanReader`, the scan's deadline). Leaving
         # it out only means the group is not invalidated for it: the safe
         # direction, and the same one a file that appears after the plan
         # was built already takes.
-        return _hash_or_none(source_dir / relative_path, size)
+        return reader.hash(source_dir / relative_path, size)
 
     for change in new_files:
         # Same name-level decision the scan makes before hashing (archive,
@@ -803,6 +897,7 @@ def build_update_plan(
     should_stop=None,
     include_removed: bool = True,
     listed=None,
+    read_deadline: float | None = None,
 ) -> UpdatePlan:
     """The whole plan: what changed, and what invalidating it would cost.
 
@@ -815,12 +910,15 @@ def build_update_plan(
     modify the project. The plan returned is identical either way; only
     the log entry is suppressed.
 
-    `include_removed` and `listed`: see `detect_changes`.
+    `include_removed` and `listed`: see `detect_changes`. `read_deadline`:
+    teto do prazo de cada leitura, para as rotas GET
+    (`SCREEN_READ_DEADLINE_SECONDS`).
     """
+    reader = _PlanReader(should_stop, read_deadline)
     unverified: list[str] = []
     changes, unchanged, fingerprint = detect_changes(
         conn, config, should_stop=should_stop, include_removed=include_removed, listed=listed,
-        unverified=unverified,
+        unverified=unverified, reader=reader,
     )
     if unverified and record_warnings:
         record_event(
@@ -830,7 +928,7 @@ def build_update_plan(
         )
     return plan_from_changes(
         conn, config, changes, unchanged, fingerprint, language=language,
-        record_warnings=record_warnings, unverified=tuple(unverified),
+        record_warnings=record_warnings, unverified=tuple(unverified), reader=reader,
     )
 
 
@@ -843,6 +941,7 @@ def plan_from_changes(
     language: str | None = None,
     record_warnings: bool = True,
     unverified: tuple[str, ...] = (),
+    reader: _PlanReader | None = None,
 ) -> UpdatePlan:
     """What invalidating `changes` would cost, from the index as it stands.
 
@@ -867,7 +966,7 @@ def plan_from_changes(
 
     intended_by_group: dict[str, list[str]] = {}
     for relative_path, group_key in _intended_membership(
-        conn, config, source_dir, by_kind["new"], removed_paths
+        conn, config, source_dir, by_kind["new"], removed_paths, reader
     ):
         intended_by_group.setdefault(group_key, []).append(relative_path)
     for group_key in intended_by_group:
