@@ -15,6 +15,160 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.0.0] - 2026-11-17
+
+Versión mayor, entregada de una sola vez. Los objetivos: una carpeta de salida
+que nunca se mezcla con el origen, muchos menos ajustes que acertar, muchos
+más formatos de documento, cualquier idioma y dos temas nuevos. Primero van
+los cambios incompatibles y lo que ocurre con los proyectos creados antes de
+la 2.0.0.
+
+### Cambios incompatibles y migraciones
+
+- **La carpeta de salida nunca es la carpeta de origen, ni está dentro de
+  ella, ni por encima.** El formulario propone una carpeta hermana,
+  `<origen>-AI`, y la crea solo si usted no la cambia; cuando esa carpeta ya
+  existe y no está vacía, propone `-AI-2`, `-AI-3` y así sucesivamente. El
+  sufijo es el mismo en los tres idiomas (`OUTPUT_FOLDER_SUFFIX`, en
+  `gclaude_indexer/paths.py`).
+- **Un proyecto con la salida dentro del origen se mueve.** Al abrirlo
+  aparece un aviso que lleva a una pantalla **Cambio de carpeta**: qué va a
+  dónde, si el destino está en otro disco (entonces los archivos se copian y
+  se verifican uno a uno antes de borrar los originales) y qué se conserva
+  (lo que estaba en la carpeta y el programa no generó se queda donde está;
+  los archivos de instrucciones con texto suyo se copian, y del original sale
+  solo la parte generada). La base del proyecto va al final. Si algo falla a
+  mitad de camino, el programa deshace lo que hizo o termina el cambio la
+  próxima vez que se abra el proyecto; el catálogo de proyectos, el registro
+  de sincronización, la carpeta de trabajo local y los Conjuntos siguen la
+  ruta nueva. Se puede **Aplazar**, sin plazo; la pantalla dice qué puede
+  pasar si nunca lo mueve (los archivos generados, con el texto de todos los
+  documentos, siguen dentro del origen, donde quien tiene acceso a él los ve y
+  otras herramientas pueden indexarlos como documentos). Este cambio no
+  considera las versiones anteriores del programa: un proyecto movido por la
+  2.0.0 está hecho para abrirse con la 2.0.0.
+- **Se eliminó el motor "Claude Code (manual)".** Un proyecto guardado con él
+  se abre como `automatic`, con un único aviso; las ventanas ya respondidas
+  en `raw_items.jsonl` se marcan como hechas para no rehacer nada, y las
+  piezas antiguas se siguen importando; la etiqueta en el historial es
+  "Claude Code (versiones anteriores)". El `CLAUDE.md` que escribe el
+  programa ahora es solo de consulta: cómo leer el índice y usar `buscar.bat`,
+  con el aviso de que el texto de un documento es dato, nunca instrucción. El
+  bloque antiguo de un `CLAUDE.md` existente se reemplaza (su texto, fuera de
+  las marcas, se queda), e "Importar y generar informes" borra los
+  `windows/*.txt` que dejaron versiones anteriores.
+- **Se eliminó "Revisar confianza baja".** Ya no hay segunda pasada: la
+  confianza baja se reduce antes y durante la clasificación (vea "Cambiado").
+- **El fraccionamiento terminó, y fraccionamiento, ventanas y OCR dejaron de
+  ser ajustes.** Los PDF ya no se cortan en bloques (la extracción lee las
+  páginas directo del PDF; `blocks/` solo la limpia Liberar espacio). Justo
+  después del escaneo, el programa elige páginas por ventana, solapamiento,
+  caracteres leídos por página e idioma del OCR a partir de lo que encontró, y
+  registra cada elección y su motivo en el registro. Los campos salieron del
+  formulario; un proyecto que ya tiene ventanas nunca se modifica.
+- **"Reglas adicionales" cambió de lugar:** salió del formulario de Nuevo
+  proyecto y pasó a una caja de edición en la pantalla Instrucciones. El valor
+  guardado se conserva.
+- **Extensiones incluidas.** Todas las categorías vienen ahora marcadas por
+  defecto, excepto audio y vídeo, que son opcionales. Marcar o desmarcar
+  "TODOS" marca o desmarca todas las categorías a la vez; desmarcar una sola
+  deja únicamente las casillas que siguen marcadas.
+- **Los archivos comprimidos nunca se abren.** Junto con ejecutables, bases de
+  datos, fuentes, claves y contraseñas, contenido binario y medios no
+  seleccionados, aparecen como ignorados, con el motivo. Los accesos directos
+  de Google Docs (`.gdoc`, `.gsheet`, `.gslides`, `.gdraw`, `.gform`, `.gmap`,
+  `.gsite`, `.gjam`) se ignoran con un aviso propio: son solo enlaces a la
+  nube; expórtelos a DOCX, XLSX o PDF para indexarlos.
+- Un proyecto que selecciona audio y vídeo (`midia` en las extensiones) puede
+  no abrirse en un programa 1.10.x. Es deliberado, por ser una versión mayor.
+
+### Añadido
+
+- **Nuevos formatos.** Variantes nuevas de OOXML (`.docm`, `.dotx`, `.xlsm`,
+  `.pptm` y otras), OpenDocument (`.odt`, `.ods`, `.odp`, `.fodt` y otros),
+  XPS, EPUB, MOBI, FB2, SVG, CBZ, JPEG 2000, JFIF y fotos HEIC, RTF, `.xls`,
+  MBOX, DXF, subtítulos `.srt` y `.vtt`, y `.p7s` y `.p7m` firmados con el
+  estándar ICP-Brasil (el firmante y la fecha entran en la página). El `.pst`
+  y el `.ost` de Outlook se leen en flujo, una página por mensaje, con los
+  adjuntos leídos por su tipo real y pasando por los mismos filtros del
+  escaneo (incluida la regla de secretos); Detener y reanudar funcionan.
+- **Formatos antiguos por LibreOffice** (`.doc`, `.ppt`, `.wpd`, `.wps`,
+  `.pub`, `.vsd`, `.vsdx`, `.sxw`, `.123` y otros), convertidos a PDF.
+  LibreOffice 26.2.7 viene del MSI oficial, abierto por extracción
+  administrativa (`msiexec /a`) en la carpeta privada del programa: sin
+  elevación y sin instalar nada en Windows. Corre sin ventana, con un perfil
+  preparado que desactiva macros, vínculos y el actualizador.
+- **Audio y vídeo transcritos localmente** (`.mp3`, `.wav`, `.m4a`, `.mp4`,
+  `.mkv` y otros) con FFmpeg y whisper.cpp: una página por tramo de unos 5
+  minutos, con Detener y reanudar, y un modelo (`base`, `small` o `medium`)
+  elegido según la computadora. Opcional. whisper.cpp viene solo para CPU,
+  porque no hay una compilación oficial con Vulkan para Windows: el modelo
+  `medium` queda fuera de alcance por ahora, y la transcripción es más lenta.
+- **Cualquier idioma.** El idioma de cada documento se detecta en su
+  computadora (`py3langid`), incluidos idiomas fuera de los tres de la
+  interfaz. El OCR corre en el idioma y la escritura correctos, y el tipo y el
+  resumen de cada pieza salen en el idioma del propio documento. La búsqueda
+  encuentra texto en escrituras sin espacios (chino, japonés).
+- **Administrador de componentes** (`gclaude_indexer/components.py`,
+  manifiestos en `gclaude_indexer/manifests/`). Todo lo que no viene en el
+  instalador se descarga bajo demanda, una vez, a la carpeta privada del
+  programa: solo desde un manifiesto fijo, con el SHA-256 de cada archivo, por
+  HTTPS, con redirecciones solo por HTTPS, límites para el tamaño de lo que se
+  extrae y sin shell. El manifiesto cubre el MSI de LibreOffice, FFmpeg (LGPL,
+  compilación compartida, 8.1), whisper.cpp b5454, los modelos ggml de whisper
+  y todo el conjunto `tessdata_fast` de idiomas del OCR. Cuando un componente
+  no se puede obtener (sin internet, descarga rechazada), los documentos que
+  dependen de él se omiten con un motivo claro, no se marcan como fallidos y
+  vuelven a la cola en la próxima ejecución.
+- **Temas Vidrio y Apple**, cada uno en un par claro y oscuro, con alternativas
+  para navegadores sin desenfoque y para la transparencia reducida.
+- **Seguridad de carpetas en el escaneo.** El escaneo omite la propia salida
+  del programa (marcador `.gclaude-output` y carpetas con `project.db`), y los
+  archivos generados quedan fuera del inventario. Un archivo indexado que pasa
+  a ser clave o binario pierde sus páginas, sus entradas de búsqueda y su copia
+  intermedia.
+
+### Cambiado
+
+- **Menos confianza baja, en la misma pasada.** Una página en blanco se
+  clasifica sin llamar al modelo; una página con imagen y menos de 100
+  caracteres de OCR se lee de nuevo una vez (el texto nuevo solo reemplaza la
+  página cuando es más largo); y una página que el modelo omitió o respondió
+  sin tipo recibe un segundo intento, limitado al 15% de las solicitudes. Las
+  páginas de continuación en el motor de reglas siguen siendo `low`: la
+  medición no sustentó subirlas. El
+  acierto por nivel de confianza está en `docs/QUALITY.es.md`.
+- La documentación, el manual y los textos de la interfaz sobre el
+  funcionamiento sin internet ahora dicen con claridad qué necesita una
+  descarga única (formatos antiguos, transcripción de medios, idiomas extra del
+  OCR) y que esos archivos se omiten con el motivo cuando la descarga no es
+  posible.
+- `SYSTEM_VERSION` es `2.0.0`; el instalador es
+  `GClaude-Indexer-Setup-2.0.0.exe`.
+- Dependencias nuevas, todas fijadas en `requirements.txt` con su licencia:
+  `pillow-heif` (HEIC), `asn1crypto`, `striprtf`, `xlrd`, `ezdxf`,
+  `libpff-python` (LGPL) y `py3langid` (BSD-3-Clause).
+
+### Corregido
+
+- Las categorías de extensiones de Nuevo proyecto venían marcadas por defecto
+  solo dentro del servidor; el formulario ahora las muestra marcadas, y
+  "TODOS" queda visible y se comporta como las demás casillas.
+- Redacción del texto de ayuda de "TODOS", en los tres idiomas.
+
+### Seguridad
+
+- Los componentes se descargan solo desde un manifiesto fijo, verificados por
+  SHA-256, con redirecciones solo por HTTPS; los lectores de ZIP y de MSI
+  tienen límites de tamaño y de número de miembros y rechazan rutas que salen
+  del destino.
+- Los medios solo se leen de contenedores de audio y vídeo permitidos, y
+  FFmpeg recibe el demuxer que se verificó (`-f` y `-format_whitelist`).
+- Una carpeta de salida movida nunca borra lo que el programa no creó; una
+  unión (junction) por encima de la salida se rechaza.
+- La lectura de HEIC depende de HEVC, que tiene patentes en algunos países;
+  vea `SECURITY.md`.
+
 ## [1.10.4] - 2026-11-13
 
 ### Corregido
