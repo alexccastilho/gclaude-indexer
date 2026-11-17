@@ -37,6 +37,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .file_types import ALWAYS_BLOCKED_EXTENSIONS, CATEGORY_ALL, category_of_extension
+from .paths import holds_generated_output
 
 _WALK_SECONDS = 6.0
 _WALK_MAX_FILES = 60_000
@@ -145,6 +146,10 @@ def _walk(folder: Path, categories: list[str], survey: FolderSurvey) -> dict[str
         try:
             entries = list(os.scandir(current))
         except OSError:
+            continue
+        # Mesma regra da varredura: saída gerada (outro projeto, Conjunto)
+        # não entra na amostra. A pasta escolhida em si não conta.
+        if current != folder and holds_generated_output(entry.name for entry in entries):
             continue
         for entry in entries:
             if time.monotonic() - started > _WALK_SECONDS or survey.files >= _WALK_MAX_FILES:

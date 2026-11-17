@@ -67,7 +67,7 @@ class SourceFolderUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class FileChange:
     relative_path: str
-    kind: str  # "new" | "changed" | "removed"
+    kind: str  # "new" | "changed" | "removed" | "generated"
     name: str
     size: int
 
@@ -151,7 +151,16 @@ def detect_changes(
     }
     stale = stale_page_paths(conn)
 
-    if not listed and known:
+    # Linhas de um 1.x antigo cujo caminho está sob uma pasta que a
+    # varredura agora pula (saída de outro projeto, Conjunto): arquivo
+    # gerado, não documento. Saem sem confirmação e fora do "removido".
+    skipped = [folder.casefold() + "/" for folder in getattr(listed, "skipped_folders", ())]
+    generated = {
+        path for path in known
+        if skipped and any(path.casefold().startswith(prefix) for prefix in skipped)
+    }
+
+    if not listed and set(known) - generated:
         raise SourceFolderUnavailable(str(source_dir))
 
     changes: list[FileChange] = []
@@ -196,8 +205,11 @@ def detect_changes(
 
         changes.append(FileChange(relative_path, "changed", path.name, size))
 
+    for relative_path in sorted(generated):
+        changes.append(FileChange(relative_path, "generated", Path(relative_path).name, 0))
+
     if include_removed:
-        for relative_path in sorted(set(known) - seen):
+        for relative_path in sorted(set(known) - seen - generated):
             changes.append(
                 FileChange(relative_path, "removed", Path(relative_path).name, 0)
             )
@@ -252,6 +264,9 @@ class UpdatePlan:
     groups: tuple[GroupInvalidation, ...]
     unchanged_count: int
     fingerprint: str
+    # Linhas que já estavam no índice sob uma pasta gerada. Não pedem
+    # confirmação nem contam como `is_empty`: saem na próxima varredura.
+    generated: tuple[FileChange, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -715,12 +730,16 @@ def build_update_plan(
         conn, config, should_stop=should_stop, include_removed=include_removed, listed=listed,
     )
 
-    by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": []}
+    by_kind: dict[str, list[FileChange]] = {"new": [], "changed": [], "removed": [], "generated": []}
     for change in changes:
         by_kind[change.kind].append(change)
 
     changed_paths = {change.relative_path for change in by_kind["changed"]}
-    removed_paths = {change.relative_path for change in by_kind["removed"]}
+    # Para a geometria dos grupos, um arquivo gerado que sai pesa como um
+    # removido: some do grupo e desloca o que vem depois.
+    removed_paths = {change.relative_path for change in by_kind["removed"]} | {
+        change.relative_path for change in by_kind["generated"]
+    }
 
     source_dir = Path(config.source_folder).resolve()
     stored_by_group = _stored_geometry(conn)
@@ -821,4 +840,5 @@ def build_update_plan(
         groups=tuple(groups),
         unchanged_count=unchanged,
         fingerprint=fingerprint,
+        generated=tuple(by_kind["generated"]),
     )

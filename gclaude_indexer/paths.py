@@ -91,6 +91,10 @@ def natural_sort_key(text: str) -> list[int | str]:
 # documento do acervo na reindexação.
 OUTPUT_FOLDER_SUFFIX = "AI"
 PROJECT_DB_NAME = "project.db"
+# Marcador que os Conjuntos gravam na pasta de destino (que não tem
+# `project.db`): é o que faz a varredura de qualquer projeto reconhecer a
+# pasta como saída gerada e não indexá-la como documento.
+OUTPUT_MARKER_NAME = ".gclaude-output"
 _WRITE_PROOF_NAME = ".gclaude-escrita-teste"
 
 
@@ -137,6 +141,19 @@ def _is_inside(child: Path, parent: Path) -> bool:
         if ancestor.exists() and parent.exists() and _same_folder(ancestor, parent):
             return True
     return False
+
+
+def is_inside_folder(child: Path, parent: Path) -> bool:
+    """`child` está em `parent` (ou é ele): ver `_is_inside`."""
+    return _is_inside(child, parent)
+
+
+def holds_generated_output(entry_names) -> bool:
+    """Uma pasta com `project.db` ou com o marcador dos Conjuntos é saída
+    gerada. Recebe os nomes que a listagem da pasta já trouxe, para a
+    varredura não pagar uma consulta ao disco por pasta."""
+    names = {name.lower() for name in entry_names}
+    return PROJECT_DB_NAME in names or OUTPUT_MARKER_NAME in names
 
 
 def _is_root(path: Path) -> bool:
