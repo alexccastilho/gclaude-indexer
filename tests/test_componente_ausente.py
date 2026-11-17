@@ -337,8 +337,9 @@ def test_video_em_espera_editado_so_sai_como_alterado_com_o_componente(tmp_path,
 
 
 def test_arquivo_em_espera_com_so_a_data_mexida_continua_quieto(tmp_path, sem_componentes):
-    """O Drive reescreve a data sem mudar o conteúdo: o hash decide, como no
-    resto do plano."""
+    """O Drive reescreve a data sem mudar o conteúdo: sem o componente, o
+    plano deixa o arquivo em espera quieto sem ler os bytes, e a varredura,
+    que lê, vê o mesmo hash e só grava a data nova."""
     import os
 
     origem, _saida, config, conn = _projeto(tmp_path)
