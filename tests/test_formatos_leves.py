@@ -1245,3 +1245,82 @@ def test_p7m_com_zip_bomba_dentro_falha_sem_alocar(tmp_path):
     assert convert(conn, config).failed == 1
     assert _arquivo(conn, "bomba.odt.p7m")["status"] == "failed"
     conn.close()
+
+
+# --- trabalho, não só texto: tabelas aninhadas, profundidade e nós visitados ----------------------
+
+
+def _fodt(corpo: str) -> str:
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?><office:document {_ODF_NS}>'
+        f'<office:body><office:text>{corpo}</office:text></office:body></office:document>'
+    )
+
+
+def _tabela(conteudo: str) -> str:
+    return (
+        '<table:table><table:table-row><table:table-cell>'
+        f'{conteudo}</table:table-cell></table:table-row></table:table>'
+    )
+
+
+def test_tabela_aninhada_aparece_uma_vez_so(tmp_path):
+    arquivo = tmp_path / "aninhada.fodt"
+    arquivo.write_text(_fodt(_tabela("<text:p>fora</text:p>" + _tabela("<text:p>dentro</text:p>"))), encoding="utf-8")
+
+    assert light_formats.extract_text_opendocument(arquivo) == "fora\ndentro"
+
+
+def test_linhas_de_cabecalho_e_de_grupo_entram_uma_vez(tmp_path):
+    corpo = (
+        '<table:table><table:table-header-rows><table:table-row><table:table-cell><text:p>Cab</text:p>'
+        '</table:table-cell></table:table-row></table:table-header-rows>'
+        '<table:table-rows><table:table-row><table:table-cell><text:p>L1</text:p></table:table-cell>'
+        '</table:table-row></table:table-rows>'
+        '<table:table-row-group><table:table-row><table:table-cell><text:p>L2</text:p></table:table-cell>'
+        '</table:table-row></table:table-row-group></table:table>'
+    )
+    arquivo = tmp_path / "grupos.fodt"
+    arquivo.write_text(_fodt(corpo), encoding="utf-8")
+
+    assert light_formats.extract_text_opendocument(arquivo) == "Cab\nL1\nL2"
+
+
+def test_tabelas_aninhadas_alem_do_limite_sao_recusadas(tmp_path):
+    conteudo = "<text:p>fundo</text:p>"
+    for _ in range(light_formats._MAX_ODF_DEPTH + 5):
+        conteudo = _tabela(conteudo)
+    arquivo = tmp_path / "funda.fodt"
+    arquivo.write_text(_fodt(conteudo), encoding="utf-8")
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+
+
+def test_span_aninhado_alem_do_limite_e_recusado(tmp_path):
+    corpo = "<text:p>" + "<text:span>" * 60 + "x" + "</text:span>" * 60 + "</text:p>"
+    arquivo = tmp_path / "spans.fodt"
+    arquivo.write_text(_fodt(corpo), encoding="utf-8")
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+
+
+def test_elementos_vazios_demais_estouram_o_orcamento_de_nos(tmp_path, monkeypatch):
+    arquivo = tmp_path / "vazio.fodt"
+    arquivo.write_text(_fodt("<text:span/>" * 500), encoding="utf-8")
+    monkeypatch.setattr(light_formats, "_MAX_ODF_NODES", 100)
+
+    with pytest.raises(light_formats.LightFormatError):
+        light_formats.extract_text_opendocument(arquivo)
+
+
+def test_tabela_larga_e_rasa_legitima_continua_convertendo(tmp_path):
+    celulas = "".join(f"<table:table-cell><text:p>c{n}</text:p></table:table-cell>" for n in range(500))
+    linhas = "".join(f"<table:table-row>{celulas}</table:table-row>" for _ in range(40))
+    arquivo = tmp_path / "larga.fodt"
+    arquivo.write_text(_fodt(f"<table:table>{linhas}</table:table>"), encoding="utf-8")
+
+    texto = light_formats.extract_text_opendocument(arquivo)
+
+    assert texto.count("\n") == 39 and texto.splitlines()[0].split("\t")[499] == "c499"
