@@ -9,6 +9,36 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [Unreleased]
+
+### Fixed
+
+- **Workspace layout: the preferences no longer sit below the fold.** The
+  theme, layout and language selects lived at the end of the side bar, after
+  every project; on a short screen you had to scroll the bar to the bottom to
+  change the theme, and the select still opened off screen. Only the project
+  list scrolls now, the footer stays in sight, and the open project is
+  scrolled into view.
+- **Stylesheets and scripts carry a version in their address** (`?v=`, a
+  hash of `static/`). They were served with no cache rule, so after an update
+  the browser could keep drawing the new pages with the old CSS.
+- **Warning boxes have a style again.** `.notice` (update banner, stale
+  reports, incomplete search index, a component that could not be removed)
+  had no rule at all and rendered as loose text; the update banner's button
+  lacked its base class.
+- **About screen:** the dependency table used Portuguese class names the CSS
+  does not know, so "missing" never turned red.
+- **The test suite no longer writes into the real per-machine folder.** One
+  test created a "Norm" project in `%LOCALAPPDATA%\GClaudeIndexer\projects.json`
+  on every run; every test now gets a temporary folder, with the downloaded
+  components reached through junctions.
+
+### Removed
+
+- Dead code: `settings_proposal.survey_folder` (and the folder walk only it
+  used), `FolderSurvey.scanned_share`, `workdir.intermediate_roots` and the
+  unused `.icon-lg` rule.
+
 ## [2.0.0] - 2026-11-17
 
 A major version, delivered all at once. The goals: an output folder that can

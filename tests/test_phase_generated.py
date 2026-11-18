@@ -58,23 +58,6 @@ def test_pasta_de_conjunto_com_marcador_e_pulada(tmp_path):
     assert _nomes(listagem, origem.resolve()) == {"a.pdf"}
 
 
-def test_a_proposta_de_configuracao_tambem_pula_pasta_gerada(tmp_path):
-    from gclaude_indexer.settings_proposal import FolderSurvey, _walk
-
-    origem = tmp_path / "origem"
-    gerada = origem / "gerada"
-    gerada.mkdir(parents=True)
-    (origem / "a.pdf").write_text("a", encoding="utf-8")
-    (gerada / "project.db").write_bytes(b"")
-    (gerada / "b.pdf").write_text("b", encoding="utf-8")
-
-    survey = FolderSurvey()
-    achados = _walk(origem, ["pdf"], survey)
-
-    assert survey.files == 1
-    assert [p.name for p in achados["pdf"]] == ["a.pdf"]
-
-
 def _registrar(conn, relative_path: str, group_key: str) -> None:
     conn.execute(
         "INSERT INTO file (relative_path, name, extension, size, sha256, mtime,"

@@ -15,6 +15,40 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [Sin publicar]
+
+### Corregido
+
+- **Diseño Área de trabajo: las preferencias ya no quedan fuera de la
+  pantalla.** Los selectores de tema, diseño e idioma estaban al final de la
+  barra lateral, después de todos los proyectos; en una pantalla baja había
+  que desplazar la barra hasta abajo para cambiar el tema, y el selector aún
+  se abría fuera de la pantalla. Ahora solo la lista de proyectos se
+  desplaza, el pie queda a la vista y el proyecto abierto aparece en la
+  lista.
+- **Las hojas de estilo y los scripts llevan la versión en la dirección**
+  (`?v=`, un hash de `static/`). Se servían sin regla de caché, y tras una
+  actualización el navegador podía dibujar las pantallas nuevas con el CSS
+  antiguo.
+- **Los cuadros de aviso vuelven a tener estilo.** `.notice` (banner de
+  actualización, informes desactualizados, índice de búsqueda incompleto,
+  componente que no se pudo eliminar) no tenía ninguna regla y aparecía como
+  texto suelto; al botón del banner de actualización le faltaba la clase
+  base.
+- **Pantalla Acerca de:** la tabla de dependencias usaba clases en portugués
+  que el CSS no conoce, y "ausente" nunca se ponía en rojo.
+- **La batería de pruebas ya no escribe en la carpeta local real de la
+  máquina.** Una prueba creaba un proyecto "Norm" en
+  `%LOCALAPPDATA%\GClaudeIndexer\projects.json` en cada ejecución; ahora
+  cada prueba usa una carpeta temporal, y los componentes descargados se
+  alcanzan mediante uniones (junctions).
+
+### Eliminado
+
+- Código muerto: `settings_proposal.survey_folder` (y el recorrido de
+  carpeta que solo él usaba), `FolderSurvey.scanned_share`,
+  `workdir.intermediate_roots` y la regla `.icon-lg`, sin uso.
+
 ## [2.0.0] - 2026-11-17
 
 Versión mayor, entregada de una sola vez. Los objetivos: una carpeta de salida

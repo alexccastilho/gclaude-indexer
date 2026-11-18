@@ -15,6 +15,37 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [Não lançado]
+
+### Corrigido
+
+- **Layout Área de trabalho: as preferências não ficam mais fora da tela.**
+  Os seletores de tema, layout e idioma ficavam no fim da barra lateral,
+  depois de todos os projetos; numa tela baixa era preciso rolar a barra até
+  embaixo para trocar o tema, e o seletor ainda abria fora da tela. Agora só
+  a lista de projetos rola, o rodapé fica à vista e o projeto aberto aparece
+  na lista.
+- **Folhas de estilo e scripts levam a versão no endereço** (`?v=`, um hash
+  de `static/`). Eram servidos sem regra de cache, e depois de uma
+  atualização o navegador podia desenhar as telas novas com o CSS antigo.
+- **As caixas de aviso voltaram a ter estilo.** `.notice` (banner de
+  atualização, relatórios desatualizados, índice de busca incompleto,
+  componente que não pôde ser removido) não tinha regra nenhuma e aparecia
+  como texto solto; o botão do banner de atualização estava sem a classe
+  base.
+- **Tela Sobre:** a tabela de dependências usava classes em português que o
+  CSS não conhece, e "ausente" nunca ficava vermelho.
+- **A suíte de testes não grava mais na pasta local real da máquina.** Um
+  teste criava um projeto "Norm" em `%LOCALAPPDATA%\GClaudeIndexer\projects.json`
+  a cada execução; agora cada teste usa uma pasta temporária, e os
+  componentes baixados são alcançados por junções.
+
+### Removido
+
+- Código morto: `settings_proposal.survey_folder` (e a varredura de pasta que
+  só ele usava), `FolderSurvey.scanned_share`, `workdir.intermediate_roots` e
+  a regra `.icon-lg`, sem uso.
+
 ## [2.0.0] - 2026-11-17
 
 Versão maior, entregue de uma vez. Os objetivos: uma pasta de saída que nunca
