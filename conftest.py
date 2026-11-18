@@ -23,6 +23,7 @@ Two things have to happen this early:
 
 import os
 import sys
+from pathlib import Path
 
 sys.dont_write_bytecode = True
 # The environment variable as well as the flag: `sys.dont_write_bytecode`
@@ -50,6 +51,91 @@ def _test_client_host():
     yield
     if added:
         app_module.ALLOWED_HOSTS.discard("testserver")
+
+
+# What the suite may still read from the real per-machine folder: the tools
+# and components this machine downloaded (Python packages in `lib`, OCR
+# models, Ghostscript), which several conversion tests need. Everything
+# else there is the user's own data — catalog, sets, sync state.
+_SHARED_LOCAL_FOLDERS = ("lib", "tessdata", "gs", "helper")
+_SHARED_LOCAL_FILES = ("tools.json",)
+
+
+def _real_local_folder() -> Path:
+    from gclaude_indexer import paths
+
+    override = os.environ.get(paths.LOCAL_FOLDER_ENV, "").strip()
+    if override:
+        return Path(override)
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "GClaudeIndexer"
+
+
+def _prepare_local_folder(folder: Path, real: Path) -> None:
+    """Components through junctions (read where they are, never copied),
+    `tools.json` copied, none of the user's files."""
+    import shutil
+
+    for name in _SHARED_LOCAL_FILES:
+        if (real / name).is_file():
+            shutil.copy2(real / name, folder / name)
+    if sys.platform == "win32":
+        import _winapi
+
+        for name in _SHARED_LOCAL_FOLDERS:
+            if (real / name).is_dir():
+                _winapi.CreateJunction(str(real / name), str(folder / name))
+
+
+def _remove_junctions(folder: Path) -> None:
+    """Junctions out before pytest cleans its temporary folders, so that
+    cleanup never walks into the real components. `os.rmdir` removes a
+    junction itself and refuses a folder that is not empty."""
+    for name in _SHARED_LOCAL_FOLDERS:
+        if os.path.lexists(folder / name):
+            os.rmdir(folder / name)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _session_local_folder(tmp_path_factory):
+    r"""The per-machine folder for the whole process, holding no user data.
+
+    `paths.machine_local_folder` holds the project catalog, the sets and the
+    sync state next to the downloaded components. Isolating it was opt-in
+    per test, and one test that forgot (`POST /projects/new`) wrote a "Norm"
+    project into the real `%LOCALAPPDATA%\GClaudeIndexer\projects.json` on
+    every run: 48 of them showed up in the app.
+
+    Set in the process environment, not through `monkeypatch`: a background
+    operation a test started may finish after that test's teardown, and must
+    still land here rather than in the real folder."""
+    from gclaude_indexer import paths
+
+    real = _real_local_folder()
+    folder = tmp_path_factory.mktemp("local-session")
+    _prepare_local_folder(folder, real)
+    previous = os.environ.get(paths.LOCAL_FOLDER_ENV)
+    os.environ[paths.LOCAL_FOLDER_ENV] = str(folder)
+    yield real
+    if previous is None:
+        os.environ.pop(paths.LOCAL_FOLDER_ENV, None)
+    else:
+        os.environ[paths.LOCAL_FOLDER_ENV] = previous
+    _remove_junctions(folder)
+
+
+@pytest.fixture(autouse=True)
+def _machine_local_folder(_session_local_folder, tmp_path_factory, monkeypatch):
+    """Each test on top of that gets a folder of its own, so no test reads
+    what another one left there (a sensor snapshot, a catalog entry). A
+    test that sets the variable itself still wins: its own
+    `monkeypatch.setenv` runs after this one."""
+    from gclaude_indexer import paths
+
+    folder = tmp_path_factory.mktemp("local")
+    _prepare_local_folder(folder, _session_local_folder)
+    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(folder))
+    yield
+    _remove_junctions(folder)
 
 
 @pytest.fixture(autouse=True)
