@@ -69,6 +69,7 @@ ESTIMATED_MODEL_SIZE_MB = 3_232
 ESTIMATED_MODEL_SIZES_MB = {
     "qwen3.5:4b": 3_232,
     "qwen3.5:9b": 6_300,
+    "ornith-1.5:9b": 6_300,  # 2.1.0: Best quality profile, 6.6 GB on ollama.com
 }
 
 

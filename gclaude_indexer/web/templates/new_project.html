@@ -167,16 +167,29 @@
     <p class="help">{{ t('new_project.help_engine') }}</p>
 
     <label for="local_model">{{ t('new_project.local_model') }} {{ m.tooltip(t, 'hint.local_model') }}</label>
-    {% if local_models %}
+    {# 2.1.0: two profiles first ("fastest" / "best quality"), then every other
+       installed model, for whoever wants to compare. #}
+    {% set chosen_model = values.local_model or default_local_model %}
+    {% set profile_models = local_model_profiles.values() | list %}
+    {% set others = local_models | reject('in', profile_models) | list %}
+    {% if chosen_model not in local_model_profiles and chosen_model not in others %}{% set others = [chosen_model] + others %}{% endif %}
     <select id="local_model" name="local_model">
-      {% for model in local_models %}
-      <option value="{{ model }}" {% if (values.local_model or default_local_model) == model %}selected{% endif %}>{{ model }}</option>
-      {% endfor %}
+      <optgroup label="{{ t('new_project.local_model_profiles') }}">
+        {% for profile, profile_model in local_model_profiles.items() %}
+        <option value="{{ profile }}" {% if chosen_model == profile %}selected{% endif %}>{{ t('new_project.local_model_profile_' + profile, model=profile_model) }}</option>
+        {% endfor %}
+      </optgroup>
+      {% if others %}
+      <optgroup label="{{ t('new_project.local_model_others') }}">
+        {% for model in others %}
+        <option value="{{ model }}" {% if chosen_model == model %}selected{% endif %}>{{ model }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
     </select>
     <p class="help">{{ t('new_project.help_local_model') }}</p>
-    {% else %}
-    <input type="text" id="local_model" name="local_model" value="{{ default_local_model }}">
-    <p class="help notice-inline">{{ t('new_project.local_model_no_ollama', default=default_local_model) }}</p>
+    {% if not local_models %}
+    <p class="help notice-inline">{{ t('new_project.local_model_no_ollama', default=local_model_profiles.get(default_local_model, default_local_model)) }}</p>
     {% endif %}
 
     <label for="processing_mode">{{ t('new_project.processing_mode') }} {{ m.tooltip(t, 'hint.processing_mode') }}</label>

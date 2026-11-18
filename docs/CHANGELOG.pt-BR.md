@@ -15,6 +15,65 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.0] - 2026-11-18
+
+### Adicionado
+
+- **Dois perfis para o modelo local: Mais rápido e Melhor qualidade.** O
+  campo "Modelo local" do projeto começa com *Mais rápido* (`qwen3.5:4b`) e
+  *Melhor qualidade, mais lento* (`ornith-1.5:9b`), seguidos dos outros
+  modelos instalados, para comparar. O projeto novo começa em Melhor
+  qualidade numa placa com 8 GB de memória ou mais, e em Mais rápido nas
+  menores, onde o modelo de 9B transborda para a RAM. O instalador baixa os
+  dois modelos (cerca de 10 GB). Medido contra dois gabaritos, na placa de
+  vídeo (Radeon RX 6700 XT):
+
+  | | Acervo de demonstração (72 páginas) | Processo real (83 páginas, 16 documentos) |
+  |---|---|---|
+  | Mais rápido | 87,5% de F1, 2 min 23 s | 46,2% de F1, 14 de 16 inícios, 3 min 26 s |
+  | Melhor qualidade | 100% de F1, 5 min 38 s | 73,7% de F1, 15 de 16 inícios, 7 min 38 s |
+
+  O `qwen3.5:9b`, padrão anterior para placas de 8 GB ou mais, achou menos
+  inícios de documento e juntou mais documentos que os dois.
+- **Tema Aqua**: claro e translúcido, à moda do GNOME (barras e barra
+  lateral de vidro sobre um fundo cor de água, cartões brancos arredondados,
+  destaque azul-petróleo). Vira superfícies opacas quando o sistema pede
+  transparência reduzida.
+
+### Alterado
+
+- **A resposta do modelo vai restrita por um JSON Schema** (saída
+  estruturada do Ollama): exatamente uma linha por página, `n` um inteiro
+  dentro da janela. As linhas não trazem mais `has_table`/`has_image`, que a
+  extração já fornece.
+- **Páginas do mesmo tipo que o modelo marca como continuação ficam numa
+  peça só** (só no mesmo arquivo, e não quando o tipo nomeia uma seção, como
+  "SEÇÃO"). Um relatório de 29 páginas saía em umas 25 peças de uma página.
+  F1 no demo: 96,5% → 100% (Melhor qualidade) e 57,6% → 87,5% (Mais
+  rápido); no processo real, Melhor qualidade foi de 57 para 22 peças para
+  16 documentos.
+- O prompt por página do modelo local não leva bloco do projeto, como em
+  toda execução iniciada pela interface até aqui. Medido quando o bloco
+  passou a poder chegar ao modelo: com o Tema preenchido, o Melhor qualidade
+  cortou pior o processo real (F1 73,7% → 50,0%, 15 → 11 de 16 inícios de
+  documento, 1 → 3 documentos juntados) e também o demo (100% → 96,5%),
+  embora tenha nomeado melhor o tipo. As linhas automáticas de perfil do
+  acervo e de tipo de acervo eram ainda piores e saíram. O Tema continua
+  entrando nas instruções escritas para o Claude.
+
+### Corrigido
+
+- **O modo de processamento "CPU" era ignorado numa execução iniciada pela
+  interface**: o motor local era criado sem as configurações do projeto e
+  carregava o modelo inteiro na placa de vídeo.
+- **Temas escuros: a lista aberta de um select ficava ilegível** (o nome
+  dos temas no seletor de tema, entre outros). As opções tinham texto quase
+  preto fixo, e quatro temas escuros não declaravam `color-scheme: dark`.
+  Todo select agora segue as cores do tema.
+- A tabela de orçamento do pacote (Resultado, Conjuntos) usava fundos creme
+  fixos, com texto claro por cima nos temas escuros; agora usa as cores de
+  aviso e de erro do tema.
+
 ## [2.0.1] - 2026-11-17
 
 ### Corrigido

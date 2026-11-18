@@ -694,25 +694,45 @@ def test_janela_so_de_legislacao_nao_espera_o_modelo(tmp_path, monkeypatch):
 
 
 def test_modelo_automatico_segue_a_vram(monkeypatch):
-    """1.5.14: placa de 8 GB ou mais usa qwen3.5:9b; 6 GB ou menos, qwen3.5:4b."""
+    """1.5.14, revisto na 2.1.0: placa de 8 GB ou mais começa no perfil
+    Melhor qualidade (ornith-1.5:9b); 6 GB ou menos, no Mais rápido
+    (qwen3.5:4b)."""
     from gclaude_indexer import engine_local
 
     assert engine_local.recommended_local_model(6144) == "qwen3.5:4b"
     assert engine_local.recommended_local_model(0) == "qwen3.5:4b"
-    assert engine_local.recommended_local_model(8188) == "qwen3.5:9b"
-    assert engine_local.recommended_local_model(12288) == "qwen3.5:9b"
+    assert engine_local.recommended_local_model(8188) == "ornith-1.5:9b"
+    assert engine_local.recommended_local_model(12288) == "ornith-1.5:9b"
+    assert engine_local.default_local_profile(12288) == "quality"
+    assert engine_local.default_local_profile(6144) == "fast"
     from gclaude_indexer.config import ProjectConfig
 
     monkeypatch.setattr(engine_local, "gpu_vram_mb", lambda: 8192)
     import gclaude_indexer.web.ollama_models as om
 
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
-    assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:9b"
-    # máquina atualizada que ainda não baixou o 9B: fica no 4B que já tem
+    assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "ornith-1.5:9b"
+    # máquina atualizada que ainda não baixou o modelo de qualidade: fica no 4B que já tem
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: name == "qwen3.5:4b")
     assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
     monkeypatch.setattr(engine_local, "gpu_vram_mb", lambda: 6144)
     assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
+
+
+def test_perfis_mais_rapido_e_melhor_qualidade(monkeypatch):
+    """2.1.0: o projeto escolhe um perfil; um nome de modelo continua valendo."""
+    from gclaude_indexer import engine_local
+    from gclaude_indexer.config import ProjectConfig
+    import gclaude_indexer.web.ollama_models as om
+
+    monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
+    cfg = lambda modelo: ProjectConfig(name="x", source_folder=".", output_folder=".", local_model=modelo)
+    assert engine_local.model_to_use(None, cfg("fast")) == "qwen3.5:4b"
+    assert engine_local.model_to_use(None, cfg("quality")) == "ornith-1.5:9b"
+    assert engine_local.model_to_use(None, cfg("qwen3.5:9b")) == "qwen3.5:9b"
+    # perfil de qualidade sem o modelo baixado: o rápido que já está aqui
+    monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: name == "qwen3.5:4b")
+    assert engine_local.model_to_use(None, cfg("quality")) == "qwen3.5:4b"
 
 
 def test_pagina_binaria_antiga_vira_pagina_vazia():

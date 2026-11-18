@@ -61,7 +61,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [CustomMessages]
 brazilianportuguese.OptionalGroup=Opcionais:
-brazilianportuguese.DownloadModel=Baixar agora o modelo de classificação local (cerca de 3,2 GB)
+brazilianportuguese.DownloadModel=Baixar agora os modelos de classificação local (cerca de 10 GB)
 brazilianportuguese.CpuSensorShortcut=Criar também o atalho do sensor de CPU
 brazilianportuguese.InstallingDeps=Instalando dependências. Isto pode levar vários minutos.
 brazilianportuguese.KeepCollections=Os acervos que você já indexou NÃO serão apagados, e a sua lista de projetos também não. Os acervos ficam nas pastas de saída que você escolheu, fora da pasta de instalação.
@@ -81,14 +81,14 @@ brazilianportuguese.DepsPageText=Tudo é baixado e instalado automaticamente, se
 brazilianportuguese.DepTesseract=Tesseract (OCR) e o idioma português — obrigatório
 brazilianportuguese.DepGhostscript=Ghostscript (tratamento de PDF) — obrigatório
 brazilianportuguese.DepOllama=Ollama (classificação com modelo local)
-brazilianportuguese.DepModel=Modelo padrão de classificação (cerca de 3,2 GB)
+brazilianportuguese.DepModel=Modelos de classificação, o mais rápido e o de melhor qualidade (cerca de 10 GB)
 brazilianportuguese.DepSensors=Bibliotecas de sensor (temperatura, potência, relógios)
 brazilianportuguese.CpuSensorComment=GClaude Indexer lendo os sensores da CPU: o Windows pede administrador na abertura, só para o leitor de sensores.
 brazilianportuguese.DepCpuSensor=Atalho do sensor de CPU na área de trabalho
 brazilianportuguese.DepPawnIO=Driver PawnIO (temperatura e potência da CPU; o Windows pede administrador)
 
 english.OptionalGroup=Optional:
-english.DownloadModel=Download the local classification model now (about 3.2 GB)
+english.DownloadModel=Download the local classification models now (about 10 GB)
 english.CpuSensorShortcut=Also create the CPU sensor shortcut
 english.InstallingDeps=Installing dependencies. This can take several minutes.
 english.KeepCollections=Collections you have already indexed will NOT be deleted, and neither will your project list. The collections live in the output folders you chose, outside the installation folder.
@@ -108,14 +108,14 @@ english.DepsPageText=Everything is downloaded and installed automatically, witho
 english.DepTesseract=Tesseract (OCR) and the Portuguese language data — required
 english.DepGhostscript=Ghostscript (PDF handling) — required
 english.DepOllama=Ollama (classification with a local model)
-english.DepModel=Default classification model (about 3.2 GB)
+english.DepModel=Classification models, the fastest and the best-quality one (about 10 GB)
 english.DepSensors=Sensor libraries (temperature, power, clocks)
 english.CpuSensorComment=GClaude Indexer with the CPU sensor: Windows asks for administrator at launch, for the sensor reader only.
 english.DepCpuSensor=CPU sensor shortcut on the desktop
 english.DepPawnIO=PawnIO driver (CPU temperature and power; Windows asks for administrator)
 
 spanish.OptionalGroup=Opcionales:
-spanish.DownloadModel=Descargar ahora el modelo de clasificación local (unos 3,2 GB)
+spanish.DownloadModel=Descargar ahora los modelos de clasificación local (unos 10 GB)
 spanish.CpuSensorShortcut=Crear también el acceso directo del sensor de CPU
 spanish.InstallingDeps=Instalando dependencias. Esto puede tardar varios minutos.
 spanish.KeepCollections=Las colecciones que ya indexó NO se eliminarán, ni tampoco su lista de proyectos. Las colecciones están en las carpetas de salida que usted eligió, fuera de la carpeta de instalación.
@@ -135,7 +135,7 @@ spanish.DepsPageText=Todo se descarga e instala automáticamente, sin abrir ning
 spanish.DepTesseract=Tesseract (OCR) y el idioma portugués — obligatorio
 spanish.DepGhostscript=Ghostscript (tratamiento de PDF) — obligatorio
 spanish.DepOllama=Ollama (clasificación con modelo local)
-spanish.DepModel=Modelo de clasificación predeterminado (unos 3,2 GB)
+spanish.DepModel=Modelos de clasificación, el más rápido y el de mejor calidad (unos 10 GB)
 spanish.DepSensors=Bibliotecas de sensor (temperatura, potencia, relojes)
 spanish.CpuSensorComment=GClaude Indexer leyendo los sensores de CPU: Windows pide administrador al abrir, solo para el lector de sensores.
 spanish.DepCpuSensor=Acceso directo del sensor de CPU en el escritorio
@@ -145,7 +145,7 @@ spanish.DepPawnIO=Controlador PawnIO (temperatura y potencia de la CPU; Windows 
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 ; The model and the CPU-sensor shortcut used to live here. They moved to the
 ; Dependencies page, where the rest of what gets downloaded is listed: a
-; person deciding whether to spend 3.2 GB should see that choice next to
+; person deciding whether to spend ~10 GB should see that choice next to
 ; the other four, not two pages away from them.
 
 [Files]
@@ -195,7 +195,7 @@ Filename: "{app}\Indexer.vbs"; Description: "{cm:LaunchProgram,{#AppName}}"; Fla
 [Code]
 const
   { Positions on the dependency page. Named because Values[3] read out of
-    context says nothing about which 3.2 GB it is deciding. }
+    context says nothing about which ~10 GB it is deciding. }
   DEP_TESSERACT = 0;
   DEP_GHOSTSCRIPT = 1;
   DEP_OLLAMA = 2;
@@ -471,7 +471,7 @@ begin
   DepsChoicePage.Values[DEP_SENSORS] := True;
 
   { 1.5.9, at the user's request: both ticked by default. The size stays
-    in the label, so the 3.2 GB download is still a visible choice; an
+    in the label, so the ~10 GB download (2.1.0: both profile models) is still a visible choice; an
     update finds the model already in Ollama and the pull returns at once. }
   DepsChoicePage.Values[DEP_MODEL] := True;
   DepsChoicePage.Values[DEP_CPUSENSOR] := True;

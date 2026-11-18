@@ -29,7 +29,7 @@ import sqlite3
 
 from .config import ProjectConfig
 from .hardware import diagnose, choose_model
-from .engine_local import LocalEngine, classify_pending as classify_pending_local, model_to_use
+from .engine_local import classify_pending as classify_pending_local, model_to_use
 from .engine_rules import classify_pending as classify_pending_rules
 
 
@@ -50,10 +50,12 @@ def run_classification(
     effective_engine = resolve_effective_engine(conn, config, language=language)
 
     if effective_engine == "local":
-        result = classify_pending_local(
-            conn, config, local_engine=LocalEngine(model=model_to_use(conn, config)),
-            should_stop=should_stop, language=language,
-        )
+        # 2.1.0: the engine is built by `classify_pending` itself, from the
+        # project. Built here, it used to lose `config` (no Subject, Collection
+        # type, Role or Extra rules ever reached the prompt of a run started
+        # from the interface) and `processing_mode` ("cpu" still loaded the
+        # whole model on the card).
+        result = classify_pending_local(conn, config, should_stop=should_stop, language=language)
         return "local", result
 
     result = classify_pending_rules(conn, config, should_stop=should_stop, language=language)

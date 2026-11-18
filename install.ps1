@@ -2258,20 +2258,21 @@ if ($OllamaPath) {
     # (the single source of truth in the project) instead of being
     # repeated here as a literal, so there aren't two versions of the
     # model name that could drift apart.
-    $DefaultModel = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import recommended_local_model, gpu_vram_mb; print(recommended_local_model(), gpu_vram_mb())" })".Trim()
-    # 1.5.14: the model follows the card. 8 GB of VRAM or more takes
-    # qwen3.5:9b; 6 GB or less keeps qwen3.5:4b (larger models spill into
-    # system RAM there and run several times slower).
+    # 2.1.0: both profile models, fastest and best quality, so that the
+    # project form can offer either without a download in the middle of a
+    # run. Names from `engine_local.LOCAL_MODEL_PROFILES`, the single source
+    # of truth; the card's memory is still printed, since on less than 8 GB
+    # the quality model spills into RAM (the form says so).
+    $ModelInfo = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import FAST_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb; print(FAST_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb())" })".Trim()
+    $ProfileModels = @()
     $DetectedVram = 0
-    if ($DefaultModel -match '^(\S+)\s+(\d+)$') {
-        $DefaultModel = $Matches[1]
-        $DetectedVram = [int]$Matches[2]
-    }
-    if ($DefaultModel) {
-        Write-Host "Video memory detected: $DetectedVram MB. Local model: $DefaultModel" -ForegroundColor Cyan
+    if ($ModelInfo -match '^(\S+)\s+(\S+)\s+(\d+)$') {
+        $ProfileModels = @($Matches[1], $Matches[2])
+        $DetectedVram = [int]$Matches[3]
+        Write-Host "Video memory detected: $DetectedVram MB. Local models: $($ProfileModels -join ', ')" -ForegroundColor Cyan
     }
 
-    if ($DefaultModel) {
+    if ($ProfileModels.Count -gt 0) {
         # Before asking Ollama anything at all. Both questions below go to
         # a server, and with the server down the answers are not "no" —
         # they are nothing, which is worse, because the script would print
@@ -2282,36 +2283,38 @@ if ($OllamaPath) {
         # startup, and `ollama list` then writes a connection error and
         # exits non-zero. That used to end the installation right here.
         $ModelList = Invoke-NativeCommand { & $OllamaPath list 2>$null }
-        $HasDefaultModel = ($LASTEXITCODE -eq 0) -and ($ModelList -match [regex]::Escape($DefaultModel))
+        $Missing = @($ProfileModels | Where-Object { -not (($LASTEXITCODE -eq 0) -and ($ModelList -match [regex]::Escape($_))) })
 
-        if ($HasDefaultModel) {
-            Write-Host "Default model ($DefaultModel) is already downloaded." -ForegroundColor Green
+        if ($Missing.Count -eq 0) {
+            Write-Host "Classification models ($($ProfileModels -join ', ')) are already downloaded." -ForegroundColor Green
         } else {
-            Write-Host "Default model ($DefaultModel) is not downloaded." -ForegroundColor Yellow
-            $ModelCommand = "ollama pull $DefaultModel"
-            # `-SkipModelDownload` overrides `-AutoInstall` for this one
-            # download, and only this one: the graphical installer says
-            # yes to everything else while leaving the several-gigabyte
-            # model as an option the user ticks deliberately.
+            Write-Host "Classification models not downloaded: $($Missing -join ', ')" -ForegroundColor Yellow
+            # `-SkipModelDownload` overrides `-AutoInstall` for these
+            # downloads, and only these: the graphical installer says yes to
+            # everything else while leaving the several-gigabyte models as
+            # an option the user ticks deliberately.
             $Proceed = [bool]$AutoInstall -and (-not $SkipModelDownload)
             if (-not $AutoInstall) {
-                Write-Host "  The default model download is large (several GB)." -ForegroundColor Yellow
-                $answer = Read-Host "  Download the default model now? (Y/N)"
+                Write-Host "  The model downloads are large (several GB)." -ForegroundColor Yellow
+                $answer = Read-Host "  Download the classification models now? (Y/N)"
                 $Proceed = $answer -match '^[SsYy]'
             }
-            if ($Proceed) {
-                Write-InstallStatus -Step 7 -Total 8 -Key "model" -Text "Baixando o modelo de classificacao (varios GB)"
-                Write-Host "  downloading $DefaultModel (this can take a while) ..." -ForegroundColor Cyan
-                Invoke-NativeCommand { & $OllamaPath pull $DefaultModel }
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "Model $DefaultModel downloaded." -ForegroundColor Green
+            foreach ($Model in $Missing) {
+                $ModelCommand = "ollama pull $Model"
+                if ($Proceed) {
+                    Write-InstallStatus -Step 7 -Total 8 -Key "model" -Text "Baixando os modelos de classificacao (varios GB)"
+                    Write-Host "  downloading $Model (this can take a while) ..." -ForegroundColor Cyan
+                    Invoke-NativeCommand { & $OllamaPath pull $Model }
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "Model $Model downloaded." -ForegroundColor Green
+                    } else {
+                        Write-Host "Failed to download model $Model. To try again later:" -ForegroundColor Yellow
+                        Write-Host "  $ModelCommand" -ForegroundColor Yellow
+                    }
                 } else {
-                    Write-Host "Failed to download model $DefaultModel. To try again later:" -ForegroundColor Yellow
+                    Write-Host "  skipped. To download it later:" -ForegroundColor Yellow
                     Write-Host "  $ModelCommand" -ForegroundColor Yellow
                 }
-            } else {
-                Write-Host "  skipped. To download it later:" -ForegroundColor Yellow
-                Write-Host "  $ModelCommand" -ForegroundColor Yellow
             }
         }
     }

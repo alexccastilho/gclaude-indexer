@@ -39,6 +39,8 @@ AVAILABLE_THEMES: tuple[str, ...] = (
     # 2.0.0: glass and an iOS/macOS look, each as a light/dark pair like
     # Studio. Appended at the end so the older positions stay put.
     "glass", "glass_dark", "apple", "apple_dark",
+    # 2.1.0: light and translucent, GNOME/libadwaita style.
+    "aqua",
 )
 THEME_COOKIE_NAME = "theme"
 

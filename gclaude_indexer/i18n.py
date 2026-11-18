@@ -128,7 +128,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.local.description": "roda qwen3.5:4b (ou qwen3.5:9b com placa de 8 GB ou mais) na sua máquina pelo Ollama, sem conta e sem internet. Exige o Ollama instalado; sem ele, cai nas regras com aviso.",
         "engine.claude_code.name": "Claude Code (versões anteriores)",
         "new_project.local_model": "Modelo local",
-        "new_project.help_local_model": 'Modelos instalados no Ollama desta máquina. A escolha é usada de verdade na classificação: deixe em "automático" para usar qwen3.5:4b (placa de até 6 GB) ou qwen3.5:9b (8 GB ou mais), ou escolha outro para comparar a qualidade entre modelos.',
+        "new_project.local_model_profiles": "Perfis",
+        "new_project.local_model_profile_fast": "Mais rápido ({model})",
+        "new_project.local_model_profile_quality": "Melhor qualidade, mais lento ({model})",
+        "new_project.local_model_others": "Outros modelos instalados",
+        "new_project.help_local_model": "Mais rápido termina em cerca de metade do tempo. Melhor qualidade acerta melhor onde cada documento começa e termina e fatia menos os documentos longos; numa placa com menos de 8 GB de memória ele transborda para a RAM e fica bem mais lento. Os outros modelos instalados servem para comparar.",
         "new_project.local_model_no_ollama": "O Ollama não está respondendo em 127.0.0.1:11434, então não dá para listar os modelos instalados. A classificação com o motor \"local\" usa o modelo escolhido aqui (padrão {default}), e precisa do Ollama no ar na hora de rodar; parado, o sistema cai no motor de regras com aviso.",
         "new_project.section_instructions": "Instruções do projeto",
         "new_project.instructions_role": "Papel nas instruções",
@@ -257,9 +261,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "A lista mostra o que está instalado no Ollama desta máquina, sempre consultado em "
             "127.0.0.1, sem conta e sem internet. O motor \"local\" classifica com o modelo "
-            "escolhido aqui. O \"automático\" usa qwen3.5:4b, ou qwen3.5:9b com 8 GB de VRAM ou mais; escolher outro serve para "
-            "comparar a qualidade entre modelos. Com o Ollama parado, o campo vira texto livre e "
-            "a classificação cai no motor de regras com aviso."
+            "escolhido aqui. Mais rápido usa qwen3.5:4b; Melhor qualidade usa ornith-1.5:9b, que "
+            "precisa de 8 GB de VRAM para rodar inteiro na placa. O projeto novo já vem com Melhor "
+            "qualidade numa placa assim, e com Mais rápido nas menores. Escolher outro modelo serve "
+            "para comparar. Com o Ollama parado, a classificação cai no motor de regras com aviso."
         ),
         "hint.processing_mode": (
             "Controla se o motor \"local\" usa a GPU. \"automático\"/\"forçar GPU\" usam o máximo "
@@ -946,6 +951,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "theme.glass_dark": "◆ Vidro escuro",
         "theme.apple": "○ Apple",
         "theme.apple_dark": "● Apple escuro",
+        "theme.aqua": "◌ Aqua",
         "theme.label": "tema",
         "theme.light": "☀ Claro",
         "theme.dark": "☾ Escuro",
@@ -1409,7 +1415,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.local.description": "runs qwen3.5:4b (or qwen3.5:9b with an 8 GB card or larger) on your machine through Ollama, no account and no internet. Requires Ollama installed; without it, falls back to rules with a warning.",
         "engine.claude_code.name": "Claude Code (earlier versions)",
         "new_project.local_model": "Local model",
-        "new_project.help_local_model": 'Models installed in Ollama on this machine. Your choice is actually used for classification: leave it as "automatic" to use qwen3.5:4b (cards up to 6 GB) or qwen3.5:9b (8 GB or more), or pick another one to compare quality across models.',
+        "new_project.local_model_profiles": "Profiles",
+        "new_project.local_model_profile_fast": "Fastest ({model})",
+        "new_project.local_model_profile_quality": "Best quality, slower ({model})",
+        "new_project.local_model_others": "Other installed models",
+        "new_project.help_local_model": "Fastest finishes in about half the time. Best quality finds where each document starts and ends more accurately and slices long documents less; on a card with less than 8 GB of memory it spills into RAM and gets much slower. The other installed models are there for comparison.",
         "new_project.local_model_no_ollama": "Ollama is not responding on 127.0.0.1:11434, so the installed models cannot be listed. Classification with the \"local\" engine uses the model chosen here (default {default}), and needs Ollama running at classification time; if it is down, the system falls back to the rules engine with a warning.",
         "new_project.section_instructions": "Project instructions",
         "new_project.instructions_role": "Role in the instructions",
@@ -1537,9 +1547,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "The list shows what is installed in Ollama on this machine, always queried at "
             "127.0.0.1, with no account and no internet. The \"local\" engine classifies with the "
-            "model chosen here. \"automatic\" uses qwen3.5:4b, or qwen3.5:9b with 8 GB of VRAM or more; picking another one "
-            "lets you compare quality across models. With Ollama stopped, the field becomes free "
-            "text and classification falls back to the rules engine with a warning."
+            "model chosen here. Fastest uses qwen3.5:4b; Best quality uses ornith-1.5:9b, which "
+            "needs 8 GB of VRAM to run whole on the card. A new project starts on Best quality on "
+            "such a card and on Fastest on smaller ones. Picking another model is for comparison. "
+            "With Ollama stopped, classification falls back to the rules engine with a warning."
         ),
         "hint.processing_mode": (
             'Controls whether the "local" engine uses the GPU. "automatic"/"force GPU" use as much '
@@ -2199,6 +2210,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "theme.glass_dark": "◆ Glass dark",
         "theme.apple": "○ Apple",
         "theme.apple_dark": "● Apple dark",
+        "theme.aqua": "◌ Aqua",
         "theme.label": "theme",
         "theme.light": "☀ Light",
         "theme.dark": "☾ Dark",
@@ -2658,7 +2670,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "engine.local.description": "ejecuta qwen3.5:4b (o qwen3.5:9b con tarjeta de 8 GB o más) en tu máquina con Ollama, sin cuenta y sin internet. Requiere Ollama instalado; sin él, recurre a las reglas con aviso.",
         "engine.claude_code.name": "Claude Code (versiones anteriores)",
         "new_project.local_model": "Modelo local",
-        "new_project.help_local_model": 'Modelos instalados en Ollama de esta máquina. La elección se usa de verdad en la clasificación: déjelo en "automático" para usar qwen3.5:4b (tarjeta de hasta 6 GB) o qwen3.5:9b (8 GB o más), o elija otro para comparar la calidad entre modelos.',
+        "new_project.local_model_profiles": "Perfiles",
+        "new_project.local_model_profile_fast": "Más rápido ({model})",
+        "new_project.local_model_profile_quality": "Mejor calidad, más lento ({model})",
+        "new_project.local_model_others": "Otros modelos instalados",
+        "new_project.help_local_model": "Más rápido termina en cerca de la mitad del tiempo. Mejor calidad acierta mejor dónde empieza y termina cada documento y parte menos los documentos largos; en una tarjeta con menos de 8 GB de memoria se desborda a la RAM y se vuelve mucho más lento. Los otros modelos instalados sirven para comparar.",
         "new_project.local_model_no_ollama": "Ollama no responde en 127.0.0.1:11434, así que no se pueden listar los modelos instalados. La clasificación con el motor \"local\" usa el modelo elegido aquí (por defecto {default}), y necesita que Ollama esté activo al momento de clasificar; si está detenido, el sistema recurre al motor de reglas con aviso.",
         "new_project.section_instructions": "Instrucciones del proyecto",
         "new_project.instructions_role": "Rol en las instrucciones",
@@ -2788,9 +2804,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "hint.local_model": (
             "La lista muestra lo instalado en Ollama de esta máquina, siempre consultado en "
             "127.0.0.1, sin cuenta y sin internet. El motor \"local\" clasifica con el modelo "
-            "elegido aquí. El \"automático\" usa qwen3.5:4b, o qwen3.5:9b con 8 GB de VRAM o más; elegir otro sirve "
-            "para comparar la calidad entre modelos. Con Ollama detenido, el campo pasa a texto "
-            "libre y la clasificación recurre al motor de reglas con aviso."
+            "elegido aquí. Más rápido usa qwen3.5:4b; Mejor calidad usa ornith-1.5:9b, que necesita "
+            "8 GB de VRAM para correr entero en la tarjeta. El proyecto nuevo empieza en Mejor "
+            "calidad con una tarjeta así, y en Más rápido con las menores. Elegir otro modelo sirve "
+            "para comparar. Con Ollama detenido, la clasificación recurre al motor de reglas con aviso."
         ),
         "hint.processing_mode": (
             'Controla si el motor "local" usa la GPU. "automático"/"forzar GPU" usan el máximo de '
@@ -3457,6 +3474,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "theme.glass_dark": "◆ Vidrio oscuro",
         "theme.apple": "○ Apple",
         "theme.apple_dark": "● Apple oscuro",
+        "theme.aqua": "◌ Aqua",
         "theme.label": "tema",
         "theme.light": "☀ Claro",
         "theme.dark": "☾ Oscuro",

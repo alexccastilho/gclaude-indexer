@@ -115,7 +115,7 @@ def _responder(motor, regra):
     """`_generate` que lê as páginas do prompt e responde com `regra(ref, nota)`."""
     chamadas: list[dict] = []
 
-    def gerar(prompt):
+    def gerar(prompt, schema=None):
         referencias = re.findall(r"--- Página (\d+) \((f\. \d+),", prompt)
         nota = "segunda leitura" in prompt or "COM O TEXTO INTEIRO" in prompt
         chamadas.append({"refs": [r for _n, r in referencias], "retry": nota})
@@ -221,45 +221,17 @@ def test_pagina_sem_tipo_nao_ganha_segunda_tentativa_se_ja_foi_a_da_resposta_fal
     assert sum(1 for c in chamadas if c["retry"]) == 1
 
 
-def test_perfil_do_acervo_entra_no_contexto_so_sem_tema(tmp_path):
+def test_contexto_tem_so_o_que_o_usuario_escreveu(tmp_path):
+    """2.1.0: o perfil tirado dos arquivos e a natureza do acervo saíram do
+    prompt; medidos, os dois pioravam a divisão em documentos."""
     from gclaude_indexer.config import load_config
 
     (tmp_path / "origem").mkdir()
     base = {"name": "x", "source_folder": str(tmp_path / "origem"), "output_folder": str(tmp_path / "saida")}
-    sem_tema = load_config(base)
-    com_tema = load_config({**base, "subject": "Obras da escola"})
-    perfil = "arquivos: pdf (3); termos frequentes nos títulos: ofício, parecer"
-    assert "Perfil do acervo" in engine_local.build_context(sem_tema, perfil)
-    assert "ofício, parecer" in engine_local.build_context(sem_tema, perfil)
-    assert "Perfil do acervo" not in engine_local.build_context(com_tema, perfil)
-    assert "Obras da escola" in engine_local.build_context(com_tema, perfil)
-    assert "Perfil do acervo" not in engine_local.build_context(sem_tema)
-
-
-def test_perfil_resume_tipos_idiomas_e_termos_dos_titulos(tmp_path):
-    from gclaude_indexer import collection_profile
-    from gclaude_indexer.db import connect, init_schema
-
-    conn = connect(tmp_path / "p.db")
-    init_schema(conn)
-    for caminho, extensao, idioma in (("a.pdf", "pdf", "pt"), ("b.pdf", "pdf", "pt"), ("c.docx", "docx", "")):
-        conn.execute(
-            "INSERT INTO file (relative_path, name, extension, size, sha256, group_key, status, language)"
-            " VALUES (?, ?, ?, 1, 'x', 'g', 'extracted', ?)", (caminho, caminho, extensao, idioma),
-        )
-    fid = conn.execute("SELECT id FROM file WHERE name = 'a.pdf'").fetchone()[0]
-    for numero, texto in enumerate(["PARECER JURÍDICO nº 1\ncorpo", "PARECER JURÍDICO nº 2", "Despacho simples"], 1):
-        conn.execute(
-            "INSERT INTO page (file_id, number, reference, char_count, image_count, has_table, text)"
-            " VALUES (?, ?, ?, 20, 0, 0, ?)", (fid, numero, f"f. {numero}", texto),
-        )
-    conn.commit()
-    perfil = collection_profile.build_profile(conn)
-    assert "pdf (2)" in perfil and "docx (1)" in perfil
-    assert "parecer" in perfil and "jurídico" in perfil
-    assert "despacho" not in perfil  # aparece num título só
-    assert len(perfil) <= 400
-    conn.close()
+    assert engine_local.build_context(load_config(base)) == ""
+    contexto = engine_local.build_context(load_config({**base, "subject": "Obras da escola"}))
+    assert "Obras da escola" in contexto
+    assert "Natureza do acervo" not in contexto and "Perfil do acervo" not in contexto
 
 
 # --- texto inteiro da página no índice ---------------------------------------

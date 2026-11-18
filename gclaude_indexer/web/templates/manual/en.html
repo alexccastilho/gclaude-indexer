@@ -107,7 +107,7 @@
 <h3>Classification</h3>
 <dl>
   <dt>Classification engine</dt><dd>What identifies the items. See the comparison in <a href="#motores">Classification engines</a>.</dd>
-  <dt>Local model</dt><dd>Which Ollama model the local engine uses. <em>automatic</em> chooses by the graphics card: <code>qwen3.5:9b</code> on a card with 8 GB of memory or more, <code>qwen3.5:4b</code> on smaller ones. Choosing another one is useful for comparing quality.</dd>
+  <dt>Local model</dt><dd>Which Ollama model the local engine uses. There are two profiles: <em>Fastest</em> (<code>qwen3.5:4b</code>) and <em>Best quality, slower</em> (<code>ornith-1.5:9b</code>), which finds where each document starts and ends more accurately and takes about twice as long. A new project starts on Best quality on a card with 8 GB of memory or more, and on Fastest on smaller ones, where the larger model spills into RAM. The other installed models are listed below the profiles, for comparison.</dd>
   <dt>Processing</dt><dd>Whether the local engine uses the graphics card (GPU). <em>automatic</em> and <em>force GPU</em> use as much of it as possible, much faster. <em>CPU/RAM only</em> leaves the card free for other programs, but is slower.</dd>
   <dt>Parallelism</dt><dd>How many files conversion and reading process at the same time. <em>economical</em>: one at a time; <em>automatic</em>: uses the processor cores and leaves one free so you can keep using the computer (recommended); <em>maximum</em>: finishes sooner, but the computer gets slow in the meantime.</dd>
 </dl>
@@ -166,18 +166,19 @@
 </table>
 </div>
 <p>The <em>Claude Code (manual)</em> engine no longer exists in 2.0.0. A project that used it opens with the <em>Automatic</em> engine, with a notice, and the items that had already been classified stay valid. Claude Code still works for consulting the index: the <code>CLAUDE.md</code> in the output folder teaches it to read the index and use <code>buscar.bat</code>.</p>
-<p>To give you an idea of time, on the demo collection (72 pages): 4 seconds with the rules, 4 minutes with <code>qwen3.5:9b</code> on a 12 GB card. A collection of thousands of pages takes hours with the local model and minutes with the rules.</p>
+<p>To give you an idea of time, on the demo collection (72 pages): 4 seconds with the rules, 2 and a half minutes on the Fastest profile and 5 and a half on Best quality, on a 12 GB card. Without a graphics card, on the CPU alone, the local model is 5 to 11 times slower. A collection of thousands of pages takes hours with the local model and minutes with the rules.</p>
 <p>Pages of laws, decrees and ordinances saved from the Planalto website do not go through any engine: the program reads them from the structure of the page itself and knows the type, number, date and summary. See <a href="#normas-e-busca">Cited acts and searching the collection</a>.</p>
 <p class="manual-tip">Tip: the Result screen has the <em>Compare engines and models</em> table. Run the same collection with different engines and compare time and score before deciding.</p>
 </section>
 
 <section id="acerto">
 <h2>9. What accuracy to expect</h2>
-<p>The quality score on the Result screen says how much confidence the engine itself declared and how many fields it filled in. It does not say whether the item is right. For that, the index is measured against a hand-checked answer key on the demo collection, in every version that touches the classifier. In the latest measurement (02/11/2026):</p>
+<p>The quality score on the Result screen says how much confidence the engine itself declared and how many fields it filled in. It does not say whether the item is right. For that, the index is measured against a hand-checked answer key on the demo collection, in every version that touches the classifier. In the latest measurements (rules on 02/11/2026; local model on 18/11/2026, version 2.1.0):</p>
 <ul>
   <li><strong>No page was lost</strong>, with either engine. The program guarantees this: every page of the collection lands in some item of the index.</li>
   <li><strong>Rules</strong>: found 36 of the 41 items, got the type right for 94% of them, the date for half and the author for one in five. In 4 seconds.</li>
-  <li><strong>Local model (<code>qwen3.5:9b</code>)</strong>: got the date right for 89% and the author for 84% of the items found, but sliced items (65 in the index for 41 in the answer key). In 4 minutes.</li>
+  <li><strong>Local model, Best quality (<code>ornith-1.5:9b</code>)</strong>: found all 41 items with the right limits. In 5 and a half minutes.</li>
+  <li><strong>Local model, Fastest (<code>qwen3.5:4b</code>)</strong>: 87.5% F1 on the item limits (39 in the index for 41 in the answer key). In 2 and a half minutes.</li>
 </ul>
 <p>In practice: the index takes Claude to the right page, and Claude checks the text in the original document before answering, as the generated instructions tell it to. Whoever programs can measure accuracy on their own machine with the <code>tools/medir_acerto.py</code> tool, over the demo collection's output folder. The full numbers, what each one means and what they do not say are in <code>docs/QUALITY.md</code> in the repository.</p>
 <p><strong>Low confidence.</strong> There is no "review" step afterwards anymore: the program reduces low confidence during classification itself. A blank page is classified without consulting the model. A page with an image and almost no OCR text is read again once, and the new text counts only if it is longer. And a page that the model skipped or answered without a type gets a second attempt, capped at 15% of the requests. The hit rate by confidence level is in <code>docs/QUALITY.md</code>.</p>

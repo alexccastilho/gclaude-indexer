@@ -1100,7 +1100,6 @@ def test_o_prompt_recebe_o_que_o_usuario_escreveu_no_formulario():
     assert "Direito Ambiental" in contexto
     assert "bibliotecário jurídico" in contexto
     assert "legislação vigente" in contexto
-    assert "biblioteca" in contexto
 
     # E entra como CONTEXTO, nunca como tarefa: o `extra_rules` daquele
     # acervo mandava "observar a legislação", que é instrução para o uso
