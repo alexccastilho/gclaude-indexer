@@ -111,7 +111,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "2.0.0"
+SYSTEM_VERSION = "2.0.1"
 
 
 def _static_version() -> str:
