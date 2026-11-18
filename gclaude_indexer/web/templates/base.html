@@ -8,13 +8,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ t('app.name') }}{% endblock %}</title>
 <link rel="icon" type="image/png" href="/static/logo.png">
-<script src="/static/htmx.min.js"></script>
-<link rel="stylesheet" href="/static/style.css">
-<link rel="stylesheet" href="/static/layouts.css">
-<link rel="stylesheet" href="/static/motion.css">
-<link rel="stylesheet" href="/static/polish.css">
-{% if ws %}<link rel="stylesheet" href="/static/workspace.css">{% endif %}
-<link rel="stylesheet" href="/static/themes.css">
+<script src="/static/htmx.min.js?v={{ static_version }}"></script>
+<link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/layouts.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/motion.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/polish.css?v={{ static_version }}">
+{% if ws %}<link rel="stylesheet" href="/static/workspace.css?v={{ static_version }}">{% endif %}
+<link rel="stylesheet" href="/static/themes.css?v={{ static_version }}">
 <noscript><style>.notice-bar[hidden] { display: flex; }</style></noscript>
 </head>
 <body>

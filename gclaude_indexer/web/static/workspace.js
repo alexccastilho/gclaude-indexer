@@ -10,6 +10,18 @@
    Enter opens; Esc closes and gives the focus back. */
 (function () {
   "use strict";
+  // The project list scrolls on its own (workspace.css): keep the open
+  // project in sight instead of somewhere below the fold.
+  var currentProject = document.querySelector('.ws-projects [aria-current="page"]');
+  if (currentProject) {
+    var projectList = currentProject.parentNode;
+    var listBox = projectList.getBoundingClientRect();
+    var itemBox = currentProject.getBoundingClientRect();
+    if (itemBox.top < listBox.top || itemBox.bottom > listBox.bottom) {
+      projectList.scrollTop += itemBox.top - listBox.top - listBox.height / 2 + itemBox.height / 2;
+    }
+  }
+
   var dialog = document.getElementById("ws-palette");
   var scrim = document.getElementById("ws-palette-scrim");
   var input = document.getElementById("ws-palette-input");

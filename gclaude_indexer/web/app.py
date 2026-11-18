@@ -20,6 +20,7 @@ arguments.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import itertools
 import os
@@ -111,6 +112,23 @@ WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 SYSTEM_VERSION = "2.0.0"
+
+
+def _static_version() -> str:
+    """Short hash of everything in `static/`, appended to each CSS and JS
+    link (`?v=`). `StaticFiles` sends no `Cache-Control`, so the browser
+    falls back to heuristic caching and may keep an old stylesheet for days
+    after an update: new pages drawn with the previous version's CSS. A new
+    query string on every change of content makes the browser fetch again."""
+    digest = hashlib.sha256()
+    for path in sorted((WEB_ROOT / "static").rglob("*")):
+        if path.is_file() and path.suffix in (".css", ".js"):
+            digest.update(path.name.encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+templates.env.globals["static_version"] = _static_version()
 
 # Fase 32: the one thing that lets a page ask for the elevated sensor
 # helper. New on every server start, never written to disk, embedded only

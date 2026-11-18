@@ -38,7 +38,7 @@
     </thead>
     <tbody>
       {% for item in diagnostico %}
-      <tr class="diagnostico-{{ 'presente' if item.present else 'ausente' }}">
+      <tr class="diagnostic-{{ 'present' if item.present else 'missing' }}">
         <td>
           {{ t('diagnostics.key.' ~ item.key) }}
           <span class="help">({{ t('diagnostics.required' if item.required else 'diagnostics.optional') }})</span>
