@@ -172,7 +172,7 @@ def test_orcamento_do_pacote_usa_as_cores_do_tema():
 def test_folha_dos_temas_e_carregada_por_ultimo_em_todas_as_telas(cliente):  # noqa: F811
     corpo = cliente.get("/projects").text
     folhas = re.findall(r'<link rel="stylesheet" href="(/static/[^"]+)">', corpo)
-    assert folhas[-1] == "/static/themes.css"
+    assert folhas[-1].split("?", 1)[0] == "/static/themes.css"
 
 
 def test_vidro_tem_alternativa_opaca_e_respeita_transparencia_reduzida():

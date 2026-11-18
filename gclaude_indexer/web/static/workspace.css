@@ -116,6 +116,19 @@ html[data-layout="workspace"] kbd {
 /* Itens da barra lateral ------------------------------------------------- */
 html[data-layout="workspace"] .ws-nav,
 html[data-layout="workspace"] .ws-projects { display: flex; flex-direction: column; gap: 1px; }
+/* The project list is the only part of the side bar that scrolls. With
+   every project in the side bar's own flow, a long list pushed the
+   preferences (theme, layout, language) below the fold: on a short screen
+   the user had to scroll the bar to the bottom to change the theme, and the
+   select still opened off screen. Now the list shrinks and scrolls by
+   itself, and the footer stays in sight. The bar keeps `overflow-y: auto`
+   for screens too short even for that. */
+html[data-layout="workspace"] .ws-projects {
+  flex: 0 1 auto;
+  min-height: 4rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
 html[data-layout="workspace"] .ws-item {
   display: flex;
   align-items: center;

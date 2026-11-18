@@ -8,7 +8,7 @@
   {% if plan.unverified %}
   {{ t('update.banner_unverified', count=plan.unverified | length) }}
   {% endif %}
-  <a href="/projects/{{ project.id }}/update" class="button-primary">
+  <a href="/projects/{{ project.id }}/update" class="button button-primary">
     {{ t('update.title') }}
   </a>
 </div>
