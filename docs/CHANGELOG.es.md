@@ -15,7 +15,7 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
-## [Sin publicar]
+## [2.0.1] - 2026-11-17
 
 ### Corregido
 

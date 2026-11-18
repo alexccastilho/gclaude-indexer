@@ -15,7 +15,7 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
-## [Não lançado]
+## [2.0.1] - 2026-11-17
 
 ### Corrigido
 

@@ -9,7 +9,7 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
-## [Unreleased]
+## [2.0.1] - 2026-11-17
 
 ### Fixed
 
