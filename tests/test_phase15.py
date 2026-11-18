@@ -45,7 +45,12 @@ def pasta_local(monkeypatch, tmp_path):
     `%LOCALAPPDATA%` de verdade, onde o auxiliar elevado publica."""
     from gclaude_indexer import sensors
 
+    from gclaude_indexer import paths
+
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    # The suite points every test at its own folder (`conftest.py`); this
+    # fixture checks the default resolution under `%LOCALAPPDATA%`.
+    monkeypatch.delenv(paths.LOCAL_FOLDER_ENV, raising=False)
     # `read_sensors` mantém um cache de 2s em variável de módulo; sem zerar,
     # um teste herda a leitura do anterior.
     monkeypatch.setattr(sensors, "_last_reading", None)
