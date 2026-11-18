@@ -107,7 +107,7 @@
 <h3>Classificação</h3>
 <dl>
   <dt>Motor de classificação</dt><dd>Quem identifica as peças. Veja a comparação em <a href="#motores">Motores de classificação</a>.</dd>
-  <dt>Modelo local</dt><dd>Qual modelo do Ollama o motor local usa. <em>automático</em> escolhe pela placa de vídeo: <code>qwen3.5:9b</code> numa placa com 8 GB de memória ou mais, <code>qwen3.5:4b</code> nas menores. Escolher outro serve para comparar qualidade.</dd>
+  <dt>Modelo local</dt><dd>Qual modelo do Ollama o motor local usa. Há dois perfis: <em>Mais rápido</em> (<code>qwen3.5:4b</code>) e <em>Melhor qualidade, mais lento</em> (<code>ornith-1.5:9b</code>), que acerta melhor onde cada documento começa e termina e leva cerca do dobro do tempo. O projeto novo começa em Melhor qualidade numa placa com 8 GB de memória ou mais, e em Mais rápido nas menores, onde o modelo maior transborda para a RAM. Os outros modelos instalados aparecem abaixo dos perfis, para comparar.</dd>
   <dt>Processamento</dt><dd>Se o motor local usa a placa de vídeo (GPU). <em>automático</em> e <em>forçar GPU</em> usam o máximo dela, bem mais rápido. <em>somente CPU/RAM</em> deixa a placa livre para outros programas, mas é mais lento.</dd>
   <dt>Paralelismo</dt><dd>Quantos arquivos a conversão e a leitura processam ao mesmo tempo. <em>econômico</em>: um por vez; <em>automático</em>: usa os núcleos do processador e deixa um livre para você continuar usando o computador (recomendado); <em>máximo</em>: termina antes, mas o computador fica lento enquanto isso.</dd>
 </dl>
@@ -166,18 +166,19 @@
 </table>
 </div>
 <p>O motor <em>Claude Code (manual)</em> deixou de existir na 2.0.0. Um projeto que o usava abre com o motor <em>Automático</em>, com um aviso, e as peças que já tinham sido classificadas continuam valendo. O Claude Code ainda serve para consultar o índice: o <code>CLAUDE.md</code> da pasta de saída o ensina a ler o índice e a usar o <code>buscar.bat</code>.</p>
-<p>Para ter uma ideia de tempo, no acervo de demonstração (72 páginas): 4 segundos com as regras, 4 minutos com o <code>qwen3.5:9b</code> numa placa de 12 GB. Um acervo de milhares de páginas leva horas com o modelo local e minutos com as regras.</p>
+<p>Para ter uma ideia de tempo, no acervo de demonstração (72 páginas): 4 segundos com as regras, 2 minutos e meio no perfil Mais rápido e 5 minutos e meio no Melhor qualidade, numa placa de 12 GB. Sem placa de vídeo, só com a CPU, o modelo local fica de 5 a 11 vezes mais lento. Um acervo de milhares de páginas leva horas com o modelo local e minutos com as regras.</p>
 <p>Páginas de leis, decretos e portarias salvas do site do Planalto não passam por motor nenhum: o programa as lê pela estrutura da própria página e sabe o tipo, o número, a data e a ementa. Veja <a href="#normas-e-busca">Normas citadas e busca</a>.</p>
 <p class="manual-tip">Dica: a tela Resultado tem a tabela <em>Comparar motores e modelos</em>. Rode o mesmo acervo com motores diferentes e compare tempo e pontuação antes de decidir.</p>
 </section>
 
 <section id="acerto">
 <h2>9. O que esperar de acerto</h2>
-<p>A nota de qualidade da tela Resultado diz quanta confiança o próprio motor declarou e quantos campos preencheu. Ela não diz se a peça está certa. Para isso, o índice é medido contra um gabarito conferido à mão no acervo de demonstração, a cada versão que mexa no classificador. Na última medição (02/11/2026):</p>
+<p>A nota de qualidade da tela Resultado diz quanta confiança o próprio motor declarou e quantos campos preencheu. Ela não diz se a peça está certa. Para isso, o índice é medido contra um gabarito conferido à mão no acervo de demonstração, a cada versão que mexa no classificador. Nas últimas medições (regras em 02/11/2026; modelo local em 18/11/2026, versão 2.1.0):</p>
 <ul>
   <li><strong>Nenhuma página se perdeu</strong>, com nenhum dos dois motores. O programa garante isso: toda página do acervo entra em alguma peça do índice.</li>
   <li><strong>Regras</strong>: encontrou 36 das 41 peças, acertou o tipo de 94% delas, a data de metade e o autor de uma em cinco. Em 4 segundos.</li>
-  <li><strong>Modelo local (<code>qwen3.5:9b</code>)</strong>: acertou a data de 89% e o autor de 84% das peças encontradas, mas fatiou peças (65 no índice para 41 no gabarito). Em 4 minutos.</li>
+  <li><strong>Modelo local, Melhor qualidade (<code>ornith-1.5:9b</code>)</strong>: achou as 41 peças com os limites certos. Em 5 minutos e meio.</li>
+  <li><strong>Modelo local, Mais rápido (<code>qwen3.5:4b</code>)</strong>: 87,5% de F1 nos limites das peças (39 no índice para 41 no gabarito). Em 2 minutos e meio.</li>
 </ul>
 <p>Na prática: o índice leva o Claude à página certa, e o Claude confere o texto no documento original antes de responder, como as instruções geradas mandam. Quem programa pode medir o acerto na própria máquina com a ferramenta <code>tools/medir_acerto.py</code>, sobre a pasta de saída do acervo de demonstração. Os números completos, o que cada um significa e o que não dizem estão em <code>docs/QUALITY.pt-BR.md</code> no repositório.</p>
 <p><strong>Confiança baixa.</strong> Não existe mais um passo para "revisar" depois: o programa reduz a confiança baixa durante a própria classificação. Uma página em branco é classificada sem consultar o modelo. Uma página com imagem e quase nenhum texto de OCR é lida de novo uma vez, e o texto novo só vale se for maior. E uma página que o modelo pulou ou respondeu sem tipo ganha uma segunda tentativa, limitada a 15% dos pedidos. O acerto por nível de confiança está em <code>docs/QUALITY.pt-BR.md</code>.</p>

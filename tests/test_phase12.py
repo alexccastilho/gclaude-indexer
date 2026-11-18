@@ -413,11 +413,14 @@ def test_formulario_oferece_os_modelos_instalados(cliente, monkeypatch):
     import gclaude_indexer.web.app as app_mod
 
     monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "default_local_profile", lambda: "fast")
     corpo = cliente.get("/projects/new").text
 
     assert '<select id="local_model" name="local_model">' in corpo
     assert '<option value="qwen3:8b"' in corpo
-    assert '<option value="qwen3.5:4b" selected' in corpo
+    # 2.1.0: o padrão é um perfil; o modelo dele não se repete na lista
+    assert '<option value="fast" selected' in corpo
+    assert '<option value="qwen3.5:4b"' not in corpo
     assert "(fixo)" not in corpo
 
 
@@ -440,12 +443,13 @@ def test_formulario_reexibido_apos_erro_tambem_oferece_os_modelos(cliente, monke
     import gclaude_indexer.web.app as app_mod
 
     monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
+    monkeypatch.setattr(app_mod, "default_local_profile", lambda: "fast")
     resposta = cliente.post("/projects/new", data={"name": "Sem pasta"})
 
     assert resposta.status_code == 400
     assert '<select id="local_model" name="local_model">' in resposta.text
     assert '<option value="qwen3:8b"' in resposta.text
-    assert '<option value="qwen3.5:4b" selected' in resposta.text
+    assert '<option value="fast" selected' in resposta.text
 
 
 # --- Tarefa 8 (correção pós-revisão): robustez e textos de ajuda -----------
@@ -475,8 +479,10 @@ def test_ajuda_do_modelo_local_diz_a_verdade_sobre_o_modelo_usado(cliente, monke
     assert "Único modelo permitido" not in corpo
     assert "só por compatibilidade" not in corpo
     assert "ainda não troca o modelo usado" not in corpo
-    assert "Modelos instalados no Ollama" in corpo
-    assert "usada de verdade na classificação" in corpo
+    # 2.1.0: a ajuda explica os dois perfis e que os outros modelos servem
+    # para comparar.
+    assert "Mais rápido" in corpo and "Melhor qualidade" in corpo
+    assert "Os outros modelos instalados servem para comparar" in corpo
 
 
 # --- Tarefa 9: quatro temas ------------------------------------------------

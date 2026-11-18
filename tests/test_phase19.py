@@ -435,7 +435,7 @@ def test_o_instalador_sobe_o_ollama_antes_de_perguntar_qualquer_coisa():
 
     subida = texto.find("Start-OllamaIfNeeded -OllamaPath $OllamaPath")
     listagem = texto.find("& $OllamaPath list")
-    baixada = texto.find("& $OllamaPath pull $DefaultModel")
+    baixada = texto.find("& $OllamaPath pull $Model")  # 2.1.0: um pull por modelo de perfil
 
     assert subida != -1, "o servidor nunca é iniciado"
     assert subida < listagem, "pergunta a lista antes de haver servidor"

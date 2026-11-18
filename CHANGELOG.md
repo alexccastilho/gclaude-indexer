@@ -9,6 +9,63 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.0] - 2026-11-18
+
+### Added
+
+- **Two profiles for the local model: Fastest and Best quality.** The
+  project's "Local model" field starts with *Fastest* (`qwen3.5:4b`) and
+  *Best quality, slower* (`ornith-1.5:9b`), followed by any other installed
+  model for comparison. A new project starts on Best quality on a card with
+  8 GB of memory or more, and on Fastest on smaller ones, where the 9B model
+  spills into RAM. The installer downloads both models (about 10 GB).
+  Measured against two answer keys, on the GPU (Radeon RX 6000 (12 GB)):
+
+  | | Demo collection (72 pages) | Real case file (83 pages, 16 documents) |
+  |---|---|---|
+  | Fastest | 87.5% F1, 2 min 23 s | 46.2% F1, 14 of 16 starts, 3 min 26 s |
+  | Best quality | 100% F1, 5 min 38 s | 73.7% F1, 15 of 16 starts, 7 min 38 s |
+
+  `qwen3.5:9b`, the previous default for cards with 8 GB or more, found
+  fewer document starts and merged more documents than both.
+- **Aqua theme**: light and translucent, in the style of GNOME (frosted
+  bars and side bar over a water-coloured background, rounded white cards,
+  teal accent). It falls back to opaque surfaces when the system asks for
+  reduced transparency.
+
+### Changed
+
+- **The model's answer is constrained by a JSON Schema** (Ollama structured
+  outputs): exactly one row per page, `n` an integer within the window. The
+  rows no longer carry `has_table`/`has_image`, which extraction already
+  provides.
+- **Pages of the same type that the model marks as continuing stay in one
+  item** (same file only, and not when the type names a section, such as
+  "SEÇÃO"). A 29-page report used to come out as about 25 one-page items.
+  Demo F1: 96.5% → 100% (Best quality) and 57.6% → 87.5% (Fastest); in the
+  real case file, Best quality went from 57 to 22 items for 16 documents.
+- The local model's per-page prompt carries no project block, as in every
+  run started from the interface so far. Measured once the block could reach
+  the model: with the Subject filled in, Best quality cut the real case file
+  worse (F1 73.7% → 50.0%, 15 → 11 of 16 document starts, 1 → 3 merged
+  documents) and the demo too (100% → 96.5%), although it named the type
+  better. The automatic collection profile and collection-type lines were
+  worse still and were removed. The Subject keeps going into the
+  instructions written for Claude.
+
+### Fixed
+
+- **The "CPU" processing mode was ignored in a run started from the
+  interface**: the local engine was built without the project settings and
+  still loaded the whole model on the graphics card.
+- **Dark themes: the open list of a select was unreadable** (the theme
+  names in the theme picker, among others). Options had a fixed near-black
+  text colour, and four dark themes did not declare `color-scheme: dark`.
+  Every select now follows the theme's colours.
+- The package budget table (Result, Sets) used fixed cream backgrounds with
+  light text on top in dark themes; it now uses the theme's warning and
+  error colours.
+
 ## [2.0.1] - 2026-11-17
 
 ### Fixed

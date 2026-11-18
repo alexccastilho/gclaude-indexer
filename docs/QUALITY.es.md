@@ -71,6 +71,51 @@ forma exacta; el autor vale por el apellido o la sigla.
   fases (la fecha en el motor de reglas y la fragmentación en el modelo son
   las dos mayores ganancias a la vista).
 
+## Perfiles, salida estructurada y agrupamiento (2.1.0, 18 de noviembre de 2026)
+
+La versión 2.1.0 ofrece dos perfiles para el modelo local, restringe la
+respuesta del modelo con un JSON Schema (salida estructurada de Ollama),
+mantiene en una sola pieza las páginas del mismo tipo que el modelo marca
+como continuación (mismo archivo, y no cuando el tipo nombra una sección) y
+no envía al modelo bloque del proyecto. Misma
+máquina (Ollama 0.40.16), medido en el acervo de demostración y en un
+**expediente real** (83 páginas, 15 PDF, 16 documentos, clave hecha a mano).
+El expediente real es privado y no está en el repositorio; sus números no
+pueden repetirse por terceros, y por eso la demostración sigue siendo la
+referencia publicada.
+
+| Perfil, tarjeta de video | Demo: F1 / piezas (41) / tiempo | Real: F1 / piezas (16) / inicios encontrados / documentos exactos / fusiones / tiempo |
+|---|---|---|
+| Más rápido (`qwen3.5:4b`) | 87,5 % / 39 / 2 min 23 s | 46,2 % / 36 / 14 de 16 / 9 / 2 / 3 min 26 s |
+| Mejor calidad (`ornith-1.5:9b`) | 100 % / 41 / 5 min 38 s | 73,7 % / 22 / 15 de 16 / 11 / 1 / 7 min 38 s |
+
+Antes de la regla de agrupamiento, ya con la salida estructurada: F1 en la
+demostración de 57,6 % (Más rápido) y 96,5 % (Mejor calidad); en el
+expediente real, 71 y 57 piezas para 16 documentos, con 15 de 16 inicios y
+una fusión en los dos. La regla le costó a Más rápido un inicio de documento
+y una fusión en el expediente real, y no le costó nada a Mejor calidad.
+`qwen3.5:9b`, el predeterminado anterior para tarjetas de 8 GB o más,
+encontró 12 de 16 inicios de documento en el expediente real y juntó dos
+documentos.
+
+El contexto del proyecto en el prompt, medido con Mejor calidad (F1, real /
+demo): ninguno 73,7 % / 100 %; solo el tipo de acervo 68,8 % / 93,0 %; solo
+el perfil del acervo 50,0 % / 84,0 %; los dos 60,6 % / 94,1 %. Las dos
+líneas automáticas salieron. Con el Tema completado (una frase que describe
+cada acervo):
+50,0 % / 96,5 %, 15 → 11 de 16 inicios y 1 → 3 fusiones en el real, aunque
+el tipo pasó de 73 % a 91 % allí. Por eso el prompt por página no envía
+bloque del proyecto; el Tema va a las instrucciones escritas para Claude.
+
+Sin tarjeta de video (solo CPU y RAM, muestra de 9 páginas de la
+demostración, el grupo Contratos): las mismas piezas y los mismos campos que
+en la tarjeta, en 136 s frente a 40 s (Más rápido) y 590 s frente a 66 s
+(Mejor calidad). Unos 15 s de cada ejecución son las etapas anteriores a la
+clasificación, así que la clasificación en sí es unas 5 veces (Más rápido) y
+11 veces (Mejor calidad) más lenta en la CPU. Una ejecución completa de
+Mejor calidad en la CPU sobre el expediente de 83 páginas no terminó una
+ventana de 16 páginas en 30 minutos.
+
 ## Confianza baja y ventana (2.0.0, 17 de noviembre de 2026)
 
 La versión 2.0.0 quitó la "revisión de confianza baja" (una segunda pasada

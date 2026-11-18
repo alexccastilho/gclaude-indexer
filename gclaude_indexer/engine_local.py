@@ -91,8 +91,22 @@ DEFAULT_LOCAL_MODEL = "qwen3.5:4b"
 # model tried (bonsai-2:9b, ornith-1.5:9b, qwen3-vl:8b) spilled into system
 # RAM and ran 2x to 9x slower, some failing windows. 8 GB cards report a
 # little under 8192 MB, hence the margin.
-LARGE_LOCAL_MODEL = "qwen3.5:9b"
 LARGE_MODEL_MIN_VRAM_MB = 7680
+
+# 2.1.0: two profiles the project chooses between, instead of a model name.
+# Measured on the demo collection and on a real 83-page case file,
+# with an answer key for each: `ornith-1.5:9b` (a Qwen 3.5 9B fine-tune)
+# finds the documents' limits best and slices them least, at about twice
+# the time of `qwen3.5:4b`, which is the fastest and finds the start of
+# as many documents. `qwen3.5:9b` lost to both on the real file (it found
+# fewer document starts and merged more), so it is no longer a default.
+# A model name still works as a value, for whoever wants to compare.
+FAST_LOCAL_MODEL = DEFAULT_LOCAL_MODEL
+QUALITY_LOCAL_MODEL = "ornith-1.5:9b"
+PROFILE_FAST = "fast"
+PROFILE_QUALITY = "quality"
+LOCAL_MODEL_PROFILES: dict[str, str] = {PROFILE_FAST: FAST_LOCAL_MODEL, PROFILE_QUALITY: QUALITY_LOCAL_MODEL}
+LARGE_LOCAL_MODEL = QUALITY_LOCAL_MODEL
 
 _vram_cache: list[int] = []
 
@@ -113,12 +127,20 @@ def gpu_vram_mb() -> int:
     return _vram_cache[0]
 
 
-def recommended_local_model(vram_mb: int | None = None) -> str:
-    """`qwen3.5:9b` for a card with 8 GB of VRAM or more, `qwen3.5:4b`
-    otherwise."""
+def default_local_profile(vram_mb: int | None = None) -> str:
+    """The profile a new project starts with: best quality on a card with
+    8 GB of VRAM or more (the 9B model fits whole), fastest otherwise (a
+    larger model spills into system RAM there and runs several times
+    slower)."""
     if vram_mb is None:
         vram_mb = gpu_vram_mb()
-    return LARGE_LOCAL_MODEL if vram_mb >= LARGE_MODEL_MIN_VRAM_MB else DEFAULT_LOCAL_MODEL
+    return PROFILE_QUALITY if vram_mb >= LARGE_MODEL_MIN_VRAM_MB else PROFILE_FAST
+
+
+def recommended_local_model(vram_mb: int | None = None) -> str:
+    """The model of the default profile: `ornith-1.5:9b` for a card with
+    8 GB of VRAM or more, `qwen3.5:4b` otherwise."""
+    return LOCAL_MODEL_PROFILES[default_local_profile(vram_mb)]
 
 # NOTE (do not translate): this prompt is sent verbatim to the local model,
 # and the project owner's collections are in Portuguese. Translating it would
@@ -291,9 +313,12 @@ def model_to_use(conn: sqlite3.Connection | None, config: ProjectConfig) -> str:
     different models, which is impossible if every run uses the same one.
     """
     chosen = (config.local_model or "").strip()
-    if chosen and chosen != "automatic":
+    if chosen in LOCAL_MODEL_PROFILES:
+        recommended = LOCAL_MODEL_PROFILES[chosen]
+    elif chosen and chosen != "automatic":
         return chosen
-    recommended = recommended_local_model()
+    else:
+        recommended = recommended_local_model()
     if recommended != DEFAULT_LOCAL_MODEL:
         # A machine upgraded from an older version may not have the 9B model
         # yet; the 4B one it already has beats waiting for a download.
@@ -481,6 +506,12 @@ class LocalEngine:
     # aritmética de um particionamento, e a cobertura do índice é o
     # requisito que não admite erro.
     per_page: bool = True
+    # 2.1.0: the per-page answer is constrained by a JSON Schema (`format`
+    # with a schema, not just "json"): exactly one object per page, `n` an
+    # integer within the window, booleans that are booleans. The model can
+    # no longer copy the page into `n`, close the JSON early or skip pages,
+    # the failures that used to cost a second request or a split window.
+    structured_output: bool = True
     # Warnings from the last call to `classify()` — items rejected because of
     # an unrecognized reference. `classify_pending`
     # reads this right after calling `classify()` to record an event; it is
@@ -511,12 +542,9 @@ class LocalEngine:
     # para o log.
     context_ceiling: int = field(default=0, repr=False)
     ceiling_details: dict = field(default_factory=dict, repr=False)
-    # 2.0.0: o perfil do acervo (tipos, idiomas e termos dos títulos),
-    # acrescentado ao contexto quando o Tema do projeto está vazio, e de onde
-    # sai o texto inteiro de uma página (o índice de busca guarda o que a
-    # janela cortou). Ambos preenchidos por `classify_pending`; sem eles o
-    # motor se comporta como antes.
-    profile_text: str = ""
+    # 2.0.0: de onde sai o texto inteiro de uma página (o índice de busca
+    # guarda o que a janela cortou). Preenchido por `classify_pending`; sem
+    # ele o motor se comporta como antes.
     page_text: "Callable[[WindowPage], str] | None" = field(default=None, repr=False)
     # Contadores da segunda tentativa (ver `_second_attempts`): pedidos
     # normais, pedidos extras e o que cada tipo de segunda tentativa tratou.
@@ -665,7 +693,7 @@ class LocalEngine:
         o necessário e repete a janela inteira; (4) só quando nem o teto
         basta ela é dividida. O gatilho final continua `linhas < páginas`.
         """
-        prompt = _build_page_prompt(pages, self.config, self.profile_text)
+        prompt = _build_page_prompt(pages, self.config)
         total = len(pages)
         teto = self._measure_ceiling()
         precisa = context_tokens_for(prompt, page_count=total, chars_per_token=self._chars_per_token)
@@ -773,7 +801,7 @@ class LocalEngine:
         for indice in faltantes:
             self._retried.add(self._retry_key(pages[indice]))
         prompt = _build_page_prompt(
-            escolhidas, self.config, self.profile_text, note=_RETRY_MISSING_NOTE.format(count=len(escolhidas))
+            escolhidas, self.config, note=_RETRY_MISSING_NOTE.format(count=len(escolhidas))
         )
         novas = self._extra_attempt(prompt, escolhidas)
         if novas is None:
@@ -824,7 +852,7 @@ class LocalEngine:
         for indice, _texto in escolhidas:
             self._retried.add(self._retry_key(pages[indice]))
         prompt = _build_page_prompt(
-            paginas, self.config, self.profile_text, note=_RETRY_UNTYPED_NOTE.format(count=len(paginas))
+            paginas, self.config, note=_RETRY_UNTYPED_NOTE.format(count=len(paginas))
         )
         novas = self._extra_attempt(prompt, paginas)
         if novas is None:
@@ -870,7 +898,8 @@ class LocalEngine:
         else:
             self.base_requests += 1
         try:
-            generation = self._generate(prompt)
+            schema = _page_schema(page_count) if self.structured_output else None
+            generation = self._generate(prompt, schema)
         except PromptTooLongError as exc:
             self._last_refused = True
             if exc.tokens:
@@ -946,7 +975,7 @@ class LocalEngine:
         self.last_window_warnings = warnings
         return items
 
-    def _generate(self, prompt: str) -> Generation:
+    def _generate(self, prompt: str, schema: dict | None = None) -> Generation:
         options: dict = {
             "temperature": 0,
             # How many of the model's layers run on the GPU. `-1` asks
@@ -970,7 +999,7 @@ class LocalEngine:
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
-                "format": "json",
+                "format": schema or "json",
                 # Turns off the "thinking" channel for models that have it
                 # (e.g. qwen3, qwen3.5): without this, those models dump the
                 # whole answer into `thinking` and return an empty
@@ -1023,14 +1052,6 @@ class LocalEngine:
         )
 
 
-# How each `collection_type` reads in the prompt. The stored values are
-# internal keys, and handing "processo" to the model as-is says less than
-# the sentence it stands for.
-_COLLECTION_TYPE_TEXT = {
-    "processo": "processo/dossiê: peças numeradas por folha, em ordem cronológica de juntada",
-    "biblioteca": "biblioteca/acervo bibliográfico: obras e documentos independentes entre si",
-}
-
 # Caps on what goes into the prompt from the project's free-text fields.
 # These are the user's own words, but they share the context window with
 # the pages being classified: a very long instruction would push out the
@@ -1043,7 +1064,7 @@ def _clip(text: str, limit: int = _CONTEXT_FIELD_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def build_context(config: ProjectConfig | None, profile: str = "") -> str:
+def build_context(config: ProjectConfig | None) -> str:
     """The "what am I looking at" block of the prompt, from the project form.
 
     This is the fix for the largest defect found in the quality review: the
@@ -1073,19 +1094,21 @@ def build_context(config: ProjectConfig | None, profile: str = "") -> str:
     if config is None:
         return ""
 
+    # 2.1.0: only what the user wrote. The two lines the program wrote on
+    # its own, the collection profile taken from the files ("arquivos: pdf
+    # (15); termos frequentes nos títulos: …") and the collection type
+    # ("processo/dossiê: peças numeradas por folha…"), are gone. Until 2.1.0
+    # a run started from the interface never sent this block at all (the
+    # engine was built without `config`), and when it started to, measured
+    # with ornith-1.5:9b against both answer keys: no context 73.7% / 100%
+    # F1 (real case file / demo), collection type only 68.8% / 93.0%,
+    # profile only 50.0% / 84.0%, both 60.6% / 94.1%. The model took a case file's
+    # documents for one long process and merged them. The per-page prompt,
+    # the one in use, sends none of this block (see `_build_page_prompt`).
     lines: list[str] = []
     subject = _clip(getattr(config, "subject", "") or "")
     if subject:
         lines.append(f"- Assunto do acervo: {subject}")
-    elif profile:
-        # 2.0.0: sem Tema, o que se sabe do acervo pelos próprios arquivos
-        # (tipos, idiomas, termos dos títulos) ocupa o lugar dele.
-        lines.append(f"- Perfil do acervo (tirado dos arquivos): {_clip(profile)}")
-
-    collection_type = getattr(config, "collection_type", "") or ""
-    description = _COLLECTION_TYPE_TEXT.get(collection_type)
-    if description:
-        lines.append(f"- Natureza do acervo: {description}")
 
     role = _clip(getattr(config, "role_instructions", "") or "")
     if role:
@@ -1148,10 +1171,10 @@ def _language_note(pages: list[WindowPage], fields: str) -> str:
 
 
 def _prompt_context(
-    pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS, profile: str = "",
+    pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS,
     note: str = "",
 ) -> str:
-    context = build_context(config, profile) + note
+    context = build_context(config) + note
     if any(STRUCK_MARK in page.text for page in pages):
         context += _STRUCK_TEXT_NOTE
     context += _language_note(pages, fields)
@@ -1262,17 +1285,12 @@ objetos, na mesma ordem. Responda SOMENTE com um objeto JSON neste formato:
 
 {{"pages": [
   {{"n": <o NÚMERO da página, de 1 a {count} — apenas o número, nada mais>,
-   "subject": "<o assunto desta página: o exame, o documento, a seção ou o \
-tema tratado nela>",
+   "subject": "<o assunto desta página: o exame, o documento, a seção ou o tema tratado nela>",
    "type": "<tipo em MAIÚSCULAS adequado a este acervo, ou null>",
    "date": "<AAAA-MM-DD, se a página trouxer uma data, senão null>",
    "author": "<autor/responsável, se a página disser, senão null>",
-   "detail": "<uma ou duas frases dizendo o que exatamente está nesta \
-página: nomes, números, exames, artigos, temas>",
-   "continues": <true se esta página continua o MESMO assunto da anterior, \
-false se começa um assunto novo>,
-   "has_table": <true ou false>,
-   "has_image": <true ou false>}}
+   "detail": "<uma ou duas frases dizendo o que exatamente está nesta página: nomes, números, exames, artigos, temas>",
+   "continues": <true se esta página continua o MESMO assunto da anterior, false se começa um assunto novo>}}
 ]}}
 
 Regras:
@@ -1293,7 +1311,7 @@ Páginas:
 
 
 def _build_page_prompt(
-    pages: list[WindowPage], config: ProjectConfig | None = None, profile: str = "", note: str = ""
+    pages: list[WindowPage], config: ProjectConfig | None = None, note: str = ""
 ) -> str:
     """As páginas numeradas de 1 a N.
 
@@ -1310,10 +1328,52 @@ def _build_page_prompt(
         f"--- Página {numero} ({page.reference}, {page.file_name}) ---\n{page.text}"
         for numero, page in enumerate(pages, start=1)
     ]
+    # 2.1.0: no project block here (`config` is not handed to the context).
+    # Until 2.1.0 a run started from the interface never sent it anyway (the
+    # engine was built without `config`); once it could, it was measured with
+    # ornith-1.5:9b against both answer keys and every line of it made the
+    # model cut the documents worse. With the Subject filled in: F1 73.7% ->
+    # 50.0% on a real 83-page case file (15 -> 11 of 16 document starts,
+    # 1 -> 3 merged documents) and 100% -> 96.5% on the demo, even though
+    # the type got better on the real file (73% -> 91%). Finding the document
+    # comes first. The Subject still goes into the instructions written for
+    # Claude, which is what its hint on the form promises.
+    del config
     return _PAGE_PROMPT.format(
-        context=_prompt_context(pages, config, _PAGE_FIELDS, profile, note), count=len(pages),
+        context=_prompt_context(pages, None, _PAGE_FIELDS, note), count=len(pages),
         text="\n\n".join(blocks),
     )
+
+
+def _page_schema(count: int) -> dict:
+    """The JSON Schema of `_PAGE_PROMPT`'s answer for a window of `count`
+    pages, handed to Ollama as `format` (structured outputs): decoding is
+    constrained to it, so the answer always parses, has exactly `count`
+    rows and `n` is a page number. The prompt still explains every field;
+    the schema only makes the shape impossible to get wrong."""
+    text_or_null = {"type": ["string", "null"]}
+    row = {
+        "type": "object",
+        "properties": {
+            "n": {"type": "integer", "minimum": 1, "maximum": count},
+            "subject": {"type": "string"},
+            "type": text_or_null,
+            "date": text_or_null,
+            "author": text_or_null,
+            "detail": {"type": "string"},
+            "continues": {"type": "boolean"},
+            # No `has_table`/`has_image` (2.1.0): extraction already sets
+            # them per page (`find_tables`, the image count) and the
+            # grouping ORs them in; asking the model too cost ~45
+            # characters of answer per page.
+        },
+        "required": ["n", "subject", "type", "date", "author", "detail", "continues"],
+    }
+    return {
+        "type": "object",
+        "properties": {"pages": {"type": "array", "items": row, "minItems": count, "maxItems": count}},
+        "required": ["pages"],
+    }
 
 
 def _pages_json(response_text: str) -> list[dict]:
@@ -1388,6 +1448,13 @@ def _rows_by_index(rows: list[dict], total: int) -> dict[int, dict]:
     return por_indice
 
 
+# Tipos que nomeiam uma parte de um documento, não um documento (ver
+# `_group_pages_into_items`), já como `_subject_key` os deixa.
+_SECTION_TYPE_WORDS = frozenset({
+    "seção", "secao", "subseção", "subsecao", "capítulo", "capitulo", "item", "tópico", "topico", "parte",
+})
+
+
 def _group_pages_into_items(
     pages: list[WindowPage], rows: list[dict], model_engine: str = "local"
 ) -> list[ClassifiedItem]:
@@ -1459,9 +1526,11 @@ def _group_pages_into_items(
         atual.clear()
 
     anterior_assunto = None
+    anterior_tipo = ""
     for indice, page in enumerate(pages):
         dados = por_indice.get(indice, {})
         assunto = _subject_key(dados.get("subject"))
+        tipo = _subject_key(dados.get("type"))
 
         # O agrupamento é decidido pelo ASSUNTO, não pelo `continues` que o
         # modelo devolve. Medido: `qwen3.5:4b` identificou impecavelmente os
@@ -1483,8 +1552,26 @@ def _group_pages_into_items(
             # separa: a peça não pode cobrir a página que ela não tem.
             continua = False
         elif assunto and anterior_assunto:
+            # 2.1.0: `continues` também junta quando o TIPO é o mesmo da
+            # página anterior, no mesmo arquivo. Medido num processo real
+            # (83 páginas): o relatório de 29 páginas saía em ~25 peças de uma
+            # página, todas do mesmo tipo e com `continues`
+            # verdadeiro, porque o assunto de cada página é o parágrafo que
+            # ela traz. Seções de tipos diferentes continuam separadas.
+            # Medido com gabarito: no processo real, ornith-1.5:9b foi de 57
+            # para 22 peças (16 documentos) e de 9 para 11 documentos exatos,
+            # sem fusão nova (qwen3.5:4b ganhou uma fusão e perdeu um início
+            # de documento); no acervo de demonstração, F1 de 96,5% para
+            # 100% (ornith) e de 57,6% para 87,5% (qwen3.5:4b).
+            # Não vale quando o tipo nomeia uma parte do documento ("SEÇÃO",
+            # "CAPÍTULO"): aí o próprio modelo disse que cada página é uma
+            # seção, e seções de assuntos diferentes ficam separadas.
+            mesmo_tipo = (
+                bool(tipo) and tipo == anterior_tipo and tipo.split()[0] not in _SECTION_TYPE_WORDS
+                and page.file_name == atual[-1][0].file_name
+            )
             continua = assunto == anterior_assunto or (
-                bool(dados.get("continues")) and _same_topic_start(assunto, anterior_assunto)
+                bool(dados.get("continues")) and (_same_topic_start(assunto, anterior_assunto) or mesmo_tipo)
             )
         else:
             # Sem assunto de um dos lados, só o sinal do modelo resta.
@@ -1495,6 +1582,7 @@ def _group_pages_into_items(
         atual.append((page, dados))
         if assunto:
             anterior_assunto = assunto
+        anterior_tipo = tipo
     fechar()
     return itens
 
@@ -1914,14 +2002,13 @@ def _log_backend(conn: sqlite3.Connection, language: str | None = None) -> None:
 
 MODEL_RETRY_SECONDS = 60.0
 def _prepare_second_attempts(conn: sqlite3.Connection, config: ProjectConfig, local_engine) -> None:
-    """Dá ao motor o perfil do acervo (só com o Tema vazio) e de onde ler o
-    texto inteiro de uma página (o índice de busca). Um motor que não tem
-    esses campos (um dublê de teste, outro motor) segue como antes."""
-    from . import collection_profile, fulltext
+    """Dá ao motor de onde ler o texto inteiro de uma página (o índice de
+    busca). Um motor que não tem esse campo (um dublê de teste, outro motor)
+    segue como antes. O perfil do acervo não vai mais ao prompt (2.1.0, ver
+    `build_context`)."""
+    from . import fulltext
 
     try:
-        if not (getattr(config, "subject", "") or "").strip() and not getattr(local_engine, "profile_text", ""):
-            local_engine.profile_text = collection_profile.build_profile(conn)
         if getattr(local_engine, "page_text", None) is None:
             local_engine.page_text = lambda page: fulltext.page_text(conn, page.file_id, page.reference)
     except Exception:

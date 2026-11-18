@@ -69,6 +69,48 @@ author matches by surname or acronym.
   phases can start (dates in the rules engine and fragmentation in the
   model are the two largest gains in sight).
 
+## Profiles, structured output and grouping (2.1.0, 18 November 2026)
+
+Version 2.1.0 offers two profiles for the local model, constrains the
+model's answer with a JSON Schema (Ollama structured outputs), keeps in one
+piece the pages of the same type that the model marks as continuing (same
+file, not when the type names a section), and sends the model no project
+block. Same machine (Ollama 0.40.16), measured on the
+demo collection and on a **real case file** (83 pages, 15 PDFs, 16
+documents, hand-made answer key). The real case file is private and is not
+in the repository; its numbers cannot be repeated by others, which is why
+the demo is still the published reference.
+
+| Profile, GPU | Demo: F1 / pieces (41) / time | Real: F1 / pieces (16) / starts found / exact documents / merges / time |
+|---|---|---|
+| Fastest (`qwen3.5:4b`) | 87.5% / 39 / 2 min 23 s | 46.2% / 36 / 14 of 16 / 9 / 2 / 3 min 26 s |
+| Best quality (`ornith-1.5:9b`) | 100% / 41 / 5 min 38 s | 73.7% / 22 / 15 of 16 / 11 / 1 / 7 min 38 s |
+
+Before the grouping rule, with structured output already on: demo F1 57.6%
+(Fastest) and 96.5% (Best quality); in the real case file, 71 and 57 pieces
+for 16 documents, with 15 of 16 starts and one merge for both. The rule cost
+Fastest one document start and one merge in the real case file, and cost
+Best quality nothing. `qwen3.5:9b`, the previous default for cards with 8 GB
+or more, found 12 of 16 document starts in the real case file and merged two
+documents.
+
+The project context in the prompt, measured with Best quality (F1, real /
+demo): none 73.7% / 100%; collection type only 68.8% / 93.0%; collection
+profile only 50.0% / 84.0%; both 60.6% / 94.1%. The two automatic lines
+were removed. With the Subject filled in (one sentence describing
+each collection): 50.0% / 96.5%,
+15 → 11 of 16 starts and 1 → 3 merges in the real file, although the type
+went from 73% to 91% there. The per-page prompt therefore sends no project
+block; the Subject goes into the instructions written for Claude.
+
+Without a graphics card (CPU and RAM only, 9-page sample of the demo, the
+Contracts group): same pieces and same fields as on the GPU, in 136 s
+against 40 s (Fastest) and 590 s against 66 s (Best quality). About 15 s of
+each run are the steps before classification, so classification itself is
+about 5 times (Fastest) and 11 times (Best quality) slower on the CPU. A
+full run of Best quality on the CPU over the 83-page case file did not
+finish one 16-page window in 30 minutes.
+
 ## Low confidence and window (2.0.0, 17 November 2026)
 
 Version 2.0.0 removed the "review low confidence" step (a whole second

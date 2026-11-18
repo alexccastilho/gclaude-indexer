@@ -66,14 +66,14 @@ html[data-theme="glass_dark"] {
 
 /* Fundo: gradiente suave e fixo, para o vidro ter o que desfocar. Fixo,
    não repinta ao rolar. */
-html:is([data-theme="glass"], [data-theme="glass_dark"]) body {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) body {
   background-color: var(--color-bg);
   background-image: var(--glass-backdrop);
   background-attachment: fixed;
 }
 
 /* Superfícies de vidro. */
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :is(
   .card, .table, .install-diagnostics, .resource-box, .progress-box,
   .quality-box, .comparison-box, .cleanup-box, .artifact, .claude-package,
   .manual-toc, .wait-card, dialog.modal, .ws-palette
@@ -84,7 +84,7 @@ html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
 }
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(.wait-card, dialog.modal, .ws-palette) {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :is(.wait-card, dialog.modal, .ws-palette) {
   /* Flutuam sobre um véu (escuro na paleta e na ajuda), não sobre o
      gradiente: quase opacos, para o texto fraco não afundar no véu. */
   background: var(--glass-sheen), color-mix(in srgb, var(--glass-solid) 92%, transparent);
@@ -93,16 +93,17 @@ html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(.wait-card, dialog.
   backdrop-filter: var(--glass-blur-strong);
 }
 /* A tabela já é vidro: as células não somam outra camada clara por cima. */
-html:is([data-theme="glass"], [data-theme="glass_dark"]) .table th { background: var(--color-surface-alt); }
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) .table th { background: var(--color-surface-alt); }
 
 /* Barras: cabeçalho, barra lateral e barra do alto, com o conteúdo
    passando por baixo. */
-html:is([data-theme="glass"], [data-theme="glass_dark"]) .header {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) .header {
   border-bottom: 1px solid var(--glass-rim);
   box-shadow: 0 8px 30px -18px rgba(15, 23, 42, 0.35);
   -webkit-backdrop-filter: var(--glass-blur-strong);
   backdrop-filter: var(--glass-blur-strong);
 }
+html[data-theme="aqua"][data-layout="workspace"] .ws-side,
 html[data-theme="glass"][data-layout="workspace"] .ws-side,
 html[data-theme="glass_dark"][data-layout="workspace"] .ws-side {
   background: var(--glass-side);
@@ -110,6 +111,7 @@ html[data-theme="glass_dark"][data-layout="workspace"] .ws-side {
   -webkit-backdrop-filter: var(--glass-blur-strong);
   backdrop-filter: var(--glass-blur-strong);
 }
+html[data-theme="aqua"][data-layout="workspace"] .ws-top,
 html[data-theme="glass"][data-layout="workspace"] .ws-top,
 html[data-theme="glass_dark"][data-layout="workspace"] .ws-top {
   background: var(--glass-top);
@@ -117,46 +119,85 @@ html[data-theme="glass_dark"][data-layout="workspace"] .ws-top {
   -webkit-backdrop-filter: var(--glass-blur-strong);
   backdrop-filter: var(--glass-blur-strong);
 }
+html[data-theme="aqua"][data-layout="workspace"] .ws-tabs,
 html[data-theme="glass"][data-layout="workspace"] .ws-tabs,
 html[data-theme="glass_dark"][data-layout="workspace"] .ws-tabs { border-bottom-color: var(--glass-rim); }
 
 /* Controles: botões translúcidos com o mesmo brilho; campos com contorno
    que se enxerga. :where() mantém a especificidade baixa, para os botões
    com estilo próprio (layouts, barra do alto) continuarem mandando. */
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)) {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)) {
   background: var(--glass-sheen), var(--color-surface);
   border-color: var(--glass-rim);
   box-shadow: inset 0 1px 0 var(--glass-rim), 0 4px 14px -8px rgba(15, 23, 42, 0.3);
 }
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)):hover {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :where(.button, button, input[type="submit"]):where(:not(.button-primary, .button-danger, .modal-close, .notice-close)):hover {
   background: var(--glass-sheen), var(--color-button-hover);
   border-color: var(--color-accent);
 }
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select, .ws-prefs-body select) {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select, .ws-prefs-body select) {
   background: var(--glass-field);
   border-color: var(--glass-control-border);
 }
-html:is([data-theme="glass"], [data-theme="glass_dark"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select):focus {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) :is(input[type="text"], input[type="number"], input[type="search"], textarea, .content select):focus {
   border-color: var(--color-accent);
 }
 
 /* Cabeçalho claro (só no Vidro claro): os textos e controles do cabeçalho
    foram escritos para um fundo escuro (branco translúcido), então seguem a
    cor de texto do tema aqui. */
+html[data-theme="aqua"] .nav-link,
 html[data-theme="glass"] .nav-link,
 html[data-theme="apple"] .nav-link { color: color-mix(in srgb, var(--color-header-text) 84%, transparent); }
+html[data-theme="aqua"] .nav-link:hover,
 html[data-theme="glass"] .nav-link:hover,
 html[data-theme="apple"] .nav-link:hover { color: var(--color-header-text); background: color-mix(in srgb, var(--color-header-text) 7%, transparent); }
+html[data-theme="aqua"] .nav-link[aria-current="page"],
 html[data-theme="glass"] .nav-link[aria-current="page"],
 html[data-theme="apple"] .nav-link[aria-current="page"] { color: var(--color-header-text); background: color-mix(in srgb, var(--color-header-text) 9%, transparent); }
+html[data-theme="aqua"] :is(.header-button, .preference-form select),
 html[data-theme="glass"] :is(.header-button, .preference-form select),
 html[data-theme="apple"] :is(.header-button, .preference-form select) {
   background: color-mix(in srgb, var(--color-header-text) 4%, transparent);
   border-color: color-mix(in srgb, var(--color-header-text) 45%, transparent);
   color: var(--color-header-text);
 }
+html[data-theme="aqua"] :is(.header-button, .preference-form select):hover,
 html[data-theme="glass"] :is(.header-button, .preference-form select):hover,
 html[data-theme="apple"] :is(.header-button, .preference-form select):hover { background: color-mix(in srgb, var(--color-header-text) 9%, transparent); }
+
+/* ==========================================================================
+   Aqua (2.1.0): a base de vidro acima, com o jeito do GNOME
+   ========================================================================== */
+
+html[data-theme="aqua"] {
+  --glass-blur: blur(20px) saturate(170%);
+  --glass-blur-strong: blur(30px) saturate(180%);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 40%);
+  --glass-rim: rgba(255, 255, 255, 0.78);
+  --glass-side: rgba(240, 249, 250, 0.5);
+  --glass-top: rgba(246, 252, 252, 0.86);
+  --glass-field: rgba(255, 255, 255, 0.8);
+  --glass-control-border: rgba(30, 43, 51, 0.48);
+  --glass-solid: #f6fbfc;
+  --glass-solid-alt: #e8f2f4;
+  --glass-backdrop:
+    radial-gradient(60vmax 50vmax at 0% 0%, #bfe6ee, transparent 62%),
+    radial-gradient(55vmax 45vmax at 100% 10%, #cfe3fa, transparent 60%),
+    radial-gradient(70vmax 55vmax at 60% 100%, #c6efe2, transparent 64%),
+    linear-gradient(165deg, #eef8fa, #e6f3f6 50%, #ecf3fb);
+  /* Cantarell é a fonte do GNOME; quem não tem cai na do sistema. */
+  --font-text: "Cantarell", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Cantarell", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --radius: 12px;
+  --radius-small: 8px;
+  accent-color: var(--color-accent);
+}
+html[data-theme="aqua"] body { font-family: var(--font-text); font-feature-settings: normal; }
+/* Botões "pílula" e cabeçalho fino, como a barra de título do Adwaita. */
+html[data-theme="aqua"] :is(.button, button, input[type="submit"]) { border-radius: 9px; font-weight: 600; }
+html[data-theme="aqua"] .button-primary { box-shadow: 0 1px 2px rgba(8, 86, 106, 0.3); }
+html[data-theme="aqua"] :is(.card, .table, .ws-palette, dialog.modal) { border-radius: var(--radius); }
 
 /* ==========================================================================
    Apple
@@ -183,14 +224,14 @@ html[data-theme="apple_dark"] { --apple-control-border: #7c7c80; }
 /* O orçamento do pacote (tela Resultado) usa estes três nomes com recuo
    para cores claras fixas; sem eles, um tema escuro mostraria texto claro
    sobre caixa creme. Aqui apontam para as cores de aviso e erro do tema. */
-html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"]) {
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"], [data-theme="apple"], [data-theme="apple_dark"]) {
   --color-warning-weak: var(--color-warning-bg);
   --color-danger-weak: var(--color-error-bg);
   --color-danger: var(--color-error);
 }
 /* O título das seções da barra lateral é texto fraco com opacidade a mais:
    abaixo de 4,5:1 nestes temas, então fica sem ela. */
-html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"])[data-layout="workspace"] .ws-sec { opacity: 1; }
+html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"], [data-theme="apple"], [data-theme="apple_dark"])[data-layout="workspace"] .ws-sec { opacity: 1; }
 
 html:is([data-theme="apple"], [data-theme="apple_dark"]) body {
   font-family: var(--font-text);
@@ -282,7 +323,7 @@ html:is([data-theme="apple"], [data-theme="apple_dark"]) .badge { font-weight: 6
 /* Navegador sem backdrop-filter: superfícies opacas, senão o texto ficaria
    sobre o gradiente sem desfoque nenhum. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) {
     --color-surface: var(--glass-solid);
     --color-surface-alt: var(--glass-solid-alt);
     --color-header-bg: var(--glass-solid);
@@ -299,7 +340,7 @@ html:is([data-theme="apple"], [data-theme="apple_dark"]) .badge { font-weight: 6
 /* Transparência reduzida pedida pelo sistema: o mesmo fundo opaco e sem
    desfoque, com o gradiente do Vidro trocado pela cor lisa. */
 @media (prefers-reduced-transparency: reduce) {
-  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) {
     --color-surface: var(--glass-solid);
     --color-surface-alt: var(--glass-solid-alt);
     --color-header-bg: var(--glass-solid);
@@ -309,12 +350,12 @@ html:is([data-theme="apple"], [data-theme="apple_dark"]) .badge { font-weight: 6
     --glass-field: var(--glass-solid);
     --glass-sheen: none;
   }
-  html:is([data-theme="glass"], [data-theme="glass_dark"]) body { background-image: none; }
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) body { background-image: none; }
   html[data-theme="apple"] { --color-header-bg: #f6f6f8; }
   html[data-theme="apple_dark"] { --color-header-bg: #1d1d1f; }
   html[data-theme="apple"][data-layout="workspace"] .ws-top,
   html[data-theme="apple_dark"][data-layout="workspace"] .ws-top { background: var(--color-bg); }
-  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="apple"], [data-theme="apple_dark"]) * {
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"], [data-theme="apple"], [data-theme="apple_dark"]) * {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
@@ -322,7 +363,7 @@ html:is([data-theme="apple"], [data-theme="apple_dark"]) .badge { font-weight: 6
 
 /* Mais contraste pedido pelo sistema: superfícies sólidas e bordas firmes. */
 @media (prefers-contrast: more) {
-  html:is([data-theme="glass"], [data-theme="glass_dark"]) {
+  html:is([data-theme="glass"], [data-theme="glass_dark"], [data-theme="aqua"]) {
     --color-surface: var(--glass-solid);
     --color-surface-alt: var(--glass-solid-alt);
     --glass-rim: color-mix(in srgb, var(--color-text) 55%, transparent);

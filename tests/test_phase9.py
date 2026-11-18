@@ -137,7 +137,8 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
     assert 'id="local_model"' in corpo
     assert '<select id="local_model" name="local_model">' in corpo
     assert '<option value="qwen3:8b"' in corpo
-    assert '<option value="qwen3.5:4b" selected' in corpo
+    # 2.1.0: o padrão é um perfil, que depende da placa desta máquina.
+    assert '<option value="fast" selected' in corpo or '<option value="quality" selected' in corpo
 
 
 def _checkbox_marcado(corpo: str, valor: str) -> bool:

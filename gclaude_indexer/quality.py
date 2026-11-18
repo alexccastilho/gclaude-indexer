@@ -26,6 +26,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .config import ProjectConfig
+from .engine_local import LOCAL_MODEL_PROFILES
 
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 
@@ -212,7 +213,8 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
 
     return {
         "engine": config.classification_engine,
-        "model": config.local_model,
+        # 2.1.0: a profile ("fast"/"quality") is shown as the model it stands for.
+        "model": LOCAL_MODEL_PROFILES.get(config.local_model, config.local_model),
         "total_items": total_items,
         "confidence": confidence,
         "missing_type": missing_type,

@@ -66,6 +66,47 @@ acento, exatamente; o autor vale pelo sobrenome ou pela sigla.
   podem começar (a data pelo motor de regras e a fragmentação pelo modelo são
   os dois maiores ganhos à vista).
 
+## Perfis, saída estruturada e agrupamento (2.1.0, 18/11/2026)
+
+A versão 2.1.0 oferece dois perfis para o modelo local, restringe a
+resposta do modelo com um JSON Schema (saída estruturada do Ollama), mantém
+numa peça só as páginas do mesmo tipo que o modelo marca como continuação
+(mesmo arquivo, e não quando o tipo nomeia uma seção) e não manda ao modelo
+bloco do projeto. Mesma máquina (Ollama 0.40.16), medido no
+acervo de demonstração e num **processo real** (83 páginas, 15 PDFs, 16
+documentos, gabarito feito à mão). O processo real é privado e não está no
+repositório; os números dele não podem ser repetidos por terceiros, e por
+isso o demo continua sendo a referência publicada.
+
+| Perfil, placa de vídeo | Demo: F1 / peças (41) / tempo | Real: F1 / peças (16) / inícios achados / documentos exatos / fusões / tempo |
+|---|---|---|
+| Mais rápido (`qwen3.5:4b`) | 87,5% / 39 / 2 min 23 s | 46,2% / 36 / 14 de 16 / 9 / 2 / 3 min 26 s |
+| Melhor qualidade (`ornith-1.5:9b`) | 100% / 41 / 5 min 38 s | 73,7% / 22 / 15 de 16 / 11 / 1 / 7 min 38 s |
+
+Antes da regra de agrupamento, já com a saída estruturada: F1 no demo de
+57,6% (Mais rápido) e 96,5% (Melhor qualidade); no processo real, 71 e 57
+peças para 16 documentos, com 15 de 16 inícios e uma fusão nos dois. A regra
+custou ao Mais rápido um início de documento e uma fusão no processo real, e
+não custou nada ao Melhor qualidade. O `qwen3.5:9b`, padrão anterior para
+placas de 8 GB ou mais, achou 12 de 16 inícios de documento no processo real
+e juntou dois documentos.
+
+O contexto do projeto no prompt, medido com o Melhor qualidade (F1, real /
+demo): nenhum 73,7% / 100%; só o tipo de acervo 68,8% / 93,0%; só o perfil
+do acervo 50,0% / 84,0%; os dois 60,6% / 94,1%. As duas linhas automáticas
+saíram. Com o Tema preenchido (uma frase descrevendo cada acervo): 50,0% / 96,5%, 15 → 11
+de 16 inícios e 1 → 3 fusões no real, embora o tipo tenha ido de 73% para
+91% ali. Por isso o prompt por página não manda bloco do projeto; o Tema
+vai para as instruções escritas para o Claude.
+
+Sem placa de vídeo (só CPU e RAM, amostra de 9 páginas do demo, o grupo
+Contratos): as mesmas peças e os mesmos campos da placa, em 136 s contra
+40 s (Mais rápido) e 590 s contra 66 s (Melhor qualidade). Uns 15 s de cada
+execução são as etapas anteriores à classificação, então a classificação em
+si fica umas 5 vezes (Mais rápido) e 11 vezes (Melhor qualidade) mais lenta
+na CPU. Uma execução inteira do Melhor qualidade na CPU sobre o processo de
+83 páginas não terminou uma janela de 16 páginas em 30 minutos.
+
 ## Confiança baixa e janela (2.0.0, 17/11/2026)
 
 A 2.0.0 tirou a "revisão de confiança baixa" (uma segunda passada inteira) e

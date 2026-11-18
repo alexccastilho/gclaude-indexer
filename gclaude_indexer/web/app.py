@@ -103,7 +103,11 @@ from .readers import reader_pool
 from .formatting import format_date, format_datetime
 from .i18n import DEFAULT_LANGUAGE, AVAILABLE_LANGUAGES, LANGUAGE_COOKIE_NAME, valid_language, translate
 from .layout import DEFAULT_LAYOUT, AVAILABLE_LAYOUTS, LAYOUT_COOKIE_NAME, valid_layout
-from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT, recommended_local_model
+from ..engine_local import (
+    _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT,
+    LOCAL_MODEL_PROFILES,
+    default_local_profile,
+)
 from .ollama_models import list_installed_models
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_theme
@@ -111,7 +115,7 @@ from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_the
 WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-SYSTEM_VERSION = "2.0.1"
+SYSTEM_VERSION = "2.1.0"
 
 
 def _static_version() -> str:
@@ -596,7 +600,7 @@ def _config_to_form(data: dict | None = None) -> dict:
     # <select>) always wins; only the "automatic" sentinel (from the
     # default, or resubmitted as-is) falls back to the default.
     if base.get("local_model") in ("", "automatic"):
-        base["local_model"] = recommended_local_model()
+        base["local_model"] = default_local_profile()
     return base
 
 
@@ -691,7 +695,8 @@ def new_project_screen(request: Request):
             "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
             "engines": CLASSIFICATION_ENGINES_ORDER,
             "local_models": list_installed_models(),
-            "default_local_model": recommended_local_model(),
+            "default_local_model": default_local_profile(),
+            "local_model_profiles": LOCAL_MODEL_PROFILES,
             "errors": [],
         },
     )
@@ -737,7 +742,8 @@ def _create_new_project_body(request: Request, form):
                 "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
-                "default_local_model": recommended_local_model(),
+                "default_local_model": default_local_profile(),
+                "local_model_profiles": LOCAL_MODEL_PROFILES,
                 "errors": errors,
             },
             status_code=400,
@@ -776,7 +782,8 @@ def _create_new_project_body(request: Request, form):
                 "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
-                "default_local_model": recommended_local_model(),
+                "default_local_model": default_local_profile(),
+                "local_model_profiles": LOCAL_MODEL_PROFILES,
                 "errors": [],
                 "existing_project": existing,
             },
