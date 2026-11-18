@@ -70,29 +70,34 @@ def _real_local_folder() -> Path:
     return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "GClaudeIndexer"
 
 
-def _prepare_local_folder(folder: Path, real: Path) -> None:
+def _prepare_local_folder(folder: Path, real: Path) -> list[Path]:
     """Components through junctions (read where they are, never copied),
-    `tools.json` copied, none of the user's files."""
+    `tools.json` copied, none of the user's files. Returns the junctions."""
     import shutil
 
     for name in _SHARED_LOCAL_FILES:
         if (real / name).is_file():
             shutil.copy2(real / name, folder / name)
+    junctions = []
     if sys.platform == "win32":
         import _winapi
 
         for name in _SHARED_LOCAL_FOLDERS:
             if (real / name).is_dir():
                 _winapi.CreateJunction(str(real / name), str(folder / name))
+                junctions.append(folder / name)
+    return junctions
 
 
-def _remove_junctions(folder: Path) -> None:
+def _remove_junctions(junctions: list[Path]) -> None:
     """Junctions out before pytest cleans its temporary folders, so that
-    cleanup never walks into the real components. `os.rmdir` removes a
-    junction itself and refuses a folder that is not empty."""
-    for name in _SHARED_LOCAL_FOLDERS:
-        if os.path.lexists(folder / name):
-            os.rmdir(folder / name)
+    cleanup never walks into the real components. Only the ones created
+    here: with no real folder to point at (CI), a test may create a plain
+    `helper` folder of its own, which is pytest's to clean. `os.rmdir`
+    removes a junction itself, never what it points at."""
+    for link in junctions:
+        if os.path.lexists(link):
+            os.rmdir(link)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -112,7 +117,7 @@ def _session_local_folder(tmp_path_factory):
 
     real = _real_local_folder()
     folder = tmp_path_factory.mktemp("local-session")
-    _prepare_local_folder(folder, real)
+    junctions = _prepare_local_folder(folder, real)
     previous = os.environ.get(paths.LOCAL_FOLDER_ENV)
     os.environ[paths.LOCAL_FOLDER_ENV] = str(folder)
     yield real
@@ -120,7 +125,7 @@ def _session_local_folder(tmp_path_factory):
         os.environ.pop(paths.LOCAL_FOLDER_ENV, None)
     else:
         os.environ[paths.LOCAL_FOLDER_ENV] = previous
-    _remove_junctions(folder)
+    _remove_junctions(junctions)
 
 
 @pytest.fixture(autouse=True)
@@ -132,10 +137,10 @@ def _machine_local_folder(_session_local_folder, tmp_path_factory, monkeypatch):
     from gclaude_indexer import paths
 
     folder = tmp_path_factory.mktemp("local")
-    _prepare_local_folder(folder, _session_local_folder)
+    junctions = _prepare_local_folder(folder, _session_local_folder)
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(folder))
     yield
-    _remove_junctions(folder)
+    _remove_junctions(junctions)
 
 
 @pytest.fixture(autouse=True)
