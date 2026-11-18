@@ -14,27 +14,20 @@ remains is the way of *looking* at a collection, which `auto_settings.py`
 reuses after the scan: a handful of PDFs are opened (a few pages each) and a
 handful of text files are read, never the whole collection.
 
-`survey_folder` (a bounded walk of a folder, stopping after `_WALK_SECONDS` or
-`_WALK_MAX_FILES`) is kept for sampling a folder that is not in the database
-yet; the scan's own listing is what the automatic settings read.
+The scan's own listing is what the automatic settings read: this module never
+walks a folder by itself.
 """
 
 from __future__ import annotations
 
-import os
 import random
 import statistics
-import time
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from .file_types import ALWAYS_BLOCKED_EXTENSIONS, CATEGORY_ALL, category_of_extension
-from .paths import holds_generated_output
 
-_WALK_SECONDS = 6.0
-_WALK_MAX_FILES = 60_000
 _PDF_SAMPLE = 12
 _PDF_PAGES_SAMPLED = 6
 _TEXT_SAMPLE = 16
@@ -79,58 +72,8 @@ class FolderSurvey:
             return 0.0
         return (self.estimated_pdf_pages() + self.by_category["imagens"]) / total
 
-    def scanned_share(self) -> float:
-        return self.pdf_scanned / len(self.pdf_pages) if self.pdf_pages else 0.0
-
 
 # --- survey -----------------------------------------------------------------
-
-
-def _accepted(extension: str, categories: list[str]) -> str | None:
-    """The file's category if the project would scan it, else `None`."""
-    category = category_of_extension(extension)
-    if not categories or CATEGORY_ALL in categories:
-        if extension in ALWAYS_BLOCKED_EXTENSIONS:
-            return None
-        if category == "midia" and "midia" not in categories:
-            return None  # "all" nunca cobre áudio e vídeo
-        return category or ("text" if CATEGORY_ALL in categories else None)
-    return category if category in categories else None
-
-
-def _walk(folder: Path, categories: list[str], survey: FolderSurvey) -> dict[str, list[Path]]:
-    started = time.monotonic()
-    found: dict[str, list[Path]] = {}
-    stack = [folder]
-    while stack:
-        current = stack.pop()
-        try:
-            entries = list(os.scandir(current))
-        except OSError:
-            continue
-        # Mesma regra da varredura: saída gerada (outro projeto, Conjunto)
-        # não entra na amostra. A pasta escolhida em si não conta.
-        if current != folder and holds_generated_output(entry.name for entry in entries):
-            continue
-        for entry in entries:
-            if time.monotonic() - started > _WALK_SECONDS or survey.files >= _WALK_MAX_FILES:
-                survey.partial = True
-                survey.seconds = time.monotonic() - started
-                return found
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    stack.append(Path(entry.path))
-                    continue
-            except OSError:
-                continue
-            category = _accepted(os.path.splitext(entry.name)[1].lower(), categories)
-            if category is None:
-                continue
-            survey.files += 1
-            survey.by_category[category] += 1
-            found.setdefault(category, []).append(Path(entry.path))
-    survey.seconds = time.monotonic() - started
-    return found
 
 
 def _sample(paths: list[Path], size: int) -> list[Path]:
@@ -202,14 +145,6 @@ def _count_languages(texts: list[str], survey: FolderSurvey) -> None:
         models = tesseract_languages(found, text, limit=1)
         if models:
             survey.language_counts[models[0]] += 1
-
-
-def survey_folder(folder: Path, categories: list[str]) -> FolderSurvey:
-    survey = FolderSurvey()
-    found = _walk(folder, categories, survey)
-    texts = _survey_pdfs(found.get("pdf", []), survey) + _survey_text_files(found)
-    _count_languages(texts, survey)
-    return survey
 
 
 # --- OCR languages installed --------------------------------------------------

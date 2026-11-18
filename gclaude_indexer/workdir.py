@@ -113,11 +113,3 @@ def destination(output_folder: str | Path, subfolder: str, relative_path: str, s
     path = local_path(output_folder, subfolder, relative_path, suffix)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def intermediate_roots(output_folder: str | Path) -> list[Path]:
-    """Every folder that may hold this project's intermediates, local and
-    legacy — what cleanup and project deletion have to cover."""
-    roots = [work_folder(output_folder) / name for name in INTERMEDIATE_SUBFOLDERS]
-    roots += [Path(output_folder) / name for name in INTERMEDIATE_SUBFOLDERS]
-    return roots
