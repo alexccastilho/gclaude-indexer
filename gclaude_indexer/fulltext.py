@@ -55,12 +55,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import language_detect
+from . import language_detect, light_formats
 from .config import ProjectConfig
 from .db import trigram_available
 from .events import record_event
 from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_whole_document_file
 from .parallelism import io_workers_for
+from .workdir import converted_artifact_path
 
 # A passage is cut at the next heading once it holds this many characters,
 # and cut anyway at the next line once it holds the second number.
@@ -206,9 +207,7 @@ class MessagePassages:
         self.references = references
 
     def __iter__(self):
-        from .light_formats import iter_pages
-
-        for number, message in enumerate(iter_pages(self.path), start=1):
+        for number, message in enumerate(light_formats.iter_pages(self.path), start=1):
             reference = self.references.get(number, f"p. {number}")
             for passage in split_document(message):
                 passage.locator = " · ".join(part for part in (reference, passage.locator) if part)
@@ -217,8 +216,6 @@ class MessagePassages:
 
 def _read_passages(config: ProjectConfig, row, references: dict[int, str]):
     """`passages_for_file` without the database: safe in a worker thread."""
-    from .conversion import converted_artifact_path
-
     relative = row["relative_path"]
     category = category_of_extension("." + row["extension"])
 

@@ -25,21 +25,21 @@ def test_a_suite_nunca_alcanca_o_ollama_real():
     """Antes desta fase a suíte fazia centenas de pedidos 404 ao Ollama real
     da máquina do desenvolvedor (modelos falsos em 127.0.0.1:11434), e duas
     quedas do servidor em uso coincidiram com rodadas da suíte em 02/11."""
-    from gclaude_indexer import engine_local
+    from gclaude_indexer import engine_local, ollama_models
 
-    assert engine_local.OLLAMA_BASE_URL == "http://127.0.0.1:9"
+    assert ollama_models.OLLAMA_BASE_URL == "http://127.0.0.1:9"
     assert engine_local.LocalEngine(model="x").url_base == "http://127.0.0.1:9"
     assert engine_local.LocalEngine(model="x", url_base="http://127.0.0.1:8").url_base == "http://127.0.0.1:8"
 
 
 def test_os_outros_leitores_do_ollama_tambem_usam_a_porta_fechada(monkeypatch):
-    """`hardware` e `web.ollama_models` consultavam `/api/tags` com o
+    """`hardware` e `ollama_models` consultavam `/api/tags` com o
     endereço copiado na importação — a rodada parcial da suíte deixou 7
     pedidos `GET /api/tags` no log do servidor real mesmo com a fixture."""
     import urllib.request
 
     from gclaude_indexer import hardware
-    from gclaude_indexer.web import ollama_models
+    from gclaude_indexer import ollama_models
 
     urls = []
 

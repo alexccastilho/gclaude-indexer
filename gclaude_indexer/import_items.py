@@ -49,9 +49,9 @@ from .config import ProjectConfig
 from .events import record_event
 from .item_normalize import clean_authors, clean_placeholders, fill_structured_authors, normalize_types
 from .windows_prep import pages_for_group
+from .paths import RAW_ITEMS_FILE_NAME
 from .run_control import checkpoint
 
-RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
 _CONFIDENCE_ORDER = {"high": 3, "medium": 2, "low": 1}
 
 

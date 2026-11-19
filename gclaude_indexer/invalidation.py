@@ -41,10 +41,9 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .fulltext import remove_file as remove_from_search
-from .conversion import converted_artifact_path
+from .workdir import converted_artifact_path
 from .events import record_event
-from .import_items import RAW_ITEMS_FILE_NAME
-from .paths import resolve_within
+from .paths import RAW_ITEMS_FILE_NAME, resolve_within
 from .run_control import checkpoint
 from .update_plan import FileChange, UpdatePlan, build_update_plan, detect_changes, plan_from_changes
 from .windows_prep import sanitize_group_name, window_key, window_spans

@@ -35,6 +35,32 @@ _BEGIN_PREFIX = "<!-- GCLAUDE-INDEXER:BEGIN"
 
 BACKUP_SUFFIX = ".bak"
 
+# Kept in Portuguese on purpose: this is default *content* written into
+# `project_instructions.md` for the collection's own Claude Project, not UI
+# text — it is not covered by the i18n layer and changing its wording would
+# be a content change, not a rename. (Task 11, Phase 14: the file's own
+# headings and labels now follow the interface language — see
+# `artifacts.generate_project_instructions_md()` — but this default role prose
+# and `SOURCE_OF_TRUTH_RULE` stay out of scope, same as this comment
+# predates.)
+DEFAULT_ROLE = (
+    "Você é um assistente de pesquisa que ajuda a localizar e resumir peças "
+    "deste acervo. Responda com base no índice e na cronologia para "
+    "encontrar a peça certa, mas siga sempre a regra inegociável abaixo "
+    "antes de citar qualquer valor, data ou conteúdo de tabela."
+)
+
+SOURCE_OF_TRUTH_RULE = (
+    "**Valor, data e conteúdo de tabela citados numa resposta sempre vêm da "
+    "leitura do arquivo original — nunca do índice.** O índice e a "
+    "cronologia foram gerados por OCR e por um motor de classificação "
+    "automática; ambos podem errar. Servem só para localizar a peça certa "
+    "pela referência (`f. N` ou `p. N`) e pelo nome do arquivo de origem. "
+    "Antes de citar um número, uma data ou o conteúdo de uma tabela, abra o "
+    "arquivo original na pasta de origem, na referência indicada, e "
+    "confirme o valor ali."
+)
+
 
 def _one_newline_style(text: str) -> str:
     """`\\r\\n` and lone `\\r` as `\\n`. Written in text mode, a `\\r\\n` would

@@ -18,7 +18,7 @@ unexpected ways.
 
 Does not reimplement detection that already exists in another module: GPU
 comes from `hardware.py` (`Win32_VideoController`/`nvidia-smi`), the models
-installed in Ollama come from `web.ollama_models.list_installed_models`,
+installed in Ollama come from `ollama_models.list_installed_models`,
 and the presence of the sensor DLLs comes from `sensors.dll_path`/
 `unavailable_reason`.
 """
@@ -33,7 +33,7 @@ from .i18n import DEFAULT_LANGUAGE, translate
 from .sensors import DLL_NAME, dll_path, unavailable_reason
 from .tools import find as find_tool
 from .subprocess_utils import run_hidden
-from .web.ollama_models import list_installed_models, model_downloaded_on_disk
+from .ollama_models import list_installed_models, model_downloaded_on_disk
 
 _TESSERACT_COMMAND = (
     "winget install --id UB-Mannheim.TesseractOCR -e --silent "

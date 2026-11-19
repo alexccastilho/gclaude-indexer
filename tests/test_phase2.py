@@ -5,7 +5,8 @@ from __future__ import annotations
 from gclaude_indexer.config import load_config
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
-from gclaude_indexer.scanning import compute_hash, derive_group_key, scan
+from gclaude_indexer.scanning import scan
+from gclaude_indexer.source_folder import compute_hash, derive_group_key
 
 
 def _criar_acervo_exemplo(base):

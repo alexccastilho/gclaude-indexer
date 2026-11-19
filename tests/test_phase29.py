@@ -708,7 +708,7 @@ def test_modelo_automatico_segue_a_vram(monkeypatch):
     from gclaude_indexer.config import ProjectConfig
 
     monkeypatch.setattr(engine_local, "gpu_vram_mb", lambda: 8192)
-    import gclaude_indexer.web.ollama_models as om
+    import gclaude_indexer.ollama_models as om
 
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
     assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "ornith-1.5:9b"
@@ -723,7 +723,7 @@ def test_perfis_mais_rapido_e_melhor_qualidade(monkeypatch):
     """2.1.0: o projeto escolhe um perfil; um nome de modelo continua valendo."""
     from gclaude_indexer import engine_local
     from gclaude_indexer.config import ProjectConfig
-    import gclaude_indexer.web.ollama_models as om
+    import gclaude_indexer.ollama_models as om
 
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
     cfg = lambda modelo: ProjectConfig(name="x", source_folder=".", output_folder=".", local_model=modelo)

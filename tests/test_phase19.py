@@ -669,7 +669,7 @@ def test_fechar_o_ollama_funciona_com_ele_ausente():
 
 
 def test_o_modelo_baixado_e_encontrado_no_disco(tmp_path, monkeypatch):
-    from gclaude_indexer.web.ollama_models import model_downloaded_on_disk
+    from gclaude_indexer.ollama_models import model_downloaded_on_disk
 
     manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /
                  "library" / "qwen3.5" / "4b")
@@ -683,7 +683,7 @@ def test_o_modelo_baixado_e_encontrado_no_disco(tmp_path, monkeypatch):
 
 
 def test_sem_tag_o_padrao_do_ollama_e_latest(tmp_path, monkeypatch):
-    from gclaude_indexer.web.ollama_models import model_downloaded_on_disk
+    from gclaude_indexer.ollama_models import model_downloaded_on_disk
 
     manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /
                  "library" / "mistral" / "latest")

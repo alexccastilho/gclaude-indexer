@@ -17,6 +17,7 @@ import pytest
 from gclaude_indexer import conversion as conversao_mod
 from gclaude_indexer import extraction as extracao_mod
 from gclaude_indexer import scanning as varredura_mod
+from gclaude_indexer import source_folder
 from gclaude_indexer.config import ProjectConfig
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.update_plan import SourceFolderUnavailable, detect_changes
@@ -264,12 +265,12 @@ def test_pasta_que_nao_responde_interrompe_a_caminhada(tmp_path, monkeypatch, li
             liberar_presos.wait()
         return scandir_real(caminho)
 
-    monkeypatch.setattr(varredura_mod.os, "scandir", _scandir)
-    monkeypatch.setattr(varredura_mod, "FOLDER_LISTING_DEADLINE_SECONDS", 0.2)
+    monkeypatch.setattr(source_folder.os, "scandir", _scandir)
+    monkeypatch.setattr(source_folder, "FOLDER_LISTING_DEADLINE_SECONDS", 0.2)
 
     inicio = time.monotonic()
-    with pytest.raises(varredura_mod.SourceFolderStalled) as erro:
-        varredura_mod.walk_source_files(origem, tmp_path / "saida")
+    with pytest.raises(source_folder.SourceFolderStalled) as erro:
+        source_folder.walk_source_files(origem, tmp_path / "saida")
     assert time.monotonic() - inicio < 5
     assert erro.value.folder.name == "pasta"
 
@@ -290,8 +291,8 @@ def test_plano_de_atualizacao_nunca_le_pasta_travada_como_remocao(tmp_path, monk
             liberar_presos.wait()
         return scandir_real(caminho)
 
-    monkeypatch.setattr(varredura_mod.os, "scandir", _scandir)
-    monkeypatch.setattr(varredura_mod, "FOLDER_LISTING_DEADLINE_SECONDS", 0.2)
+    monkeypatch.setattr(source_folder.os, "scandir", _scandir)
+    monkeypatch.setattr(source_folder, "FOLDER_LISTING_DEADLINE_SECONDS", 0.2)
 
     with pytest.raises(SourceFolderUnavailable):
         detect_changes(conn, config)

@@ -111,7 +111,7 @@ def test_banco_ja_quebrado_pela_versao_anterior_e_reparado(tmp_path):
     # this state — but a database left by 1.10.2 still has it.
     caminho = origem / "pasta" / "a.txt"
     _gravar(caminho, "Ata da reunião extraordinária.", deslocamento=10)
-    from gclaude_indexer.scanning import compute_hash
+    from gclaude_indexer.source_folder import compute_hash
 
     conn.execute(
         "UPDATE file SET status = 'discovered', page_count = NULL, sha256 = ?, size = ?, mtime = ?"

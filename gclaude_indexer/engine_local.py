@@ -36,54 +36,29 @@ from .db import BatchWriter
 from .file_types import PAGED_CATEGORIES, category_of_extension
 from .events import record_event
 from .i18n import nested
-from .import_items import RAW_ITEMS_FILE_NAME
 from .engine_rules import RulesEngine, load_rules
 from .gpu_budget import server_environment
 from .html_text import STRUCK_MARK
-from . import ollama_backend
+from . import fulltext, hardware, ollama_backend, ollama_models
+from .ollama_backend import OLLAMA_SERVE_LOG_NAME
+from .ollama_models import DEFAULT_LOCAL_MODEL
 from .subprocess_utils import start_in_background
 from . import language_detect, planalto
-from .paths import machine_local_folder
+from .paths import RAW_ITEMS_FILE_NAME, machine_local_folder
 from .tools import find as find_tool
 
-OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 # Was 120. A full window in the per-page mode answers ~1,800
 # tokens; on a 6 GB laptop card running hot (84 °C) that took
 # 40 s on average and past 120 s on the heavy ones, which then timed out,
 # restarted Ollama and started the same window over. This is a hang
 # detector, not a pace target.
 GENERATION_TIMEOUT_S = 300
-# What a server this program brings up prints goes here instead of
-# nowhere, so the cause of a crash can be read afterwards.
-OLLAMA_SERVE_LOG_NAME = "ollama-serve.log"
 PING_TIMEOUT_S = 5
 # Explicit user request: when Ollama does not respond, try to restart the
 # server on our own before giving up and falling back to the 'rules' engine.
 OLLAMA_RESTART_ATTEMPTS = 3
 WAIT_BETWEEN_ATTEMPTS_S = 4.0
 
-# By explicit user decision, the 'local' engine always uses this model, on
-# any machine — the hardware table from section 10.2 (phase 7) still exists
-# for diagnostics/reporting, but no longer decides the model used here. Only
-# a manual choice in `modelo_local` (form) overrides this.
-#
-# Version 1.0.1 moved the default from `gemma4:e4b` to `qwen3.5:4b`, on the
-# benchmark this project ran over the same windows of a 31-page document,
-# every model fully resident on an 8 GB card:
-#
-#   qwen3.5:4b     3.0 GB   100% of types filled    30.8 s/window
-#   gemma4:e4b     3.1 GB    79.5%                  38.5 s/window
-#   qwen3.5:9b     5.3 GB    79.5%                  86.2 s/window
-#   qwen3:8b       5.4 GB   100%                   108.8 s/window
-#   granite4.2:8b  5.7 GB   100%                   116.9 s/window
-#
-# `qwen3.5:4b` wins on both axes at once — best quality, fastest — and it is
-# also the smallest download by far: `gemma4:e4b` pulls ~9.6 GB from Ollama
-# even though only ~3.1 GB is resident, so the switch cuts the first-run
-# download roughly threefold and fits a 6 GB card as comfortably as an 8 GB
-# one. `gemma4:e4b` remains selectable in the form for comparison; it is no
-# longer downloaded by the installer.
-DEFAULT_LOCAL_MODEL = "qwen3.5:4b"
 
 # A card with 8 GB or more of VRAM holds the 9B model whole, and the
 # bigger model reads names, signatures and dates better. Cards of 6 GB or
@@ -117,8 +92,6 @@ def gpu_vram_mb() -> int:
     if not _vram_cache:
         vram = 0
         try:
-            from . import hardware
-
             gpu = hardware._detect_nvidia_gpu() or hardware._detect_wmi_gpu()
             vram = int(gpu.vram_mb) if gpu else 0
         except Exception:
@@ -323,9 +296,8 @@ def model_to_use(conn: sqlite3.Connection | None, config: ProjectConfig) -> str:
         # A machine upgraded from an older version may not have the 9B model
         # yet; the 4B one it already has beats waiting for a download.
         try:
-            from .web.ollama_models import model_downloaded_on_disk
-
-            if not model_downloaded_on_disk(recommended) and model_downloaded_on_disk(DEFAULT_LOCAL_MODEL):
+            downloaded = ollama_models.model_downloaded_on_disk
+            if not downloaded(recommended) and downloaded(DEFAULT_LOCAL_MODEL):
                 return DEFAULT_LOCAL_MODEL
         except Exception:
             pass
@@ -488,7 +460,7 @@ class LocalEngine:
     # class is defined, and the test suite replaces `OLLAMA_BASE_URL` with a
     # closed port so that no test ever reaches the Ollama of the machine it
     # runs on (fase 37). In production the two are the same value.
-    url_base: str = field(default_factory=lambda: OLLAMA_BASE_URL)
+    url_base: str = field(default_factory=lambda: ollama_models.OLLAMA_BASE_URL)
     timeout: int = GENERATION_TIMEOUT_S
     num_gpu: int = -1
     # Explicit context size. `None` means "let Ollama use its default",
@@ -2006,7 +1978,6 @@ def _prepare_second_attempts(conn: sqlite3.Connection, config: ProjectConfig, lo
     busca). Um motor que não tem esse campo (um dublê de teste, outro motor)
     segue como antes. O perfil do acervo não vai mais ao prompt (2.1.0, ver
     `build_context`)."""
-    from . import fulltext
 
     try:
         if getattr(local_engine, "page_text", None) is None:
@@ -2040,8 +2011,6 @@ FALLBACK_FIELD = "fallback"
 def _has_dedicated_gpu() -> bool:
     """A graphics card Ollama runs on (NVIDIA through `nvidia-smi`, or an
     AMD card reported by Windows). Integrated graphics do not count."""
-    from . import hardware
-
     if hardware._detect_nvidia_gpu() is not None:
         return True
     gpu = hardware._detect_wmi_gpu()

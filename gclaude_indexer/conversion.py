@@ -33,6 +33,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 from . import language_detect, legacy_office, light_formats, media, no_window, ocr_detection, outlook, tools, workdir
+from .workdir import converted_artifact_path, text_suffix
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
@@ -42,6 +43,7 @@ from .worker_pool import (
     deadline_for_size,
 )
 from .parallelism import _physical_cores, io_workers_for, workers_for
+from .fulltext import remove_file as remove_from_search
 from .file_types import (
     ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
     REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
@@ -63,15 +65,6 @@ LEGACY_CATEGORY = "legados"
 OUTLOOK_CATEGORY = "outlook"
 # Áudio e vídeo (`midia`): fila própria, transcrita em fluxo neste processo (`_convert_media`).
 MEDIA_CATEGORY = "midia"
-# Extensões que já existiam antes da 2.0.0: o texto intermediário delas
-# continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
-# Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
-# `IMG_1.HEIC` e `IMG_1.JPG` não podem disputar o mesmo arquivo.
-_ORIGINAL_EXTENSIONS = frozenset({
-    "docx", "xlsx", "pptx", "jpg", "jpeg", "png", "tif", "tiff", "bmp", "gif", "webp",
-    "txt", "md", "log", "csv", "html", "htm", "xhtml", "xht", "shtml", "mht", "mhtml", "xml", "json",
-    "eml", "msg",
-})
 ERROR_MESSAGE_CHAR_LIMIT = 500
 
 
@@ -98,57 +91,6 @@ def _destination_path(output_dir: Path, subfolder: str, relative_path: str, new_
     # In the per-machine work folder, never in the (Drive-synced)
     # output folder — see `workdir.py`.
     return workdir.destination(output_dir, subfolder, relative_path, new_extension)
-
-
-def converted_artifact_path(
-    output_folder: str | Path,
-    relative_path: str,
-    extension: str,
-    needs_ocr: bool,
-) -> Path | None:
-    """The intermediate `extraction` re-reads this file from, or `None`
-    when it reads the original document in the source folder.
-
-    The single place that answers "does this file have an intermediate on
-    disk". `_process_file` below writes it and
-    `extraction._extract_file_pages` reads it, so a third party that needs
-    to know whether it is still there — the incremental update, which
-    sends a merely-renumbered file back to `'converted'` precisely so
-    extraction can re-read the intermediate instead of paying OCR again —
-    must agree with both. Agreeing means asking here, not restating the
-    rule: `cleanup.py` deletes `converted/` permanently, and a guess that
-    says "the artifact is there" when it is not costs the document.
-
-    A PDF that already had a text layer is the one case with no
-    intermediate: nothing was written to `converted/` for it and
-    extraction opens the original, so there is nothing `cleanup.py` could
-    have taken away.
-    """
-    extension = extension.lstrip(".").lower()
-    category = category_of_extension("." + extension)
-    if category == "pdf":
-        if not needs_ocr:
-            return None
-        return workdir.intermediate_path(output_folder, "converted", relative_path, ".pdf")
-    if category in ("paginados", "legados"):
-        # Sempre há um PDF intermediário (o original não é PDF).
-        return workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
-    if category == "assinados":
-        # Só o conteúdo envelopado diz qual: PDF dentro, PDF aqui; qualquer
-        # outro tipo vira texto. Quem converte apaga o outro.
-        as_pdf = workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
-        if as_pdf.exists():
-            return as_pdf
-        return workdir.intermediate_path(output_folder, "converted", relative_path, f".{extension}.txt")
-    return workdir.intermediate_path(output_folder, "converted", relative_path, text_suffix(extension))
-
-
-def text_suffix(extension: str) -> str:
-    """Sufixo do `.txt` intermediário de uma extensão."""
-    extension = extension.lstrip(".").lower()
-    if category_of_extension("." + extension) is not None and extension not in _ORIGINAL_EXTENSIONS:
-        return f".{extension}.txt"
-    return ".txt"
 
 
 def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
@@ -1524,8 +1466,6 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
     Those files are named in a warning instead — the project update is the
     path that discards windows correctly. A file waiting for a component in
     a group with windows is held the same way (`components_held_back`)."""
-    from .fulltext import remove_file as remove_from_search
-
     rows, held_back = _ocr_retry_candidates(conn)
     requeued = 0
     try:

@@ -79,7 +79,7 @@ def test_um_projeto_da_1_0_1_ganha_a_coluna_na_primeira_abertura(tmp_path):
 
 
 def test_o_caminhamento_ignora_lixo_de_sistema_e_a_pasta_de_saida(tmp_path):
-    from gclaude_indexer.scanning import source_files
+    from gclaude_indexer.source_folder import source_files
 
     origem = tmp_path / "origem"
     saida = origem / "saida"
@@ -885,7 +885,7 @@ def _group_key(origem: Path, saida: Path) -> str:
     intended group would never match, and every divergence test would
     measure the wrong thing while still passing.
     """
-    from gclaude_indexer.scanning import derive_group_key
+    from gclaude_indexer.source_folder import derive_group_key
 
     origem_resolvida = origem.resolve()
     chave = derive_group_key(

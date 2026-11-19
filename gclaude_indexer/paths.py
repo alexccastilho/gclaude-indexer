@@ -91,6 +91,9 @@ def natural_sort_key(text: str) -> list[int | str]:
 # documento do acervo na reindexação.
 OUTPUT_FOLDER_SUFFIX = "AI"
 PROJECT_DB_NAME = "project.db"
+# What the classification engines write, one item per line, and the import
+# step reads back into the database.
+RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
 # Marcador que os Conjuntos gravam na pasta de destino (que não tem
 # `project.db`): é o que faz a varredura de qualquer projeto reconhecer a
 # pasta como saída gerada e não indexá-la como documento.

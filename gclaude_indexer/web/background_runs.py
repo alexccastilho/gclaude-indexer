@@ -40,7 +40,7 @@ from ..auto_settings import resolve_auto_settings
 from ..engine_local import model_to_use
 from ..orchestrator import resolve_effective_engine, run_classification
 from ..project import load_project
-from .. import scanning
+from .. import source_folder
 from ..scanning import scan
 from .eta import ProgressEstimator
 
@@ -157,17 +157,17 @@ def _scan_totals(
     config: ProjectConfig,
     on_found: Callable[[int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-) -> tuple[list[scanning.SourceFile], int]:
+) -> tuple[list[source_folder.SourceFile], int]:
     """The files the scan will walk, in order, and their total bytes.
 
-    One walk (`scanning.walk_source_stats`, the scan's own criteria — system
+    One walk (`source_folder.walk_source_stats`, the scan's own criteria — system
     files such as `desktop.ini` left out, so the bar's denominator matches
     what the scan records): the list is handed to the scan so the folder is
     not walked again, the count drives the progress bar, and the byte total
     drives the time estimate (`eta.py`) — scanning hashes every file, so its
     cost tracks size, not file count.
     """
-    found = scanning.walk_source_stats(
+    found = source_folder.walk_source_stats(
         Path(config.source_folder).resolve(),
         Path(config.output_folder).resolve(),
         on_found=on_found,
@@ -532,7 +532,7 @@ class TaskManager:
                     task.finished_ok = True
                 finally:
                     work_conn.close()
-            except scanning.SourceFolderStalled as exc:
+            except source_folder.SourceFolderStalled as exc:
                 task.error = translate(language or DEFAULT_LANGUAGE, "error.folder_stalled", folder=str(exc.folder))
             except Exception as exc:  # never brings down the server
                 task.error = str(exc)[:500]

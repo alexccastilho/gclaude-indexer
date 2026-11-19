@@ -255,13 +255,41 @@ def _extension(name: str) -> str:
     return suffix
 
 
+# Files the operating system, the sync client or an editor writes into a
+# folder without anyone putting them there. Matched by exact name (lower
+# case) or by prefix, and never indexed.
+_SYSTEM_FILE_NAMES = frozenset({
+    "desktop.ini", "thumbs.db", "ehthumbs.db", ".ds_store",
+    ".dropbox", ".dropbox.attr", "folder.jpg", "albumartsmall.jpg",
+})
+_SYSTEM_FILE_PREFIXES = ("~$", ".~lock.", "albumart_")
+
+
+def is_system_file(path: Path) -> bool:
+    """Whether `path` is operating-system or sync bookkeeping.
+
+    Deliberately a small, explicit list rather than a rule like "hidden
+    files": a collection can legitimately contain a document whose name
+    starts with a dot, and refusing to index it because of that would be a
+    silent loss of the user's own material. Everything here is a file no
+    person put in the folder.
+
+    Bookkeeping files (such as desktop.ini) that slip in through the "all
+    extensions" option are never indexed; otherwise a `desktop.ini` could
+    become item number one of an index, summarised as
+    "operating system configuration file".
+    """
+    name = path.name.lower()
+    if name in _SYSTEM_FILE_NAMES:
+        return True
+    return any(name.startswith(prefix) for prefix in _SYSTEM_FILE_PREFIXES)
+
+
 def name_decision(name: str, categories: list[str] | None = None) -> str | None:
     """The part of `index_decision` that needs only the file name, in the
     same order. `None` means "not decided by the name"."""
     lower = name.lower()
     extension = _extension(lower)
-    # Local import: scanning imports this module.
-    from .scanning import is_system_file
     if is_system_file(Path(name)):
         return REASON_SYSTEM
     if extension in GOOGLE_DOC_EXTENSIONS:
