@@ -108,7 +108,7 @@ from ..engine_local import (
     LOCAL_MODEL_PROFILES,
     default_local_profile,
 )
-from .ollama_models import list_installed_models
+from ..ollama_models import list_installed_models
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_theme
 

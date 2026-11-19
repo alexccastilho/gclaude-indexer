@@ -174,17 +174,17 @@ def test_ini_nunca_entra_nem_com_todas_as_extensoes():
 def test_a_pasta_de_origem_e_percorrida_uma_vez_so(cliente, tmp_path, monkeypatch):
     """A contagem entrega a lista pronta à varredura: no Drive, cada
     caminhada por uma pasta com muitos arquivos custa minutos."""
-    from gclaude_indexer import scanning
+    from gclaude_indexer import source_folder
 
     projeto_id, _ = _criar_projeto(cliente, tmp_path)
     caminhadas = []
-    original = scanning.walk_source_stats
+    original = source_folder.walk_source_stats
 
     def contar(*args, **kwargs):
         caminhadas.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(scanning, "walk_source_stats", contar)
+    monkeypatch.setattr(source_folder, "walk_source_stats", contar)
     cliente.post(f"/projects/{projeto_id}/run-next")
     _esperar(lambda: task_manager.get(projeto_id, "scan") is not None
              and not task_manager.get(projeto_id, "scan").running)
@@ -194,7 +194,7 @@ def test_a_pasta_de_origem_e_percorrida_uma_vez_so(cliente, tmp_path, monkeypatc
 
 
 def test_caminhada_informa_cada_arquivo_encontrado(tmp_path):
-    from gclaude_indexer.scanning import walk_source_files
+    from gclaude_indexer.source_folder import walk_source_files
 
     origem = tmp_path / "origem"
     (origem / "a").mkdir(parents=True)

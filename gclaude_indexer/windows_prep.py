@@ -30,7 +30,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .paths import natural_sort_key, resolve_within
+from .paths import RAW_ITEMS_FILE_NAME, natural_sort_key, resolve_within
 
 
 @dataclass
@@ -271,8 +271,6 @@ def mark_answered_windows(conn, output_folder: Path | str) -> int:
     was removed (2.0.0). Used once, when a project saved with that engine is
     opened, so the automatic classification does not redo them. Returns how
     many windows were marked."""
-    from .import_items import RAW_ITEMS_FILE_NAME  # late import avoids a cycle
-
     jsonl_path = Path(output_folder) / RAW_ITEMS_FILE_NAME
     try:
         # `split("\n")`, not `splitlines()` (1.5.9, see `import_items`).

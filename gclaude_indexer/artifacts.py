@@ -38,34 +38,10 @@ from .config import ProjectConfig
 from .events import record_event
 from .html_text import STRUCK_MARK
 from .i18n import _REFERENCE_LANGUAGE, translate
-from .managed_block import user_part, write_managed
+from .instructions_dedup import detect, is_only_generated
+from .managed_block import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE, has_managed_block, user_part, write_managed
 from .run_control import OperationCancelled, checkpoint
 
-# Kept in Portuguese on purpose: this is default *content* written into
-# `project_instructions.md` for the collection's own Claude Project, not UI
-# text — it is not covered by the i18n layer and changing its wording would
-# be a content change, not a rename. (Task 11, Phase 14: the file's own
-# headings and labels now follow the interface language — see
-# `generate_project_instructions_md()` below — but this default role prose
-# and `SOURCE_OF_TRUTH_RULE` stay out of scope, same as this comment
-# predates.)
-DEFAULT_ROLE = (
-    "Você é um assistente de pesquisa que ajuda a localizar e resumir peças "
-    "deste acervo. Responda com base no índice e na cronologia para "
-    "encontrar a peça certa, mas siga sempre a regra inegociável abaixo "
-    "antes de citar qualquer valor, data ou conteúdo de tabela."
-)
-
-SOURCE_OF_TRUTH_RULE = (
-    "**Valor, data e conteúdo de tabela citados numa resposta sempre vêm da "
-    "leitura do arquivo original — nunca do índice.** O índice e a "
-    "cronologia foram gerados por OCR e por um motor de classificação "
-    "automática; ambos podem errar. Servem só para localizar a peça certa "
-    "pela referência (`f. N` ou `p. N`) e pelo nome do arquivo de origem. "
-    "Antes de citar um número, uma data ou o conteúdo de uma tabela, abra o "
-    "arquivo original na pasta de origem, na referência indicada, e "
-    "confirme o valor ali."
-)
 
 
 def _now_iso() -> str:
@@ -1221,14 +1197,10 @@ def _is_legacy_text(text: str) -> bool:
     hand, in a file with no marks yet, would have had all of their text
     taken for ours and replaced (a `.bak` kept it, but still). Now every
     section of the file has to be one the program writes."""
-    from .instructions_dedup import is_only_generated
-
     return SOURCE_OF_TRUTH_RULE in text and is_only_generated(text)
 
 
 def _is_legacy_file(path: Path) -> bool:
-    from .managed_block import has_managed_block
-
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -1237,8 +1209,6 @@ def _is_legacy_file(path: Path) -> bool:
 
 
 def _duplicate_notice(conn, config: ProjectConfig, own: str, language: str) -> list[str]:
-    from .instructions_dedup import detect
-
     report = detect(own, config.subject)
     if not report.has_findings:
         return []

@@ -30,6 +30,7 @@ from .windows_counters import (
     vram_total_mb,
     vram_used_mb,
 )
+from . import ollama_models
 from .gpu_budget import loaded_model_share
 from .hardware import _detect_nvidia_gpu, _detect_wmi_gpu
 from .sensors import read_sensors
@@ -185,9 +186,7 @@ def sample_resources() -> ResourceSample:
     # apart from a model spilling into RAM. A bad answer costs the three
     # fields of this sample, never the sample.
     try:
-        from .engine_local import OLLAMA_BASE_URL
-
-        share = loaded_model_share(OLLAMA_BASE_URL)
+        share = loaded_model_share(ollama_models.OLLAMA_BASE_URL)
     except Exception:
         share = None
     return ResourceSample(

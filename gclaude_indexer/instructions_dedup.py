@@ -53,6 +53,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from .i18n import AVAILABLE_LANGUAGES, translate
+from .managed_block import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE
 
 _HEADING_KEYS = (
     "artifact.project_instructions.title",
@@ -137,8 +138,6 @@ class Reference:
 
 def reference(subject: str = "") -> Reference:
     """What the block can say, in the three languages."""
-    from .artifacts import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE
-
     trigrams: set = set()
     headings: set = set()
     prefixes = []

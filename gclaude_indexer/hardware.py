@@ -21,16 +21,14 @@ import json
 import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from . import windows_counters
 from .events import record_event
-from . import engine_local
-from .engine_local import DEFAULT_LOCAL_MODEL
+from . import ollama_models
+from .ollama_models import DEFAULT_LOCAL_MODEL
 from .i18n import nested
 from .paths import machine_local_folder
 from .tools import find as find_tool
@@ -38,7 +36,7 @@ from .subprocess_utils import run_hidden
 
 GB_MB = 1024
 
-# Default local model (`DEFAULT_LOCAL_MODEL`, in `engine_local.py` — the one
+# Default local model (`DEFAULT_LOCAL_MODEL`, in `ollama_models.py` — the one
 # source of truth for the name). Phase 13 Task 8 let the user pick a
 # different model through the form (`config.local_model`); from then on
 # `choose_model`, below, decides whether the hardware can handle the model
@@ -363,20 +361,8 @@ def _real_model_size_mb(model_name: str, timeout_s: float = _MODEL_SIZE_TIMEOUT_
     in bytes). Returns `None` when Ollama does not respond or the model has
     not been downloaded on this machine yet — in those cases the caller
     falls back to `ESTIMATED_MODEL_SIZE_MB`."""
-    try:
-        # Read at call time, not copied at import: the test suite points
-        # `engine_local.OLLAMA_BASE_URL` at a closed port (fase 37).
-        with urllib.request.urlopen(f"{engine_local.OLLAMA_BASE_URL}/api/tags", timeout=timeout_s) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
-        return None
-
-    models = data.get("models") if isinstance(data, dict) else None
-    if not isinstance(models, list):
-        return None
-
-    for model in models:
-        if isinstance(model, dict) and model.get("name") == model_name:
+    for model in ollama_models.installed_models(timeout_s) or []:
+        if model.get("name") == model_name:
             size_bytes = model.get("size")
             if isinstance(size_bytes, (int, float)) and size_bytes > 0:
                 return int(size_bytes) // (1024 * 1024)

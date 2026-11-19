@@ -72,9 +72,9 @@ def _ollama_em_porta_fechada(monkeypatch):
     falsos, e duas quedas do servidor em uso coincidiram com rodadas da
     suíte. A porta 9 (discard) recusa a conexão na hora; quem
     precisa de um servidor falso passa a própria URL."""
-    from gclaude_indexer import engine_local
+    from gclaude_indexer import ollama_models
 
-    monkeypatch.setattr(engine_local, "OLLAMA_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setattr(ollama_models, "OLLAMA_BASE_URL", "http://127.0.0.1:9")
 
 
 # Fase 37: the `ollama` CLI itself talks to the server named by OLLAMA_HOST —
@@ -86,9 +86,10 @@ def _ollama_em_porta_fechada(monkeypatch):
 # prints "Warning: could not connect" and still exits 0, so the diagnostics
 # keep reporting the client version.
 from gclaude_indexer import engine_local as _engine_local  # noqa: E402
+from gclaude_indexer import ollama_models as _ollama_models  # noqa: E402
 
 os.environ["OLLAMA_HOST"] = "127.0.0.1:9"
-_engine_local.OLLAMA_BASE_URL = "http://127.0.0.1:9"
+_ollama_models.OLLAMA_BASE_URL = "http://127.0.0.1:9"
 
 
 def _a_suite_nao_sobe_o_ollama(command, env=None, log_path=None):

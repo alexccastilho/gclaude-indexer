@@ -21,14 +21,10 @@ is marked `skipped`, with an event.
 
 from __future__ import annotations
 
-import hashlib
-import os
-import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from .config import ProjectConfig
 from .db import BatchWriter
@@ -42,11 +38,19 @@ from .file_types import (
     name_decision,
     needs_head,
 )
+from .fulltext import remove_file as remove_from_search
 from .i18n import DEFAULT_LANGUAGE, translate
-from .paths import holds_generated_output
+from .invalidation import discard_changed_file
+from . import source_folder
+from .source_folder import (
+    MAX_CONSECUTIVE_TIMEOUTS,
+    STAT_DEADLINE_SECONDS,
+    SourceFile,
+    compute_hash,
+    derive_group_key,
+)
+from .workdir import converted_artifact_path
 from .worker_pool import CallTimedOut, StepStalledError, call_with_deadline, deadline_for_size
-
-HASH_BLOCK_SIZE = 1024 * 1024
 
 
 @dataclass
@@ -63,43 +67,11 @@ class ScanResult:
     ignored_by_reason: dict[str, int] = field(default_factory=dict)
 
 
-def compute_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as file:
-        for chunk in iter(lambda: file.read(HASH_BLOCK_SIZE), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def read_head(path: Path) -> bytes:
     """Só o começo do arquivo: o bastante para `index_decision` decidir sem
     baixar um arquivo grande do Drive."""
     with open(path, "rb") as file:
         return file.read(HEAD_BYTES)
-
-
-def derive_group_key(relative_path: str, source_dir: Path, config: ProjectConfig) -> str | None:
-    """Derives the file's group key according to `config.group_mode`."""
-    parts = Path(relative_path).parts
-
-    if config.group_mode == "all_together":
-        return source_dir.name
-
-    if config.group_mode == "subfolder":
-        # More than one segment: the first is the immediate subfolder. A
-        # file loose at the root of the source folder forms its own group.
-        return parts[0] if len(parts) > 1 else source_dir.name
-
-    if config.group_mode == "name_pattern":
-        name = Path(relative_path).name
-        match = re.search(config.group_pattern, name)
-        if not match:
-            return None
-        if match.groups():
-            return match.group(1)
-        return match.group(0)
-
-    raise ValueError(f"unknown group_mode: {config.group_mode!r}")
 
 
 def _list_known_files(conn: sqlite3.Connection) -> tuple[set[str], dict[str, sqlite3.Row]]:
@@ -159,196 +131,6 @@ def _update_file(
     )
 
 
-# Files the operating system, the sync client or an editor writes into a
-# folder without anyone putting them there. Matched by exact name (lower
-# case) or by prefix, and never indexed.
-_SYSTEM_FILE_NAMES = frozenset({
-    "desktop.ini", "thumbs.db", "ehthumbs.db", ".ds_store",
-    ".dropbox", ".dropbox.attr", "albumartsmall.jpg",
-    ".dropbox", ".dropbox.attr", "folder.jpg", "albumartsmall.jpg",
-})
-_SYSTEM_FILE_PREFIXES = ("~$", ".~lock.", "albumart_")
-
-
-def is_system_file(path: Path) -> bool:
-    """Whether `path` is operating-system or sync bookkeeping.
-
-    Deliberately a small, explicit list rather than a rule like "hidden
-    files": a collection can legitimately contain a document whose name
-    starts with a dot, and refusing to index it because of that would be a
-    silent loss of the user's own material. Everything here is a file no
-    person put in the folder.
-
-    Bookkeeping files (such as desktop.ini) that slip in through the "all
-    extensions" option are never indexed; otherwise a `desktop.ini` could
-    become item number one of an index, summarised as
-    "operating system configuration file".
-    """
-    name = path.name.lower()
-    if name in _SYSTEM_FILE_NAMES:
-        return True
-    return any(name.startswith(prefix) for prefix in _SYSTEM_FILE_PREFIXES)
-
-
-FOLDER_LISTING_DEADLINE_SECONDS = 600.0
-STAT_DEADLINE_SECONDS = 600.0
-MAX_CONSECUTIVE_TIMEOUTS = 3
-
-
-class SourceFolderStalled(RuntimeError):
-    """A folder of the collection never answered its listing, twice.
-
-    Raised, never skipped: a walk that left a folder out would describe a
-    collection without those files, and the update plan reads a missing
-    file as a removed one."""
-
-    def __init__(self, folder: Path):
-        super().__init__(str(folder))
-        self.folder = folder
-
-
-def _list_folder(folder: Path) -> list[os.DirEntry]:
-    """`os.scandir(folder)` with a deadline. A Google Drive folder
-    that never answers its listing froze the walk, and with it the scan's
-    count, for good. One retry, on a fresh thread, then
-    `SourceFolderStalled`."""
-    for attempt in (1, 2):
-        try:
-            return call_with_deadline(
-                lambda: list(os.scandir(folder)), deadline=FOLDER_LISTING_DEADLINE_SECONDS,
-            )
-        except CallTimedOut:
-            if attempt == 2:
-                raise SourceFolderStalled(folder) from None
-    raise AssertionError("unreachable")
-
-
-class SourceFile(NamedTuple):
-    """One file of the collection as the folder listing reported it."""
-
-    path: Path
-    size: int
-    mtime: float
-
-
-def relative_text(path: Path, root: Path) -> str:
-    """`str(path.relative_to(root))`, by cutting the text of `root` off the
-    front when `path` is written under it. `Path.relative_to` was
-    most of the time of a walk over a large Google Drive folder, pure Python
-    work; the slice gives the same text. Anything not written as a plain
-    child of `root` takes the original, exact route."""
-    text = str(path)
-    prefix = str(root)
-    if not prefix.endswith(("\\", "/")):
-        prefix += os.sep
-    if text.startswith(prefix) and len(text) > len(prefix):
-        return text[len(prefix):]
-    return str(path.relative_to(root))
-
-
-class SourceListing(list):
-    """A lista de `SourceFile` de uma varredura, com as pastas que ela pulou
-    por serem saída gerada (a própria saída, outro projeto, um Conjunto):
-    `skipped_folders` guarda cada uma como texto relativo à origem, com
-    `/`. O plano de atualização usa isso para tirar do índice o que um
-    1.x antigo indexou dali."""
-
-    skipped_folders: list[str]
-
-    def __init__(self, items=(), skipped_folders=()):
-        super().__init__(items)
-        self.skipped_folders = list(skipped_folders)
-
-
-def walk_source_stats(
-    source_dir: Path,
-    output_dir: Path,
-    on_found: Callable[[int], None] | None = None,
-    should_stop: Callable[[], bool] | None = None,
-) -> SourceListing:
-    """Path, size and modification time of every file of the collection, in
-    the order the scan walks them.
-
-    `os.scandir` rather than `rglob` + `stat`: on Windows the directory
-    listing already carries each file's size **and modification time**
-    (`DirEntry.stat()` reads them from the listing, with no call to the
-    drive). On a Google Drive folder with over a hundred thousand files the
-    extra `stat` per file is what turns the walk into minutes: 1.8.1 took
-    the update check of a large collection from minutes to seconds by using
-    the listing's own values, which match the stored ones on every
-    unchanged file, so nothing has to be hashed again.
-
-    `on_found(n)` is called with the running count after each file — the
-    Execution screen shows it, so a long walk never looks frozen.
-    `should_stop` interrupts the walk (pause); what was found so far is
-    returned.
-    """
-    output_dir = output_dir.resolve()
-    found: list[SourceFile] = []
-    skipped: list[str] = []
-    pending = [source_dir]
-    while pending:
-        if should_stop is not None and should_stop():
-            break
-        current = pending.pop()
-        if current.resolve() == output_dir:
-            if current != source_dir:
-                skipped.append(relative_text(current, source_dir).replace(os.sep, "/"))
-            continue
-        try:
-            entries = _list_folder(current)
-        except OSError:
-            continue  # unreadable folder: same as `rglob`, which skips it
-        # Saída gerada de qualquer projeto (`project.db`) ou de um Conjunto
-        # (marcador) nunca é documento. A pasta de origem em si não entra
-        # na regra: pular a raiz esvaziaria o acervo inteiro.
-        if current != source_dir and holds_generated_output(entry.name for entry in entries):
-            skipped.append(relative_text(current, source_dir).replace(os.sep, "/"))
-            continue
-        for entry in entries:
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append(Path(entry.path))
-                    continue
-                if not entry.is_file():
-                    continue
-                info = entry.stat()
-            except OSError:
-                continue
-            path = Path(entry.path)
-            if is_system_file(path):
-                continue
-            found.append(SourceFile(path, info.st_size, info.st_mtime))
-            if on_found is not None:
-                on_found(len(found))
-    found.sort(key=lambda item: relative_text(item.path, source_dir).lower())
-    return SourceListing(found, skipped)
-
-
-def walk_source_files(
-    source_dir: Path,
-    output_dir: Path,
-    on_found: Callable[[int], None] | None = None,
-    should_stop: Callable[[], bool] | None = None,
-) -> list[tuple[Path, int]]:
-    """`(path, size)` of every file of the collection (see
-    `walk_source_stats`, which also keeps the modification time)."""
-    return [
-        (item.path, item.size)
-        for item in walk_source_stats(source_dir, output_dir, on_found, should_stop)
-    ]
-
-
-def source_files(source_dir: Path, output_dir: Path) -> list[Path]:
-    """Files of the collection, in the order the scan walks them.
-
-    Extracted from `scan()` so the update plan
-    (`update_plan.py`) walks by exactly the same criteria. Two walks that
-    disagree would make the plan describe a folder the scan does not see.
-    """
-    return [item.path for item in walk_source_stats(source_dir, output_dir)]
-
-
 def scan(
     conn: sqlite3.Connection,
     config: ProjectConfig,
@@ -381,7 +163,7 @@ def scan(
     result = ScanResult()
 
     if files is None:
-        files = walk_source_stats(source_dir, output_dir)
+        files = source_folder.walk_source_stats(source_dir, output_dir)
 
     writer = BatchWriter(conn)
     try:
@@ -589,10 +371,6 @@ def _holds_old_data(conn: sqlite3.Connection, relative_path: str) -> bool:
 
 def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
     """Pages, full-text rows and converted intermediate of one file."""
-    # Local imports: both modules import this one.
-    from .conversion import converted_artifact_path
-    from .fulltext import remove_file as remove_from_search
-
     row = conn.execute(
         "SELECT id, extension, needs_ocr FROM file WHERE relative_path = ?", (relative_path,)
     ).fetchone()
@@ -778,8 +556,6 @@ def _record_scanned_file(
             # abre a própria transação). No fluxo normal o documento chega
             # aqui já `discovered` e sem páginas, e nada é confirmado antes.
             if _holds_old_data(writer.conn, relative_path):
-                from .invalidation import discard_changed_file  # importa este módulo
-
                 writer.run_own_transaction(
                     lambda c: discard_changed_file(c, config, relative_path, name, size, language)
                 )

@@ -37,7 +37,7 @@ import fitz  # PyMuPDF
 
 from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
-from .conversion import converted_artifact_path
+from .workdir import converted_artifact_path
 from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
 from .db import BatchWriter
 from .events import record_event

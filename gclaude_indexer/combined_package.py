@@ -39,7 +39,6 @@ from .artifacts import (
     NORMS_FILENAME,
     PROJECT_INSTRUCTIONS_FILENAME,
     REVIEW_FILENAME,
-    SOURCE_OF_TRUTH_RULE,
     TIMELINE_FILENAME,
     ArtifactNames,
     project_instructions_sections,
@@ -48,7 +47,7 @@ from .catalog import CatalogEntry, find_project
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig
 from .i18n import DEFAULT_LANGUAGE, translate
-from .managed_block import merge_managed
+from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed
 from .paths import OUTPUT_MARKER_NAME, is_inside_folder
 from .project import load_project
 from .sets import SetEntry, SetMember

@@ -1162,7 +1162,7 @@ def test_arquivos_do_sistema_nao_viram_pecas():
     configuração do sistema operacional"."""
     from pathlib import Path as _Path
 
-    from gclaude_indexer.scanning import is_system_file
+    from gclaude_indexer.file_types import is_system_file
 
     for lixo in ("desktop.ini", "Thumbs.db", ".DS_Store", "~$rascunho.docx", ".~lock.a.odt#"):
         assert is_system_file(_Path(lixo)), lixo

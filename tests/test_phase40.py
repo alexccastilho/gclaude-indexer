@@ -329,7 +329,7 @@ def test_nenhum_texto_da_interface_tem_travessao():
 # --- performance (strategy chosen for projects with many files) -------------
 
 def test_caminho_relativo_rapido_e_igual_ao_do_pathlib(tmp_path):
-    from gclaude_indexer.scanning import relative_text
+    from gclaude_indexer.source_folder import relative_text
 
     raiz = tmp_path / "Acervo Ação"
     for rel in ("a.pdf", "Sub/b.PDF", "Sub/Mais Fundo/c d.docx", "ç/é.txt"):

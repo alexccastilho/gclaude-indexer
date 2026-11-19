@@ -23,7 +23,8 @@ from pathlib import Path
 
 from gclaude_indexer import db
 from gclaude_indexer.config import ProjectConfig
-from gclaude_indexer.scanning import SourceFile, scan, walk_source_stats
+from gclaude_indexer.scanning import scan
+from gclaude_indexer.source_folder import SourceFile, walk_source_stats
 from gclaude_indexer.update_plan import detect_changes
 
 

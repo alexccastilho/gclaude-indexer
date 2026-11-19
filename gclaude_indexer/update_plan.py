@@ -57,7 +57,7 @@ from .file_types import (
 )
 from .paths import natural_sort_key
 from .run_control import checkpoint
-from .scanning import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
+from .source_folder import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
 from .windows_prep import sanitize_group_name, window_key, window_spans
 from .worker_pool import CallTimedOut, DaemonThreadExecutor, deadline_for_size
 
@@ -136,7 +136,7 @@ def stale_page_paths(conn: sqlite3.Connection) -> set[str]:
 # que isso é conferido na tela seguinte, não nunca. Quem aplica (a execução,
 # o botão Atualizar) usa o prazo inteiro.
 SCREEN_READ_DEADLINE_SECONDS = 15.0
-# Como a varredura (`scanning.MAX_CONSECUTIVE_TIMEOUTS`): várias travadas
+# Como a varredura (`source_folder.MAX_CONSECUTIVE_TIMEOUTS`): várias travadas
 # seguidas são o disco ou o Drive, não o arquivo.
 MAX_CONSECUTIVE_TIMEOUTS = 3
 # Espera de uma leitura em fatias, para Parar valer no meio dela.
@@ -250,7 +250,7 @@ def detect_changes(
     screen's scan applies what changed by itself, but deleting a document
     from the index stays a decision the person confirms on the update
     screen. `listed`: the walk the caller already made
-    (`scanning.walk_source_stats`), so the folder is not walked twice.
+    (`source_folder.walk_source_stats`), so the folder is not walked twice.
 
     `unverified`: recebe o caminho de cada arquivo cujo tamanho ou data
     mudou mas que não pôde ser lido a tempo (`_PlanReader`). Ele não é

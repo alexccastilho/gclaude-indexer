@@ -39,6 +39,7 @@ import re
 from pathlib import Path
 
 from . import language_detect
+from .file_types import category_of_extension
 
 SAMPLE_PAGES = 3
 SAMPLE_DPI = 200
@@ -353,8 +354,6 @@ def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_read
     Chaves: `ocr_pages`/`page_count` (PDF), `native` (texto nativo),
     `scripts`, `rotate`, `samples`, `needs` (modelos de escrita a baixar) e
     `probed` (se o OSD rodou)."""
-    from .file_types import category_of_extension
-
     path = Path(source_folder) / row["relative_path"]
     category = category_of_extension("." + row["extension"])
     result: dict = {

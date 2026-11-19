@@ -33,7 +33,18 @@ import hashlib
 import os
 from pathlib import Path
 
+from .file_types import category_of_extension
 from .paths import machine_local_folder
+
+# Extensões que já existiam antes da 2.0.0: o texto intermediário delas
+# continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
+# Toda extensão nova ganha `<nome>.<ext>.txt`: `Planilha.xls` e `Planilha.xlsx`,
+# `IMG_1.HEIC` e `IMG_1.JPG` não podem disputar o mesmo arquivo.
+_ORIGINAL_EXTENSIONS = frozenset({
+    "docx", "xlsx", "pptx", "jpg", "jpeg", "png", "tif", "tiff", "bmp", "gif", "webp",
+    "txt", "md", "log", "csv", "html", "htm", "xhtml", "xht", "shtml", "mht", "mhtml", "xml", "json",
+    "eml", "msg",
+})
 
 INTERMEDIATE_SUBFOLDERS: tuple[str, ...] = ("converted", "blocks")
 WORK_FOLDER_NAME = "work"
@@ -113,3 +124,54 @@ def destination(output_folder: str | Path, subfolder: str, relative_path: str, s
     path = local_path(output_folder, subfolder, relative_path, suffix)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def converted_artifact_path(
+    output_folder: str | Path,
+    relative_path: str,
+    extension: str,
+    needs_ocr: bool,
+) -> Path | None:
+    """The intermediate `extraction` re-reads this file from, or `None`
+    when it reads the original document in the source folder.
+
+    The single place that answers "does this file have an intermediate on
+    disk". `conversion._process_file` writes it and
+    `extraction._extract_file_pages` reads it, so a third party that needs
+    to know whether it is still there — the incremental update, which
+    sends a merely-renumbered file back to `'converted'` precisely so
+    extraction can re-read the intermediate instead of paying OCR again —
+    must agree with both. Agreeing means asking here, not restating the
+    rule: `cleanup.py` deletes `converted/` permanently, and a guess that
+    says "the artifact is there" when it is not costs the document.
+
+    A PDF that already had a text layer is the one case with no
+    intermediate: nothing was written to `converted/` for it and
+    extraction opens the original, so there is nothing `cleanup.py` could
+    have taken away.
+    """
+    extension = extension.lstrip(".").lower()
+    category = category_of_extension("." + extension)
+    if category == "pdf":
+        if not needs_ocr:
+            return None
+        return intermediate_path(output_folder, "converted", relative_path, ".pdf")
+    if category in ("paginados", "legados"):
+        # Sempre há um PDF intermediário (o original não é PDF).
+        return intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
+    if category == "assinados":
+        # Só o conteúdo envelopado diz qual: PDF dentro, PDF aqui; qualquer
+        # outro tipo vira texto. Quem converte apaga o outro.
+        as_pdf = intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
+        if as_pdf.exists():
+            return as_pdf
+        return intermediate_path(output_folder, "converted", relative_path, f".{extension}.txt")
+    return intermediate_path(output_folder, "converted", relative_path, text_suffix(extension))
+
+
+def text_suffix(extension: str) -> str:
+    """Sufixo do `.txt` intermediário de uma extensão."""
+    extension = extension.lstrip(".").lower()
+    if category_of_extension("." + extension) is not None and extension not in _ORIGINAL_EXTENSIONS:
+        return f".{extension}.txt"
+    return ".txt"

@@ -381,7 +381,7 @@ def test_descricoes_dos_motores_nao_afirmam_o_que_o_codigo_nao_faz(cliente):
 def test_listar_modelos_devolve_nomes_ordenados(monkeypatch):
     import json
     import io
-    from gclaude_indexer.web import ollama_models
+    from gclaude_indexer import ollama_models
 
     resposta = json.dumps({"models": [
         {"name": "qwen3:8b"}, {"name": "gemma4:e4b"}, {"name": "gemma4:26b"},
@@ -400,7 +400,7 @@ def test_listar_modelos_devolve_nomes_ordenados(monkeypatch):
 
 def test_listar_modelos_devolve_lista_vazia_quando_ollama_esta_fora(monkeypatch):
     import urllib.error
-    from gclaude_indexer.web import ollama_models
+    from gclaude_indexer import ollama_models
 
     def _explode(*_args, **_kwargs):
         raise urllib.error.URLError("conexão recusada")
@@ -457,7 +457,7 @@ def test_formulario_reexibido_apos_erro_tambem_oferece_os_modelos(cliente, monke
 
 def test_listar_modelos_engole_resposta_http_malformada(monkeypatch):
     import http.client
-    from gclaude_indexer.web import ollama_models
+    from gclaude_indexer import ollama_models
 
     def _trunca(*_args, **_kwargs):
         raise http.client.IncompleteRead(b"parcial")

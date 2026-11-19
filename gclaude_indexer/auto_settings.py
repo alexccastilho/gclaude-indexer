@@ -39,6 +39,7 @@ from .config import ProjectConfig
 from .events import record_event
 from .file_types import category_of_extension
 from .i18n import nested
+from .ollama_models import list_installed_models
 from .settings_proposal import (
     FolderSurvey,
     _count_languages,
@@ -144,8 +145,6 @@ def _effective_engine(conn: sqlite3.Connection, config: ProjectConfig, language:
         if config.classification_engine in ("local", "rules"):
             return config.classification_engine
         try:
-            from .web.ollama_models import list_installed_models
-
             return "local" if list_installed_models() else "rules"
         except Exception:
             return "rules"

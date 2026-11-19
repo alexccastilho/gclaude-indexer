@@ -16,7 +16,7 @@ from gclaude_indexer import db
 from gclaude_indexer.config import ProjectConfig
 from gclaude_indexer.invalidation import apply_pending_changes
 from gclaude_indexer.paths import OUTPUT_MARKER_NAME
-from gclaude_indexer.scanning import walk_source_stats
+from gclaude_indexer.source_folder import walk_source_stats
 from gclaude_indexer.update_plan import build_update_plan
 
 

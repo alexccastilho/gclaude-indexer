@@ -23,6 +23,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
+from .file_types import is_whole_document_file
+from .windows_prep import pages_for_group
+
 VALID_ENGINES = {"rules", "local", "claude_code", "structured"}  # structured: planalto.py
 VALID_CONFIDENCES = {"high", "medium", "low"}
 
@@ -58,8 +61,6 @@ def starts_new_document(previous: WindowPage | None, page: WindowPage) -> bool:
 
     PDFs and images are left to the engine: a scanned document often spans
     several image files, and a case file several PDF volumes."""
-    from .file_types import is_whole_document_file
-
     if previous is None or page.file_name == previous.file_name:
         return False
     return is_whole_document_file(previous.file_name) or is_whole_document_file(page.file_name)
@@ -189,8 +190,6 @@ def load_window_pages(
     Pass a `WindowPageLoader` when loading many windows in a row."""
     if loader is not None:
         return loader.load(window_row)
-    from .windows_prep import pages_for_group  # late import avoids a cycle
-
     start, end = _key_positions(window_row["key"])
     all_pages = pages_for_group(conn, window_row["group_key"])
     block = all_pages[start - 1 : end]

@@ -40,9 +40,8 @@ from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
 from .html_text import without_struck_text
-from .paths import app_root
+from .paths import RAW_ITEMS_FILE_NAME, app_root
 
-RAW_ITEMS_FILE_NAME = "raw_items.jsonl"
 # Medido em `demo/acervo` (docs/QUALITY.md) e NÃO adotado: a base era pequena
 # demais (2 peças `medium` contra 17 `low`) para dizer que `medium` acerta mais
 # que `low`. Só vira `True` com uma medição que sustente.
