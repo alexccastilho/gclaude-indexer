@@ -36,7 +36,7 @@ from ..pipeline import (
     DONE_STATUSES, STEP_ORDER, SourceFolderMissing, begin_step, call_step, count_files_in, done_count, finish_step,
 )
 from ..project import load_project
-from .. import source_folder
+from .. import hardware, source_folder
 from ..fulltext import coverage as fulltext_coverage
 from .eta import ProgressEstimator
 from .step_state import classification_pending, conversion_pending
@@ -403,19 +403,23 @@ class TaskManager:
                 # sobreposição, caracteres e idioma (`auto_settings.py`), e as
                 # etapas seguintes da cadeia têm de usar esses valores.
                 current_config, work_conn = load_project(entry_output_folder)
+                # The card is read once per execution: the steps of one
+                # chain share the stop signal and its `run_state`.
+                readings = task.stop_signal.run_state.setdefault("hardware_readings", {})
                 try:
-                    # Source folder check, effective engine (decided once per
-                    # step) and the opening of the `run` row: `pipeline`.
-                    run = begin_step(work_conn, current_config, step, language=language)
+                    with hardware.readings_per_execution(readings):
+                        # Source folder check, effective engine (decided once
+                        # per step) and the opening of the `run` row: `pipeline`.
+                        run = begin_step(work_conn, current_config, step, language=language)
 
-                    def scanned(files_done: int, bytes_done: int) -> None:
-                        task.scanned, task.scanned_bytes = files_done, bytes_done
+                        def scanned(files_done: int, bytes_done: int) -> None:
+                            task.scanned, task.scanned_bytes = files_done, bytes_done
 
-                    call_step(
-                        work_conn, current_config, run,
-                        should_stop=task.stop_signal.should_stop, language=language,
-                        files=files, on_progress=scanned, run_state=task.stop_signal.run_state,
-                    )
+                        call_step(
+                            work_conn, current_config, run,
+                            should_stop=task.stop_signal.should_stop, language=language,
+                            files=files, on_progress=scanned, run_state=task.stop_signal.run_state,
+                        )
                     task.finished_ok = True
                 finally:
                     work_conn.close()

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import ctypes
 import functools
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import shutil
 import subprocess
@@ -126,6 +128,40 @@ def forget_measurements() -> None:
         cached.cache_clear()
 
 
+# One execution of the steps ("Run everything", or a single step) reads the
+# card once: each step decided the engine again (`diagnose`) and the
+# classification checked for a card again (`engine_local._has_dedicated_gpu`),
+# each time `nvidia-smi` or two PowerShell processes. Between executions the
+# card is read again, so a swap is still seen. Outside an execution
+# (`readings_per_execution` not active), every call reads, as before.
+_execution_readings: ContextVar[dict | None] = ContextVar("execution_readings", default=None)
+
+
+@contextmanager
+def readings_per_execution(readings: dict):
+    """Within this block (in this thread), each card reading is taken once
+    and kept in `readings`, a dict the execution owns."""
+    token = _execution_readings.set(readings)
+    try:
+        yield
+    finally:
+        _execution_readings.reset(token)
+
+
+def _read_once_per_execution(name: str, read):
+    """Only a card found is kept: a reading that failed (`None`, a
+    PowerShell that timed out) is tried again on the next call, as before."""
+    readings = _execution_readings.get()
+    if readings is None:
+        return read()
+    if name in readings:
+        return readings[name]
+    value = read()
+    if value is not None:
+        readings[name] = value
+    return value
+
+
 # `windows_counters` sits below this module and cannot import it; its one
 # fact measured once is kept the same way and dropped with the others.
 _measured.append(windows_counters.memory_clock_mhz)
@@ -160,6 +196,10 @@ class ModelChoice:
 
 
 def detect_nvidia_gpu() -> GpuInfo | None:
+    return _read_once_per_execution("nvidia", _detect_nvidia_gpu)
+
+
+def _detect_nvidia_gpu() -> GpuInfo | None:
     path = find_tool("nvidia-smi")
     if not path:
         return None
@@ -181,6 +221,10 @@ def detect_nvidia_gpu() -> GpuInfo | None:
 
 
 def detect_wmi_gpu() -> GpuInfo | None:
+    return _read_once_per_execution("wmi", _detect_wmi_gpu)
+
+
+def _detect_wmi_gpu() -> GpuInfo | None:
     """Fallback with no `nvidia-smi`, via WMI (also detects AMD/Intel).
 
     `Win32_VideoController.AdapterRAM` is an old (32-bit) field and saturates
