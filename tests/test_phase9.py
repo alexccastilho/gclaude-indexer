@@ -103,8 +103,6 @@ def test_projeto_criado_aparece_na_lista(cliente, tmp_path):
 
 
 def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypatch):
-    import gclaude_indexer.web.app as app_mod
-
     # Determinístico independente do Ollama estar de pé nesta máquina
     # (Tarefa 8, fase 12): o formulário lista os modelos instalados num
     # <select>, mas o teste não pode depender do serviço real.

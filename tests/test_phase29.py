@@ -273,8 +273,6 @@ def test_log_ao_vivo_so_acrescenta_resposta_200():
 
 
 def test_resumo_de_qualidade_fica_em_cache_ate_algo_mudar(tmp_path, monkeypatch):
-    from gclaude_indexer.web import app as app_mod
-
     _, _, config, conn = _projeto_com_paginas(tmp_path)
     chamadas = []
     original = caches.quality_summary

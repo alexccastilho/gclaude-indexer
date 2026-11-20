@@ -22,7 +22,6 @@ from gclaude_indexer.paths import (
     OUTPUT_FOLDER_SUFFIX, check_new_project_folders, suggest_output_folder,
 )
 from gclaude_indexer.project import create_project, load_project
-from gclaude_indexer.web import app as app_mod
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web import routes_projects
 

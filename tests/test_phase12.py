@@ -440,8 +440,6 @@ def test_listar_modelos_devolve_lista_vazia_quando_ollama_esta_fora(monkeypatch)
 
 
 def test_formulario_oferece_os_modelos_instalados(cliente, monkeypatch):
-    import gclaude_indexer.web.app as app_mod
-
     monkeypatch.setattr(routes_projects, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     monkeypatch.setattr(routes_projects, "default_local_profile", lambda: "fast")
     corpo = cliente.get("/projects/new").text
@@ -455,8 +453,6 @@ def test_formulario_oferece_os_modelos_instalados(cliente, monkeypatch):
 
 
 def test_formulario_avisa_quando_nao_ha_modelo_instalado(cliente, monkeypatch):
-    import gclaude_indexer.web.app as app_mod
-
     monkeypatch.setattr(routes_projects, "list_installed_models", lambda: [])
     corpo = cliente.get("/projects/new").text
 
@@ -470,7 +466,6 @@ def test_formulario_reexibido_apos_erro_tambem_oferece_os_modelos(cliente, monke
     """Mesmo ponto de atenção das Tarefas 6 e 7: o ramo de erro de
     `criar_novo_projeto` passa por um contexto próprio, então um teste que só
     faz GET não pega regressão nesse segundo ponto."""
-    import gclaude_indexer.web.app as app_mod
 
     monkeypatch.setattr(routes_projects, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     monkeypatch.setattr(routes_projects, "default_local_profile", lambda: "fast")
@@ -501,7 +496,6 @@ def test_ajuda_do_modelo_local_diz_a_verdade_sobre_o_modelo_usado(cliente, monke
     compatibilidade' (a lista é real e vem do Ollama), nem 'a escolha não
     muda o modelo usado' (desde a Tarefa 8 da Fase 13, `modelo_para_usar`
     respeita `config.local_model`; só "automático"/vazio cai no padrão)."""
-    import gclaude_indexer.web.app as app_mod
 
     monkeypatch.setattr(routes_projects, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
     corpo = cliente.get("/projects/new").text
@@ -724,7 +718,6 @@ def test_limpeza_pausa_etapas_em_andamento_antes_de_apagar(cliente, tmp_path, mo
     uma etapa ativa falharia em silêncio no Windows. Só provar que `pausar`
     foi chamada não basta — precisa ser chamada ANTES do `rmtree`, senão a
     chamada pode ter acontecido tarde demais para evitar a corrida."""
-    import gclaude_indexer.web.app as app_mod
     from gclaude_indexer.web.background_runs import task_manager
 
     projeto_id = _criar_projeto(cliente, tmp_path)
