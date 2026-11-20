@@ -153,8 +153,9 @@ def write_managed(
     *,
     is_legacy: Callable[[str], bool] = lambda text: False,
     user_text: str = "",
-) -> Path:
-    """Merges `generated` into the file at `path` and writes it.
+) -> bool:
+    """Merges `generated` into the file at `path` and writes it. Returns
+    whether the file was written (an identical one is left alone).
 
     The first time a file with no marks is touched, a copy goes to
     `<name>.bak` — the only moment the user's own content is restructured,
@@ -168,9 +169,10 @@ def write_managed(
 
     merged = merge_managed(existing, generated, is_legacy=is_legacy, user_text=user_text)
     # An identical file is left alone (see `artifacts.write_if_changed`).
-    if existing is None or _one_newline_style(existing) != merged:
-        path.write_text(merged, encoding="utf-8")
-    return path
+    if existing is not None and _one_newline_style(existing) == merged:
+        return False
+    path.write_text(merged, encoding="utf-8")
+    return True
 
 
 def user_part(path: Path) -> str:
