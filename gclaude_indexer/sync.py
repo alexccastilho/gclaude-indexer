@@ -52,9 +52,7 @@ def _read_registry() -> dict:
 
 
 def _write_registry(registry: dict) -> None:
-    path = _registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_text_atomic(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=2))
 
 
 def _key(output_folder) -> str:
@@ -101,11 +99,11 @@ def mark_synced(output_folder) -> None:
 def rename_key(old_folder, new_folder) -> None:
     """A pasta de saída mudou de lugar (`relocation.py`): a data conhecida
     passa para a chave nova, para o aviso de sincronização incompleta
-    continuar valendo. Gravação atômica (`paths.write_text_atomic`)."""
+    continuar valendo."""
     registry = _read_registry()
     old_key, new_key = _key(old_folder), _key(new_folder)
     if old_key not in registry or old_key == new_key:
         return
     value = registry.pop(old_key)
     registry.setdefault(new_key, value)
-    write_text_atomic(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=2))
+    _write_registry(registry)
