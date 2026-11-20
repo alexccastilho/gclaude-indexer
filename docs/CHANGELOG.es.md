@@ -15,6 +15,75 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.1] - 2026-11-20
+
+Una versión de orden: el código se reorganizó para que cada regla tenga un
+solo dueño, sin cambiar lo que recibe el modelo (el pedido a Ollama es
+idéntico byte a byte). En el camino se encontraron y corrigieron 45
+defectos, cada uno con una prueba que fallaba antes de la corrección.
+
+### Agregado
+
+- **Hardware y sistema operativo mínimos y recomendados** en
+  TECHNICAL.es.md (y en las traducciones), con enlace en el README y en el
+  manual: Windows 10 de 64 bits como mínimo, 4 GB de RAM con el motor de
+  reglas u 8 GB con el modelo local sin tarjeta de video, y 16 GB de RAM con
+  una tarjeta de 8 GB de VRAM como recomendado.
+
+### Cambiado
+
+- **La pantalla de Ejecución es más liviana**: cada actualización bajó de
+  unos 27 a 15 ms, "Ejecutar todo" abre 2 procesos de PowerShell en vez de
+  12 y armar las ventanas de un proyecto grande bajó de 4,5 a 1,0 s. La
+  tarjeta de video se lee una vez por ejecución, los informes leen la base
+  una vez por generación y las ventanas de un grupo salen por índice.
+
+### Corregido
+
+- **Un proyecto guardado abre con la carpeta de origen fuera de línea**;
+  ventanas, clasificación y generación siguen funcionando, porque solo leen
+  la base del proyecto.
+- **Pantalla de Ejecución**: la barra y el tiempo restante cuentan lo que
+  falta igual que las tarjetas de las etapas; el panel de espera muestra
+  limpieza, indexación de la búsqueda, reintentos y eliminación en curso; la
+  pantalla se actualiza justo después de limpiar, indexar, eliminar o
+  deduplicar; "Próxima etapa", "Ejecutar todo" y "Continuar" responden
+  "ocupado" durante una operación en vez de empezar otra, y "Mover ahora" ya
+  no se traba.
+- **Proyectos y configuración**: un proyecto guardado por una versión más
+  nueva abre en vez de dar error 500, y abrirlo o guardarlo en una versión
+  más vieja conserva la configuración de la más nueva; el bloqueo del
+  proyecto y el aviso de sincronización reconocen la misma carpeta escrita
+  con otras mayúsculas; el catálogo no junta carpetas que Windows distingue;
+  un Conjunto ya no apunta al proyecto que heredó el id de uno eliminado;
+  los registros JSON se graban de forma atómica; un registro de
+  sincronización ilegible o un disco lleno no impiden abrir el proyecto.
+- **Clasificación**: una ventana devuelta antes de una caída ya no deja
+  piezas duplicadas; reprocesar ventanas con fallo graba la base antes de
+  reemplazar `raw_items.jsonl`; la copia de un documento que cambió vuelve
+  al acervo; un documento que pasa a ignorado se lleva sus ventanas; un
+  archivo devuelto a la cola pierde la marca de OCR fallido por cualquier
+  camino; el motor de reglas no deja páginas fuera del índice cuando se
+  descarta una pieza; una pieza fechada solo por mes o año conserva la fecha
+  con el modelo local; los dos motores graban el resumen con el mismo tope y
+  listan los archivos de la pieza en el orden de las páginas.
+- **Paquete generado**: el CLAUDE.md del proyecto trae la regla innegociable;
+  el paquete combinado mantiene la sección de seguridad y usa portugués ante
+  un idioma desconocido, como el simple; una pieza de varios archivos
+  muestra su firma y cuenta como legislación; el log lista el CLAUDE.md
+  cuando cambia y muestra cada etapa traducida, y review.md indica la etapa
+  de cada error en el idioma del informe.
+- **Pantallas de Resultado e Instrucciones**: "Comparar motores" muestra la
+  misma nota que el cuadro de calidad, que indica el modelo que realmente se
+  ejecuta y ya no queda desactualizado; la pantalla de Instrucciones ya no
+  promete al modelo local los primeros 700 caracteres de las reglas
+  adicionales; la pantalla y el manual dicen que "forzar GPU" es igual que
+  automático; el aviso del motor openrouter retirado aparece una vez, no en
+  cada apertura.
+- **La búsqueda** encuentra texto en hangul de ancho medio, y un proyecto
+  migrado rehace una vez el índice de búsqueda para escrituras sin espacios.
+- Lo que queda fuera de un archivo de Outlook siempre aparece en el log.
+
 ## [2.1.0] - 2026-11-18
 
 ### Agregado
