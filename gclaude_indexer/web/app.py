@@ -56,7 +56,7 @@ from ..artifacts import (
 from ..catalog import CatalogEntry, catalog_folder, find_project, list_projects, register_project
 from ..config import (
     EXTRA_RULES_MAX_LENGTH, FORM_FIELDS, ConfigError, ProjectConfig, config_from_input, default_value,
-    defaults, field_kind,
+    defaults, extra_rules_errors, field_kind,
 )
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
@@ -1410,6 +1410,7 @@ def _instructions_dedup_body(request: Request, project_id: int, form):
             path = Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             changed_config = False
+            saved_rules = config.extra_rules
             if rules:
                 added = "\n".join(f"- {rule}" for rule in rules)
                 config.extra_rules = (config.extra_rules.rstrip() + "\n" + added) if config.extra_rules.strip() else added
@@ -1417,7 +1418,15 @@ def _instructions_dedup_body(request: Request, project_id: int, form):
             if forget_form_instructions(config, new_user):
                 changed_config = True
             if changed_config:
-                save_project_config(conn, config)
+                try:
+                    save_project_config(conn, config)
+                except ConfigError as exc:
+                    # As regras movidas passariam do teto: nada muda, nem a
+                    # parte do usuário (que ainda não foi tocada).
+                    return render(request, "instructions.html", _instructions_context(
+                        entry, config, language, conn=conn, extra_rules=saved_rules,
+                        message="; ".join(translate(language, e.key, **e.params) for e in exc.errors),
+                    ), status_code=422)
             replace_user_part(path, new_user, stamp=stamp, allow_empty=True)
             generate_project_instructions_md(conn, config, language)
             backup = path.with_name(f"{path.name}.{stamp}{BACKUP_SUFFIX}")
@@ -1476,7 +1485,7 @@ def _instructions_extra_rules_body(request: Request, project_id: int, form):
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
     text = str(form.get("extra_rules", "")).replace("\r\n", "\n").strip()
     with _open_project(project_id) as (entry, config, conn):
-        if len(text) > EXTRA_RULES_MAX_LENGTH:
+        if extra_rules_errors(text):
             return render(
                 request, "instructions.html",
                 _instructions_context(
