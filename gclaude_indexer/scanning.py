@@ -38,7 +38,6 @@ from .file_types import (
     name_decision,
     needs_head,
 )
-from .fulltext import remove_file as remove_from_search
 from .i18n import DEFAULT_LANGUAGE, translate
 from .invalidation import discard_changed_file
 from . import source_folder
@@ -320,7 +319,7 @@ def _scan_files(
         if reason is not None:
             _record_ignored_file(
                 writer, relative_path, name, extension, size, mtime, reason,
-                existing_row, known_paths, result, config.output_folder,
+                existing_row, known_paths, result, config, language,
             )
             continue
 
@@ -407,22 +406,36 @@ def _release_copies_of_old_content(
     )
 
 
-def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
-    """Pages, full-text rows and converted intermediate of one file."""
-    row = conn.execute(
-        "SELECT id, extension, needs_ocr FROM file WHERE relative_path = ?", (relative_path,)
+def _drop_derived_data(
+    writer: BatchWriter, config: ProjectConfig, relative_path: str, name: str, size: int, language,
+) -> None:
+    """What the index holds of a document that just stopped being one (its
+    content turned into a key, or into binary): the same discard as a
+    changed document (`invalidation.discard_changed_file`: pages, search
+    rows, the group's windows from it on and their `raw_items.jsonl` lines),
+    then the converted intermediate.
+
+    Run before the flip to `skipped` is queued, never inside a batch op: the
+    discard commits in a transaction of its own, and the intermediate is
+    unlinked only after that commit, as `invalidation.py` requires. Inside
+    an op, the unlink ran before a commit that could still fail or be
+    replayed, and the windows and their lines stayed behind, pointing at
+    pages that were gone."""
+    row = writer.conn.execute(
+        "SELECT extension, needs_ocr FROM file WHERE relative_path = ?", (relative_path,)
     ).fetchone()
     if row is None:
         return
-    remove_from_search(conn, row["id"])
-    conn.execute("DELETE FROM page WHERE file_id = ?", (row["id"],))
-    if output_folder:
-        artifact = converted_artifact_path(output_folder, relative_path, row["extension"], bool(row["needs_ocr"]))
-        if artifact is not None:
-            try:
-                artifact.unlink(missing_ok=True)
-            except OSError:
-                pass
+    if _holds_old_data(writer.conn, relative_path):
+        writer.run_own_transaction(
+            lambda c: discard_changed_file(c, config, relative_path, name, size, language)
+        )
+    artifact = converted_artifact_path(config.output_folder, relative_path, row["extension"], bool(row["needs_ocr"]))
+    if artifact is not None:
+        try:
+            artifact.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _ignore_reason(path: Path, name: str, config: ProjectConfig) -> str | None:
@@ -446,7 +459,7 @@ def _ignore_reason(path: Path, name: str, config: ProjectConfig) -> str | None:
 
 def _record_ignored_file(
     writer: BatchWriter, relative_path: str, name: str, extension: str, size: int, mtime: float,
-    reason: str, existing_row, known_paths, result: ScanResult, output_folder: str | None = None,
+    reason: str, existing_row, known_paths, result: ScanResult, config: ProjectConfig, language=None,
 ) -> None:
     """The file stays in the inventory as `skipped`, the reason in
     `file.error`, with an empty hash: it was never read, so it has no
@@ -457,14 +470,15 @@ def _record_ignored_file(
             c, relative_path, name, extension_no_dot, size, "", mtime, None, SKIPPED, reason,
         ))
     else:
+        # A row that held a document (its content changed into a key, or
+        # into binary) must not leave the old text behind: pages, full-text
+        # rows, the group's windows and the intermediate on disk go before
+        # the flip. In the normal flow the update plan already did this
+        # before the scan; this is the net under a direct scan.
+        if _is_indexed_row(existing_row):
+            _drop_derived_data(writer, config, relative_path, name, size, language)
+
         def op(c) -> None:
-            # A row that held a document (its content changed into a key, or
-            # into binary) must not leave the old text behind: pages and
-            # full-text rows go with the flip, and so does the intermediate
-            # on disk. In the normal flow the update plan already did this
-            # before the scan; this is the net under a direct scan.
-            if _is_indexed_row(existing_row):
-                _drop_derived_data(c, relative_path, output_folder)
             _update_file(
                 c, relative_path, name, extension_no_dot, size, "", mtime, None, SKIPPED, reason,
             )
