@@ -47,7 +47,7 @@ from ..artifacts import (
     pending_items,
     stale_artifacts,
 )
-from ..catalog import CatalogEntry, catalog_folder, find_project, list_projects
+from ..catalog import catalog_folder, list_projects
 from ..config import EXTRA_RULES_MAX_LENGTH, ConfigError, ProjectConfig, default_value, extra_rules_errors
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
@@ -59,12 +59,11 @@ from ..windows_prep import cleanup_legacy_window_files
 from ..invalidation import PlanExpired, apply_update_plan
 from ..update_plan import SCREEN_READ_DEADLINE_SECONDS, SourceFolderUnavailable, UpdatePlan, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
-from .. import claude_package, combined_package, relocation
+from .. import claude_package, combined_package
 from ..claude_package import generate_claude_project_package
 from ..output_names import INDEX_FILENAME, PROJECT_INSTRUCTIONS_FILENAME, REVIEW_FILENAME, TIMELINE_FILENAME
 from ..paths import resolve_within, suggest_output_folder
-from ..run_control import OperationCancelled
-from ..project import describe_project, save_project_config
+from ..project import save_project_config
 from ..sets import SetEntry, SetMember, find_set, list_sets, propose_alias, remove_set, save_set
 from ..quality import compare_runs, quality_summary
 from ..resources import latest_sample
@@ -80,8 +79,6 @@ from ..fulltext import (
     search as fulltext_search,
 )
 from ..staleness import record_loaded_source
-from ..sync import check_sync, mark_synced
-from ..lock import check_lock, create_lock
 from ..pipeline import LOG_STEPS
 from .step_state import next_pending_step, step_status
 from .background_runs import compute_progress, task_manager
@@ -89,7 +86,7 @@ from .i18n import DEFAULT_LANGUAGE, LANGUAGE_COOKIE_NAME, valid_language, transl
 from .layout import DEFAULT_LAYOUT, LAYOUT_COOKIE_NAME, valid_layout
 from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, valid_theme
-from . import project_access, routes_projects, state
+from . import project_access, routes_projects, routes_relocation, state
 from .caches import _cached_by_signature, _cached_quality_summary, _idle_fragment
 from .formatting import _format_time
 from .notices import (
@@ -102,12 +99,13 @@ from .operations import (
 )
 from .project_access import (
     IncompleteSyncError, LockAbandonedError, LockBlockedError, RelocationBusyError, RelocationNeededError,
-    _after_relocation, _open_project, _project_or_404, _read_project, _settle_relocation,
+    _open_project, _project_or_404, _read_project,
 )
 from .rendering import WEB_ROOT, _request_language, _zip_response, render, templates
+from .routes_relocation import _render_relocation
 from .state import (
     _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _generation_slot, _operation_holding, _operation_in_progress,
-    _release_all_projects, _release_project, _step_in_progress, lock_manager,
+    _release_all_projects, _release_project, _step_in_progress,
 )
 
 
@@ -277,152 +275,7 @@ def _handle_database_busy(request: Request, exc: sqlite3.OperationalError):
 
 
 app.include_router(routes_projects.router)
-
-
-@app.post("/projects/{project_id}/alive")
-def project_alive(project_id: int):
-    """A screen of the project is still open: keeps its lock.
-    Never takes the lock — that is the next real request's job, with the
-    usual check of who else holds it."""
-    entry = find_project(project_id)
-    if entry is not None:
-        lock_manager.touch(entry.output_folder)
-    return Response(status_code=204)
-
-
-# --- cross-machine portability: lock and sync (section 11) -------------------
-
-
-@app.post("/projects/{project_id}/take-lock")
-def take_over_lock_route(project_id: int):
-    """Explicit user confirmation to take over an abandoned lock (section
-    11.3 — a lock from another machine, unused for more than 10 minutes)."""
-    entry = _project_or_404(project_id)
-    _release_project(entry.output_folder, keep_lock_file=True)
-    lock_manager.take_over(entry.output_folder)
-    mark_synced(entry.output_folder)
-    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
-
-
-@app.post("/projects/{project_id}/continue-anyway")
-def continue_anyway_route(project_id: int):
-    """Explicit user confirmation to continue despite the incomplete sync
-    warning (section 11.4)."""
-    entry = _project_or_404(project_id)
-    mark_synced(entry.output_folder)
-    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
-
-
-def _render_relocation(
-    request: Request, entry: CatalogEntry, source_folder: str, *,
-    error_key: str = "", error_params: dict | None = None, status_code: int = 200,
-) -> HTMLResponse:
-    """A tela de interrupção (molde `lock_abandoned.html`): o que muda, para
-    onde, os avisos e os botões Mover agora / Adiar."""
-    plan = None
-    plan_error_key, plan_error_params = "", {}
-    try:
-        plan = relocation.build_plan(source_folder, entry.output_folder)
-    except relocation.RelocationError as exc:
-        plan_error_key, plan_error_params = exc.key, exc.params
-    except OSError as exc:
-        plan_error_key, plan_error_params = "relocation.error.failed", {"error": str(exc)}
-    destination = plan.new if plan is not None else (suggest_output_folder(source_folder) or "")
-    return render(
-        request, "relocation.html",
-        {
-            "project": entry,
-            "source_folder": source_folder,
-            "destination": destination,
-            "plan": plan,
-            "plan_size": relocation.megabytes(plan.total_bytes) if plan is not None else "",
-            "plan_error_key": plan_error_key,
-            "plan_error_params": plan_error_params,
-            "error_key": error_key,
-            "error_params": error_params or {},
-            "postponed": relocation.is_postponed(entry.output_folder),
-        },
-        status_code=status_code,
-    )
-
-
-def _relocation_source(entry: CatalogEntry) -> str | None:
-    """A origem gravada no projeto, lida sem abrir o banco para escrita
-    (`describe_project` não cria nada)."""
-    summary = describe_project(entry.output_folder)
-    return summary.source_folder if summary is not None else None
-
-
-@app.get("/projects/{project_id}/relocate", response_class=HTMLResponse)
-def relocation_screen(request: Request, project_id: int):
-    entry = _project_or_404(project_id)
-    entry = _settle_relocation(project_id, entry)
-    source = _relocation_source(entry)
-    if source is None or not relocation.output_inside_source(source, entry.output_folder):
-        return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
-    return _render_relocation(request, entry, source)
-
-
-@app.post("/projects/{project_id}/relocate/postpone")
-def postpone_relocation_route(project_id: int):
-    """"Adiar", sem prazo: guardado nesta máquina. A tela de interrupção não
-    volta; a Execução mostra o aviso a cada abertura até a mudança."""
-    entry = _project_or_404(project_id)
-    relocation.postpone(entry.output_folder)
-    return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
-
-
-@app.post("/projects/{project_id}/relocate")
-def relocate_route(request: Request, project_id: int):
-    """"Mover agora". O pedido traz só o id: a origem vem do banco e o
-    destino é calculado aqui (`paths.suggest_output_folder`), nunca do
-    formulário. A proteção contra outro site é a mesma das outras rotas
-    que mudam algo (`_only_own_pages`)."""
-    entry = _project_or_404(project_id)
-    entry = _settle_relocation(project_id, entry)
-    source = _relocation_source(entry)
-    if source is None or not relocation.output_inside_source(source, entry.output_folder):
-        return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
-
-    def refuse(key: str, **params) -> HTMLResponse:
-        return _render_relocation(request, entry, source, error_key=key, error_params=params, status_code=409)
-
-    if _step_in_progress(project_id):
-        return refuse("relocation.error.step_running")
-    if _operation_in_progress(project_id):
-        return _operation_busy_response(request, project_id)
-    if not check_sync(entry.output_folder).ok:
-        return refuse("relocation.error.sync")
-    lock_result = check_lock(entry.output_folder)
-    if lock_result.status in ("blocked", "abandoned"):
-        return refuse("relocation.error.other_machine", machine=lock_result.message_params.get("machine", ""))
-    try:
-        plan = relocation.build_plan(source, entry.output_folder)
-    except relocation.RelocationError as exc:
-        return refuse(exc.key, **exc.params)
-    except OSError as exc:
-        return refuse("relocation.error.failed", error=str(exc))
-
-    old = entry.output_folder
-    run_url = f"/projects/{project_id}/run"
-
-    def work(should_stop):
-        try:
-            with relocation.flying(old, plan.new):
-                # Nenhuma conexão nossa pode ficar aberta: o Windows não
-                # deixa mudar de nome um arquivo aberto. A trava continua
-                # no arquivo (desta máquina) e vai junto com a pasta.
-                _release_project(old, keep_lock_file=True)
-                create_lock(old)
-                relocation.execute(plan, should_stop=should_stop, on_finalize=_after_relocation)
-        except relocation.RelocationCancelled:
-            raise OperationCancelled()
-        except relocation.RelocationError as exc:
-            raise _OperationMessage(exc.key, next_url=f"/projects/{project_id}/relocate", **exc.params)
-        return run_url
-
-    operation = _start_operation(project_id, "relocation.move", work, next_url=run_url)
-    return _operation_response(request, operation, project_id, waiting_url="/projects")
+app.include_router(routes_relocation.router)
 
 
 # --- screen: Execution ---------------------------------------------------------
