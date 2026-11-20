@@ -669,7 +669,7 @@ also the HTTP form field names, so the two never drift apart.
 | `ocr_language` | — (automatic) | `por` | not a form field since 2.0.0: language detected in the sampled text; Tesseract language code |
 | `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
 | `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `qwen3.5:4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
-| `processing_mode` | choice | `automatic` | `automatic`/`gpu` use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
+| `processing_mode` | choice | `automatic` | `gpu` behaves exactly like `automatic` (the screen says so): both use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
 | `parallelism` | choice | `automatic` | `economy` (1 worker), `automatic` (physical cores minus one), `maximum` (all physical cores) — see section 5.2 |
 | `role_instructions` | long text | a default template | **shown to the classifying model** as context; who Claude is, in the generated instructions |
 | `extra_rules` | long text, edited on the Instructions screen (not in the form since 2.0.0) | empty | **shown to the classifying model** as context; appended to the generated instructions |

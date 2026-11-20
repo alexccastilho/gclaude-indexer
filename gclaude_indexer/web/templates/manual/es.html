@@ -108,7 +108,7 @@
 <dl>
   <dt>Motor de clasificación</dt><dd>Quién identifica las piezas. Vea la comparación en <a href="#motores">Motores de clasificación</a>.</dd>
   <dt>Modelo local</dt><dd>Qué modelo de Ollama usa el motor local. Hay dos perfiles: <em>Más rápido</em> (<code>qwen3.5:4b</code>) y <em>Mejor calidad, más lento</em> (<code>ornith-1.5:9b</code>), que acierta mejor dónde empieza y termina cada documento y tarda cerca del doble. El proyecto nuevo empieza en Mejor calidad con una tarjeta de 8 GB de memoria o más, y en Más rápido con las menores, donde el modelo mayor se desborda a la RAM. Los otros modelos instalados aparecen debajo de los perfiles, para comparar.</dd>
-  <dt>Procesamiento</dt><dd>Si el motor local usa la tarjeta de video (GPU). <em>automático</em> y <em>forzar GPU</em> la aprovechan al máximo, bastante más rápido. <em>solo CPU/RAM</em> deja la tarjeta libre para otros programas, pero es más lento.</dd>
+  <dt>Procesamiento</dt><dd>Si el motor local usa la tarjeta de video (GPU). <em>automático</em> y <em>forzar GPU</em> hacen lo mismo (forzar GPU es igual que automático): la aprovechan al máximo, bastante más rápido. <em>solo CPU/RAM</em> deja la tarjeta libre para otros programas, pero es más lento.</dd>
   <dt>Paralelismo</dt><dd>Cuántos archivos procesan al mismo tiempo la conversión y la lectura. <em>económico</em>: uno a la vez; <em>automático</em>: usa los núcleos del procesador y deja uno libre para que usted siga usando la computadora (recomendado); <em>máximo</em>: termina antes, pero la computadora se pone lenta mientras tanto.</dd>
 </dl>
 

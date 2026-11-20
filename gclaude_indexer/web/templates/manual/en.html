@@ -108,7 +108,7 @@
 <dl>
   <dt>Classification engine</dt><dd>What identifies the items. See the comparison in <a href="#motores">Classification engines</a>.</dd>
   <dt>Local model</dt><dd>Which Ollama model the local engine uses. There are two profiles: <em>Fastest</em> (<code>qwen3.5:4b</code>) and <em>Best quality, slower</em> (<code>ornith-1.5:9b</code>), which finds where each document starts and ends more accurately and takes about twice as long. A new project starts on Best quality on a card with 8 GB of memory or more, and on Fastest on smaller ones, where the larger model spills into RAM. The other installed models are listed below the profiles, for comparison.</dd>
-  <dt>Processing</dt><dd>Whether the local engine uses the graphics card (GPU). <em>automatic</em> and <em>force GPU</em> use as much of it as possible, much faster. <em>CPU/RAM only</em> leaves the card free for other programs, but is slower.</dd>
+  <dt>Processing</dt><dd>Whether the local engine uses the graphics card (GPU). <em>automatic</em> and <em>force GPU</em> do the same thing (force GPU is the same as automatic): they use as much of it as possible, much faster. <em>CPU/RAM only</em> leaves the card free for other programs, but is slower.</dd>
   <dt>Parallelism</dt><dd>How many files conversion and reading process at the same time. <em>economical</em>: one at a time; <em>automatic</em>: uses the processor cores and leaves one free so you can keep using the computer (recommended); <em>maximum</em>: finishes sooner, but the computer gets slow in the meantime.</dd>
 </dl>
 

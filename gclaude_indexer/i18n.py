@@ -140,11 +140,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.existing_instructions_placeholder": "cole aqui as instruções atuais do seu Projeto no Claude. Elas são mantidas",
         "new_project.processing_mode": "Processamento",
         "new_project.processing_mode_automatic": "automático (usa GPU ao máximo)",
-        "new_project.processing_mode_gpu": "forçar GPU",
+        "new_project.processing_mode_gpu": "forçar GPU (igual ao automático)",
         "new_project.processing_mode_cpu": "somente CPU/RAM",
         "new_project.help_processing_mode": (
-            '"automático" e "forçar GPU" usam o máximo de GPU disponível e transbordam o resto '
-            'para a RAM; "somente CPU/RAM" ignora a GPU mesmo que exista. É mais lento, mas útil para não '
+            '"automático" e "forçar GPU" fazem o mesmo ("forçar GPU" é igual ao automático): usam o máximo '
+            'de GPU disponível e transbordam o resto para a RAM; "somente CPU/RAM" ignora a GPU mesmo que exista. É mais lento, mas útil para não '
             "competir com outro programa que esteja usando a placa de vídeo."
         ),
         "new_project.parallelism": "Paralelismo",
@@ -266,7 +266,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "para comparar. Com o Ollama parado, a classificação cai no motor de regras com aviso."
         ),
         "hint.processing_mode": (
-            "Controla se o motor \"local\" usa a GPU. \"automático\"/\"forçar GPU\" usam o máximo "
+            "Controla se o motor \"local\" usa a GPU. \"forçar GPU\" é igual ao automático: os dois usam o máximo "
             "de GPU disponível e só usam RAM para o que não couber; \"somente CPU/RAM\" nunca usa "
             "a GPU, mesmo que exista. É mais lento, mas libera a placa de vídeo para outra coisa."
         ),
@@ -1428,10 +1428,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.existing_instructions_placeholder": "paste your Claude Project's current instructions here. They are kept",
         "new_project.processing_mode": "Processing",
         "new_project.processing_mode_automatic": "automatic (uses GPU to the max)",
-        "new_project.processing_mode_gpu": "force GPU",
+        "new_project.processing_mode_gpu": "force GPU (same as automatic)",
         "new_project.processing_mode_cpu": "CPU/RAM only",
         "new_project.help_processing_mode": (
-            '"automatic" and "force GPU" use as much GPU as available and spill the rest to RAM; '
+            '"automatic" and "force GPU" do the same thing ("force GPU" is the same as automatic): they use as much '
+            'GPU as available and spill the rest to RAM; '
             '"CPU/RAM only" ignores the GPU even if one exists. It is slower, but useful for not competing '
             "with another program using the graphics card."
         ),
@@ -1553,7 +1554,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "With Ollama stopped, classification falls back to the rules engine with a warning."
         ),
         "hint.processing_mode": (
-            'Controls whether the "local" engine uses the GPU. "automatic"/"force GPU" use as much '
+            'Controls whether the "local" engine uses the GPU. "force GPU" is the same as automatic: both use as much '
             'GPU as available and only use RAM for what doesn\'t fit; "CPU/RAM only" never uses the '
             "GPU, even if one exists. It is slower, but frees the graphics card for something else."
         ),
@@ -2684,11 +2685,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "new_project.existing_instructions_placeholder": "pegue aquí las instrucciones actuales de su Proyecto en Claude. Se conservan",
         "new_project.processing_mode": "Procesamiento",
         "new_project.processing_mode_automatic": "automático (usa la GPU al máximo)",
-        "new_project.processing_mode_gpu": "forzar GPU",
+        "new_project.processing_mode_gpu": "forzar GPU (igual que automático)",
         "new_project.processing_mode_cpu": "solo CPU/RAM",
         "new_project.help_processing_mode": (
-            '"automático" y "forzar GPU" usan el máximo de GPU disponible y desbordan el resto a '
-            'la RAM; "solo CPU/RAM" ignora la GPU aunque exista. Es más lento, pero útil para no competir '
+            '"automático" y "forzar GPU" hacen lo mismo ("forzar GPU" es igual que automático): usan el máximo '
+            'de GPU disponible y desbordan el resto a la RAM; "solo CPU/RAM" ignora la GPU aunque exista. Es más lento, pero útil para no competir '
             "con otro programa que esté usando la tarjeta gráfica."
         ),
         "new_project.parallelism": "Paralelismo",
@@ -2811,7 +2812,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "para comparar. Con Ollama detenido, la clasificación recurre al motor de reglas con aviso."
         ),
         "hint.processing_mode": (
-            'Controla si el motor "local" usa la GPU. "automático"/"forzar GPU" usan el máximo de '
+            'Controla si el motor "local" usa la GPU. "forzar GPU" es igual que automático: los dos usan el máximo de '
             'GPU disponible y solo usan RAM para lo que no quepa; "solo CPU/RAM" nunca usa la GPU, '
             "aunque exista. Es más lento, pero libera la tarjeta gráfica para otra cosa."
         ),
