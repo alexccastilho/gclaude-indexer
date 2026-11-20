@@ -21,6 +21,7 @@ from ..install_diagnostics import check_installation
 from .i18n import DEFAULT_LANGUAGE, LANGUAGE_COOKIE_NAME, valid_language
 from .layout import DEFAULT_LAYOUT, LAYOUT_COOKIE_NAME, valid_layout
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, valid_theme
+from .caches import _about_cache
 from .rendering import _request_language, render
 
 
@@ -90,7 +91,6 @@ async def remove_component(request: Request):
 # driver (about a second); nothing in it changes from one click to the
 # next, so the answer is kept for a few minutes.
 ABOUT_CACHE_SECONDS = 300.0
-_about_cache: dict[str, tuple[float, object]] = {}
 
 
 def _installation_report(language: str):
