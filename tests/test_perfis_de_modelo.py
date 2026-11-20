@@ -40,7 +40,7 @@ def test_execucao_pela_interface_leva_o_projeto_ao_motor(monkeypatch):
     `num_gpu`: o Tema, o tipo de acervo e as regras extras nunca chegavam ao
     prompt de uma execução da interface, e o modo "cpu" carregava o modelo
     inteiro na placa. Agora quem monta o motor é `classify_pending`."""
-    from gclaude_indexer import engine_local, local_models, orchestrator
+    from gclaude_indexer import engine_local, orchestrator
     from gclaude_indexer.config import ProjectConfig
 
     criados = []
@@ -50,9 +50,10 @@ def test_execucao_pela_interface_leva_o_projeto_ao_motor(monkeypatch):
             criados.append(kw)
             raise RuntimeError("parar aqui")
 
-    monkeypatch.setattr(orchestrator, "resolve_effective_engine", lambda *a, **k: "local")
+    monkeypatch.setattr(
+        orchestrator, "decide_engine", lambda *a, **k: orchestrator.EngineDecision("local", "qwen3.5:4b")
+    )
     monkeypatch.setattr(engine_local, "LocalEngine", MotorFalso)
-    monkeypatch.setattr(local_models, "model_to_use", lambda config: "qwen3.5:4b")
     config = ProjectConfig(name="x", source_folder=".", output_folder=".", processing_mode="cpu",
                            subject="Obras da escola municipal")
     try:

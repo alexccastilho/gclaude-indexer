@@ -1981,18 +1981,22 @@ def classify_pending(
     local_engine: LocalEngine | None = None,
     should_stop=None,
     language: str | None = None,
+    model: str | None = None,
 ) -> LocalClassificationResult:
     """Classifies every `pending` window with the `local` engine.
 
     With a graphics card, a model that stops responding is waited
     for (and restarted) and the run carries on from the same window; the
     Rules engine is never used. Without one, the window falls back to the
-    `rules` engine, marked so the next run gives it back to the model."""
+    `rules` engine, marked so the next run gives it back to the model.
+
+    `model`: the model already decided for the run (`orchestrator.
+    decide_engine`); without it, the project's."""
     result = LocalClassificationResult()
 
     if local_engine is None:
         local_engine = LocalEngine(
-            model=local_models.model_to_use(config), num_gpu=_num_gpu_for(config.processing_mode),
+            model=model or local_models.model_to_use(config), num_gpu=_num_gpu_for(config.processing_mode),
             config=config,
         )
 

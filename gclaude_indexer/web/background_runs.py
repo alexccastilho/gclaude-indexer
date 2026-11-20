@@ -41,9 +41,7 @@ from ..conversion import convert, requeue_ocr_failures
 from ..extraction import extract_pages
 from ..windows_prep import prepare_windows
 from ..auto_settings import resolve_auto_settings
-from ..engine_names import ENGINE_LOCAL
-from ..local_models import model_to_use
-from ..orchestrator import resolve_effective_engine, run_classification
+from ..orchestrator import decide_engine, run_classification
 from ..project import load_project
 from .. import source_folder
 from ..fulltext import coverage as fulltext_coverage
@@ -107,8 +105,8 @@ _STEP_FUNCTIONS = {
     "windows": lambda conn, config, should_stop, language: prepare_windows(
         conn, config, should_stop=should_stop, language=language
     ),
-    "classification": lambda conn, config, should_stop, language: run_classification(
-        conn, config, should_stop=should_stop, language=language
+    "classification": lambda conn, config, should_stop, language, decision=None: run_classification(
+        conn, config, should_stop=should_stop, language=language, decision=decision
     ),
 }
 
@@ -497,9 +495,11 @@ class TaskManager:
                         return
                     # Task 15: time per step, for the engine/model
                     # benchmark (`quality.compare_runs`). Records the
-                    # *effective* engine (via `resolve_effective_engine`,
-                    # which resolves the "automatic" sentinel to the engine
-                    # that will actually run) — not the configured one.
+                    # *effective* engine (via `decide_engine`, which
+                    # resolves the "automatic" sentinel to the engine that
+                    # will actually run) — not the configured one. The
+                    # classification step receives this same decision
+                    # instead of deciding again.
                     # Recording the configured one left `run.engine` as
                     # "automatic" (the default) while `item.engine` received
                     # the engine actually used (`rules` or `local`), and the
@@ -508,14 +508,13 @@ class TaskManager:
                     # same thread) instead of opening another connection:
                     # sqlite3 does not allow sharing a connection between
                     # threads.
-                    engine = resolve_effective_engine(work_conn, current_config, language=language)
-                    model = model_to_use(current_config) if engine == ENGINE_LOCAL else None
+                    decision = decide_engine(work_conn, current_config, language=language)
                     cursor = work_conn.execute(
                         """
                         INSERT INTO run (step, engine, model, parallelism, started_at, items, ok)
                         VALUES (?, ?, ?, ?, ?, 0, 0)
                         """,
-                        (step, engine, model, current_config.parallelism, datetime.now().isoformat(timespec="microseconds")),
+                        (step, decision.engine, decision.model, current_config.parallelism, datetime.now().isoformat(timespec="microseconds")),
                     )
                     work_conn.commit()
                     run_id = cursor.lastrowid
@@ -528,6 +527,8 @@ class TaskManager:
                         extra = {"files": files, "on_progress": scanned}
                     if step in ("scan", "extraction"):
                         extra["run_state"] = task.stop_signal.run_state
+                    if step == "classification":
+                        extra["decision"] = decision
                     _STEP_FUNCTIONS[step](work_conn, current_config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
