@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .paths import resolved_folder
+from .paths import folder_key, resolved_folder
 
 LOCK_FILE_NAME = "project.lock"
 MINUTES_UNTIL_ABANDONED = 10
@@ -170,6 +170,10 @@ class LockManager:
         self._locks: dict[str, LockInfo] = {}
         self._last_use: dict[str, float] = {}
         self._in_use: dict[str, int] = {}
+        # `folder_key` of each stored key: the same folder spelled another
+        # way (`H:` and `h:`; on Google Drive the typed case survives
+        # `resolve()`) is found under the key it was first stored with.
+        self._folder_keys: dict[str, str] = {}
         self._internal_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -178,6 +182,24 @@ class LockManager:
     def _key(output_folder) -> str:
         return resolved_folder(output_folder)
 
+    def _lookup(self, output_folder) -> tuple[str, str]:
+        """`(key, folder_key)`, computed outside the internal lock (both
+        read the disk, and on Google Drive that can take a while)."""
+        key = self._key(output_folder)
+        return key, folder_key(key)
+
+    def _stored(self, key: str, compare: str) -> str:
+        """The key this folder is already stored under, compared by
+        `folder_key`; a new folder keeps its own spelling. Called with the
+        internal lock held."""
+        stored = self._folder_keys.get(key)
+        if stored is None:
+            for known, known_compare in self._folder_keys.items():
+                if known_compare == compare:
+                    return known
+            self._folder_keys[key] = compare
+        return key
+
     def set_keep_alive(self, keep_alive) -> None:
         """`keep_alive(output_folder) -> bool`: whether work the browser
         does not see (a step running in the background) still needs the
@@ -185,27 +207,31 @@ class LockManager:
         self._keep_alive = keep_alive
 
     def is_open(self, output_folder) -> bool:
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
-            return self._key(output_folder) in self._locks
+            return self._stored(key, compare) in self._locks
 
     def touch(self, output_folder) -> None:
         """Records that the project is being used now."""
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             if key in self._locks:
                 self._last_use[key] = time.monotonic()
 
     def begin_use(self, output_folder) -> None:
         """A request is working on the project: the lock stays while it
         lasts, however long (an import of over a hundred thousand items takes minutes)."""
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             self._in_use[key] = self._in_use.get(key, 0) + 1
             self._last_use[key] = time.monotonic()
 
     def end_use(self, output_folder) -> None:
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             count = self._in_use.get(key, 0) - 1
             if count > 0:
                 self._in_use[key] = count
@@ -214,8 +240,9 @@ class LockManager:
             self._last_use[key] = time.monotonic()
 
     def open(self, output_folder) -> LockInfo:
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             if key not in self._locks:
                 self._locks[key] = create_lock(output_folder)
                 self._ensure_thread()
@@ -225,16 +252,18 @@ class LockManager:
     def take_over(self, output_folder) -> LockInfo:
         """Replaces an abandoned lock with a new one from this machine —
         should only be called after the user's explicit confirmation."""
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             self._locks[key] = create_lock(output_folder)
             self._last_use[key] = time.monotonic()
             self._ensure_thread()
             return self._locks[key]
 
     def close(self, output_folder) -> None:
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             if key in self._locks:
                 remove_lock(output_folder)
                 del self._locks[key]
@@ -244,8 +273,9 @@ class LockManager:
         """Para de cuidar da trava desta pasta **sem apagar o arquivo**: a
         mudança de pasta (`relocation.py`) leva `project.lock` junto, e a
         batida do coração não pode regravá-lo no lugar antigo no meio dela."""
-        key = self._key(output_folder)
+        key, compare = self._lookup(output_folder)
         with self._internal_lock:
+            key = self._stored(key, compare)
             self._locks.pop(key, None)
             self._last_use.pop(key, None)
 

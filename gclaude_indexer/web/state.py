@@ -18,6 +18,7 @@ from contextlib import contextmanager
 
 from ..catalog import catalog_folder, list_projects
 from ..lock import LockManager
+from ..paths import folder_key
 from .background_runs import task_manager
 from .readers import reader_pool
 
@@ -118,11 +119,12 @@ def _project_busy(output_folder) -> bool:
     The lock was opened with the folder `find_project` resolved for this
     machine, so each entry is resolved the same way before comparing: the
     shared catalog keeps the absolute path of the machine that registered
-    the project, which on another drive letter never matches."""
-    key = LockManager._key(output_folder)
+    the project, which on another drive letter never matches. Compared by
+    `folder_key`: `H:` and `h:` are the same folder."""
+    key = folder_key(output_folder)
     folder = catalog_folder()
     for entry in list_projects():
-        if LockManager._key(entry.resolved_output_folder(folder)) == key:
+        if folder_key(entry.resolved_output_folder(folder)) == key:
             return _step_in_progress(entry.id) or _operation_in_progress(entry.id)
     return False
 
