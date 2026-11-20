@@ -10,8 +10,14 @@ O que ele faz, nesta ordem:
 
   1. lê da tabela `event` quais janelas registraram falha;
   2. faz cópia de segurança do `project.db` e do `raw_items.jsonl`;
-  3. apaga do `raw_items.jsonl` as peças vindas dessas janelas;
-  4. devolve essas janelas para `status = 'pending'`.
+  3. devolve essas janelas para `status = 'pending'` (e grava o banco);
+  4. só então apaga do `raw_items.jsonl` as peças vindas dessas janelas.
+
+A ordem é a da devolução de janelas do produto
+(`engine_local.requeue_fallback_windows`): se o processo cair entre os dois
+passos, as janelas ficam `pending` com as peças velhas ainda no arquivo, e
+rodar de novo termina o serviço. Na ordem contrária a queda deixava as
+janelas `done` sem peça nenhuma, e nada as reclassificava.
 
 Depois disso, rodar a etapa 6 na interface reclassifica só elas, e a etapa
 7 (importação) reescreve a tabela de peças inteira a partir do JSONL
@@ -37,6 +43,12 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
+
+RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from gclaude_indexer import raw_items  # noqa: E402
 
 # As duas assinaturas de falha da etapa 6, como `events.record_event` as
 # grava. Ambas guardam a chave da janela em `message_params` (JSON).
@@ -98,26 +110,17 @@ def podar_jsonl(caminho: Path, janelas: set[str]) -> tuple[int, int]:
     Devolve `(linhas removidas, linhas mantidas)`. Uma linha que não
     decodifica é mantida: a importação já reporta isso como erro, e apagar
     em silêncio o que não se consegue ler não é decisão deste script — a
-    mesma regra que `invalidation._prune_raw_items` segue.
+    mesma regra que `invalidation._prune_raw_items` segue. A troca é a do
+    produto (`raw_items.prune`): lido em fluxo, o arquivo novo escrito ao
+    lado e renomeado por cima só quando completo, as linhas mantidas byte a
+    byte.
     """
     if not caminho.exists():
         return (0, 0)
 
-    mantidas: list[str] = []
-    removidas = 0
-    for linha in caminho.read_text(encoding="utf-8").splitlines():
-        if not linha.strip():
-            continue
-        try:
-            if json.loads(linha).get("window") in janelas:
-                removidas += 1
-                continue
-        except json.JSONDecodeError:
-            pass
-        mantidas.append(linha)
-
-    caminho.write_text("\n".join(mantidas) + ("\n" if mantidas else ""), encoding="utf-8")
-    return (removidas, len(mantidas))
+    total = sum(1 for _ in raw_items.iter_lines(caminho))
+    removidas = raw_items.prune(caminho, lambda linha: linha.get(raw_items.WINDOW) in janelas)
+    return (removidas, total - removidas)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -167,15 +170,16 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copy2(jsonl, jsonl.with_suffix(f".jsonl.bak-{marca}"))
         print(f"\nCópia de segurança gravada com o sufixo .bak-{marca}")
 
-        removidas, mantidas = podar_jsonl(jsonl, set(janelas))
-        print(f"raw_items.jsonl: {removidas} peça(s) removida(s), {mantidas} mantida(s)")
-
+        # O banco primeiro, o arquivo depois (ver a docstring do módulo).
         conn.executemany(
             "UPDATE window SET status = 'pending' WHERE key = ?",
             [(chave,) for chave in janelas],
         )
         conn.commit()
         print(f"{len(janelas)} janela(s) devolvida(s) para 'pending'.")
+
+        removidas, mantidas = podar_jsonl(jsonl, set(janelas))
+        print(f"raw_items.jsonl: {removidas} peça(s) removida(s), {mantidas} mantida(s)")
 
         print(
             "\nPronto. Agora, na interface do GClaude Indexer:\n"
