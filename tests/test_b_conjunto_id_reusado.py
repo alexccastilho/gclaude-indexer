@@ -21,7 +21,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gclaude_indexer import catalog as catalog_mod
-from gclaude_indexer import paths
 from gclaude_indexer.catalog import list_projects, register_project, remove_project
 from gclaude_indexer.combined_package import load_members
 from gclaude_indexer.output_names import INDEX_FILENAME
@@ -42,7 +41,6 @@ class _Relogio:
 
 @pytest.fixture
 def cliente(tmp_path, monkeypatch):
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     monkeypatch.setattr(catalog_mod, "datetime", _Relogio)
     from gclaude_indexer.web.app import app
     from gclaude_indexer.web.state import lock_manager

@@ -201,10 +201,8 @@ def test_etapa_rodando_segura_a_trava_com_o_catalogo_em_outra_letra(tmp_path, mo
     import shutil
     from types import SimpleNamespace
 
-    from gclaude_indexer import catalog, paths, settings
+    from gclaude_indexer import catalog, settings
 
-    (tmp_path / "local").mkdir()
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     primeiro = tmp_path / "H"
     (primeiro / "GClaude" / "catalogo").mkdir(parents=True)
     (primeiro / "Saidas" / "Processo X").mkdir(parents=True)

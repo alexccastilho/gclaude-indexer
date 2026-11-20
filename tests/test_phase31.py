@@ -158,12 +158,10 @@ def _app_com_projeto(tmp_path, monkeypatch):
     """Servidor de teste com um projeto pronto, no mesmo isolamento da fase 18."""
     from fastapi.testclient import TestClient
 
-    from gclaude_indexer import paths
     from gclaude_indexer.catalog import register_project
     from gclaude_indexer.config import config_to_json
     from gclaude_indexer.web.app import app
 
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     origem = tmp_path / "origem"
     origem.mkdir()
     saida = tmp_path / "saida"

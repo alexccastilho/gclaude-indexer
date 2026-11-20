@@ -23,7 +23,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import fitz
-import pytest
 
 from gclaude_indexer import update_plan
 from gclaude_indexer.config import load_config
@@ -33,11 +32,6 @@ from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.invalidation import apply_pending_changes
 from gclaude_indexer.scanning import scan
 from gclaude_indexer.windows_prep import prepare_windows
-
-
-@pytest.fixture(autouse=True)
-def _pasta_local(tmp_path, monkeypatch):
-    monkeypatch.setenv("GCLAUDE_INDEXER_LOCAL_FOLDER", str(tmp_path / "local"))
 
 
 def _pdf(caminho, textos):

@@ -315,9 +315,7 @@ def _arranque_isolado(monkeypatch, tmp_path, *, ja_aberto: bool):
 
     from gclaude_indexer import paths
 
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
-    (tmp_path / "local").mkdir()
-    status = tmp_path / "local" / sensor_service.LAUNCH_STATUS_FILE_NAME
+    status = paths.machine_local_folder() / sensor_service.LAUNCH_STATUS_FILE_NAME
     status.write_text("started", encoding="utf-8")
     monkeypatch.setattr(sensor_service, "server_listening", lambda *_a: ja_aberto)
     monkeypatch.setattr(sensor_service, "pid_listening_on", lambda *_a: 4242)

@@ -9,10 +9,8 @@ from gclaude_indexer import paths, sync
 
 
 @pytest.fixture
-def pasta_local(tmp_path, monkeypatch):
-    local = tmp_path / "local"
-    local.mkdir()
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(local))
+def pasta_local(monkeypatch):
+    local = paths.machine_local_folder()
     monkeypatch.setattr("gclaude_indexer.sync.machine_local_folder", lambda: local)
     return local
 
