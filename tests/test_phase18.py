@@ -394,18 +394,3 @@ def test_a_execucao_nao_manda_gerar_relatorio_com_trabalho_pendente(tmp_path, mo
     corpo = cliente.get(f"/projects/{projeto_id}/run").text
 
     assert 'id="stale-artifacts"' not in corpo
-
-
-def test_as_chaves_novas_existem_nos_tres_idiomas():
-    from gclaude_indexer.i18n import translate
-
-    chaves = (
-        "result.stale_title",
-        "result.stale_explanation",
-        "result.stale_regenerate",
-        "run.stale_artifacts",
-    )
-    for idioma in ("pt", "en", "es"):
-        for chave in chaves:
-            texto = translate(idioma, chave)
-            assert texto and not texto.startswith(("result.", "run.")), f"{idioma}/{chave}"

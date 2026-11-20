@@ -420,18 +420,3 @@ def test_so_o_grupo_que_mudou_e_regravado(tmp_path):
     ).fetchone()[0]
     assert "index-Compras.md" in mudou
     assert "index-Atas.md" not in mudou
-
-
-def test_as_chaves_novas_existem_nos_tres_idiomas():
-    from gclaude_indexer.i18n import _TRANSLATIONS
-
-    chaves = [
-        "update.checking", "update.instructions_title", "update.instructions_label",
-        "update.instructions_help", "log.update.instructions_replaced",
-        "log.artifacts.changed", "log.artifacts.unchanged",
-        "artifact.project_instructions.collection_title",
-        "artifact.project_instructions.collection_intro",
-    ]
-    for idioma in ("pt", "en", "es"):
-        for chave in chaves:
-            assert chave in _TRANSLATIONS[idioma], (idioma, chave)

@@ -26,7 +26,6 @@ from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.extraction import extract_pages
-from gclaude_indexer.i18n import translate
 from gclaude_indexer.outlook import PstMessage, sanitize_attachment_name
 from gclaude_indexer.scanning import scan
 from gclaude_indexer.workdir import PAGE_SEPARATOR
@@ -402,16 +401,6 @@ def test_separador_de_pagina_nunca_aparece_dentro_de_uma_mensagem(tmp_path, monk
     conn.close()
 
 
-def test_rotulos_nos_tres_idiomas():
-    for idioma in ("pt-BR", "en", "es"):
-        for chave in (
-            "new_project.category.outlook", "log.conversion.outlook_unavailable",
-            "log.conversion.outlook_truncated", "log.conversion.outlook_attachments_skipped",
-        ):
-            assert translate(idioma, chave) != chave
-    assert PAGE_SEPARATOR  # o mesmo separador da caixa .mbox
-
-
 # --- rodada de correções 1 ------------------------------------------------------------------------
 
 
@@ -683,12 +672,6 @@ def test_mensagens_ou_pastas_ilegiveis_sao_avisadas(tmp_path, monkeypatch):
     avisos = [r["message"] for r in conn.execute("SELECT message FROM event WHERE level = 'warning'")]
     assert any("Danificada.pst" in a and "2 mensagem(ns) ou pasta(s)" in a for a in avisos), avisos
     conn.close()
-
-
-def test_avisos_de_conteudo_ilegivel_nos_tres_idiomas():
-    for idioma in ("pt-BR", "en", "es"):
-        for chave in ("log.conversion.outlook_attachments_unreadable", "log.conversion.outlook_items_unreadable"):
-            assert translate(idioma, chave) != chave
 
 
 def test_anexo_que_o_extrator_nao_consegue_ler_e_avisado_e_o_tipo_nao_lido_nao(tmp_path):

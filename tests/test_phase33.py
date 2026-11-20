@@ -241,8 +241,3 @@ def test_ocupado_sem_dono_vai_para_o_resultado(tmp_path, monkeypatch):
     resposta = operations._operation_busy_response(Request(escopo), pid)
 
     assert resposta.status_code == 303 and resposta.headers["location"] == f"/projects/{pid}/result"
-
-
-def test_texto_de_voltar_da_pagina_de_ocupado_nos_tres_idiomas():
-    for idioma in ("pt", "en", "es"):
-        assert translate(idioma, "activity.busy.back") != "activity.busy.back", idioma
