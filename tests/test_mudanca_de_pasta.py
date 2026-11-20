@@ -27,6 +27,8 @@ from gclaude_indexer.project import create_project
 from gclaude_indexer.sets import SetEntry, SetMember, find_set, save_set
 from gclaude_indexer.web import app as app_mod, rendering
 from gclaude_indexer.web.app import app
+from gclaude_indexer.web import state
+from gclaude_indexer.web import readers
 
 HEADERS = {"Origin": "http://testserver"}
 
@@ -38,7 +40,7 @@ def local(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(pasta))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(pasta / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
-    for modulo in (app_mod, rendering):
+    for modulo in (app_mod, rendering, state):
         monkeypatch.setattr(modulo, "catalog_folder", lambda: None)
     return pasta
 
@@ -55,8 +57,8 @@ def deteccao_ligada(monkeypatch):
 def cliente(local, deteccao_ligada):
     yield TestClient(app)
     for entrada in catalogo_mod.list_projects():
-        app_mod.lock_manager.close(entrada.output_folder)
-        app_mod.reader_pool.close(entrada.output_folder)
+        state.lock_manager.close(entrada.output_folder)
+        readers.reader_pool.close(entrada.output_folder)
 
 
 def _criar(origem: Path, saida: Path, nome: str = "Projeto"):
@@ -540,7 +542,7 @@ def test_mover_agora_com_operacao_rodando_responde_ocupado(cliente, tmp_path):
     origem = tmp_path / "Acervo"
     saida = origem / "saida"
     entrada = _criar(origem, saida)
-    with app_mod._generation_slot(entrada.id, "run.import_and_generate") as tomada:
+    with state._generation_slot(entrada.id, "run.import_and_generate") as tomada:
         assert tomada
         resposta = cliente.post(
             f"/projects/{entrada.id}/relocate", headers=HEADERS,
@@ -573,8 +575,8 @@ def test_adiar_mostra_o_aviso_a_cada_abertura(cliente, tmp_path):
     assert relocation.is_postponed(saida)
 
     for _ in range(2):
-        app_mod.lock_manager.close(str(saida))  # abertura nova, como numa sessão nova
-        app_mod.reader_pool.close(str(saida))
+        state.lock_manager.close(str(saida))  # abertura nova, como numa sessão nova
+        readers.reader_pool.close(str(saida))
         execucao = cliente.get(f"/projects/{entrada.id}/run")
         assert execucao.status_code == 200
         assert "relocation-banner" in execucao.text
@@ -623,7 +625,7 @@ def test_etapa_em_curso_recusa(cliente, tmp_path, monkeypatch):
     saida = origem / "saida"
     entrada = _criar(origem, saida)
     monkeypatch.setattr(
-        app_mod.task_manager, "latest_for_project", lambda pid: type("T", (), {"running": True})()
+        state.task_manager, "latest_for_project", lambda pid: type("T", (), {"running": True})()
     )
 
     resposta = cliente.post(f"/projects/{entrada.id}/relocate", headers=HEADERS, follow_redirects=False)

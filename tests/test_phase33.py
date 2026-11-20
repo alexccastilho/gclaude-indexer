@@ -27,40 +27,40 @@ from tests.test_phase32 import _arranque_isolado
 
 
 def _slot_livre(pid):
-    return pid not in modulo_app._OPERATIONS_IN_PROGRESS
+    return pid not in state._OPERATIONS_IN_PROGRESS
 
 
 @pytest.mark.parametrize("saida", [RuntimeError("falhou no meio"), GeneratorExit(), KeyboardInterrupt()])
 def test_slot_e_liberado_em_qualquer_saida(saida):
     with pytest.raises(type(saida)):
-        with modulo_app._generation_slot(9001, "update.confirm") as claimed:
+        with state._generation_slot(9001, "update.confirm") as claimed:
             assert claimed
             raise saida
     assert _slot_livre(9001)
 
 
 def test_slot_e_liberado_no_retorno_normal():
-    with modulo_app._generation_slot(9002, "delete.confirm") as claimed:
-        assert claimed and 9002 in modulo_app._OPERATIONS_IN_PROGRESS
+    with state._generation_slot(9002, "delete.confirm") as claimed:
+        assert claimed and 9002 in state._OPERATIONS_IN_PROGRESS
     assert _slot_livre(9002)
 
 
 def test_arranque_descarta_residuo_do_slot(monkeypatch, tmp_path):
     _arranque_isolado(monkeypatch, tmp_path, ja_aberto=False)
-    modulo_app._OPERATIONS_IN_PROGRESS[7] = ("update.confirm", 0.0)
+    state._OPERATIONS_IN_PROGRESS[7] = ("update.confirm", 0.0)
     try:
         modulo_app.start_server(port=8123)
         assert _slot_livre(7)
     finally:
-        modulo_app._OPERATIONS_IN_PROGRESS.pop(7, None)
+        state._OPERATIONS_IN_PROGRESS.pop(7, None)
 
 
 def test_tempo_decorrido_vem_do_relogio_monotonico(tmp_path, monkeypatch):
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     relogio = {"agora": 1000.0}
-    monkeypatch.setattr(modulo_app.time, "monotonic", lambda: relogio["agora"])
-    monkeypatch.setattr(modulo_app.time, "time", lambda: 0.0)  # relógio de parede "voltou": não pode importar
-    with modulo_app._generation_slot(pid, "update.confirm"):
+    monkeypatch.setattr(state.time, "monotonic", lambda: relogio["agora"])
+    monkeypatch.setattr(state.time, "time", lambda: 0.0)  # relógio de parede "voltou": não pode importar
+    with state._generation_slot(pid, "update.confirm"):
         relogio["agora"] = 1042.0
         dados = cliente.get(f"/projects/{pid}/activity", cookies={"language": "pt"}).json()
     assert dados["elapsed_s"] == 42 and dados["operation_key"] == "update.confirm"
@@ -84,7 +84,7 @@ _ROTAS = [
 
 
 def _ocupado_por_geracao(pid):
-    return modulo_app._generation_slot(pid, "run.import_and_generate")
+    return state._generation_slot(pid, "run.import_and_generate")
 
 
 @pytest.mark.parametrize("rota, dados, _interno, _chave", _ROTAS)
@@ -93,8 +93,8 @@ def test_operacao_com_slot_ocupado_recebe_409_e_nao_faz_nada(tmp_path, monkeypat
     efeitos: list[str] = []
     for nome in ("apply_update_plan", "delete_project", "index_fulltext", "clear_intermediates"):
         monkeypatch.setattr(modulo_app, nome, lambda *a, _n=nome, **k: efeitos.append(_n))
-    monkeypatch.setattr(modulo_app.task_manager, "pause", lambda *a, **k: efeitos.append("pause"))
-    monkeypatch.setattr(modulo_app.lock_manager, "close", lambda *a, **k: efeitos.append("close"))
+    monkeypatch.setattr(state.task_manager, "pause", lambda *a, **k: efeitos.append("pause"))
+    monkeypatch.setattr(state.lock_manager, "close", lambda *a, **k: efeitos.append("close"))
 
     with _ocupado_por_geracao(pid):
         resposta = cliente.post(f"/projects/{pid}/{rota}", data=dados, cookies={"language": "pt"})
@@ -118,17 +118,17 @@ def test_operacao_ocupa_o_slot_com_a_chave_do_botao(tmp_path, monkeypatch, rota,
     vistos: list[str | None] = []
 
     def observa(*a, **k):
-        vistos.append(modulo_app._OPERATIONS_IN_PROGRESS.get(pid, (None,))[0])
+        vistos.append(state._OPERATIONS_IN_PROGRESS.get(pid, (None,))[0])
         return None
 
     monkeypatch.setattr(modulo_app, interno, observa)
-    monkeypatch.setattr(modulo_app.task_manager, "pause", lambda *a, **k: None)
-    monkeypatch.setattr(modulo_app.lock_manager, "close", lambda *a, **k: None)
+    monkeypatch.setattr(state.task_manager, "pause", lambda *a, **k: None)
+    monkeypatch.setattr(state.lock_manager, "close", lambda *a, **k: None)
 
     cliente.post(f"/projects/{pid}/{rota}", data=dados, follow_redirects=False)
 
     assert vistos == [chave], "durante a operação, /activity veria o texto do botão que a disparou"
-    assert pid not in modulo_app._OPERATIONS_IN_PROGRESS
+    assert pid not in state._OPERATIONS_IN_PROGRESS
 
 
 def test_textos_de_ocupado_nos_tres_idiomas():
@@ -152,7 +152,7 @@ def test_token_nao_ascii_e_recusado_sem_excecao():
         "headers": [
             (b"x-gclaude-sensor-token", b"\xe9\xe9"),
             (b"sec-fetch-site", b"same-origin"),
-            (b"host", f"127.0.0.1:{modulo_app.SERVER_PORT}".encode()),
+            (b"host", f"127.0.0.1:{state.SERVER_PORT}".encode()),
         ],
     }
     assert modulo_app._sensor_request_allowed(Request(escopo)) is False
@@ -162,6 +162,7 @@ def test_token_nao_ascii_e_recusado_sem_excecao():
 
 from gclaude_indexer import sensors
 from tests.test_phase32 import _Computer, _Hardware, _Sensor, _como_admin, _nct
+from gclaude_indexer.web import state
 
 
 def test_sub_hardware_que_nao_e_superio_nao_decide_a_ventoinha(monkeypatch):

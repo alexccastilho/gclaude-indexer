@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import pytest
+from gclaude_indexer.web import state
 
 RAIZ = Path(__file__).resolve().parent.parent
 CAMINHO_INSTALAR_PS1 = RAIZ / "install.ps1"
@@ -444,7 +445,7 @@ def test_nenhuma_rota_http_pode_disparar_uac(monkeypatch):
     guardas = {
         "X-GClaude-Sensor-Token": modulo_app.SENSOR_REQUEST_TOKEN,
         "Sec-Fetch-Site": "same-origin",
-        "Host": f"127.0.0.1:{modulo_app.SERVER_PORT}",
+        "Host": f"127.0.0.1:{state.SERVER_PORT}",
     }
     assert cliente.post("/sensors/request-elevation").status_code == 403
     for guarda in guardas:

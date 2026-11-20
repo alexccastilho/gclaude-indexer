@@ -30,6 +30,7 @@ from gclaude_indexer import db
 from gclaude_indexer.i18n import translate
 from gclaude_indexer.run_control import OperationCancelled
 from gclaude_indexer.web import app as modulo_app
+from gclaude_indexer.web import state
 
 
 def _parar_sempre():
@@ -146,7 +147,7 @@ def test_operacao_em_segundo_plano_aparece_e_para_pelo_botao(tmp_path, monkeypat
             break
         time.sleep(0.01)
     assert operacao.status == "stopped"
-    assert pid not in modulo_app._OPERATIONS_IN_PROGRESS, "o projeto fica livre de novo"
+    assert pid not in state._OPERATIONS_IN_PROGRESS, "o projeto fica livre de novo"
     vista = [v for v in cliente.get("/activity").json()["operations"] if v["project_id"] == pid][0]
     assert vista["message"] == translate("pt", "activity.stopped")
 
@@ -190,7 +191,7 @@ def test_o_aviso_de_atualizacao_fica_quieto_enquanto_uma_operacao_roda(tmp_path,
     from tests.test_phase32 import _app_com_projeto
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    with modulo_app._generation_slot(pid, "update.confirm"):
+    with state._generation_slot(pid, "update.confirm"):
         assert cliente.get(f"/projects/{pid}/update/banner").text == ""
 
 
@@ -358,7 +359,7 @@ def test_tela_parada_reaproveita_a_resposta_e_renova_quando_algo_comeca(tmp_path
         assert cliente.get(f"/projects/{pid}/run/steps").status_code == 200
     assert len(chamadas) == 1, "parado, o banco não é lido de novo a cada 2 s"
 
-    with modulo_app._generation_slot(pid, "update.confirm"):
+    with state._generation_slot(pid, "update.confirm"):
         cliente.get(f"/projects/{pid}/run/steps")
         cliente.get(f"/projects/{pid}/run/steps")
     assert len(chamadas) == 3, "com algo rodando, cada pergunta lê o banco"
