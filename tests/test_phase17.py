@@ -653,7 +653,7 @@ def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path
     nao_conferidos: list[str] = []
     detect_changes(conn, config, unverified=nao_conferidos)
     assert nao_conferidos == ["d0.pdf"]
-    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in update_plan._PENDING_READS), 5)
+    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in list(update_plan._PENDING_READS)), 5)
 
     nao_conferidos = []
     mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
@@ -679,7 +679,7 @@ def test_leitura_tardia_de_arquivo_novo_tambem_vale_para_o_plano_seguinte(tmp_pa
     leituras["espera"] = 0.5
 
     update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
-    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in update_plan._PENDING_READS), 5)
+    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in list(update_plan._PENDING_READS)), 5)
     update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
     assert leituras["chamadas"] == ["b.pdf"]
 
