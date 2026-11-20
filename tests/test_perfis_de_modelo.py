@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gclaude_indexer.web.app as modulo_app
+import gclaude_indexer.web.rendering as rendering
 from tests.test_phase9 import cliente  # noqa: F401
 
 
@@ -23,9 +24,9 @@ def test_modelo_antigo_escolhido_continua_selecionado(monkeypatch):
     mesmo que o modelo não esteja mais instalado."""
     import re
 
-    fonte = (modulo_app.WEB_ROOT / "templates" / "new_project.html").read_text(encoding="utf-8")
+    fonte = (rendering.WEB_ROOT / "templates" / "new_project.html").read_text(encoding="utf-8")
     trecho = fonte[fonte.index("{% set chosen_model"):fonte.index("</select>", fonte.index("{% set chosen_model")) + 9]
-    ambiente = modulo_app.templates.env
+    ambiente = rendering.templates.env
     html = ambiente.from_string(trecho).render(
         values={"local_model": "qwen3.5:9b"}, default_local_model="quality",
         local_model_profiles={"fast": "qwen3.5:4b", "quality": "ornith-1.5:9b"},

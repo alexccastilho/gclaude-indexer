@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
-from gclaude_indexer.web.app import app, _format_time
+from gclaude_indexer.web.app import app
+from gclaude_indexer.web.formatting import _format_time
 from gclaude_indexer.web.background_runs import task_manager
 
 
@@ -549,11 +550,11 @@ def test_tema_desconhecido_cai_no_padrao(cliente):
 def test_css_define_os_tokens_dos_temas_novos():
     from pathlib import Path
 
-    import gclaude_indexer.web.app as app_mod
+    import gclaude_indexer.web.rendering as rendering
 
     import re
 
-    css = (Path(app_mod.WEB_ROOT) / "static" / "style.css").read_text(encoding="utf-8")
+    css = (Path(rendering.WEB_ROOT) / "static" / "style.css").read_text(encoding="utf-8")
 
     def tokens(bloco: str) -> set[str]:
         return set(re.findall(r"(--color-[a-z0-9-]+)\s*:", bloco))
@@ -814,9 +815,9 @@ def test_css_esconde_a_faixa_quando_marcada_com_hidden():
     """`display:flex` na regra base vence o [hidden] do navegador; sem uma
     regra explícita o botão de dispensar fica inerte e o teste de HTML não pega."""
     from pathlib import Path
-    import gclaude_indexer.web.app as app_mod
+    import gclaude_indexer.web.rendering as rendering
 
-    css = (Path(app_mod.WEB_ROOT) / "static" / "style.css").read_text(encoding="utf-8")
+    css = (Path(rendering.WEB_ROOT) / "static" / "style.css").read_text(encoding="utf-8")
     assert ".notice-bar[hidden]" in css
     bloco = css.split(".notice-bar[hidden]", 1)[1].split("}", 1)[0]
     assert "display: none" in bloco
