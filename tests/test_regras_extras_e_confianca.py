@@ -12,7 +12,7 @@ from gclaude_indexer.config import config_to_json, load_config
 from gclaude_indexer.i18n import translate
 from gclaude_indexer.project import load_project, save_project_config
 from gclaude_indexer.managed_block import generated_part
-from gclaude_indexer.web.app import EXTRA_RULES_MAX_LENGTH
+from gclaude_indexer.config import EXTRA_RULES_MAX_LENGTH
 from tests.test_phase42 import _web
 
 HEADERS = {"Origin": "http://testserver"}
