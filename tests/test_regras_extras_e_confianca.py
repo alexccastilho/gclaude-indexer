@@ -137,3 +137,63 @@ def test_limpeza_de_repeticao_ainda_move_regras_para_a_config(tmp_path, monkeypa
     assert resposta.status_code == 200
     assert candidatos, "a cópia da fixture deveria oferecer ao menos uma regra para mover"
     assert _regras_gravadas(pasta).strip()
+
+
+def test_limpeza_de_repeticao_nao_passa_do_teto_das_regras(tmp_path, monkeypatch):
+    """O teto das regras extras valia só na caixa; mover regras da limpeza
+    de repetição passava dele em silêncio. Agora nada muda: nem as regras,
+    nem a parte do usuário."""
+    from tests.test_phase42 import _escrever_com_copia
+
+    cliente, pid, pasta = _web(tmp_path, monkeypatch)
+    cheio = "z" * EXTRA_RULES_MAX_LENGTH
+    cliente.post(f"/projects/{pid}/instructions/extra-rules", data={"extra_rules": cheio}, headers=HEADERS)
+    caminho = _escrever_com_copia(tmp_path, pasta, "")
+    antes = caminho.read_text(encoding="utf-8")
+    tela = cliente.get(f"/projects/{pid}/instructions").text
+    impressao = re.search(r'name="fingerprint" value="([0-9a-f]+)"', tela).group(1)
+    candidatos = [int(v) for v in re.findall(r'name="move" value="(\d+)"', tela)]
+    assert candidatos
+    resposta = cliente.post(
+        f"/projects/{pid}/instructions/dedup",
+        data={"action": "remove", "fingerprint": impressao, "move": candidatos}, headers=HEADERS,
+    )
+    assert resposta.status_code == 422
+    assert str(EXTRA_RULES_MAX_LENGTH) in resposta.text
+    assert _regras_gravadas(pasta) == cheio
+    assert caminho.read_text(encoding="utf-8") == antes
+
+
+def test_teto_das_regras_vale_em_toda_gravacao_que_as_muda(tmp_path):
+    import pytest
+
+    from gclaude_indexer.config import ConfigError
+    from gclaude_indexer.project import create_project, merge_project_config
+
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    config = load_config({"name": "X", "source_folder": str(origem), "output_folder": str(tmp_path / "saida")})
+    conn, _ = create_project(config)
+    config.extra_rules = "x" * (EXTRA_RULES_MAX_LENGTH + 1)
+    with pytest.raises(ConfigError):
+        save_project_config(conn, config)
+    with pytest.raises(ConfigError):
+        merge_project_config(conn, {"extra_rules": config.extra_rules})
+    conn.close()
+
+    # Um projeto que já ficou acima do teto continua abrindo e sendo regravado.
+    banco = tmp_path / "saida" / "project.db"
+    import sqlite3
+
+    direto = sqlite3.connect(banco)
+    dados = json.loads(direto.execute("SELECT config_json FROM project").fetchone()[0])
+    dados["extra_rules"] = config.extra_rules
+    direto.execute("UPDATE project SET config_json = ?", (json.dumps(dados, ensure_ascii=False),))
+    direto.commit()
+    direto.close()
+    aberto, conn = load_project(tmp_path / "saida")
+    aberto.subject = "novo assunto"
+    save_project_config(conn, aberto)
+    merge_project_config(conn, {"overlap": 1})
+    conn.close()
+    assert _regras_gravadas(tmp_path / "saida") == config.extra_rules

@@ -257,6 +257,19 @@ def default_value(name: str) -> object:
     return defaults()[name]
 
 
+def extra_rules_errors(text: str, previous: str = "") -> list[ConfigErrorMessage]:
+    """O teto das regras extras vale para o que muda: um texto igual ao já
+    gravado passa, para um projeto que ficou acima do teto (gravado antes de
+    toda gravação conferir) seguir abrindo e sendo regravado."""
+    if text == previous or len(text) <= EXTRA_RULES_MAX_LENGTH:
+        return []
+    return [
+        ConfigErrorMessage(
+            "instructions.extra_rules.too_long", {"size": len(text), "limit": EXTRA_RULES_MAX_LENGTH}
+        )
+    ]
+
+
 _INTEGER_TEXT = re.compile(r"[+-]?\d+")
 _TRUE_TEXTS = frozenset({"true", "1", "on", "yes"})
 _FALSE_TEXTS = frozenset({"false", "0", "off", "no", ""})
@@ -340,6 +353,8 @@ def _build(data: dict, *, check_source: bool) -> ProjectConfig:
         raise ConfigError([ConfigErrorMessage("config_error.type_error", {"detail": str(exc)})])
 
     errors = _validate(config, check_source=check_source)
+    if check_source and isinstance(config.extra_rules, str):
+        errors += extra_rules_errors(config.extra_rules)
     if errors:
         raise ConfigError(errors)
 
