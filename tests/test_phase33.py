@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from gclaude_indexer.web import app as modulo_app, routes_projects
+from gclaude_indexer.web import app as modulo_app, routes_projects, routes_update
 from tests.test_phase31 import _app_com_projeto
 from tests.test_phase32 import _arranque_isolado
 
@@ -84,7 +84,7 @@ _ROTAS = [
 
 # Onde cada rota procura a função que o teste troca.
 _DONO = {
-    "apply_update_plan": modulo_app,
+    "apply_update_plan": routes_update,
     "delete_project": routes_projects,
     "index_fulltext": modulo_app,
     "clear_intermediates": modulo_app,

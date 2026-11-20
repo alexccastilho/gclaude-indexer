@@ -42,14 +42,12 @@ from ..artifacts import (
     forget_form_instructions, generate_project_instructions_md, pending_items, stale_artifacts,
 )
 from ..catalog import catalog_folder, list_projects
-from ..config import EXTRA_RULES_MAX_LENGTH, ConfigError, ProjectConfig, default_value, extra_rules_errors
+from ..config import EXTRA_RULES_MAX_LENGTH, ConfigError, default_value, extra_rules_errors
 from ..db import is_lock_error
 from ..install_diagnostics import check_installation
 from ..events import record_event
 from ..instructions_dedup import apply as dedup_apply, block_pointer
 from ..managed_block import BACKUP_SUFFIX, generated_part, replace_user_part, user_part
-from ..invalidation import PlanExpired, apply_update_plan
-from ..update_plan import SCREEN_READ_DEADLINE_SECONDS, SourceFolderUnavailable, UpdatePlan, build_update_plan
 from ..cleanup import clear_intermediates, intermediates_size
 from .. import claude_package, combined_package
 from ..claude_package import generate_claude_project_package
@@ -71,20 +69,20 @@ from .i18n import DEFAULT_LANGUAGE, LANGUAGE_COOKIE_NAME, valid_language, transl
 from .layout import DEFAULT_LAYOUT, LAYOUT_COOKIE_NAME, valid_layout
 from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, valid_theme
-from . import routes_projects, routes_relocation, routes_run, state
+from . import routes_projects, routes_relocation, routes_run, routes_update, state
 from .caches import _cached_by_signature
 from .formatting import _format_time
-from .notices import _dedup_kept, _dedup_notice, _dedup_report, _pipeline_has_pending_work, _stale_context
-from .operations import _OperationMessage, _operation_busy_response, _operation_response, _start_operation
+from .notices import _dedup_kept, _dedup_notice, _dedup_report, _stale_context
+from .operations import _operation_busy_response
 from .project_access import (
     IncompleteSyncError, LockAbandonedError, LockBlockedError, RelocationBusyError, RelocationNeededError,
-    _open_project, _project_or_404, _read_project,
+    _open_project, _read_project,
 )
 from .rendering import WEB_ROOT, _request_language, _zip_response, render, templates
 from .routes_relocation import _render_relocation
 from .state import (
-    _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _generation_slot, _operation_in_progress, _release_all_projects,
-    _release_project, _step_in_progress,
+    _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _generation_slot, _release_all_projects, _release_project,
+    _step_in_progress,
 )
 
 
@@ -240,52 +238,7 @@ def _handle_database_busy(request: Request, exc: sqlite3.OperationalError):
 app.include_router(routes_projects.router)
 app.include_router(routes_relocation.router)
 app.include_router(routes_run.router)
-
-
-@app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
-def update_banner(request: Request, project_id: int):
-    """The "the folder changed" notice on the Execution screen.
-
-    Fetched by HTMX after the page renders, never before it: on a large
-    Drive-synced collection the walk takes seconds, and paying them before
-    the first pixel would trade one problem for another. An unreachable
-    source folder renders nothing — the screen is not the place to shout
-    about a disconnected drive, and `SourceFolderUnavailable` never
-    becomes a removal proposal.
-
-    `record_warnings=False`: this runs on every open of the Execution
-    screen, so it must not be able to write a single row.
-    """
-    # While an update or a generation runs, the folder is walked by
-    # it already; a second walk here would only slow both down.
-    if _operation_in_progress(project_id):
-        return HTMLResponse("")
-    with _open_project(project_id) as (entry, config, conn):
-        if _pipeline_has_pending_work(conn):
-            return HTMLResponse("")
-        # A project that never ran sees every document as "new": the first
-        # "Run everything" reads them all, so offering an update to someone
-        # who has just created the project only confuses them.
-        if conn.execute("SELECT 1 FROM file LIMIT 1").fetchone() is None:
-            return HTMLResponse("")
-        try:
-            plan = build_update_plan(
-                conn, config, record_warnings=False, read_deadline=SCREEN_READ_DEADLINE_SECONDS,
-            )
-        except SourceFolderUnavailable:
-            return HTMLResponse("")
-        if plan.is_empty:  # com não conferidos, não está vazio: o aviso aparece
-            return HTMLResponse("")
-        return render(
-            request, "_update_banner.html",
-            {"project": entry, "plan": plan, "config": config},
-        )
-
-
-def _current_instructions(config: ProjectConfig) -> str:
-    """The user's part of `project_instructions.md`, to fill the field of
-    the update screen."""
-    return user_part(Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME)
+app.include_router(routes_update.router)
 
 
 def _dedup_view(report, language: str) -> dict | None:
@@ -481,121 +434,6 @@ def _instructions_extra_rules_body(request: Request, project_id: int, form):
             entry, config, language, conn=conn, saved=True,
             message=translate(language, "instructions.extra_rules.saved"),
         ))
-
-
-@app.get("/projects/{project_id}/update", response_class=HTMLResponse)
-def update_screen(request: Request, project_id: int):
-    """The confirmation. Read-only: it never writes to the project.
-
-    `record_warnings=False` is what makes that categorical rather than
-    merely usual — see `build_update_plan`.
-    """
-    with _open_project(project_id) as (entry, config, conn):
-        try:
-            plan = build_update_plan(
-                conn, config, record_warnings=False, read_deadline=SCREEN_READ_DEADLINE_SECONDS,
-            )
-        except SourceFolderUnavailable:
-            return render(
-                request, "update_project.html",
-                {"project": entry, "config": config, "plan": None,
-                 "error": "update.source_unavailable"},
-                status_code=409,
-            )
-        return render(
-            request, "update_project.html",
-            {"project": entry, "config": config, "plan": plan, "error": None,
-             "current_instructions": _current_instructions(config)},
-        )
-
-
-@app.post("/projects/{project_id}/update", response_class=HTMLResponse)
-async def update_apply(request: Request, project_id: int):
-    form = await request.form()
-    return await run_in_threadpool(_update_apply_body, request, project_id, form)
-
-
-def _update_apply_body(request: Request, project_id: int, form):
-    """The checks that answer with a screen run here, in the
-    request; the walk of the folder and the invalidation run in the
-    background, with Stop. The slot is claimed by `_start_operation`
-    before anything is opened or written (fase 33, decision 3)."""
-    entry = _project_or_404(project_id)
-    if _step_in_progress(project_id):
-        with _open_project(project_id) as (entry, config, _conn):
-            return render(
-                request, "update_project.html",
-                {"project": entry, "config": config, "plan": None,
-                 "error": "update.run_in_progress"},
-                status_code=409,
-            )
-
-    def work(should_stop):
-        return _update_apply_unlocked(request, project_id, form, should_stop)
-
-    run_url = f"/projects/{project_id}/run"
-    operation = _start_operation(project_id, "update.confirm", work, run_url)
-    return _operation_response(request, operation, project_id, run_url)
-
-
-def _update_apply_unlocked(request: Request, project_id: int, form, should_stop=None):
-    """Applies the plan, then sends the user to the Execution screen.
-
-    The stale-plan check lives in `apply_update_plan`, not here: it is the
-    invariant of the invalidation itself, and putting it there keeps it
-    testable without a web server and keeps this route from walking the
-    folder a third time. The route rebuilds the plan the form refers to,
-    hands it over, and turns a refusal into a screen.
-
-    `record_warnings=False` here too, and for a different reason than on
-    the GET routes: `apply_update_plan` builds its own plan and records
-    the layout warning itself, so leaving it on would log the same
-    mismatch twice for one action — and once on a refusal that applied
-    nothing at all.
-    """
-    language = _request_language(request)
-
-    with _open_project(project_id) as (entry, config, conn):
-        # `_open_project`'s lock is the cross-machine one and the running
-        # step already holds it, so it protects nothing here. SQLite
-        # covers most of the database side, but `_prune_raw_items` is
-        # outside it: it streams `raw_items.jsonl` to a temporary file
-        # and renames it over the original while `classify_pending` may
-        # be appending, so classifications written during the copy are
-        # lost, or a stale line survives and is imported against pages
-        # that have since moved.
-        if _step_in_progress(project_id):
-            raise _OperationMessage("update.run_in_progress")
-
-        # What the user actually saw. `apply_update_plan` walks the folder
-        # itself and refuses when it no longer matches; only the
-        # fingerprint of the plan is read, so no third walk here (1.9.0:
-        # each walk of a large Drive folder can take half a minute).
-        seen = str(form.get("fingerprint", ""))
-        try:
-            apply_update_plan(
-                conn, config, UpdatePlan.witness(seen), language, should_stop=should_stop,
-            )
-        except SourceFolderUnavailable:
-            raise _OperationMessage("update.source_unavailable") from None
-        except PlanExpired:
-            raise _OperationMessage(
-                "update.plan_expired", next_url=f"/projects/{project_id}/update",
-            ) from None
-
-        # The instructions as the user has them today in the Claude
-        # Project. Their text replaces the user's part of the file; the
-        # generated section stays and is refreshed by the next generation.
-        pasted = str(form.get("current_instructions", ""))
-        if replace_user_part(
-            Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME, pasted,
-            stamp=datetime.now().strftime("%Y%m%d-%H%M%S"),
-        ):
-            record_event(
-                conn, "update", "info", "log.update.instructions_replaced", {}, language=language,
-            )
-
-    return f"/projects/{project_id}/run"
 
 
 # --- screen: Result ---------------------------------------------------------
