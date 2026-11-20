@@ -26,7 +26,6 @@ from ..managed_block import BACKUP_SUFFIX, generated_part, replace_user_part, us
 from ..output_names import PROJECT_INSTRUCTIONS_FILENAME
 from ..project import save_project_config
 from .i18n import translate
-from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT
 from .notices import _dedup_kept, _dedup_report
 from .operations import _operation_busy_response
 from .project_access import _open_project
@@ -72,7 +71,6 @@ def _instructions_context(entry, config, language: str, *, message: str = "", sa
         "message": message, "saved": saved,
         "extra_rules": config.extra_rules if extra_rules is None else extra_rules,
         "extra_rules_limit": EXTRA_RULES_MAX_LENGTH,
-        "extra_rules_prompt_limit": EXTRA_RULES_PROMPT_LIMIT,
         "dedup": _dedup_view(report, language),
         "dedup_kept": report is not None and conn is not None and _dedup_kept(conn, report.fingerprint),
     }
