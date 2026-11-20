@@ -34,13 +34,20 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .artifacts import (
-    demote_headings, project_instructions_sections, role_section, rule_section, subject_or_placeholder,
+    CLAUDE_MD_SECURITY,
+    demote_headings,
+    is_legacy_claude_md,
+    is_legacy_instructions,
+    project_instructions_sections,
+    role_section,
+    rule_section,
+    subject_or_placeholder,
 )
 from .catalog import CatalogEntry, find_project
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig
 from .i18n import DEFAULT_LANGUAGE, translate
-from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed
+from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed, write_managed
 from .output_names import (
     CLAUDE_MD_FILENAME,
     COMBINED_STALE_PATTERNS,
@@ -248,13 +255,8 @@ def _where_section(members: list[Member], language: str) -> list[str]:
     return lines
 
 
-def generate_instructions(
-    entry: SetEntry, members: list[Member], language: str, existing: str | None = None,
-) -> str:
-    """O `project_instructions.md` único do conjunto. O texto pessoal fica
-    fora das marcas e só é semeado quando ainda não há nada fora delas
-    (`merge_managed`): num arquivo já gravado na pasta, o que a pessoa
-    escreveu ali é a verdade e atravessa a regeneração."""
+def _instructions_block(entry: SetEntry, members: list[Member], language: str) -> str:
+    """O que vai entre as marcas do `project_instructions.md` do conjunto."""
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     available = [m for m in members if m.available and m.config is not None]
     lines = [f"# {t('combined.title', name=entry.name)}", ""]
@@ -272,7 +274,19 @@ def generate_instructions(
         # Um nível abaixo: o título do acervo é o `##`.
         lines += demote_headings(sections)
         lines.append("")
-    return merge_managed(existing, "\n".join(lines), user_text=entry.personal_instructions)
+    return "\n".join(lines)
+
+
+def generate_instructions(
+    entry: SetEntry, members: list[Member], language: str, existing: str | None = None,
+) -> str:
+    """O `project_instructions.md` único do conjunto. O texto pessoal fica
+    fora das marcas e só é semeado quando ainda não há nada fora delas
+    (`merge_managed`): num arquivo já gravado na pasta, o que a pessoa
+    escreveu ali é a verdade e atravessa a regeneração."""
+    return merge_managed(
+        existing, _instructions_block(entry, members, language), user_text=entry.personal_instructions,
+    )
 
 
 def _guide(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
@@ -326,6 +340,7 @@ def _claude_md(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
     words = _PROSE_WORDS[language]
     return _CLAUDE_MD[language].format(
         name=entry.name, collections="\n".join(collections), where=t("combined.where_text"), rule=SOURCE_OF_TRUTH_RULE,
+        security=CLAUDE_MD_SECURITY[language],
         alias_index=prefixed_name(words["alias"], INDEX_FILENAME),
         alias_group_index=prefixed_name(words["alias"], dashed_name(INDEX_FILENAME, words["group"])),
         alias_timeline=prefixed_name(words["alias"], TIMELINE_FILENAME),
@@ -413,14 +428,18 @@ def write_folder(entry: SetEntry, folder: Path, language: str = DEFAULT_LANGUAGE
         destination.write_bytes(item.read())
         written.append(destination)
 
+    # Como no projeto simples (`write_managed`): cópia `.bak` na primeira vez
+    # que um arquivo sem marcas é tocado, arquivo inteiro de versão anterior
+    # reconhecido, e arquivo igual deixado como está.
     instructions = folder / PROJECT_INSTRUCTIONS_FILENAME
-    existing = instructions.read_text(encoding="utf-8") if instructions.exists() else None
-    instructions.write_text(generate_instructions(entry, combined.members, language, existing), encoding="utf-8")
+    write_managed(
+        instructions, _instructions_block(entry, combined.members, language),
+        is_legacy=is_legacy_instructions, user_text=entry.personal_instructions,
+    )
     written.append(instructions)
 
     claude_md = folder / CLAUDE_MD_FILENAME
-    existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else None
-    claude_md.write_text(merge_managed(existing, _claude_md(entry, combined, language)), encoding="utf-8")
+    write_managed(claude_md, _claude_md(entry, combined, language), is_legacy=is_legacy_claude_md)
     written.append(claude_md)
     return written
 
@@ -585,6 +604,8 @@ acervo começam pelo apelido dele e dois sublinhados (`{alias_index}`,
 `{alias_group_index}`, `{alias_timeline}`,
 `{alias_review}`, `{alias_norms}` quando há normas).
 
+{security}
+
 ## Em qual acervo procurar
 
 {where}
@@ -602,6 +623,8 @@ collection's files start with its alias and two underscores
 (`{alias_index}`, `{alias_group_index}`, `{alias_timeline}`,
 `{alias_review}`, `{alias_norms}` when there are norms).
 
+{security}
+
 ## Which collection to search
 
 {where}
@@ -618,6 +641,8 @@ Esta carpeta reúne los informes de más de una colección. Los archivos de
 cada colección empiezan por su alias y dos guiones bajos
 (`{alias_index}`, `{alias_group_index}`, `{alias_timeline}`,
 `{alias_review}`, `{alias_norms}` cuando hay normas).
+
+{security}
 
 ## En qué colección buscar
 

@@ -580,10 +580,7 @@ def generate_cited_norms_md(conn, config: ProjectConfig, language: str) -> Path 
         "SELECT * FROM item WHERE engine = ? ORDER BY group_key, start_order", (planalto.ENGINE,)
     ).fetchall()
     if not atos:
-        try:
-            caminho.unlink()
-        except FileNotFoundError:
-            pass
+        _remove_output(caminho)
         return None
 
     physical = _physical_pages(conn)
@@ -1313,15 +1310,14 @@ def generate_project_instructions_md(conn, config: ProjectConfig, language: str)
     # as instruções que ele já usava, coladas no formulário — atravessam
     # cada regeneração. Um arquivo de versão anterior às marcas traz a regra
     # da fonte original (sempre em português) e é inteiramente nosso.
-    before = path.read_bytes() if path.exists() else None
-    write_managed(
+    wrote = write_managed(
         path,
         "\n".join(lines),
         is_legacy=is_legacy_instructions,
         user_text=config.existing_instructions,
     )
     changed = _changed_files.get()
-    if changed is not None and path.read_bytes() != before:
+    if changed is not None and wrote:
         changed.append(path)
     return path
 
