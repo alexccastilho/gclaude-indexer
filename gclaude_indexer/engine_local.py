@@ -1832,10 +1832,30 @@ def _has_dedicated_gpu() -> bool:
     return gpu is not None and ("amd" in vendor or "advanced micro" in vendor) and gpu.vram_mb >= 2048
 
 
+def _mentions_fallback(jsonl_path: Path) -> bool:
+    """Whether the file has the `"fallback"` key anywhere, by a byte search.
+
+    Almost every classification finds none (the model was up last time),
+    and parsing every line of a file of gigabytes to learn that took
+    seconds. Inside a JSON string a quote is escaped, so the quoted key
+    only appears as a key (or as a whole string value, which just means
+    the full pass below runs, as before)."""
+    needle = b'"' + raw_items.FALLBACK.encode("ascii") + b'"'
+    tail = b""
+    with open(jsonl_path, "rb") as file:
+        while True:
+            block = file.read(1 << 20)
+            if not block:
+                return False
+            if needle in tail + block[: len(needle) - 1] or needle in block:
+                return True
+            tail = block[-(len(needle) - 1):]
+
+
 def _fallback_only_windows(jsonl_path: Path) -> set:
     """Keys of the windows whose every line in `raw_items.jsonl` carries
     `"fallback": true`. One pass, holding only keys."""
-    if not jsonl_path.exists():
+    if not jsonl_path.exists() or not _mentions_fallback(jsonl_path):
         return set()
     marked: set = set()
     unmarked: set = set()
