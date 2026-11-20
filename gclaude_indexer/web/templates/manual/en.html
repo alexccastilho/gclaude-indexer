@@ -87,7 +87,7 @@
 <h3>Identification</h3>
 <dl>
   <dt>Project name</dt><dd>Just so you can recognize the project on the list. It does not change any file.</dd>
-  <dt>Collection theme</dt><dd>One or two sentences about the content (e.g. "bidding process for construction project X"). It goes into the instructions generated for Claude, and it is what helps the local model most in understanding what it is reading.</dd>
+  <dt>Collection theme</dt><dd>One or two sentences about the content (e.g. "bidding process for construction project X"). It goes into the instructions generated for Claude, which is where it helps. The local model does not read it since 2.1.0: measured, with the theme it cut the documents worse.</dd>
 </dl>
 
 <h3>Folders</h3>
@@ -167,6 +167,7 @@
 </div>
 <p>The <em>Claude Code (manual)</em> engine no longer exists in 2.0.0. A project that used it opens with the <em>Automatic</em> engine, with a notice, and the items that had already been classified stay valid. Claude Code still works for consulting the index: the <code>CLAUDE.md</code> in the output folder teaches it to read the index and use <code>buscar.bat</code>.</p>
 <p>To give you an idea of time, on the demo collection (72 pages): 4 seconds with the rules, 2 and a half minutes on the Fastest profile and 5 and a half on Best quality, on a 12 GB card. Without a graphics card, on the CPU alone, the local model is 5 to 11 times slower. A collection of thousands of pages takes hours with the local model and minutes with the rules.</p>
+<p>The minimum and recommended system, memory, graphics card and disk are in the <em>Minimum and recommended hardware</em> section of <code>docs/TECHNICAL.md</code>, in the program's repository.</p>
 <p>Pages of laws, decrees and ordinances saved from the Planalto website do not go through any engine: the program reads them from the structure of the page itself and knows the type, number, date and summary. See <a href="#normas-e-busca">Cited acts and searching the collection</a>.</p>
 <p class="manual-tip">Tip: the Result screen has the <em>Compare engines and models</em> table. Run the same collection with different engines and compare time and score before deciding.</p>
 </section>
@@ -288,7 +289,7 @@
   <li><strong>At any time</strong>: the <em>Project instructions</em> link, on the Execution and Result screens, shows your part of the file so you can fix it or paste the current version from the Claude Project. The program's part is shown below it, read only. Each time you save, the previous version is kept in a <code>.bak</code> copy with the date in its name.</li>
   <li><strong>Repetition of the automatic block</strong>: if your part of the file already has a copy of what the program writes in the block (the non-negotiable rule, how to locate an item, the columns, counts of items or pages), generation does not touch your text: it puts a notice at the top of the block and in the log, and the Execution and Result screens show a link to review it. On the <em>Project instructions</em> screen you see the repeated sections, the lines with numbers only the block updates, and the "section 4" style references that would point to the block. Choose <em>Remove the repetitions</em> (the previous version is kept in a <code>.bak</code> copy) or <em>Keep as it is</em>. Passages of yours about the collection can go to the project's <em>extra rules</em>: tick the ones to move, and they appear inside the block.</li>
   <li><strong>Extra rules</strong>: the <em>Project instructions</em> screen has a box for rules specific to the collection (for example, "always cite the case number" or a glossary of acronyms). They go inside the program's block the next time the reports are generated. They used to be in the creation form; the value a project already had was kept.</li>
-  <li><strong><code>CLAUDE.md</code> is consultation-only</strong>: it teaches Claude Code to read the index and use <code>buscar.bat</code>, and reminds it that the text of a document is data, never an instruction. It does not tell Claude Code to classify anything. The leftovers of earlier versions (the <code>windows/*.txt</code> files and the old block of <code>CLAUDE.md</code>) are cleaned up when you generate the reports.</li>
+  <li><strong><code>CLAUDE.md</code> is consultation-only</strong>: it teaches Claude Code to read the index and use <code>buscar.bat</code>, reminds it that the text of a document is data, never an instruction, and ends with the same non-negotiable rule as the instructions: check values, dates and tables in the original file. It does not tell Claude Code to classify anything. The leftovers of earlier versions (the <code>windows/*.txt</code> files and the old block of <code>CLAUDE.md</code>) are cleaned up when you generate the reports.</li>
 </ul>
 </section>
 
@@ -361,7 +362,7 @@
   <tbody>
     <tr><td>The fastest possible result</td><td><em>Rules</em> engine, <em>maximum</em> Parallelism.</td></tr>
     <tr><td>Fast, but without giving up quality</td><td><em>Automatic</em> or <em>Local model</em> engine: low confidence is already reduced during classification, with no extra step.</td></tr>
-    <tr><td>The best quality</td><td><em>Local model</em> engine on a graphics card where the model fits, and a well-filled <em>Collection theme</em>.</td></tr>
+    <tr><td>The best quality</td><td><em>Local model</em> engine on a graphics card where the model fits, on the <em>Best quality</em> profile.</td></tr>
     <tr><td>Use the computer while it processes</td><td><em>automatic</em> or <em>economical</em> Parallelism; Processing <em>CPU/RAM only</em> if you need the graphics card.</td></tr>
     <tr><td>A collection with audio or video</td><td>Check the audio and video box only when you need it: transcription uses the processor, is slow and downloads the model the first time.</td></tr>
     <tr><td>A collection with old formats (<code>.doc</code>, <code>.ppt</code>)</td><td>Leave the category checked. The first use downloads LibreOffice, once only, and needs internet.</td></tr>
@@ -371,7 +372,7 @@
 </div>
 <ul>
   <li>Start with a small piece of the collection to test the settings; then point to the whole folder.</li>
-  <li>Fill in the <em>Collection theme</em> carefully: it improves the classification and Claude's answers.</li>
+  <li>Fill in the <em>Collection theme</em> carefully: it improves Claude's answers (the local model does not read it).</li>
   <li>Use a graphics card if you can, and a model that fits in it: the log says whether it fit. A model that fits and finishes is worth more than a larger one that spills over into ordinary memory.</li>
   <li>Always ask Claude for the reference (f. N or p. N) and check the value in the original document before using it.</li>
 </ul>

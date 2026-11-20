@@ -73,6 +73,7 @@ El idioma de cada documento se detecta uno por uno, sea cual sea, y el tipo y el
 - Algunos gigabytes libres en disco.
 - No hace falta instalar nada antes. El instalador trae Python, el OCR (Tesseract y Ghostscript, que leen páginas escaneadas), Ollama, que es el programa que ejecuta el modelo local, y el propio modelo; lo que es opcional, lo muestra en una lista antes de descargar. Internet solo se usa en ese momento y, después, para los componentes opcionales descritos arriba.
 - Una tarjeta de video con 6 GB o más hace al modelo local bastante más rápido. Sin tarjeta, corre despacio en la memoria común, y el motor de reglas hace el trabajo en segundos.
+- La computadora mínima y la recomendada, ítem por ítem, están en [Hardware mínimo y recomendado](TECHNICAL.es.md#hardware-mínimo-y-recomendado).
 
 El programa clasifica las piezas de dos maneras. El motor de reglas reconoce cada pieza por patrones del texto, como los títulos de las piezas, y termina en segundos. El modelo local es un programa de inteligencia artificial que lee cada fragmento, acierta más la fecha y el autor, y tarda más. La opción predeterminada, Automático, usa el modelo local cuando la computadora lo aguanta y las reglas cuando no.
 
