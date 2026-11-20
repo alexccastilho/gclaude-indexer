@@ -362,6 +362,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_file_mtime_column(conn)
     _ensure_file_ocr_failed_column(conn)
     _ensure_file_group_key_index(conn)
+    _ensure_window_group_key_index(conn)
     _ensure_fulltext_file_range_columns(conn)
     _ensure_file_ocr_failed_index(conn)
     _ensure_file_signature_table(conn)
@@ -412,6 +413,16 @@ def _ensure_file_group_key_index(conn: sqlite3.Connection) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(file)").fetchall()}
     if "group_key" in columns:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_file_group_key ON file(group_key)")
+
+
+def _ensure_window_group_key_index(conn: sqlite3.Connection) -> None:
+    """The windows step, the update plan and the invalidation read a group's
+    windows by `window.group_key`, one query per group; without an index
+    each one scanned the whole window table. Guarded by column, like
+    `_ensure_file_group_key_index`."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(window)").fetchall()}
+    if "group_key" in columns:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_window_group_key ON window(group_key)")
 
 
 def _ensure_fulltext_file_range_columns(conn: sqlite3.Connection) -> None:
