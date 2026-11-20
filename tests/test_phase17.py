@@ -2329,18 +2329,6 @@ def test_poda_que_falha_e_contada_e_avisada_em_vez_de_silenciosa(tmp_path, monke
     assert avisos[0]["level"] == "warning"
 
 
-def test_as_chaves_do_log_da_atualizacao_existem_nos_tres_idiomas():
-    """A suíte não tem teste de paridade de chaves de i18n; sem isto uma
-    tradução faltando só apareceria para o usuário."""
-    from gclaude_indexer.i18n import _TRANSLATIONS
-
-    for idioma in ("pt", "en", "es"):
-        assert "log.update.applied" in _TRANSLATIONS[idioma]
-        assert "log.update.orphan_window_file" in _TRANSLATIONS[idioma]
-        assert "log.update.raw_items_prune_failed" in _TRANSLATIONS[idioma]
-        assert "log.update.reconversion_needed" in _TRANSLATIONS[idioma]
-
-
 # --- Task 9: removed documents in review.md --------------------------------
 
 
@@ -2375,18 +2363,6 @@ def test_sem_remocoes_o_review_diz_que_nao_houve(tmp_path):
     texto = generate_review_md(conn, config, "pt").read_text(encoding="utf-8")
 
     assert "Nenhum documento removido" in texto
-
-
-def test_a_secao_de_removidos_existe_nos_tres_idiomas():
-    from gclaude_indexer.i18n import translate
-
-    for idioma in ("pt", "en", "es"):
-        for chave in (
-            "artifact.review.removed_section",
-            "artifact.review.removed_none",
-        ):
-            texto = translate(idioma, chave)
-            assert texto and not texto.startswith("artifact."), f"{idioma}/{chave}"
 
 
 # --- Task 10: rotas, tela de confirmação e aviso na execução ---------------

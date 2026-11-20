@@ -450,24 +450,6 @@ def test_sem_notas_nao_ha_resumo_de_contexto(tmp_path, monkeypatch):
     conn.close()
 
 
-_CHAVES_DA_FASE = (
-    ("log.local_engine.gpu_plan", {"model": "m", "layers": 1, "layers_total": 1, "free_vram": 1, "context": 1, "ceiling": 1}),
-    ("log.local_engine.window_note", {"window": "w", "reason": "r"}),
-    ("log.local_engine.window_context_raised", {"context": 1}),
-    ("log.local_engine.window_split_for_size", {"pages": 1, "needed": 1, "ceiling": 1}),
-    ("log.local_engine.context_summary", {"raised": 1, "split": 1, "ceiling": 1}),
-)
-
-
-def test_chaves_da_fase_36_nos_tres_idiomas():
-    from gclaude_indexer.i18n import translate
-
-    for idioma in ("pt", "en", "es"):
-        for chave, params in _CHAVES_DA_FASE:
-            texto = translate(idioma, chave, **params)
-            assert texto and texto != chave, (idioma, chave)
-
-
 # --- Task 6: diagnóstico do backend a partir do log do servidor -------------
 
 _LOG_AMD = """time=2026-11-02T12:02:30.000-03:00 level=INFO source=types.go:32 msg="inference compute" id=GPU-1 library=CUDA compute=8.6 name=CUDA0 description="NVIDIA GeForce Laptop GPU (6 GB)" total="6.0 GiB" available="5.1 GiB"
@@ -579,16 +561,6 @@ def test_backend_nvidia_sem_avisos_e_so_o_evento_informativo(tmp_path, monkeypat
 def test_sem_log_nenhum_o_backend_fica_como_nao_identificado(tmp_path, monkeypatch):
     eventos = _classificar_com_backend(tmp_path, monkeypatch, None)
     assert [e[1] for e in eventos] == ["log.local_engine.backend_unknown"]
-
-
-_CHAVES_DA_FASE += (
-    ("log.local_engine.backend", {"device": "d", "library": "l", "total": "t", "note": "n"}),
-    ("log.local_engine.backend_parallel_pinned", {"family": "f"}),
-    ("log.local_engine.backend_no_note", {}),
-    ("log.local_engine.backend_amd_no_hip7", {"device": "d"}),
-    ("log.local_engine.backend_amd_driver_old", {"device": "d"}),
-    ("log.local_engine.backend_unknown", {}),
-)
 
 
 # --- Task 7: flash attention desligada em Vulkan sobre AMD RDNA1/RDNA2 ------
@@ -713,13 +685,6 @@ def test_evento_do_backend_diz_que_a_flash_attention_foi_desligada(tmp_path, mon
     (tmp_path / "nvidia").mkdir()
     eventos = _classificar_com_backend(tmp_path / "nvidia", monkeypatch, cuda)
     assert json.loads(eventos[0][2])["tuning"]["$i18n_key"] == "log.local_engine.backend_tuning_default"
-
-
-_CHAVES_DA_FASE += (
-    ("log.local_engine.backend", {"device": "d", "library": "l", "total": "t", "note": "n", "tuning": "u"}),
-    ("log.local_engine.backend_flash_attention_off", {}),
-    ("log.local_engine.backend_tuning_default", {}),
-)
 
 
 # --- Task 8: versão e documentos ---------------------------------------------

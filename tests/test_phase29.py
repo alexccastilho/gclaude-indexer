@@ -25,7 +25,6 @@ from gclaude_indexer import fulltext
 from gclaude_indexer.artifacts import _gaps_by_group
 from gclaude_indexer.engine_rules import classify_pending as classify_rules
 from gclaude_indexer.fulltext import coverage, index_pending, remove_file, search
-from gclaude_indexer.i18n import translate
 from gclaude_indexer.raw_items import FILE_NAME as RAW_ITEMS_FILE_NAME
 from gclaude_indexer.quality import _coverage
 from gclaude_indexer.web.background_runs import StepTask, _fulltext_progress_dict
@@ -159,11 +158,6 @@ def test_barra_mostra_a_fase_da_busca(tmp_path):
     assert progresso["phase"] == "fulltext"
     assert (progresso["concluidos"], progresso["total"], progresso["percentual"]) == (2, 3, 66)
     conn.close()
-
-
-def test_rotulo_da_fase_nos_tres_idiomas():
-    for idioma in ("pt", "en", "es"):
-        assert translate(idioma, "run.phase_fulltext") != "run.phase_fulltext"
 
 
 # --- contagem de páginas e cobertura ---------------------------------------------

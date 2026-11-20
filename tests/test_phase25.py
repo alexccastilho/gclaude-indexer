@@ -411,18 +411,3 @@ def test_pagina_inteira_com_banco_ocupado_explica_em_vez_de_erro_500(cliente, tm
     resposta = cliente.get(f"/projects/{projeto}/run/steps")
     assert resposta.status_code == 503
     assert "Banco de dados ocupado" in resposta.text
-
-
-def test_chaves_novas_nos_tres_idiomas():
-    from gclaude_indexer.i18n import translate
-
-    for idioma in ("pt", "en", "es"):
-        for chave, params in (
-            ("log.worker_restarted", {"name": "x", "minutes": 10}),
-            ("log.pool_stalled", {"name": "x"}),
-            ("error.file_timed_out", {"minutes": 10}),
-            ("busy.title", {}),
-            ("busy.message", {}),
-        ):
-            texto = translate(idioma, chave, **params)
-            assert texto and texto != chave

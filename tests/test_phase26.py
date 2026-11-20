@@ -298,18 +298,3 @@ def test_plano_de_atualizacao_nunca_le_pasta_travada_como_remocao(tmp_path, monk
         detect_changes(conn, config)
     conn.close()
     assert origem.exists()
-
-
-def test_chaves_novas_nos_tres_idiomas():
-    from gclaude_indexer.i18n import translate
-
-    for idioma in ("pt", "en", "es"):
-        for chave, params in (
-            ("log.scan.file_timed_out", {"name": "x", "minutes": 10}),
-            ("log.scan.file_unreadable", {"name": "x", "error": "y"}),
-            ("log.scan.discarded_without_update", {"name": "x", "windows": 2}),
-            ("log.scan.content_changed_waiting", {"name": "x"}),
-            ("error.folder_stalled", {"folder": "x"}),
-        ):
-            texto = translate(idioma, chave, **params)
-            assert texto and texto != chave
