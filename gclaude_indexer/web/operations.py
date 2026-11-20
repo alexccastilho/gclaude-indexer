@@ -157,6 +157,30 @@ def _operation_view(operation: _Operation, language: str) -> dict:
         "elapsed_s": max(0, int(end - operation.started_at)),
         "next_url": operation.next_url,
         "message": message,
+        "stoppable": True,
+    }
+
+
+def _slot_view(project_id: int, key: str, started_at: float, language: str) -> dict:
+    """An operation holding the project's slot through `_generation_slot`
+    (clearing intermediates, search indexing, dedup, deletion): it runs
+    inside its own request, is not in `_OPERATIONS` and cannot be stopped,
+    but the waiting panel of every other screen still has to see it. The id
+    is negative so it never meets one from `_OPERATION_IDS`; it disappears
+    from `/activity` when the slot is released."""
+    entry = find_project(project_id)
+    return {
+        "id": -project_id,
+        "project_id": project_id,
+        "project_name": entry.name if entry is not None else "",
+        "operation": translate(language, key),
+        "operation_key": key,
+        "status": "running",
+        "stopping": False,
+        "elapsed_s": max(0, int(time.monotonic() - started_at)),
+        "next_url": f"/projects/{project_id}/run",
+        "message": "",
+        "stoppable": False,
     }
 
 

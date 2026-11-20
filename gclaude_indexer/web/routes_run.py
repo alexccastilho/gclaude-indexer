@@ -42,7 +42,7 @@ from .formatting import _format_time
 from .notices import _dedup_notice, _reports_to_regenerate, _stale_context
 from .operations import (
     OPERATION_FINISHED_TTL_SECONDS, _OPERATIONS, _back_to_project, _operation_response, _operation_view,
-    _start_operation,
+    _slot_view, _start_operation,
 )
 from .project_access import _open_project, _project_or_404, _read_project
 from .rendering import _request_language, render
@@ -406,7 +406,15 @@ def global_activity(request: Request) -> dict:
                     and now - operation.finished_at > OPERATION_FINISHED_TTL_SECONDS):
                 del _OPERATIONS[project_id]
         operations = list(_OPERATIONS.values())
-    return {"operations": [_operation_view(op, language) for op in operations]}
+        slots = dict(state._OPERATIONS_IN_PROGRESS)
+    views = [_operation_view(op, language) for op in operations]
+    # The slot taken by `_generation_slot` has no entry in `_OPERATIONS`.
+    started_here = {op.project_id for op in operations if op.status == "running"}
+    views += [
+        _slot_view(project_id, key, started_at, language)
+        for project_id, (key, started_at) in slots.items() if project_id not in started_here
+    ]
+    return {"operations": views}
 
 
 @router.post("/projects/{project_id}/operation/stop")
