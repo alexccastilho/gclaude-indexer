@@ -127,8 +127,8 @@ SEARCH_LAUNCHER_FILENAME = "buscar.bat"
 CLAUDE_MD_FILENAME = "CLAUDE.md"
 
 
-# O motor que o leitor do Planalto (`planalto.py`) grava nas peças que
-# reconhece de forma determinística: leis, decretos, MPs, portarias. Fase
+# As peças do motor do leitor do Planalto (`planalto.ENGINE`), reconhecidas
+# de forma determinística: leis, decretos, MPs, portarias. Fase
 # 31: essas peças saem do índice e da cronologia (num acervo grande de
 # legislação, eram quase todas as linhas do índice). Fase 38: elas não vão
 # mais para arquivo nenhum. O `legislacao-<grupo>.md` chegava a dezenas de

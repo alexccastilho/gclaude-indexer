@@ -50,7 +50,6 @@ MAX_FOLDER_DEPTH = 64
 PROGRESS_EVERY = 25
 
 
-
 class OutlookError(Exception):
     """O arquivo não pôde ser lido (corrompido, protegido, formato errado)."""
 

@@ -14,6 +14,7 @@ verdade."""
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -708,3 +709,72 @@ def test_anexo_que_o_extrator_nao_consegue_ler_e_avisado_e_o_tipo_nao_lido_nao(t
         reader_factory=lambda _p: LeitorSimulado(mensagens), on_note=lambda tipo, dados: notas.append((tipo, dados["name"])),
     )
     assert notas == [("attachment_unreadable", "corrompido.docx")]
+
+
+class _PastaFalsa:
+    """Pasta do pypff: mensagens e subpastas por índice; `None` é um item
+    que o arquivo danificado não deixa abrir."""
+
+    def __init__(self, name, mensagens=(), pastas=()):
+        self.name = name
+        self._mensagens = list(mensagens)
+        self._pastas = list(pastas)
+        self.number_of_sub_messages = len(self._mensagens)
+        self.number_of_sub_folders = len(self._pastas)
+
+    def get_sub_message(self, index):
+        if self._mensagens[index] is None:
+            raise OSError("bloco corrompido")
+        return self._mensagens[index]
+
+    def get_sub_folder(self, index):
+        if self._pastas[index] is None:
+            raise OSError("bloco corrompido")
+        return self._pastas[index]
+
+
+def test_leitor_real_conta_mensagens_e_pastas_que_nao_abrem():
+    class _Msg:
+        def __init__(self, assunto):
+            self.subject = assunto
+
+    class _Arquivo:
+        def get_root_folder(self):
+            return _PastaFalsa("", [_Msg("A"), None], [None, _PastaFalsa("Caixa", [_Msg("B")])])
+
+    leitor = object.__new__(outlook._PypffReader)
+    leitor.unreadable = 0
+    leitor._file = _Arquivo()
+    assert [m.subject for m in leitor.messages()] == ["A", "B"]
+    assert leitor.unreadable == 2
+
+
+def test_retoma_progresso_gravado_pela_versao_anterior(tmp_path):
+    """O `.progress` que as versões até a 2.1.0 gravavam, escrito à mão: uma
+    conversão parada antes da atualização continua depois dela."""
+    origem = tmp_path / "x.pst"
+    origem.write_bytes(b"1")
+    destino = tmp_path / "saida.txt"
+    feito = "Assunto: M1\n\ncorpo 1".encode("utf-8")
+    (tmp_path / "saida.txt.partial").write_bytes(feito)
+    info = origem.stat()
+    (tmp_path / "saida.txt.progress").write_text(json.dumps({
+        "size": info.st_size, "mtime_ns": info.st_mtime_ns, "messages": 1, "bytes": len(feito),
+        "pages": 1, "extracted": 0,
+    }), encoding="utf-8")
+    lidas = []
+
+    class Leitor(LeitorSimulado):
+        def messages(self):
+            for mensagem in super().messages():
+                lidas.append(mensagem.subject)
+                yield mensagem
+
+    resultado = outlook.convert_pst(
+        origem, destino, tmp_path / "anexos", lambda p, n: None,
+        reader_factory=lambda _p: Leitor([PstMessage(subject="M1", plain="nunca"), PstMessage(subject="M2", plain="corpo 2")]),
+    )
+    assert resultado.pages == 2
+    texto = destino.read_text(encoding="utf-8")
+    assert "corpo 1" in texto and "corpo 2" in texto and "nunca" not in texto
+    assert not (tmp_path / "saida.txt.progress").exists()

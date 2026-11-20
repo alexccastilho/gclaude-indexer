@@ -756,3 +756,21 @@ def test_estimativa_usa_o_nome_do_modelo_e_nao_o_caminho(tmp_path, sim):
     _transcrever(tmp_path, ferramentas, on_estimate=vistos.append)
     assert media.REALTIME_FACTOR[True]["medium"] != media.REALTIME_FACTOR[True]["small"]
     assert vistos[0]["estimate"] == pytest.approx(25.0 * media.REALTIME_FACTOR[True]["medium"])
+
+
+def test_progresso_gravado_pela_versao_anterior_ainda_vale(tmp_path):
+    """O `.progress` da transcrição como as versões até a 2.1.0 o gravavam,
+    escrito à mão: vale para a mesma origem e o mesmo modelo, e só para eles."""
+    origem = tmp_path / "aula.mp3"
+    origem.write_bytes(b"audio")
+    destino = tmp_path / "aula.txt"
+    (tmp_path / "aula.txt.partial").write_bytes(b"x" * 40)
+    info = origem.stat()
+    (tmp_path / "aula.txt.progress").write_text(json.dumps({
+        "size": info.st_size, "mtime_ns": info.st_mtime_ns, "model": "small",
+        "offset": 4800000, "bytes": 40, "pages": 1, "languages": {"pt": 300.0},
+    }), encoding="utf-8")
+    assert media._saved_state(destino, origem, "small") == {
+        "offset": 4800000, "bytes": 40, "pages": 1, "languages": {"pt": 300.0},
+    }
+    assert media._saved_state(destino, origem, "medium") is None
