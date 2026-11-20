@@ -123,13 +123,13 @@ def _telas_da_execucao_sem_reaproveitar(monkeypatch):
     """1.9.0: parada, a tela de Execução reaproveita a resposta por até 30 s.
     Os testes mudam o banco por fora e esperam ver a mudança na hora; o
     reaproveitamento tem teste próprio, que liga o prazo de novo."""
-    from gclaude_indexer.web import app as modulo_app
+    from gclaude_indexer.web import app as modulo_app, caches
 
-    monkeypatch.setattr(modulo_app, "IDLE_FRAGMENT_SECONDS", 0.0)
-    with modulo_app._idle_fragments_lock:
-        modulo_app._idle_fragments.clear()
-    with modulo_app._quality_cache_lock:
-        modulo_app._quality_cache.clear()
+    monkeypatch.setattr(caches, "IDLE_FRAGMENT_SECONDS", 0.0)
+    with caches._idle_fragments_lock:
+        caches._idle_fragments.clear()
+    with caches._quality_cache_lock:
+        caches._quality_cache.clear()
     modulo_app._about_cache.clear()
 
 

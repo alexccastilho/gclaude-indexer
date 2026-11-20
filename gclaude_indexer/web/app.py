@@ -55,7 +55,7 @@ from ..config import (
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
 from ..events import list_events, record_event
-from ..instructions_dedup import apply as dedup_apply, block_pointer, detect as dedup_detect
+from ..instructions_dedup import apply as dedup_apply, block_pointer
 from ..managed_block import BACKUP_SUFFIX, generated_part, replace_user_part, user_part
 from ..deletion import delete_project
 from ..import_items import import_and_consolidate
@@ -108,11 +108,18 @@ from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT
 from ..local_models import LOCAL_MODEL_PROFILES, default_local_profile
 from ..engine_names import ENGINE_AUTOMATIC, ENGINE_LOCAL, ENGINE_RULES
 from ..ollama_models import list_installed_models
-from ..file_status import AWAITING_PROCESSING, FAILED, WINDOW_DONE, WINDOW_PENDING, in_params
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, valid_theme
 from . import state
+from .caches import (
+    _cached_by_signature, _cached_quality_summary, _idle_fragment, _idle_fragments, _idle_fragments_lock,
+    _quality_cache, _quality_cache_lock,
+)
 from .formatting import _format_time
+from .notices import (
+    _dedup_kept, _dedup_notice, _dedup_report, _pipeline_has_pending_work, _reports_to_regenerate,
+    _stale_context,
+)
 from .operations import (
     OPERATION_FINISHED_TTL_SECONDS, _OPERATIONS, _OperationMessage, _back_to_project,
     _operation_busy_response, _operation_response, _operation_view, _start_operation,
@@ -985,79 +992,6 @@ def run_screen(request: Request, project_id: int):
     )
 
 
-def _reports_to_regenerate(conn):
-    """Out-of-date reports, but only once there is nothing left to process.
-
-    Two different questions share the word "pending" and must not share a
-    predicate. `_pipeline_has_pending_work` below deliberately ignores
-    pending *windows*, so that someone who stops classification part-way
-    still sees the update banner. Here the opposite holds: nudging "generate
-    the reports" while windows are still waiting for the model would produce
-    reports that are incomplete the moment they are written, and stale again
-    a minute later. So this one does consult them.
-
-    The nudge is only a nudge. The button itself is always on the Execution
-    screen, so a user who deliberately stopped half-way and wants reports
-    for what is done can still ask for them.
-    """
-    if _pipeline_has_pending_work(conn):
-        return None
-    if conn.execute("SELECT 1 FROM window WHERE status = ? LIMIT 1", (WINDOW_PENDING,)).fetchone():
-        return None
-    return stale_artifacts(conn)
-
-
-def _stale_context(staleness) -> dict:
-    """The numbers the two notices interpolate, or an empty dict."""
-    if staleness is None:
-        return {"stale": None, "stale_numbers": {}}
-    return {
-        "stale": staleness,
-        "stale_numbers": {
-            "generated_at": staleness.generated_at,
-            "was_files": staleness.recorded.files,
-            "was_windows": staleness.recorded.windows_done,
-            "was_items": staleness.recorded.items,
-            "now_files": staleness.current.files,
-            "now_windows": staleness.current.windows_done,
-            "now_items": staleness.current.items,
-        },
-    }
-
-
-def _pipeline_has_pending_work(conn) -> bool:
-    """Whether documents are still waiting to be converted or extracted.
-
-    Used only to silence the update banner, and only for that one case:
-    while a file sits in `'discovered'` or `'converted'`, the honest next
-    action is to run the steps — `convert()` selects the first,
-    `extract_pages()` the second — not to diagnose the folder again. It
-    is deliberately *not* "did an update just happen": nothing records
-    that, and inferring it from a flag would be one more value derived
-    twice.
-
-    Statuses left out on purpose. `'extracted'` is a finished file;
-    `'failed'`, `'skipped'` and `'duplicate'` are terminal for this run —
-    no step picks them up, so a collection holding only those has no
-    pending work and the notice is honest again.
-
-    Pending *windows* are not consulted, though the classification
-    engines do select `window.status = 'pending'`. The only transition
-    in the codebase is `pending -> 'done'` on success, so a user who
-    stops classification part-way — an ordinary thing to do at roughly
-    thirty seconds a window, and the Execution screen offers the button
-    — would leave windows pending forever and never see the banner
-    again for that project. Nor did the clause earn its place: after an
-    apply of a pure addition nothing is `'discovered'` or `'converted'`
-    and the discarded tail windows are gone, so the predicate was
-    already False and the banner returned anyway. Applying the same plan
-    twice is prevented by the key-based layout comparison in
-    `update_plan._layout_disagrees`, not by this guard.
-    """
-    marks, values = in_params(AWAITING_PROCESSING)
-    return conn.execute(f"SELECT 1 FROM file WHERE status IN ({marks}) LIMIT 1", values).fetchone() is not None
-
-
 @app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
 def update_banner(request: Request, project_id: int):
     """The "the folder changed" notice on the Execution screen.
@@ -1102,38 +1036,6 @@ def _current_instructions(config: ProjectConfig) -> str:
     """The user's part of `project_instructions.md`, to fill the field of
     the update screen."""
     return user_part(Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME)
-
-
-def _dedup_report(config):
-    """The user's part of the instructions repeating the managed block
-, or `None` when it does not."""
-    own = user_part(Path(config.output_folder) / PROJECT_INSTRUCTIONS_FILENAME)
-    if not own:
-        return None
-    report = dedup_detect(own, config.subject)
-    return report if report.has_findings else None
-
-
-def _dedup_kept(conn, fingerprint: str) -> bool:
-    """The person chose "keep as it is" for this exact text."""
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM event WHERE message_key = 'log.instructions.dedup_kept'"
-            " AND message_params LIKE ? LIMIT 1",
-            (f"%{fingerprint}%",),
-        ).fetchone()
-    except sqlite3.Error:
-        return False
-    return row is not None
-
-
-def _dedup_notice(conn, config) -> bool:
-    """Whether the Execution and Result screens point to the clean-up."""
-    try:
-        report = _dedup_report(config)
-    except Exception:
-        return False
-    return report is not None and not _dedup_kept(conn, report.fingerprint)
 
 
 def _dedup_view(report, language: str) -> dict | None:
@@ -1492,51 +1394,6 @@ def steps_fragment(request: Request, project_id: int):
     return HTMLResponse(_idle_fragment(project_id, "steps", language, build))
 
 
-# The Execution screen asks for the steps table and the progress box
-# every two seconds. With nothing running, the answer cannot change except
-# through an action of this server (a step, an update, a generation), and
-# on a large project on Google Drive each answer cost about a second of
-# reads through the drive, competing with every other screen. While idle,
-# the same answer is reused for a while; anything that starts or ends
-# changes the key and forces a fresh one.
-IDLE_FRAGMENT_SECONDS = 30.0
-_idle_fragments: dict[tuple[int, str, str], tuple[tuple, float, str]] = {}
-_idle_fragments_lock = threading.Lock()
-
-
-def _activity_key(project_id: int) -> tuple | None:
-    """What would change the screen: `None` while something runs."""
-    task = task_manager.latest_for_project(project_id)
-    if task is not None and task.running:
-        return None
-    with _SLOTS_LOCK:
-        if project_id in _OPERATIONS_IN_PROGRESS:
-            return None
-        operation = _OPERATIONS.get(project_id)
-    return (
-        id(task), getattr(task, "error", None),
-        (operation.id, operation.status) if operation is not None else None,
-    )
-
-
-def _idle_fragment(project_id: int, name: str, language: str, build) -> str:
-    key = _activity_key(project_id)
-    cache_key = (project_id, name, language)
-    now = time.monotonic()
-    if key is not None:
-        with _idle_fragments_lock:
-            cached = _idle_fragments.get(cache_key)
-        if cached is not None and cached[0] == key and now - cached[1] < IDLE_FRAGMENT_SECONDS:
-            return cached[2]
-    html = build()
-    with _idle_fragments_lock:
-        if key is None:
-            _idle_fragments.pop(cache_key, None)
-        else:
-            _idle_fragments[cache_key] = (key, now, html)
-    return html
-
-
 def _steps_context(project_id: int, entry, config: ProjectConfig, conn, language: str) -> dict:
     steps = step_status(conn, lambda key: _step_running(project_id, key))
     quality = _cached_quality_summary(project_id, conn, config)
@@ -1552,49 +1409,6 @@ def _steps_context(project_id: int, entry, config: ProjectConfig, conn, language
         "show_done_notice": show_finished_notice,
         "qualidade": quality,
     }
-
-
-# The steps table refreshes every two seconds and used to recompute
-# the whole quality summary each time (every page, every item). Its inputs
-# only change when items, windows, pages or failures do, so it is kept per
-# project and recomputed when that cheap signature moves.
-_quality_cache: dict[tuple[int, str], tuple[tuple, object]] = {}
-_quality_cache_lock = threading.Lock()
-
-
-def _quality_signature(conn, config: ProjectConfig) -> tuple:
-    row = conn.execute(
-        """
-        SELECT (SELECT MAX(id) FROM item), (SELECT COUNT(*) FROM item),
-               (SELECT COUNT(*) FROM window WHERE status = ?),
-               (SELECT COUNT(*) FROM window WHERE status = ?),
-               (SELECT MAX(id) FROM page),
-               (SELECT COUNT(*) FROM file WHERE status = ?)
-        """,
-        (WINDOW_DONE, WINDOW_PENDING, FAILED),
-    ).fetchone()
-    return (tuple(row), config.classification_engine, config.local_model)
-
-
-def _cached_quality_summary(project_id: int, conn, config: ProjectConfig) -> dict:
-    return _cached_by_signature(project_id, "quality", conn, config, lambda: quality_summary(conn, config))
-
-
-def _cached_by_signature(project_id: int, name: str, conn, config: ProjectConfig, compute):
-    """A summary of the project, kept until the cheap signature moves
-    (1.9.0: the Result screen of a large project on Google Drive
-    took tens of seconds to recompute the quality, the pending items and the run
-    comparison on every visit; their inputs had not changed)."""
-    signature = _quality_signature(conn, config)
-    key = (project_id, name)
-    with _quality_cache_lock:
-        cached = _quality_cache.get(key)
-    if cached is not None and cached[0] == signature:
-        return cached[1]
-    value = compute()
-    with _quality_cache_lock:
-        _quality_cache[key] = (signature, value)
-    return value
 
 
 def _step_running(project_id: int, key: str) -> bool:

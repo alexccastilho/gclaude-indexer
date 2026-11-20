@@ -34,6 +34,7 @@ from gclaude_indexer.windows_prep import group_page_counts, pages_for_group, pre
 
 from .test_busca_texto_completo import _extrair, _projeto
 from .test_phase28 import _projeto_com_paginas
+from gclaude_indexer.web import caches
 
 # --- busca de texto completo ----------------------------------------------------
 
@@ -276,16 +277,16 @@ def test_resumo_de_qualidade_fica_em_cache_ate_algo_mudar(tmp_path, monkeypatch)
 
     _, _, config, conn = _projeto_com_paginas(tmp_path)
     chamadas = []
-    original = app_mod.quality_summary
-    monkeypatch.setattr(app_mod, "quality_summary", lambda c, cfg: chamadas.append(1) or original(c, cfg))
-    app_mod._quality_cache.clear()
-    app_mod._cached_quality_summary(1, conn, config)
-    app_mod._cached_quality_summary(1, conn, config)
+    original = caches.quality_summary
+    monkeypatch.setattr(caches, "quality_summary", lambda c, cfg: chamadas.append(1) or original(c, cfg))
+    caches._quality_cache.clear()
+    caches._cached_quality_summary(1, conn, config)
+    caches._cached_quality_summary(1, conn, config)
     assert len(chamadas) == 1
     prepare_windows(conn, config)
     conn.execute("UPDATE window SET status = 'done' WHERE id = (SELECT MIN(id) FROM window)")
     conn.commit()
-    app_mod._cached_quality_summary(1, conn, config)
+    caches._cached_quality_summary(1, conn, config)
     assert len(chamadas) == 2
     conn.close()
 

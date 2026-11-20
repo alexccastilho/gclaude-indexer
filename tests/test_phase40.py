@@ -32,6 +32,7 @@ from gclaude_indexer.run_control import OperationCancelled
 from gclaude_indexer.web import app as modulo_app
 from gclaude_indexer.web import state
 from gclaude_indexer.web import operations
+from gclaude_indexer.web import caches
 
 
 def _parar_sempre():
@@ -347,7 +348,7 @@ def test_tela_parada_reaproveita_a_resposta_e_renova_quando_algo_comeca(tmp_path
     from tests.test_phase32 import _app_com_projeto
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    monkeypatch.setattr(modulo_app, "IDLE_FRAGMENT_SECONDS", 30.0)
+    monkeypatch.setattr(caches, "IDLE_FRAGMENT_SECONDS", 30.0)
     chamadas = []
     original = modulo_app._steps_context
 
