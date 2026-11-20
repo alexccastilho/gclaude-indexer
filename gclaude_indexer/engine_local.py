@@ -28,7 +28,7 @@ from pathlib import Path
 from .classification import (
     STOP_CLASSIFYING, WindowItems, WindowPage, WindowRunCounts, ClassifiedItem, classify_windows,
     page_order, starts_new_document, normalize_type,
-    SUMMARY_CHAR_LIMIT, item_for_pages, normalize_confidence, normalize_date,
+    FALLBACK_SUMMARY_CHARS, SUMMARY_CHAR_LIMIT, coverage_items, item_for_pages, normalize_confidence, normalize_date,
 )
 from .config import ProjectConfig
 from .engine_names import ENGINE_LOCAL
@@ -1644,11 +1644,7 @@ def _log_rejection_warnings(
         )
 
 
-# Quantos caracteres do texto da página entram no resumo de emergência de
-# uma peça de cobertura. O bastante para alguém reconhecer o que há ali e
-# decidir abrir a página; curto o bastante para o índice continuar sendo um
-# índice, e não uma cópia do acervo.
-_FALLBACK_SUMMARY_CHARS = 300
+_FALLBACK_SUMMARY_CHARS = FALLBACK_SUMMARY_CHARS
 
 # Resumo da peça de uma página sem texto e sem imagem (tipo
 # `item_normalize.BLANK_PAGE_TYPE`). É o que o acervo traz de
@@ -1690,48 +1686,8 @@ def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], li
 
 
 def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
-    """Peças de cobertura para páginas que o modelo deixou de fora.
-
-    Existe por causa do requisito central deste sistema: o índice é lido
-    para encontrar *em que PDF e em que página* está uma informação, e uma
-    página ausente do índice é informação que ninguém mais encontra. Um
-    prompt pode pedir cobertura total; só o código pode garanti-la.
-
-    Medido no benchmark que motivou isto: sobre um relatório de 31 páginas,
-    três modelos diferentes (`gemma4:e4b`, `qwen3:8b`, `qwen3.5:9b`)
-    devolveram de 0 a 3 peças cobrindo no máximo 9,7% das páginas — todas
-    com confiança "high". Não é um modelo ruim; é o que acontece quando se
-    pede agrupamento sem exigir cobertura.
-
-    Estas peças são deliberadamente honestas sobre o que são: confiança
-    "low", tipo nulo, e um resumo tirado do início da própria página. Elas
-    não fingem uma classificação que não houve — garantem que a página
-    exista no índice, com sua referência e seu arquivo, para que a busca
-    chegue nela.
-
-    Páginas consecutivas são agrupadas numa peça só, para não inchar o
-    índice com uma linha por página quando um bloco inteiro ficou de fora.
-    """
-    if not pages:
-        return []
-
-    blocos: list[list[WindowPage]] = [[pages[0]]]
-    for anterior, page in zip(pages, pages[1:]):
-        if page_order(page) == page_order(anterior) + 1 and not starts_new_document(anterior, page):
-            blocos[-1].append(page)
-        else:
-            blocos.append([page])
-
-    itens: list[ClassifiedItem] = []
-    for bloco in blocos:
-        texto = " ".join(" ".join(p.text.split()) for p in bloco).strip()
-        resumo = texto[:_FALLBACK_SUMMARY_CHARS].rstrip()
-        if len(texto) > _FALLBACK_SUMMARY_CHARS:
-            resumo += "…"
-        itens.append(item_for_pages(
-            bloco, engine=ENGINE_LOCAL, confidence="low", summary=resumo or None,
-        ))
-    return itens
+    """Peças de cobertura do motor local (`classification.coverage_items`)."""
+    return coverage_items(pages, ENGINE_LOCAL)
 
 
 def _log_gpu_plan(

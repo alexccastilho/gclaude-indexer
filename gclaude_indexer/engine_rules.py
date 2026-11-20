@@ -32,6 +32,7 @@ from .classification import (
     WindowPage,
     WindowRunCounts,
     classify_windows,
+    coverage_items,
     item_for_pages,
     starts_new_document,
 )
@@ -300,13 +301,15 @@ def classify_pending(
         structured_items, rest = planalto.split(pages)
         return WindowItems(structured_items + (engine.classify(rest) if rest else []))
 
-    # No coverage fill here, unlike the local engine: a refused item's pages
-    # leave the index (rare: this engine's dates are always valid).
+    # The same coverage guarantee as the local engine. Rules and Planalto
+    # acts cover every page by construction, so it only acts after an item
+    # refused by the validation: its pages stay in the index.
     classify_windows(
         conn, config, classify_window, result,
         invalid_item_event=lambda _item, window_key, errors: (
             "log.rules.invalid_item", {"window": window_key, "errors": "; ".join(errors)}
         ),
+        coverage=("log.rules.coverage_filled", lambda pages: coverage_items(pages, ENGINE_RULES)),
         should_stop=should_stop, language=language,
     )
 

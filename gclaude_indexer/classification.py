@@ -483,6 +483,60 @@ def uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> lis
     return faltando
 
 
+# Quantos caracteres do texto da página entram no resumo de emergência de
+# uma peça de cobertura. O bastante para alguém reconhecer o que há ali e
+# decidir abrir a página; curto o bastante para o índice continuar sendo um
+# índice, e não uma cópia do acervo.
+FALLBACK_SUMMARY_CHARS = 300
+
+def coverage_items(pages: list[WindowPage], engine: str) -> list[ClassifiedItem]:
+    """Peças de cobertura para páginas que o modelo deixou de fora.
+
+    Existe por causa do requisito central deste sistema: o índice é lido
+    para encontrar *em que PDF e em que página* está uma informação, e uma
+    página ausente do índice é informação que ninguém mais encontra. Um
+    prompt pode pedir cobertura total; só o código pode garanti-la.
+
+    Medido no benchmark que motivou isto: sobre um relatório de 31 páginas,
+    três modelos diferentes (`gemma4:e4b`, `qwen3:8b`, `qwen3.5:9b`)
+    devolveram de 0 a 3 peças cobrindo no máximo 9,7% das páginas — todas
+    com confiança "high". Não é um modelo ruim; é o que acontece quando se
+    pede agrupamento sem exigir cobertura.
+
+    Estas peças são deliberadamente honestas sobre o que são: confiança
+    "low", tipo nulo, e um resumo tirado do início da própria página. Elas
+    não fingem uma classificação que não houve — garantem que a página
+    exista no índice, com sua referência e seu arquivo, para que a busca
+    chegue nela.
+
+    Páginas consecutivas são agrupadas numa peça só, para não inchar o
+    índice com uma linha por página quando um bloco inteiro ficou de fora.
+
+    `engine`: o motor que a peça leva (os dois têm a garantia; no de regras
+    ela só age depois de uma peça recusada pela validação).
+    """
+    if not pages:
+        return []
+
+    blocos: list[list[WindowPage]] = [[pages[0]]]
+    for anterior, page in zip(pages, pages[1:]):
+        if page_order(page) == page_order(anterior) + 1 and not starts_new_document(anterior, page):
+            blocos[-1].append(page)
+        else:
+            blocos.append([page])
+
+    itens: list[ClassifiedItem] = []
+    for bloco in blocos:
+        texto = " ".join(" ".join(p.text.split()) for p in bloco).strip()
+        resumo = texto[:FALLBACK_SUMMARY_CHARS].rstrip()
+        if len(texto) > FALLBACK_SUMMARY_CHARS:
+            resumo += "…"
+        itens.append(item_for_pages(
+            bloco, engine=engine, confidence="low", summary=resumo or None,
+        ))
+    return itens
+
+
 def classify_windows(
     conn: sqlite3.Connection,
     config: ProjectConfig,
@@ -512,7 +566,7 @@ def classify_windows(
 
     `coverage` (event key, items builder): pages no written item covers get
     items of their own, after validation, so a refused item never takes its
-    pages out of the index. Only the local engine has it today.
+    pages out of the index (both engines, `coverage_items`).
 
     One commit every couple of seconds (`BatchWriter`) instead of one per
     window plus one per event: each commit on a Drive-synced database costs
