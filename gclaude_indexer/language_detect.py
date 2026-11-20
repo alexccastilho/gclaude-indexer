@@ -109,6 +109,8 @@ def _unspaced_ranges() -> list[tuple[int, int]]:
 # e do `GLOB` do SQLite, que entendem `a-b` do mesmo jeito).
 _UNSPACED_CLASS = "".join(f"{chr(start)}-{chr(end)}" for start, end in _unspaced_ranges())
 _UNSPACED_CHAR = re.compile(f"[{_UNSPACED_CLASS}]")
+# Algum caractere dessas escritas, no `GLOB` do SQLite (`fulltext.backfill_trigram`).
+UNSPACED_GLOB = f"*[{_UNSPACED_CLASS}]*"
 _SPACE_BETWEEN_UNSPACED = re.compile(f"(?<=[{_UNSPACED_CLASS}])[ \\t\u3000]+(?=[{_UNSPACED_CLASS}])")
 
 

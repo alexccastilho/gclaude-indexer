@@ -679,6 +679,38 @@ def test_projeto_antigo_recebe_os_trechos_na_tabela_trigram_uma_vez(tmp_path):
     conn.close()
 
 
+# Trechos só com caracteres de faixas que o filtro do `backfill_trigram`
+# deixava de fora: tibetano, ideogramas de compatibilidade, o plano 2 do han,
+# katakana de meia largura e hangul jamo.
+_SO_FAIXAS_ESQUECIDAS = {
+    1: ("\u0f40\u0f41\u0f42\u0f44\u0f45\u0f46\u0f47\u0f49\u0f4f\u0f50\u0f51\u0f53\u0f54\u0f55\u0f56\u0f58", "\u0f44\u0f45\u0f46\u0f47"),
+    2: ("\uf900\uf901\uf902\uf903\uf904\uf905\uf906\uf907", "\uf902\uf903\uf904"),
+    3: ("\U00020000\U00020001\U00020002\U00020003\U00020004\U00020005", "\U00020002\U00020003\U00020004"),
+    4: ("\uff71\uff72\uff73\uff74\uff75\uff76\uff77\uff78\uff79\uff7a\uff7b\uff7c\uff7d\uff7e\uff7f", "\uff74\uff75\uff76"),
+    5: ("\u1100\u1101\u1102\u1103\u1104\u1105\u1106\u1107\u1108\u1109\u110a\u110b\u110c", "\u1103\u1104\u1105"),
+}
+
+
+def test_projeto_antigo_leva_para_a_trigram_todas_as_escritas_sem_espaco(tmp_path):
+    """O filtro grosso do `backfill_trigram` usa as mesmas faixas que a
+    indexação: num projeto migrado da 1.x, um trecho só com estes
+    caracteres entra na `fulltext_trigram` e a busca o acha, como num
+    projeto indexado já na 2.0.0."""
+    from gclaude_indexer import fulltext
+
+    conn = _banco_com_trechos(tmp_path, {n: [texto] for n, (texto, _termo) in _SO_FAIXAS_ESQUECIDAS.items()})
+    novos = conn.execute("SELECT COUNT(*) FROM fulltext_trigram").fetchone()[0]
+    assert novos == len(_SO_FAIXAS_ESQUECIDAS)  # a indexação já os levava
+    conn.execute("DELETE FROM fulltext_trigram")
+    conn.execute("UPDATE fulltext_trigram_state SET backfilled = 0")
+    conn.commit()
+
+    assert fulltext.backfill_trigram(conn) == len(_SO_FAIXAS_ESQUECIDAS)
+    for file_id, (_texto, termo) in _SO_FAIXAS_ESQUECIDAS.items():
+        hits, total = fulltext.search(conn, termo)
+        assert total == 1 and hits[0].file_id == file_id, file_id
+    conn.close()
+
 
 def test_remover_arquivo_indexado_sem_faixa_tira_tambem_os_trechos_trigram(tmp_path):
     from gclaude_indexer import fulltext
