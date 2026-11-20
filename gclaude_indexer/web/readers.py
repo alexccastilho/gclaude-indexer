@@ -43,7 +43,8 @@ from pathlib import Path
 from ..db import READER_TIMEOUT_SECONDS
 from ..lock import LockManager
 from ..paths import sqlite_readonly_uri
-from ..project import DB_NAME, load_project
+from ..paths import PROJECT_DB_NAME
+from ..project import load_project
 
 # 64 MB of page cache: measured enough for the full gain on a project with
 # over a hundred thousand files (128, 256 and 512 MB gave the same times).
@@ -82,7 +83,7 @@ class ReaderPool:
         if not self.enabled:
             return None
         key = LockManager._key(output_folder)
-        db_path = Path(output_folder) / DB_NAME
+        db_path = Path(output_folder) / PROJECT_DB_NAME
         signature = _signature(db_path)
         if signature is None:
             return None

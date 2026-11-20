@@ -48,7 +48,7 @@ from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, b
 from .config import ConfigError, ProjectConfig
 from .i18n import DEFAULT_LANGUAGE, translate
 from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed
-from .paths import OUTPUT_MARKER_NAME, is_inside_folder
+from .paths import OUTPUT_MARKER_NAME, PROJECT_DB_NAME, is_inside_folder
 from .project import load_project
 from .sets import SetEntry, SetMember
 
@@ -359,7 +359,7 @@ def _is_protected_folder(folder: Path, members: list[Member]) -> bool:
         destino = folder.resolve()
     except OSError:
         destino = folder
-    if (destino / "project.db").exists():
+    if (destino / PROJECT_DB_NAME).exists():
         return True
     protegidas = set()
     origens = []

@@ -29,15 +29,14 @@ anexos (o trabalho caro).
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Protocol
 
-from .light_formats import MBOX_PAGE_SEPARATOR
+from . import resumable
+from .resumable import Interrupted
 
 # Tetos (um arquivo de terceiros não pode esgotar disco nem memória).
 MAX_MESSAGES = 200_000
@@ -46,13 +45,10 @@ MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 # Teto do texto que vai para o intermediário (um anexo pequeno pode virar muito texto).
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ATTACHMENTS_PER_MESSAGE = 200
-MAX_PAGE_CHARS = 2_000_000
 MAX_FOLDER_DEPTH = 64
 # O progresso vai a disco a cada tantas mensagens (e sempre ao parar).
 PROGRESS_EVERY = 25
 
-PROGRESS_SUFFIX = ".progress"
-PARTIAL_SUFFIX = ".partial"
 
 
 class OutlookError(Exception):
@@ -61,10 +57,6 @@ class OutlookError(Exception):
 
 class ReaderUnavailable(OutlookError):
     """A biblioteca que lê `.pst`/`.ost` não está neste computador."""
-
-
-class Interrupted(Exception):
-    """Parar foi pedido; o progresso já está gravado."""
 
 
 class PstAttachment(Protocol):
@@ -298,44 +290,6 @@ def message_body(message: PstMessage) -> str:
     return ""
 
 
-def _clean(text: str) -> str:
-    # O avanço de página separa as páginas no intermediário: nunca no texto.
-    return text.replace("\x0c", " ")[:MAX_PAGE_CHARS]
-
-
-def _read_progress(progress: Path, partial: Path, source: Path) -> dict | None:
-    """O progresso gravado (mensagens já escritas, bytes e páginas do parcial,
-    bytes de anexos já extraídos) se vale para este arquivo de origem (mesmo
-    tamanho e data) e o parcial tem aqueles bytes; senão `None`."""
-    try:
-        data = json.loads(progress.read_text(encoding="utf-8"))
-        stat = source.stat()
-        if (
-            data["size"] == stat.st_size and data["mtime_ns"] == stat.st_mtime_ns
-            and partial.stat().st_size >= data["bytes"]
-        ):
-            return {
-                "messages": int(data["messages"]), "bytes": int(data["bytes"]),
-                "pages": int(data.get("pages", data["messages"])), "extracted": int(data.get("extracted", 0)),
-            }
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    return None
-
-
-def _write_progress(progress: Path, source: Path, messages: int, size: int, pages: int, extracted: int) -> None:
-    stat = source.stat()
-    temporary = progress.with_name(progress.name + ".tmp")
-    temporary.write_text(
-        json.dumps({
-            "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "messages": messages, "bytes": size,
-            "pages": pages, "extracted": extracted,
-        }),
-        encoding="utf-8",
-    )
-    os.replace(temporary, progress)
-
-
 @dataclass
 class PstResult:
     pages: int
@@ -369,31 +323,24 @@ def convert_pst(
     para um arquivo ilegível. Os anexos são gravados em
     `attachments_root/<n>/<nome>`, lidos e apagados em seguida."""
     reader_factory = reader_factory or open_reader
-    partial = destination.with_name(destination.name + PARTIAL_SUFFIX)
-    progress = destination.with_name(destination.name + PROGRESS_SUFFIX)
-
-    saved = _read_progress(progress, partial, source) or {"messages": 0, "bytes": 0, "pages": 0, "extracted": 0}
-    skip, size, pages = saved["messages"], saved["bytes"], saved["pages"]
-    # O teto de anexos é do arquivo, não da execução: vale também na retomada.
-    extracted = saved["extracted"]
+    saved = resumable.read_progress(destination, source)
+    try:
+        skip, size, pages = int(saved["messages"]), int(saved["bytes"]), int(saved.get("pages", saved["messages"]))
+        # O teto de anexos é do arquivo, não da execução: vale também na retomada.
+        extracted = int(saved.get("extracted", 0))
+    except (TypeError, KeyError, ValueError):
+        skip = size = pages = extracted = 0
     reader = reader_factory(source)
     truncated = None
     written = skip
     try:
-        with open(partial, "ab") as handle:
-            handle.truncate(size)
-            handle.seek(size)
-
-            def emit(text: str) -> None:
-                nonlocal size, pages
-                chunk = ((MBOX_PAGE_SEPARATOR if pages else "") + _clean(text)).encode("utf-8")
-                handle.write(chunk)
-                size += len(chunk)
-                pages += 1
+        with resumable.PageWriter(destination, size, pages) as writer:
 
             def save() -> None:
-                handle.flush()
-                _write_progress(progress, source, written, size, pages, extracted)
+                writer.flush()
+                resumable.write_progress(
+                    destination, source, messages=written, bytes=writer.size, pages=writer.pages, extracted=extracted,
+                )
 
             for index, message in enumerate(reader.messages()):
                 if index >= MAX_MESSAGES:
@@ -401,34 +348,27 @@ def convert_pst(
                     break
                 if index < skip:
                     continue
-                if size >= MAX_OUTPUT_BYTES:
+                if writer.size >= MAX_OUTPUT_BYTES:
                     truncated = "output"
                     break
                 if should_stop is not None and should_stop():
                     save()
                     raise Interrupted()
-                emit(f"{_header(message)}\n\n{message_body(message)}")
+                writer.write(f"{_header(message)}\n\n{message_body(message)}")
                 extracted += _attachments(
-                    message, attachments_root / str(index + 1), attachment_text, emit,
-                    MAX_EXTRACTED_BYTES - extracted, on_note, lambda: size >= MAX_OUTPUT_BYTES,
+                    message, attachments_root / str(index + 1), attachment_text, writer.write,
+                    MAX_EXTRACTED_BYTES - extracted, on_note, lambda: writer.size >= MAX_OUTPUT_BYTES,
                 )
                 written = index + 1
                 if written % PROGRESS_EVERY == 0:
                     save()
-            handle.flush()
+            writer.flush()
+            pages = writer.pages
     finally:
         reader.close()
         shutil.rmtree(attachments_root, ignore_errors=True)
 
-    if pages == 0:
-        # Caixa sem mensagens: uma página vazia, como um arquivo vazio.
-        partial.write_text("", encoding="utf-8")
-        pages = 1
-    os.replace(partial, destination)
-    try:
-        progress.unlink()
-    except OSError:
-        pass
+    pages = resumable.finish(destination, pages)
     return PstResult(pages=pages, messages=written, truncated=truncated)
 
 
@@ -488,6 +428,6 @@ def _attachments(
             shutil.rmtree(folder, ignore_errors=True)
         if text and text.strip():
             # O texto também tem teto: um anexo pequeno pode virar muito texto.
-            emit(f"Anexo: {label} (mensagem: {message.subject})\n\n{text[:MAX_PAGE_CHARS]}")
+            emit(f"Anexo: {label} (mensagem: {message.subject})\n\n{text}")
     shutil.rmtree(folder, ignore_errors=True)
     return used

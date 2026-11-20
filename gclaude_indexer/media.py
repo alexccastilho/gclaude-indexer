@@ -44,7 +44,6 @@ import json
 import math
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -55,7 +54,9 @@ from pathlib import Path
 from typing import Callable
 
 from . import components
-from .light_formats import MBOX_PAGE_SEPARATOR
+from . import resumable
+from .resumable import Interrupted
+from .subprocess_utils import kill_tree
 
 COMPONENT_FFMPEG = "ffmpeg"
 COMPONENT_WHISPER = "whisper-cpp"
@@ -83,7 +84,6 @@ MIN_TAIL_SECONDS = 0.5
 MAX_AUDIO_SECONDS = 24 * 3600
 # Teto do texto que vai para o intermediário.
 MAX_OUTPUT_BYTES = 256 * 1024 * 1024
-MAX_PAGE_CHARS = 2_000_000
 
 # Tempo limite: o arquivo todo vale 3x a estimativa (mínimo 10 min); cada
 # processo, no máximo 6x a estimativa do trecho (mínimo 5 min). A extração do
@@ -110,8 +110,6 @@ MIN_GPU_VRAM_MB = 2048
 MEDIUM_VRAM_MB = 6144
 LOW_RAM_MB = 8192
 
-PROGRESS_SUFFIX = ".progress"
-PARTIAL_SUFFIX = ".partial"
 # Só para apagar a sobra da versão anterior (ver o começo do módulo).
 LANGUAGE_SUFFIX = ".idioma"
 WORK_WAV = "audio.wav"
@@ -129,10 +127,6 @@ class MediaTimeout(MediaError):
 class MediaRefused(MediaError):
     """O contêiner é uma lista de reprodução ou roteiro (HLS, `concat`…), que
     pode apontar para outros arquivos: não é mídia de verdade e não é lido."""
-
-
-class Interrupted(Exception):
-    """Parar foi pedido; o progresso já está gravado."""
 
 
 class Postponed(Exception):
@@ -299,32 +293,6 @@ def _popen(command: list[str], stderr, stdout=subprocess.DEVNULL) -> subprocess.
     return subprocess.Popen(command, shell=False, **kwargs)
 
 
-def _kill_tree(process: subprocess.Popen) -> None:
-    """Mata o processo e os filhos dele."""
-    if sys.platform == "win32":
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                shell=False, capture_output=True, timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        except (OSError, subprocess.SubprocessError):
-            pass
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            pass
-    try:
-        process.kill()
-    except OSError:
-        pass
-    try:
-        process.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        pass
-
-
 class _Process:
     """Um processo por vez (CPU e memória de um `whisper-cli` já bastam)."""
 
@@ -348,15 +316,15 @@ class _Process:
                     except subprocess.TimeoutExpired:
                         pass
                     if self.should_stop is not None and self.should_stop():
-                        _kill_tree(process)
+                        kill_tree(process)
                         raise Interrupted()
                     if time.monotonic() > deadline:
-                        _kill_tree(process)
+                        kill_tree(process)
                         raise MediaTimeout(
                             f"{Path(command[0]).name} passou do tempo limite ({int(timeout)} s) e foi encerrado"
                         )
             except BaseException:
-                _kill_tree(process)
+                kill_tree(process)
                 raise
         return code, _log_tail(log)
 
@@ -534,39 +502,6 @@ def format_page(start: float, end: float, segments: list[tuple[float, float, str
     return header + "\n" + "\n".join(text for _begin, _end, text in segments)
 
 
-# --- progresso ---------------------------------------------------------------
-
-
-def _read_progress(progress: Path, partial: Path, source: Path, model: str) -> dict | None:
-    """O progresso gravado se vale para esta origem (mesmo tamanho e data),
-    para este modelo e para este parcial (que tem aqueles bytes); senão
-    `None`."""
-    try:
-        data = json.loads(progress.read_text(encoding="utf-8"))
-        stat = source.stat()
-        if (
-            data["size"] == stat.st_size and data["mtime_ns"] == stat.st_mtime_ns and data["model"] == model
-            and partial.stat().st_size >= data["bytes"]
-        ):
-            return {
-                "offset": int(data["offset"]), "bytes": int(data["bytes"]), "pages": int(data["pages"]),
-                "languages": {str(key): float(value) for key, value in dict(data["languages"]).items()},
-            }
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-    return None
-
-
-def _write_progress(progress: Path, source: Path, model: str, state: dict) -> None:
-    stat = source.stat()
-    temporary = progress.with_name(progress.name + ".tmp")
-    temporary.write_text(
-        json.dumps({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "model": model, **state}),
-        encoding="utf-8",
-    )
-    os.replace(temporary, progress)
-
-
 def _threads() -> int:
     try:
         from .parallelism import _physical_cores
@@ -600,15 +535,12 @@ def transcribe(
     tempo limite (nesse caso o progresso é apagado). `work` é a pasta local
     deste arquivo (o WAV e os arquivos de cada trecho); é apagada no fim, mas
     não ao Parar."""
-    partial = destination.with_name(destination.name + PARTIAL_SUFFIX)
-    progress = destination.with_name(destination.name + PROGRESS_SUFFIX)
     wav = work / WORK_WAV
-    saved = _read_progress(progress, partial, source, tools.model_name)
+    saved = _saved_state(destination, source, tools.model_name)
     if saved is None:
         # Origem trocada, outro modelo ou progresso ilegível: recomeça.
         shutil.rmtree(work, ignore_errors=True)
-        partial.unlink(missing_ok=True)
-        progress.unlink(missing_ok=True)
+        resumable.discard(destination)
         saved = {"offset": 0, "bytes": 0, "pages": 0, "languages": {}}
     work.mkdir(parents=True, exist_ok=True)
     runner = _Process(should_stop)
@@ -616,30 +548,40 @@ def transcribe(
         if not wav.is_file():
             container = check_container(tools, source, runner, work)
             if not extract_audio(tools, source, wav, runner, container):
-                return _finish_empty(destination, partial, progress, work, no_audio=True)
-        return _transcribe_wav(source, destination, partial, progress, work, wav, tools, runner, saved, on_estimate)
+                return _finish_empty(destination, work, no_audio=True)
+        return _transcribe_wav(source, destination, work, wav, tools, runner, saved, on_estimate)
     except (Interrupted, Postponed, MediaTimeout):
         # Nada do que já foi transcrito é jogado fora.
         raise
     except BaseException:
         # Falha (ou qualquer erro inesperado): nada fica para trás.
         shutil.rmtree(work, ignore_errors=True)
-        partial.unlink(missing_ok=True)
-        progress.unlink(missing_ok=True)
+        resumable.discard(destination)
         raise
 
 
-def _finish_empty(destination: Path, partial: Path, progress: Path, work: Path, no_audio: bool) -> MediaResult:
+def _saved_state(destination: Path, source: Path, model: str) -> dict | None:
+    """O progresso gravado para esta origem e este modelo, ou `None`."""
+    data = resumable.read_progress(destination, source, model=model)
+    try:
+        return {
+            "offset": int(data["offset"]), "bytes": int(data["bytes"]), "pages": int(data["pages"]),
+            "languages": {str(key): float(value) for key, value in dict(data["languages"]).items()},
+        }
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def _finish_empty(destination: Path, work: Path, no_audio: bool) -> MediaResult:
     shutil.rmtree(work, ignore_errors=True)
-    partial.unlink(missing_ok=True)
-    progress.unlink(missing_ok=True)
+    resumable.discard(destination)
     destination.write_text("", encoding="utf-8")
     destination.with_name(destination.name + LANGUAGE_SUFFIX).unlink(missing_ok=True)
     return MediaResult(pages=1, no_audio=no_audio)
 
 
 def _transcribe_wav(
-    source: Path, destination: Path, partial: Path, progress: Path, work: Path, wav: Path,
+    source: Path, destination: Path, work: Path, wav: Path,
     tools: Toolset, runner: _Process, saved: dict, on_estimate: EstimateCallback | None,
 ) -> MediaResult:
     try:
@@ -679,17 +621,15 @@ def _transcribe_wav(
         )
         threads = _threads()
         chunk_wav, out_base = work / "trecho.wav", work / "trecho"
-        with open(partial, "ab") as handle:
-            handle.truncate(size)
-            handle.seek(size)
+        with resumable.PageWriter(destination, size, pages) as writer:
             while offset < total:
                 if total - offset < MIN_TAIL_SECONDS * SAMPLE_RATE:
                     break
-                if size >= MAX_OUTPUT_BYTES:
+                if writer.size >= MAX_OUTPUT_BYTES:
                     truncated = "output"
                     break
                 if runner.should_stop is not None and runner.should_stop():
-                    handle.flush()
+                    writer.flush()
                     raise Interrupted()
                 target = offset + CHUNK_SECONDS * SAMPLE_RATE
                 end = total if total - target < MIN_TAIL_SECONDS * SAMPLE_RATE else find_cut(reader, target, total)
@@ -699,7 +639,7 @@ def _transcribe_wav(
                     end = total
                 write_chunk(reader, offset, end, chunk_wav)
                 if time.monotonic() - run_start > max(FILE_TIMEOUT_MIN_S, FILE_TIMEOUT_FACTOR * projected):
-                    handle.flush()
+                    writer.flush()
                     raise Postponed()
                 chunk_started = time.monotonic()
                 result_json = out_base.with_name(out_base.name + ".json")
@@ -711,32 +651,25 @@ def _transcribe_wav(
                     raise MediaError(f"o whisper.cpp falhou ao transcrever o trecho em {format_clock(offset / SAMPLE_RATE)}")
                 segments, language = parse_whisper_json(result_json)
                 if segments:
-                    page = format_page(offset / SAMPLE_RATE, end / SAMPLE_RATE, segments)[:MAX_PAGE_CHARS]
-                    chunk = ((MBOX_PAGE_SEPARATOR if pages else "") + page.replace("\x0c", " ")).encode("utf-8")
-                    handle.write(chunk)
-                    size += len(chunk)
-                    pages += 1
+                    writer.write(format_page(offset / SAMPLE_RATE, end / SAMPLE_RATE, segments))
                     if language:
                         languages[language] += (end - offset) / SAMPLE_RATE
-                handle.flush()
+                writer.flush()
                 if not measured and end > offset:
                     measured = True
                     projected = (time.monotonic() - chunk_started) / ((end - offset) / SAMPLE_RATE) * remaining
                 offset = end
-                _write_progress(progress, source, tools.model_name, {
-                    "offset": offset, "bytes": size, "pages": pages, "languages": dict(languages),
-                })
+                resumable.write_progress(
+                    destination, source, model=tools.model_name,
+                    offset=offset, bytes=writer.size, pages=writer.pages, languages=dict(languages),
+                )
+            pages = writer.pages
 
     language = languages.most_common(1)[0][0] if languages else ""
-    if pages == 0:
-        # Nenhuma fala (ou só silêncio): uma página vazia, como um arquivo vazio.
-        partial.write_text("", encoding="utf-8")
-        pages = 1
-    os.replace(partial, destination)
+    pages = resumable.finish(destination, pages)
     try:
         destination.with_name(destination.name + LANGUAGE_SUFFIX).unlink(missing_ok=True)
     except OSError:
         pass  # sobra antiga presa (Drive): inofensiva, ninguém mais a lê
-    progress.unlink(missing_ok=True)
     shutil.rmtree(work, ignore_errors=True)
     return MediaResult(pages=pages, language=language, duration=duration, truncated=truncated)

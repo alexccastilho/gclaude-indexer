@@ -16,6 +16,8 @@ and the `--version` checks.
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
 
@@ -70,3 +72,30 @@ def start_in_background(
     finally:
         if kwargs.get("stdout") not in (None, subprocess.DEVNULL):
             kwargs["stdout"].close()
+
+
+def kill_tree(process: subprocess.Popen) -> None:
+    """Kills the process and its children. Killing only the parent left an
+    orphan `soffice.bin` holding its temporary profile and the memory."""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                shell=False, capture_output=True, timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        pass

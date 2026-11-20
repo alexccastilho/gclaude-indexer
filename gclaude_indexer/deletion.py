@@ -24,15 +24,15 @@ from pathlib import Path
 from . import workdir
 from .catalog import CatalogEntry, remove_project
 from .managed_block import BACKUP_SUFFIX, without_managed_block
+from .paths import PROJECT_DB_NAME, RAW_ITEMS_FILE_NAME
 
-PROJECT_DB_NAME = "project.db"
 
 # Everything the system writes into an output folder — and only that. The
 # folder itself can be one the user picked with their own files in it.
 GENERATED_FOLDERS = ("converted", "blocks", "windows", "logs")
 GENERATED_FILES = (
-    "project.db", "project.db-journal", "project.db-wal", "project.db-shm",
-    "project.lock", "raw_items.jsonl",
+    PROJECT_DB_NAME, f"{PROJECT_DB_NAME}-journal", f"{PROJECT_DB_NAME}-wal", f"{PROJECT_DB_NAME}-shm",
+    "project.lock", RAW_ITEMS_FILE_NAME,
     "index.md", "index-*.md", "timeline.md", "review.md",
     # Fase 31: a legislação do Planalto e a cronologia por grupo. Sem
     # estes, "excluir com os arquivos" deixava a pasta de saída de pé.

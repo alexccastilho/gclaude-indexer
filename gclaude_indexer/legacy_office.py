@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -48,6 +47,7 @@ import threading
 from pathlib import Path
 
 from . import components
+from .subprocess_utils import kill_tree
 
 COMPONENT_NAME = "libreoffice"
 # Onde o executável fica dentro do componente extraído.
@@ -176,33 +176,6 @@ def _popen(command: list[str], env: dict) -> subprocess.Popen:
     return subprocess.Popen(command, shell=False, env=env, **kwargs)
 
 
-def _kill_tree(process: subprocess.Popen) -> None:
-    """Mata o processo e os filhos dele. Sem isso o `soffice.bin` órfão
-    continua segurando o perfil temporário e a memória."""
-    if sys.platform == "win32":
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                shell=False, capture_output=True, timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        except (OSError, subprocess.SubprocessError):
-            pass
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            pass
-    try:
-        process.kill()
-    except OSError:
-        pass
-    try:
-        process.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        pass
-
-
 def _command(soffice: Path, profile: Path, outdir: Path, source: Path) -> list[str]:
     return [
         str(soffice), "--headless", "--norestore", "--nolockcheck", "--nodefault", "--nologo",
@@ -238,12 +211,12 @@ def convert_to_pdf_bytes(source: Path, soffice: Path, timeout: float = CONVERT_T
         try:
             code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _kill_tree(process)
+            kill_tree(process)
             raise LegacyOfficeError(
                 f"o LibreOffice passou de {int(timeout)} s e foi encerrado (arquivo travado, protegido ou corrompido)"
             ) from None
         except BaseException:
-            _kill_tree(process)
+            kill_tree(process)
             raise
 
         produced = outdir / (copy.stem + ".pdf")

@@ -36,7 +36,8 @@ from .artifacts import NORMS_FILENAME, legislation_file_test, norm_links_by_file
 from .fulltext import MATCH_END, MATCH_START
 from .fulltext import search as fulltext_search
 from .i18n import DEFAULT_LANGUAGE, translate
-from .project import DB_NAME, load_project
+from .paths import PROJECT_DB_NAME
+from .project import load_project
 
 # Os filtros por grupo e por legislação se aplicam depois da consulta FTS,
 # que ordena por relevância: pede-se mais do que se mostra para o filtro
@@ -156,8 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     pasta = Path(args.pasta)
-    if not (pasta / DB_NAME).exists():
-        print(translate(args.idioma, "buscar.no_project", folder=str(pasta), db=DB_NAME), file=sys.stderr)
+    if not (pasta / PROJECT_DB_NAME).exists():
+        print(translate(args.idioma, "buscar.no_project", folder=str(pasta), db=PROJECT_DB_NAME), file=sys.stderr)
         return 2
     print(run(
         pasta, " ".join(args.termo), args.grupo, args.so_legislacao, args.limite, args.lexml, args.idioma,

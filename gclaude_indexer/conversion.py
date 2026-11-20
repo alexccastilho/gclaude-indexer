@@ -32,10 +32,11 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from . import language_detect, legacy_office, light_formats, media, no_window, ocr_detection, outlook, tools, workdir
+from . import language_detect, legacy_office, light_formats, media, no_window, ocr_detection, outlook, resumable, tools, workdir
 from .workdir import converted_artifact_path, text_suffix
 from .config import ProjectConfig
-from .db import BatchWriter
+from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
+from .ocr_detection import MIN_AVG_CHARS_PER_PAGE
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
@@ -53,7 +54,6 @@ from .file_types import (
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
-MIN_AVG_CHARS_PER_PAGE = 100
 # How much of an unknown-extension file is checked for a NUL byte.
 _BINARY_SNIFF_BYTES = 8192
 # Categories whose conversion may run OCR — the CPU-bound queue.
@@ -65,7 +65,6 @@ LEGACY_CATEGORY = "legados"
 OUTLOOK_CATEGORY = "outlook"
 # Áudio e vídeo (`midia`): fila própria, transcrita em fluxo neste processo (`_convert_media`).
 MEDIA_CATEGORY = "midia"
-ERROR_MESSAGE_CHAR_LIMIT = 500
 
 
 @dataclass
@@ -1717,7 +1716,7 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
             source_path, destination, attachments_root, lambda path, name: _attachment_text(path, config, name),
             should_stop=should_stop, on_note=on_note,
         )
-    except outlook.Interrupted:
+    except resumable.Interrupted:
         return None
     except outlook.ReaderUnavailable:
         return {
@@ -1796,7 +1795,7 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
     work = workdir.work_folder(output_dir) / "converted" / relative_path / "midia"
     try:
         outcome = media.transcribe(source_path, destination, work, tools, should_stop, on_estimate)
-    except media.Interrupted:
+    except resumable.Interrupted:
         return None
     except media.Postponed:
         # Passou do tempo previsto: o progresso ficou e o arquivo continua na

@@ -28,6 +28,7 @@ from gclaude_indexer import components, fulltext, media, ocr_languages, workdir
 from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, requeue_ocr_failures
 from gclaude_indexer.db import connect, init_schema
+from gclaude_indexer.light_formats import MBOX_PAGE_SEPARATOR
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension
 from gclaude_indexer.i18n import translate
@@ -170,7 +171,7 @@ def _transcrever(tmp_path, ferramentas=None, **kwargs):
 def test_trechos_cortados_em_pausas_viram_paginas_com_intervalo_no_cabecalho(tmp_path, sim):
     _arquivo, destino, trabalho, resultado = _transcrever(tmp_path)
 
-    paginas = destino.read_text(encoding="utf-8").split(media.MBOX_PAGE_SEPARATOR)
+    paginas = destino.read_text(encoding="utf-8").split(MBOX_PAGE_SEPARATOR)
     assert [p.splitlines()[0] for p in paginas] == [
         "[00:00:00–00:00:10]", "[00:00:10–00:00:20]", "[00:00:20–00:00:25]",
     ]
@@ -196,7 +197,7 @@ def test_trechos_cortados_em_pausas_viram_paginas_com_intervalo_no_cabecalho(tmp
 def test_trecho_sem_fala_nao_gera_pagina_mas_o_horario_do_proximo_continua(tmp_path, sim):
     sim.empty_chunks = {2}
     _arquivo, destino, _trabalho, resultado = _transcrever(tmp_path)
-    paginas = destino.read_text(encoding="utf-8").split(media.MBOX_PAGE_SEPARATOR)
+    paginas = destino.read_text(encoding="utf-8").split(MBOX_PAGE_SEPARATOR)
     assert [p.splitlines()[0] for p in paginas] == ["[00:00:00–00:00:10]", "[00:00:20–00:00:25]"]
     assert resultado.pages == 2
 
@@ -302,7 +303,7 @@ def test_falha_do_whisper_apaga_o_progresso(tmp_path, sim):
 
 def test_tempo_limite_mata_o_processo_e_falha(tmp_path, sim, monkeypatch):
     mortos: list = []
-    monkeypatch.setattr(media, "_kill_tree", lambda processo: mortos.append(processo))
+    monkeypatch.setattr(media, "kill_tree", lambda processo: mortos.append(processo))
     monkeypatch.setattr(media, "FILE_TIMEOUT_MIN_S", 0.0)
     monkeypatch.setattr(media, "PROCESS_TIMEOUT_MIN_S", 0.0)
     monkeypatch.setattr(media, "PROCESS_TIMEOUT_FACTOR", 0)
@@ -334,7 +335,7 @@ def test_parar_depois_do_primeiro_trecho_e_retomar_sem_refazer_o_que_ja_foi(tmp_
     resultado = media.transcribe(arquivo, destino, trabalho, ferramentas)
     # O áudio não foi extraído de novo e só os trechos 2 e 3 foram transcritos.
     assert len(sim.ffmpeg_calls) == 1 and len(sim.whisper_calls) == 3
-    paginas = destino.read_text(encoding="utf-8").split(media.MBOX_PAGE_SEPARATOR)
+    paginas = destino.read_text(encoding="utf-8").split(MBOX_PAGE_SEPARATOR)
     assert [p.splitlines()[0][:10] for p in paginas] == ["[00:00:00–", "[00:00:10–", "[00:00:20–"]
     assert resultado.pages == 3
     # Idêntico a uma execução sem parada.
@@ -343,7 +344,7 @@ def test_parar_depois_do_primeiro_trecho_e_retomar_sem_refazer_o_que_ja_foi(tmp_
     destino2 = outro / "aula.mp3.txt"
     outro.mkdir()
     media.transcribe(arquivo, destino2, outro / "w", ferramentas)
-    assert [p.splitlines()[0] for p in destino2.read_text(encoding="utf-8").split(media.MBOX_PAGE_SEPARATOR)] == [
+    assert [p.splitlines()[0] for p in destino2.read_text(encoding="utf-8").split(MBOX_PAGE_SEPARATOR)] == [
         p.splitlines()[0] for p in paginas
     ]
 
@@ -387,7 +388,7 @@ def test_estouro_do_orcamento_guarda_o_progresso_e_a_proxima_execucao_retoma(tmp
 
 
 def test_tempo_limite_de_um_processo_nao_joga_fora_os_trechos_prontos(tmp_path, sim, monkeypatch):
-    monkeypatch.setattr(media, "_kill_tree", lambda processo: None)
+    monkeypatch.setattr(media, "kill_tree", lambda processo: None)
     arquivo = _origem(tmp_path)
     destino = tmp_path / "saida" / "aula.mp3.txt"
     destino.parent.mkdir()
@@ -463,7 +464,7 @@ def test_arquivo_trocado_ou_outro_modelo_descarta_o_progresso(tmp_path, sim):
 
 def test_parar_durante_um_processo_mata_a_arvore(tmp_path, sim, monkeypatch):
     mortos: list = []
-    monkeypatch.setattr(media, "_kill_tree", lambda processo: mortos.append(processo))
+    monkeypatch.setattr(media, "kill_tree", lambda processo: mortos.append(processo))
     sim.hang = "ffmpeg"
     with pytest.raises(media.Interrupted):
         _transcrever(tmp_path, should_stop=lambda: True)

@@ -44,7 +44,8 @@ import threading
 from typing import Callable
 
 from ..conversion import ocr_retry_count
-from ..project import DB_NAME, load_project
+from ..paths import PROJECT_DB_NAME
+from ..project import load_project
 
 STEPS: tuple[str, ...] = ("scan", "conversion", "extraction", "windows", "classification")
 STATUSES: tuple[str, ...] = ("not_started", "pending", "running", "done")
@@ -135,7 +136,7 @@ _status_cache_lock = threading.Lock()
 
 def _db_signature(output_folder: str) -> tuple[int, int] | None:
     try:
-        info = os.stat(os.path.join(str(output_folder), DB_NAME))
+        info = os.stat(os.path.join(str(output_folder), PROJECT_DB_NAME))
     except OSError:
         return None
     return (info.st_size, info.st_mtime_ns)

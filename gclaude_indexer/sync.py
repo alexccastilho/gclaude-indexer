@@ -22,10 +22,9 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import machine_local_folder, write_text_atomic
+from .paths import PROJECT_DB_NAME, machine_local_folder, write_text_atomic
 
 REGISTRY_FILE_NAME = "sincronizacao.json"
-PROJECT_DB_NAME = "project.db"
 SLACK_SECONDS = 1.0  # tolerance for minimal mtime differences between filesystems
 
 

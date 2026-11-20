@@ -178,6 +178,9 @@ CREATE INDEX IF NOT EXISTS idx_event_level ON event(level);
 """
 
 
+# `file.error` keeps the start of the message (the end, for a tool's
+# stderr): enough to tell the cause, never a whole document.
+ERROR_MESSAGE_CHAR_LIMIT = 500
 WRITER_TIMEOUT_SECONDS = 30.0
 # The Execution screen polls every two seconds. A poll that waits 30 s for a
 # busy database ties up a server thread and shows nothing; one that gives up
