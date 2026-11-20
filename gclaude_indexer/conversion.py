@@ -1496,7 +1496,8 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
     'discovered', so this conversion tries it again. Only OCR
     failures: a corrupt or protected file would fail the same way forever.
 
-    The flag stays set until a conversion succeeds, so a file that keeps
+    The flag goes with the return to the queue (`reset_to_discovered`) and
+    the conversion sets it again when OCR fails again, so a file that keeps
     failing is retried on every run — at the cost of one more attempt.
 
     An 'extracted' file is only requeued while the project has no windows.
@@ -1512,8 +1513,9 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
         for row in rows:
             remove_from_search(conn, row["id"])
             conn.execute("DELETE FROM page WHERE file_id = ?", (row["id"],))
-            # Unlike a changed file (`invalidation._apply`), keeps `ocr_lang`/`language`: the bytes are the same.
-            conn.execute(file_status.RESET_TO_DISCOVERED_KEEP_LANGUAGE, (row["id"],))
+            # Unlike a changed file (`invalidation._apply`), keeps `ocr_lang`/`language`: the bytes
+            # are the same, and `ocr_lang` is the plan this retry exists to apply.
+            file_status.reset_to_discovered(conn, row["id"], keep=file_status.KEEP_SAME_BYTES)
             requeued += 1
         if requeued:
             record_event(

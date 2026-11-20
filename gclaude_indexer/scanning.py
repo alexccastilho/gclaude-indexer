@@ -29,7 +29,9 @@ from pathlib import Path
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
-from .file_status import DISCOVERED, DUPLICATE, OUT_OF_INDEX, SKIPPED, in_params, is_waiting_component
+from .file_status import (
+    DISCOVERED, DUPLICATE, OUT_OF_INDEX, SKIPPED, in_params, is_waiting_component, reset_to_discovered,
+)
 from .file_types import (
     HEAD_BYTES,
     REASON_NOT_SELECTED,
@@ -118,15 +120,22 @@ def _update_file(
     status: str,
     error: str | None = None,
 ) -> None:
+    """New bytes for a known row, with `status` `discovered` or `skipped`."""
     conn.execute(
-        """
-        UPDATE file
-        SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?,
-            status = ?, error = ?, page_count = NULL, needs_ocr = 0, ocr_lang = NULL, language = NULL,
-            ocr_failed = CASE WHEN ? = ? THEN 0 ELSE ocr_failed END
-        WHERE relative_path = ?
-        """,
-        (name, extension, size, file_hash, mtime, group_key, status, error, status, SKIPPED, relative_path),
+        "UPDATE file SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?"
+        " WHERE relative_path = ?",
+        (name, extension, size, file_hash, mtime, group_key, relative_path),
+    )
+    if status == DISCOVERED:
+        # The same reset as everywhere else (the language was the old bytes').
+        reset_to_discovered(conn, relative_path=relative_path)
+        return
+    # Ignored by the scan: its intermediate was already deleted
+    # (`_drop_derived_data`), so `needs_ocr` goes too.
+    conn.execute(
+        "UPDATE file SET status = ?, error = ?, page_count = NULL, needs_ocr = 0, ocr_lang = NULL,"
+        " language = NULL, ocr_failed = 0 WHERE relative_path = ?",
+        (status, error, relative_path),
     )
 
 

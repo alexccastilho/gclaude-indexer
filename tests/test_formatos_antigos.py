@@ -747,5 +747,7 @@ def test_varredura_zera_ocr_failed_quando_o_arquivo_vira_ignorado(tmp_path):
 
     _linha(conn, "outro.pdf", "pdf", "failed", "x", 1)
     scanning._update_file(conn, "outro.pdf", "outro.pdf", "pdf", 5, "h", 1.0, None, "discovered")
-    assert conn.execute("SELECT ocr_failed FROM file WHERE name = 'outro.pdf'").fetchone()[0] == 1
+    # Etapa B: a volta para `discovered` é o reset único (`file_status.reset_to_discovered`),
+    # que também zera `ocr_failed` (tests/test_b_volta_para_discovered.py).
+    assert conn.execute("SELECT ocr_failed FROM file WHERE name = 'outro.pdf'").fetchone()[0] == 0
     conn.close()
