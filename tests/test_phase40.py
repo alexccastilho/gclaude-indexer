@@ -34,6 +34,7 @@ from gclaude_indexer.web import state
 from gclaude_indexer.web import operations
 from gclaude_indexer.web import caches
 from gclaude_indexer.web import routes_run
+from gclaude_indexer.web import routes_result
 
 
 def _parar_sempre():
@@ -373,13 +374,13 @@ def test_resultado_nao_recalcula_a_qualidade_sem_mudanca(tmp_path, monkeypatch):
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     chamadas = []
-    original = modulo_app.quality_summary
+    original = routes_result.quality_summary
 
     def contando(*args, **kwargs):
         chamadas.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(modulo_app, "quality_summary", contando)
+    monkeypatch.setattr(routes_result, "quality_summary", contando)
     assert cliente.get(f"/projects/{pid}/result").status_code == 200
     assert cliente.get(f"/projects/{pid}/result").status_code == 200
     assert len(chamadas) == 1
