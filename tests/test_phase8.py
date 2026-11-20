@@ -17,7 +17,7 @@ from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.windows_prep import prepare_windows
-from gclaude_indexer.engine_local import LocalEngine, _dict_to_item, _extract_items_json, classify_pending
+from gclaude_indexer.engine_local import LocalEngine, classify_pending
 from gclaude_indexer.local_models import model_to_use
 from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 from gclaude_indexer.scanning import scan
@@ -105,62 +105,6 @@ def ollama_fake():
         thread.join(timeout=2)
 
 
-# --- motor local: parsing e validação da resposta do modelo ----------------
-
-
-def test_extract_items_json_aceita_objeto_com_chave_pecas():
-    resultado = _extract_items_json(json.dumps({"items": [{"ref_start": "f. 1"}]}))
-    assert resultado == [{"ref_start": "f. 1"}]
-
-
-def test_extract_items_json_aceita_lista_direta():
-    resultado = _extract_items_json(json.dumps([{"ref_start": "f. 1"}]))
-    assert resultado == [{"ref_start": "f. 1"}]
-
-
-def test_extract_items_json_tolera_resposta_quebrada():
-    assert _extract_items_json("isto nao e json") == []
-    assert _extract_items_json(json.dumps({"outra_coisa": 1})) == []
-
-
-def test_dict_to_item_recusa_referencia_alucinada():
-    paginas = [WindowPage("f. 1", "doc.pdf", "texto", False, 0)]
-    bruto = {"ref_start": "f. 99", "ref_end": "f. 99", "confidence": "high"}
-    assert _dict_to_item(bruto, paginas) is None
-
-
-def test_dict_to_item_aceita_referencia_real_e_agrega_metadados():
-    paginas = [
-        WindowPage("f. 1", "doc.pdf", "texto 1", has_table=False, image_count=0),
-        WindowPage("f. 2", "doc.pdf", "texto 2", has_table=True, image_count=1),
-    ]
-    bruto = {
-        "ref_start": "f. 1", "ref_end": "f. 2", "type": "OFÍCIO", "date": "2024-03-15",
-        "author": "Fulano", "summary": "resumo curto", "confidence": "high",
-    }
-    peca = _dict_to_item(bruto, paginas)
-    assert peca is not None
-    assert peca.engine == "local"
-    assert peca.start_order == 1 and peca.end_order == 2
-    assert peca.has_table is True  # herdado da página 2
-    assert peca.has_image is True
-    assert peca.files == ["doc.pdf"]
-
-
-def test_dict_to_item_data_invalida_vira_none():
-    paginas = [WindowPage("f. 1", "doc.pdf", "texto", False, 0)]
-    bruto = {"ref_start": "f. 1", "ref_end": "f. 1", "date": "não é data", "confidence": "high"}
-    peca = _dict_to_item(bruto, paginas)
-    assert peca.date is None
-
-
-def test_dict_to_item_confianca_ausente_vira_baixa():
-    paginas = [WindowPage("f. 1", "doc.pdf", "texto", False, 0)]
-    bruto = {"ref_start": "f. 1", "ref_end": "f. 1"}
-    peca = _dict_to_item(bruto, paginas)
-    assert peca.confidence == "low"
-
-
 # --- motor local: conexão real com um Ollama falso -------------------------
 
 
@@ -176,11 +120,11 @@ def test_motor_local_disponivel_e_classifica_com_servidor_fake(ollama_fake):
         {
             "response": json.dumps(
                 {
-                    "items": [
+                    "pages": [
                         {
-                            "ref_start": "f. 1", "ref_end": "f. 1", "type": "OFÍCIO",
-                            "date": "2024-03-15", "author": None, "summary": "resumo de teste",
-                            "has_table": False, "has_image": False, "confidence": "high",
+                            "n": 1, "subject": "ofício de teste", "type": "OFÍCIO",
+                            "date": "2024-03-15", "author": None, "detail": "resumo de teste",
+                            "continues": False,
                         }
                     ]
                 }
@@ -188,13 +132,9 @@ def test_motor_local_disponivel_e_classifica_com_servidor_fake(ollama_fake):
         }
     ]
 
-    # `per_page=False`: este teste exercita o modo de FAIXAS, que continua
-    # existindo e é o formato que o servidor falso responde acima. O modo
-    # padrão passou a ser "uma linha por página" (fase 16), com prompt e
-    # formato próprios — coberto pelos testes da fase 16.
-    motor = LocalEngine(
-        model="fake-model", url_base=f"http://127.0.0.1:{porta}", per_page=False
-    )
+    # A resposta no formato "uma linha por página" (fase 16), o único que a
+    # classificação usa: tipo e detalhe preenchidos dão confiança alta.
+    motor = LocalEngine(model="fake-model", url_base=f"http://127.0.0.1:{porta}")
     assert motor.is_available() is True
 
     paginas = [WindowPage("f. 1", "doc.pdf", "OFÍCIO texto de teste", False, 0)]

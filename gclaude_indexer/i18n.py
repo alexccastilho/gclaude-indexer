@@ -3965,12 +3965,15 @@ def unwrap_nested(value: object) -> tuple[str, dict] | None:
 # retranslates from the key and ignores the stored `message`, so deleting
 # one of these (or renaming a `{param}` in it) would show the raw key, or a
 # literal `{name}`, in the log of an old project. The review mode left in
-# 9f24daf, the Claude Code engine in eb3b23c, PDF slicing in 9d5b4fa and the
-# extension filter of the scan in b2128f8.
+# 9f24daf, the Claude Code engine in eb3b23c, PDF slicing in 9d5b4fa, the
+# extension filter of the scan in b2128f8 and the local engine's ranges mode
+# (its two reference-rejection warnings) in the T step of the untangle.
 # `tests/test_chaves_de_evento.py` keeps this list honest both ways.
 RETIRED_EVENT_KEYS: frozenset[str] = frozenset({
     "log.claude_code.sync_status",
     "log.conversion.sliced",
+    "log.local_engine.all_items_rejected",
+    "log.local_engine.reference_rejected",
     "log.review.invalid_item",
     "log.review.nothing_to_review",
     "log.review.submitting",

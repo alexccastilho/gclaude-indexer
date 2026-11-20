@@ -28,7 +28,7 @@ from pathlib import Path
 from .classification import (
     STOP_CLASSIFYING, WindowItems, WindowPage, WindowRunCounts, ClassifiedItem, classify_windows,
     page_order, starts_new_document, normalize_type,
-    FALLBACK_SUMMARY_CHARS, SUMMARY_CHAR_LIMIT, coverage_items, item_for_pages, normalize_confidence, normalize_date,
+    FALLBACK_SUMMARY_CHARS, SUMMARY_CHAR_LIMIT, coverage_items, item_for_pages,
 )
 from .config import ProjectConfig
 from .engine_names import ENGINE_LOCAL
@@ -59,70 +59,6 @@ PING_TIMEOUT_S = 5
 # server on our own before giving up and falling back to the 'rules' engine.
 OLLAMA_RESTART_ATTEMPTS = 3
 WAIT_BETWEEN_ATTEMPTS_S = 4.0
-
-
-# NOTE (do not translate): this prompt is sent verbatim to the local model,
-# and the project owner's collections are in Portuguese. Translating it would
-# change classification behavior — it's a behavior knob, not code — so it
-# stays in Portuguese on purpose.
-_PROMPT = """\
-Você é um classificador de peças de um acervo documental.
-{context}
-Abaixo está o \
-texto de uma janela: um trecho contínuo de páginas, cada uma rotulada por \
-sua referência citável (ex. "f. 12" ou "p. 5") e pelo nome do arquivo de \
-origem.
-
-Identifique as peças (documentos individuais) contidas neste texto. Uma \
-peça pode ocupar uma ou mais páginas consecutivas. Responda SOMENTE com um \
-objeto JSON, sem nenhum texto fora dele, neste formato exato:
-
-{{"items": [
-  {{"ref_start": "<referência que aparece literalmente no texto>",
-   "ref_end": "<referência que aparece literalmente no texto>",
-   "type": "<tipo do documento em MAIÚSCULAS, adequado a este acervo, ou null>",
-   "date": "<AAAA-MM-DD ou null>",
-   "author": "<autor ou null>",
-   "summary": "<frase curta ou null>",
-   "has_table": true ou false,
-   "has_image": true ou false,
-   "confidence": "high", "medium" ou "low"}}
-]}}
-
-Regras:
-- ref_inicial e ref_final têm que ser referências que aparecem literalmente \
-no texto abaixo — nunca invente uma.
-- data só em ISO (AAAA-MM-DD); sem data clara no texto, use null.
-- confianca "low" quando você não tiver certeza do tipo ou dos limites \
-da peça; nunca finja certeza.
-- Não copie o texto inteiro no resumo — uma frase basta.
-- COBERTURA TOTAL, esta é a regra mais importante: TODA página listada \
-abaixo tem de estar dentro de exatamente uma peça. Some as faixas que você \
-devolver — elas precisam cobrir da primeira à última página, sem buraco e \
-sem sobreposição. Uma página que não aparece em nenhuma peça é informação \
-PERDIDA para quem for consultar este índice depois. Se um trecho for \
-irrelevante ou você não souber nomeá-lo, devolva-o mesmo assim como uma \
-peça com "type": null e um resumo do que há ali — nunca o omita.
-- UMA PEÇA POR UNIDADE DE ASSUNTO. Uma peça é o menor trecho que alguém \
-procuraria inteiro: um documento, um exame, um capítulo, uma seção com \
-título próprio. Páginas seguidas que continuam o MESMO assunto formam uma \
-peça só; um assunto novo começa uma peça nova. Os dois extremos são \
-igualmente errados: fatiar um assunto contínuo em peças de uma ou duas \
-páginas, e juntar assuntos distintos numa peça gigante que obriga a ler \
-tudo para achar qualquer coisa.
-- O "summary" é o que será lido para decidir se vale abrir esta página. \
-Escreva-o para responder "o que exatamente está aqui": cite os nomes, \
-números, exames, artigos ou temas que aparecem no trecho. Um resumo \
-genérico ("continuação do texto", "informações diversas") torna a peça \
-inútil no índice.
-- Preencha "type" sempre que o documento permitir reconhecê-lo, usando os \
-tipos que fazem sentido para ESTE acervo (veja o contexto acima, quando \
-houver). Use null apenas quando o trecho realmente não permitir dizer o \
-que é.
-
-Texto da janela:
-{text}
-"""
 
 
 class OllamaConnectionError(Exception):
@@ -291,10 +227,8 @@ _RESPONSE_TOKENS_PER_PAGE = 220
 
 
 def _response_tokens_for(page_count: int = 0) -> int:
-    """Tokens to reserve for the answer. `page_count` of 0 means the ranges
-    mode, whose reply does not grow with the window."""
-    if page_count <= 0:
-        return _RESPONSE_TOKENS
+    """Tokens to reserve for the answer: one budget per page described,
+    never below `_RESPONSE_TOKENS`."""
     return max(_RESPONSE_TOKENS, page_count * _RESPONSE_TOKENS_PER_PAGE)
 
 # Context sizes are rounded up to a multiple of this — a stable value
@@ -391,19 +325,14 @@ class LocalEngine:
     # a missing config simply means the prompt has no context block — the
     # exact behaviour this class had before `build_context` existed.
     config: "ProjectConfig | None" = None
-    # "uma linha por página" em vez de "enumere as faixas". Ver
-    # `_PAGE_PROMPT`: modelos pequenos leem bem uma página e erram a
-    # aritmética de um particionamento, e a cobertura do índice é o
-    # requisito que não admite erro.
-    per_page: bool = True
     # 2.1.0: the per-page answer is constrained by a JSON Schema (`format`
     # with a schema, not just "json"): exactly one object per page, `n` an
     # integer within the window, booleans that are booleans. The model can
     # no longer copy the page into `n`, close the JSON early or skip pages,
     # the failures that used to cost a second request or a split window.
     structured_output: bool = True
-    # Warnings from the last call to `classify()` — items rejected because of
-    # an unrecognized reference. `classify_pending`
+    # Warnings from the last call to `classify()` — pages the model's answer
+    # left out. `classify_pending`
     # reads this right after calling `classify()` to record an event; it is
     # not part of the common `ClassificationEngine` interface (only
     # `LocalEngine` exposes it). Each entry is (i18n key, params) — Task 12
@@ -837,33 +766,7 @@ class LocalEngine:
             return False
 
     def classify(self, pages: list[WindowPage]) -> list[ClassifiedItem]:
-        if self.per_page:
-            return self.classify_per_page(pages)
-        prompt = _build_prompt(pages, self.config)
-        self.plan_gpu_use(prompt)
-        response_text = self._generate(prompt).text
-        raw_items = _extract_items_json(response_text)
-        reference_map = _reference_map(pages)
-
-        items: list[ClassifiedItem] = []
-        warnings: list[tuple[str, dict]] = []
-        for raw in raw_items:
-            item = _dict_to_item(raw, pages, reference_map)
-            if item is None:
-                reason = _reference_rejection_reason(raw, reference_map)
-                if reason:
-                    warnings.append(reason)
-                continue
-            items.append(item)
-
-        if raw_items and len(warnings) == len(raw_items):
-            warnings.append((
-                "log.local_engine.all_items_rejected",
-                {"model": self.model, "count": len(raw_items)},
-            ))
-
-        self.last_window_warnings = warnings
-        return items
+        return self.classify_per_page(pages)
 
     def _generate(self, prompt: str, schema: dict | None = None) -> Generation:
         options: dict = {
@@ -1028,14 +931,13 @@ _STRUCK_TEXT_NOTE = (
 
 
 # 2.0.0: idioma por documento. O prompt continua em português (ver
-# `_PROMPT`), mas o tipo e o resumo de cada peça saem no idioma do próprio
+# `_PAGE_PROMPT`), mas o tipo e o resumo de cada peça saem no idioma do próprio
 # documento: um contrato em alemão é indexado em alemão, como quem procura
 # nele o procuraria. O idioma é detectado aqui, página a página, a cada
 # janela: um `.pst` mistura mensagens em idiomas diferentes, e a janela
 # carrega as que tiver. Com mais de um idioma, vale o da maior parte.
 # Projetos antigos não são reescritos: só o que for classificado de agora em
 # diante segue esta regra.
-_MAIN_FIELDS = '"type" e "summary"'
 _PAGE_FIELDS = '"subject", "type" e "detail"'
 
 
@@ -1061,7 +963,7 @@ def _language_note(pages: list[WindowPage], fields: str) -> str:
 
 
 def _prompt_context(
-    pages: list[WindowPage], config: ProjectConfig | None, fields: str = _MAIN_FIELDS,
+    pages: list[WindowPage], config: ProjectConfig | None, fields: str,
     note: str = "",
 ) -> str:
     context = build_context(config) + note
@@ -1071,64 +973,12 @@ def _prompt_context(
     return context
 
 
-def _build_prompt(pages: list[WindowPage], config: ProjectConfig | None = None) -> str:
-    blocks = [f"--- {page.reference} ({page.file_name}) ---\n{page.text}" for page in pages]
-    return _PROMPT.format(context=_prompt_context(pages, config), text="\n\n".join(blocks))
-
-
-def _extract_items_json(response_text: str) -> list[dict]:
-    try:
-        data = json.loads(response_text)
-    except json.JSONDecodeError:
-        return []
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    if isinstance(data, dict):
-        items = data.get("items")
-        if isinstance(items, list):
-            return [item for item in items if isinstance(item, dict)]
-    return []
-
-
-_SHEET_PREFIX_REGEX = re.compile(r"^fl\.?")
-
-# The reference at the start of what the model returned, ignoring anything
-# it appended. Each page is presented as `--- f. 2 (Arquivo.pdf) ---`, and
-# a model that copies the whole label back — `"ref_start": "f. 2
-# (Arquivo.pdf)"` — has identified the page correctly and written it in a
-# form that exact-string matching rejects. Measured: with the improved
-# prompt, `qwen3:8b` returned one item spanning f. 2 to f. 16 (the whole
-# document, exactly as asked) and every single one was discarded for this,
-# leaving a window with zero items and no visible reason.
-_REFERENCE_HEAD_REGEX = re.compile(r"^\s*((?:f|fl|p|pag|pág)\.?\s*\d+)", re.IGNORECASE)
-
-
-def _normalize_reference(reference: str) -> str:
-    """Comparison key tolerant of case, spacing, the alternate abbreviation
-    'fl.' (folha) for 'f.', and anything the model appended after the
-    reference itself.
-
-    The model may return 'F. 1', 'f.1' or 'fl. 1' for the same 'f. 1'
-    reference in the window, and comparing by exact string equality used to
-    silently discard the whole item. It may also
-    return 'f. 1 (Contrato.pdf)', echoing the label the page was presented
-    under — also a correct identification, and also discarded.
-
-    Never merges different prefixes: 'f. 1' and 'p. 1' remain distinct
-    references, on purpose.
-    """
-    head = _REFERENCE_HEAD_REGEX.match(reference or "")
-    text = head.group(1) if head else (reference or "")
-    text = re.sub(r"\s+", "", text.strip().lower())
-    return _SHEET_PREFIX_REGEX.sub("f.", text)
-
-
 # --- modo "uma linha por página" -------------------------------------------
 #
-# Por que existe um segundo prompt.
+# Por que o prompt é por página.
 #
-# O prompt principal pede FAIXAS: "devolva as peças, cada uma de ref_start a
-# ref_end". Isso obriga o modelo a fazer contabilidade — enumerar intervalos
+# O prompt anterior (o modo de faixas, removido) pedia FAIXAS: "devolva as
+# peças, cada uma de ref_start a ref_end". Isso obrigava o modelo a fazer contabilidade — enumerar intervalos
 # que, somados, cubram exatamente as páginas da janela, sem buraco e sem
 # sobreposição. Medido em dois benchmarks sobre um relatório de 31 páginas:
 #
@@ -1163,6 +1013,10 @@ _RETRY_UNTYPED_NOTE = (
     "e preencha o \"type\" se o texto permitir reconhecer o documento.\n"
 )
 
+# NOTE (do not translate): this prompt is sent verbatim to the local model,
+# and the project owner's collections are in Portuguese. Translating it would
+# change classification behavior — it's a behavior knob, not code — so it
+# stays in Portuguese on purpose.
 _PAGE_PROMPT = """\
 Você é um indexador de um acervo documental.
 {context}
@@ -1471,95 +1325,6 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
     fechar()
     return itens
 
-def _reference_map(pages: list[WindowPage]) -> dict[str, tuple[str, int]]:
-    """Normalized reference -> (original reference in the window, numeric
-    order). Uses `setdefault` so that, in the rare case where two window
-    references collide after normalization, the first one (lower order)
-    wins."""
-    reference_map: dict[str, tuple[str, int]] = {}
-    for page in pages:
-        reference_map.setdefault(
-            _normalize_reference(page.reference), (page.reference, page_order(page))
-        )
-    return reference_map
-
-
-def _reference_rejection_reason(
-    raw: dict, reference_map: dict[str, tuple[str, int]]
-) -> tuple[str, dict] | None:
-    """(i18n key, params) for a raw item rejected because of an unrecognized
-    reference in the window — logging only (`_dict_to_item` is what
-    actually decides whether the item is accepted). Returns `None` when the
-    item was not rejected because of the reference (missing fields, or valid
-    references out of order)."""
-    start_ref = raw.get("ref_start")
-    end_ref = raw.get("ref_end")
-    if not isinstance(start_ref, str) or not isinstance(end_ref, str):
-        return None
-    if _normalize_reference(start_ref) in reference_map and _normalize_reference(end_ref) in reference_map:
-        return None
-
-    expected = ", ".join(sorted({ref for ref, _ in reference_map.values()}))
-    return (
-        "log.local_engine.reference_rejected",
-        {"start": repr(start_ref), "end": repr(end_ref), "expected": expected},
-    )
-
-
-def _dict_to_item(
-    raw: dict, pages: list[WindowPage], reference_map: dict[str, tuple[str, int]] | None = None
-) -> ClassifiedItem | None:
-    """Converts the raw item returned by the model, rejecting a reference
-    that does not actually exist in the window (hallucination) — same spirit
-    as section 7's validation, applied right at the engine's output. The
-    comparison is tolerant of case, spacing and the 'fl.' abbreviation (see
-    `_normalize_reference`) — without this, a model returning 'F. 1'
-    instead of 'f. 1' had the whole item discarded, even though the
-    reference existed."""
-    raw_start_ref = raw.get("ref_start")
-    raw_end_ref = raw.get("ref_end")
-    if not isinstance(raw_start_ref, str) or not isinstance(raw_end_ref, str):
-        return None
-
-    reference_map = reference_map if reference_map is not None else _reference_map(pages)
-    start_key = _normalize_reference(raw_start_ref)
-    end_key = _normalize_reference(raw_end_ref)
-    if start_key not in reference_map or end_key not in reference_map:
-        return None
-
-    start_ref, start_order = reference_map[start_key]
-    end_ref, end_order = reference_map[end_key]
-    if start_order > end_order:
-        return None
-
-    item_pages = [p for p in pages if start_order <= page_order(p) <= end_order]
-
-    type_ = raw.get("type")
-    if not isinstance(type_, str):
-        type_ = None
-
-    # The same date rule as every other path (`classification.normalize_date`):
-    # `AAAA-MM` and `AAAA` stay, a day that does not exist falls back to its
-    # month. Dropping a partial date lost the period of every document dated
-    # by month ("jan/2020"), which the model returns as `2020-01`.
-    date_value = normalize_date(raw.get("date"))
-
-    author = raw.get("author") if isinstance(raw.get("author"), str) else None
-    summary = raw.get("summary") if isinstance(raw.get("summary"), str) else None
-
-    # The references the model named, which `item_pages` may not start and
-    # end with when two references collide after normalization.
-    return replace(
-        item_for_pages(
-            item_pages, engine=ENGINE_LOCAL, confidence=normalize_confidence(raw.get("confidence")),
-            type_=type_, date=date_value, author=author, summary=summary,
-            has_table=bool(raw.get("has_table")) or any(p.has_table for p in item_pages),
-            has_image=bool(raw.get("has_image")) or any(p.image_count > 0 for p in item_pages),
-        ),
-        start_ref=start_ref, end_ref=end_ref, start_order=start_order, end_order=end_order,
-    )
-
-
 @dataclass
 class LocalClassificationResult(WindowRunCounts):
     windows_via_rules_fallback: int = 0
@@ -1620,10 +1385,9 @@ def _log_rejection_warnings(
     conn: sqlite3.Connection, local_engine: LocalEngine, window_key: str, language: str | None = None,
     writer=None,
 ) -> None:
-    """Logs (at `aviso` level) every item rejected because of an unrecognized
-    reference in the last call to `local_engine.classify()` — before, that
-    discard was silent: a run with qwen3.5:9b could end with 0 items and
-    no clue in the log.
+    """Logs (at `aviso` level) every warning from the last call to
+    `local_engine.classify()` (`last_window_warnings`) — a loss the window
+    survived must not be silent.
 
     `reason` is `nested(warning_key, **warning_params)` (Task 12, Phase
     14), not pre-translated text — it stays retranslatable along with the

@@ -16,12 +16,11 @@ from __future__ import annotations
 from gclaude_indexer import i18n
 from gclaude_indexer.config import load_config
 from gclaude_indexer.classification import WindowPage
-from gclaude_indexer.engine_local import LocalEngine, _build_page_prompt
+from gclaude_indexer.engine_local import _build_page_prompt
 from tests.test_phase9 import _criar_projeto, cliente  # noqa: F401
 
 
 def test_prompt_da_classificacao_nao_leva_as_regras_extras(tmp_path):
-    assert LocalEngine(model="m").per_page, "a classificação usa o prompt por página"
     config = load_config({
         "name": "x", "subject": "y", "source_folder": str(tmp_path), "output_folder": str(tmp_path),
         "extra_rules": "REGRA-MARCADOR sempre cite o processo",
