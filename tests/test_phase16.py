@@ -373,7 +373,7 @@ def test_o_caminho_gravado_pelo_instalador_vem_antes_do_path(pasta_local, monkey
 
     falso = tmp_path / "tesseract.exe"
     falso.write_text("", encoding="utf-8")
-    tools.record_tool("tesseract", str(falso))
+    tools.tools_path().write_text(json.dumps({"tesseract": str(falso)}), encoding="utf-8")
 
     monkeypatch.setattr(tools.shutil, "which", lambda _nome: "C:/do/PATH/antigo.exe")
     assert tools.find("tesseract") == str(falso)
@@ -382,7 +382,9 @@ def test_o_caminho_gravado_pelo_instalador_vem_antes_do_path(pasta_local, monkey
 def test_um_registro_apontando_para_arquivo_sumido_cai_para_o_path(pasta_local, monkeypatch):
     from gclaude_indexer import tools
 
-    tools.record_tool("tesseract", str(pasta_local / "nao_existe.exe"))
+    tools.tools_path().write_text(
+        json.dumps({"tesseract": str(pasta_local / "nao_existe.exe")}), encoding="utf-8"
+    )
     monkeypatch.setattr(tools.shutil, "which", lambda _nome: "C:/valido/tesseract.exe")
     assert tools.find("tesseract") == "C:/valido/tesseract.exe"
 
@@ -393,7 +395,6 @@ def test_o_path_das_ferramentas_e_acrescentado_sem_duplicar(pasta_local, monkeyp
     pasta_bin = tmp_path / "bin"
     pasta_bin.mkdir()
     (pasta_bin / "tesseract.exe").write_text("", encoding="utf-8")
-    tools.record_tool("tesseract", str(pasta_bin / "tesseract.exe"))
     monkeypatch.setattr(tools, "find", lambda nome: str(pasta_bin / "tesseract.exe") if nome == "tesseract" else None)
 
     resultado = tools.path_with_tools("C:/ja/existente")

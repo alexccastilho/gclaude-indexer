@@ -96,16 +96,6 @@ def recorded_tools() -> dict:
     return {str(k): str(v) for k, v in data.items() if isinstance(v, str) and v}
 
 
-def record_tool(name: str, path: str) -> None:
-    """Records where `name` lives. Used by the tests and by any future
-    caller that resolves a program the installer did not."""
-    recorded = recorded_tools()
-    recorded[name] = path
-    destination = tools_path()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(recorded, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def _from_known_locations(name: str) -> str | None:
     for variable, relative in _KNOWN_LOCATIONS.get(name, ()):
         base = os.environ.get(variable)
