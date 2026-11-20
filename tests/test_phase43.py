@@ -15,7 +15,7 @@ import json
 import re
 from pathlib import Path
 
-from gclaude_indexer.web import app as modulo_app
+from gclaude_indexer.web import app as modulo_app, rendering
 from gclaude_indexer.web.layout import AVAILABLE_LAYOUTS, DEFAULT_LAYOUT, LAYOUT_COOKIE_NAME
 from gclaude_indexer.web.theme import AVAILABLE_THEMES, DEFAULT_THEME
 from tests.test_phase9 import _criar_projeto, cliente  # noqa: F401
@@ -34,7 +34,7 @@ def test_area_de_trabalho_e_o_padrao_e_os_outros_continuam():
 
 def test_barra_lateral_lista_os_projetos_e_marca_a_tela(cliente, tmp_path):
     pid = _criar_projeto(cliente, tmp_path, nome="Acervo Lateral")
-    modulo_app._side_bar_cache.clear()
+    rendering._side_bar_cache.clear()
     corpo = cliente.get(f"/projects/{pid}/run").text
     assert 'data-layout="workspace"' in corpo
     assert 'class="ws-side"' in corpo
@@ -49,7 +49,7 @@ def test_barra_lateral_lista_os_projetos_e_marca_a_tela(cliente, tmp_path):
 
 def test_paleta_tem_telas_projetos_e_preferencias(cliente, tmp_path):
     pid = _criar_projeto(cliente, tmp_path, nome="Acervo Paleta")
-    modulo_app._side_bar_cache.clear()
+    rendering._side_bar_cache.clear()
     corpo = cliente.get("/projects").text
     assert 'id="ws-palette"' in corpo and 'role="dialog"' in corpo and 'role="listbox"' in corpo
     dados = re.search(r'<script type="application/json" id="ws-palette-data">(.*?)</script>', corpo, re.S).group(1)
@@ -74,7 +74,7 @@ def test_outro_layout_nao_tem_barra_lateral(cliente, tmp_path):
 
 def test_barra_lateral_nao_abre_banco(cliente, tmp_path, monkeypatch):
     _criar_projeto(cliente, tmp_path)
-    modulo_app._side_bar_cache.clear()
+    rendering._side_bar_cache.clear()
     import gclaude_indexer.web.step_state as step_state
 
     def proibido(*args, **kwargs):

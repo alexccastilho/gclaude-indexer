@@ -1625,16 +1625,16 @@ def test_o_aviso_aparece_em_qualquer_tela(pasta_local, monkeypatch):
     etapa, e o usuário precisa ver isso onde quer que esteja."""
     from fastapi.testclient import TestClient
 
-    from gclaude_indexer.web import app as app_mod
+    from gclaude_indexer.web import app as app_mod, rendering
 
-    monkeypatch.setattr(app_mod, "source_is_stale", lambda: True)
+    monkeypatch.setattr(rendering, "source_is_stale", lambda: True)
     cliente = TestClient(app_mod.app)
     for rota in ("/projects", "/projects/new", "/about"):
         resposta = cliente.get(rota)
         assert resposta.status_code == 200, rota
         assert "stale-banner" in resposta.text, rota
 
-    monkeypatch.setattr(app_mod, "source_is_stale", lambda: False)
+    monkeypatch.setattr(rendering, "source_is_stale", lambda: False)
     assert "stale-banner" not in cliente.get("/projects").text
 
 

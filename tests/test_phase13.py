@@ -1070,9 +1070,9 @@ def test_layout_e_tema_sao_independentes(cliente):
 
 def test_cada_layout_define_regras_proprias():
     from pathlib import Path
-    import gclaude_indexer.web.app as app_mod
+    import gclaude_indexer.web.rendering as rendering
 
-    css = (Path(app_mod.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
+    css = (Path(rendering.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
     for nome in ("technical", "editorial", "compact"):
         bloco = css.split(f'html[data-layout="{nome}"]', 1)
         assert len(bloco) > 1, f"layout {nome} sem regra"
@@ -1085,18 +1085,18 @@ def test_layouts_nao_redefinem_cores():
     previsibilidade das 16 combinações layout × paleta."""
     import re
     from pathlib import Path
-    import gclaude_indexer.web.app as app_mod
+    import gclaude_indexer.web.rendering as rendering
 
-    css = (Path(app_mod.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
+    css = (Path(rendering.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
     definicoes = re.findall(r"(--color-[a-z0-9-]+)\s*:", css)
     assert not definicoes, f"layouts.css não pode definir cores: {definicoes}"
 
 
 def test_nenhum_layout_usa_fonte_generica_ou_remota():
     from pathlib import Path
-    import gclaude_indexer.web.app as app_mod
+    import gclaude_indexer.web.rendering as rendering
 
-    css = (Path(app_mod.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
+    css = (Path(rendering.WEB_ROOT) / "static" / "layouts.css").read_text(encoding="utf-8")
     baixo = css.lower()
     for proibida in ("inter", "roboto", "arial", "fonts.googleapis", "fonts.gstatic", "@import url("):
         assert proibida not in baixo, f"proibido no sistema offline: {proibida}"

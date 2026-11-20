@@ -45,3 +45,16 @@ def format_date(value: str | datetime | None, language: str) -> str:
     if language == "en":
         return dt.strftime("%m/%d/%Y")
     return dt.strftime("%d/%m/%Y")
+
+
+def _format_time(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}min {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}min"
