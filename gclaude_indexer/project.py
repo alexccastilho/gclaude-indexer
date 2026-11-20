@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -169,6 +170,43 @@ def create_project(config: ProjectConfig) -> tuple[sqlite3.Connection, int]:
     return conn, cursor.lastrowid
 
 
+# Databases `init_schema` already brought up to date in this process, with
+# the identity they had right after it. `load_project` runs on every request
+# (the Execution screen's polls reopen the project every two seconds while a
+# step writes), and `init_schema` is some thirty statements and a commit on
+# a database that is usually on Google Drive.
+_SCHEMA_DONE: dict[str, tuple] = {}
+
+
+def _schema_identity(conn: sqlite3.Connection, db_path: Path) -> tuple:
+    """The file (its id and creation time: a database replaced on disk, by
+    a restore or by Drive, is another file), its `schema_version`, which
+    SQLite bumps on any change of schema by this process or any other, and
+    a fingerprint of the schema itself, for a database written over the
+    same file whose counter happens to match."""
+    info = os.stat(db_path)
+    version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    objects, length = conn.execute("SELECT COUNT(*), SUM(LENGTH(sql)) FROM sqlite_master").fetchone()
+    return (info.st_ino, getattr(info, "st_birthtime_ns", None), version, objects, length)
+
+
+def _ensure_schema(conn: sqlite3.Connection, db_path: Path) -> None:
+    """`init_schema`, skipped when this same file already went through it
+    and its schema has not changed since."""
+    key = os.path.normcase(os.path.abspath(db_path))
+    try:
+        current = _schema_identity(conn, db_path)
+    except OSError:
+        current = None
+    if current is not None and _SCHEMA_DONE.get(key) == current:
+        return
+    init_schema(conn)
+    try:
+        _SCHEMA_DONE[key] = _schema_identity(conn, db_path)
+    except OSError:
+        _SCHEMA_DONE.pop(key, None)
+
+
 def load_project(
     output_folder: Path, timeout: float = WRITER_TIMEOUT_SECONDS
 ) -> tuple[ProjectConfig, sqlite3.Connection]:
@@ -189,10 +227,10 @@ def load_project(
     conn = connect(db_path, timeout=timeout)
     # Phase 13 Task 15: projects created before a new table existed (here,
     # `execucao`) only get it if `init_schema` also runs on reopen,
-    # not only on create — `CREATE TABLE IF NOT EXISTS` is idempotent, so
-    # calling it again on an already up-to-date database costs nothing.
+    # not only on create. Once per database in this process, though: see
+    # `_ensure_schema`.
     try:
-        init_schema(conn)
+        _ensure_schema(conn, db_path)
         rows = conn.execute("SELECT id, config_json FROM project ORDER BY id").fetchall()
     except sqlite3.Error:
         # A locked database must not leave a half-open connection behind
