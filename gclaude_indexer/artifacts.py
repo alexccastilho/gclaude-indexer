@@ -559,7 +559,7 @@ def generate_claude_md(config: ProjectConfig, language: str) -> Path:
     é substituído (`is_legacy_claude_md`)."""
     language = language if language in _CLAUDE_MD_CONTENT else _REFERENCE_LANGUAGE
     path = Path(config.output_folder) / CLAUDE_MD_FILENAME
-    write_managed(
+    wrote = write_managed(
         path,
         _CLAUDE_MD_CONTENT[language].format(
             subject=subject_or_name(config), project_name=config.name,
@@ -567,6 +567,10 @@ def generate_claude_md(config: ProjectConfig, language: str) -> Path:
         ),
         is_legacy=is_legacy_claude_md,
     )
+    # Na lista do que mudou (`log.artifacts.changed`), como os demais.
+    changed = _changed_files.get()
+    if changed is not None and wrote:
+        changed.append(path)
     return path
 
 
