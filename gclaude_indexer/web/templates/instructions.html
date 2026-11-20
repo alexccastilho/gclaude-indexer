@@ -69,7 +69,7 @@
 
 <form method="post" action="/projects/{{ project.id }}/instructions/extra-rules" class="card">
   <label for="extra_rules">{{ t('instructions.extra_rules.label') }}</label>
-  <p class="help">{{ t('instructions.extra_rules.help', limit=extra_rules_limit, prompt=extra_rules_prompt_limit) }}</p>
+  <p class="help">{{ t('instructions.extra_rules.help', limit=extra_rules_limit) }}</p>
   <textarea id="extra_rules" name="extra_rules" rows="5" maxlength="{{ extra_rules_limit }}">{{ extra_rules }}</textarea>
   <p><button type="submit" class="button-primary">{{ m.icon('check') }} {{ t('instructions.extra_rules.save') }}</button></p>
 </form>

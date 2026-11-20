@@ -55,10 +55,10 @@ _warned_unknown_fields: set[str] = set()
 # `engine_local.py:_num_gpu_for`.
 PROCESSING_MODES = {"automatic", "gpu", "cpu"}
 
-# Teto do que a caixa "Regras extras do projeto" aceita. O prompt do modelo
-# local usa só os primeiros `EXTRA_RULES_PROMPT_LIMIT` caracteres; o resto
-# continua indo para as instruções do Claude, por isso o teto é maior. Texto
-# acima do teto é recusado, nunca cortado em silêncio.
+# Teto do que a caixa "Regras extras do projeto" aceita. As regras vão para
+# as instruções do Claude; o prompt por página do modelo local (2.1.0) não
+# leva o bloco do projeto, então o modelo não as lê. Texto acima do teto é
+# recusado, nunca cortado em silêncio.
 EXTRA_RULES_MAX_LENGTH = 4000
 
 # Campos do formulário Novo projeto, na ordem em que o POST é lido.
