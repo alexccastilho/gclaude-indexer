@@ -258,7 +258,7 @@ def test_log_traduz_a_etapa_de_importacao_e_nao_mostra_chave_crua(cliente, tmp_p
     `step.*.title` i18n key — `_log.html` fell back to the raw key, in any
     language. `import` is deliberately not in `STEPS` (see
     `import_items.py`'s module docstring) but must still resolve to a
-    translated label via `app.LOG_KNOWN_STEPS`."""
+    translated label via `pipeline.LOG_STEPS`."""
     from gclaude_indexer.catalog import find_project
     from gclaude_indexer.events import record_event
     from gclaude_indexer.project import load_project
