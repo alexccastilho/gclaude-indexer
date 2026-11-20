@@ -137,7 +137,8 @@
     title.textContent = T.running.replace("{operation}", label);
     project.textContent = op.project_name;
     hint.textContent = op.stopping ? T.stopping : T.hint;
-    stopButton.hidden = false;
+    // Clearing intermediates, indexing, dedup and deletion cannot be stopped.
+    stopButton.hidden = op.stoppable === false;
     stopButton.disabled = !!op.stopping;
     stopButton.setAttribute("data-project", String(op.project_id));
     okButton.hidden = true;
