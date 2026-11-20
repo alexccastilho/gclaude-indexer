@@ -35,7 +35,7 @@ from pathlib import Path
 
 from . import lexml, planalto
 from .config import ProjectConfig
-from .events import record_event
+from .events import event_message, record_event
 from .file_status import (
     ALL_FILE_STATUSES, CONVERSION_SUCCEEDED, FAILED, SKIPPED, WINDOW_DONE, WINDOW_PENDING, in_params,
 )
@@ -978,7 +978,8 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     ).fetchall()
 
     error_events = conn.execute(
-        "SELECT step, message, created_at FROM event WHERE level = 'error' ORDER BY id DESC LIMIT 50"
+        "SELECT step, message, message_key, message_params, created_at FROM event"
+        " WHERE level = 'error' ORDER BY id DESC LIMIT 50"
     ).fetchall()
 
     gaps = _gaps_by_group(conn)
@@ -1036,8 +1037,10 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     if not error_events:
         lines.append(t("artifact.review.errors_none"))
     else:
+        # Retranslated into the report's language, as the live log does;
+        # the step stays the raw id, like the status codes above.
         for event in error_events:
-            lines.append(f"- [{event['created_at']}] ({event['step']}) {event['message']}")
+            lines.append(f"- [{event['created_at']}] ({event['step']}) {event_message(event, language)}")
 
     path = Path(config.output_folder) / REVIEW_FILENAME
     write_if_changed(path, "\n".join(lines) + "\n")
