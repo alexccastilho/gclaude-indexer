@@ -29,7 +29,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
-from .file_status import DISCOVERED, DUPLICATE, OUT_OF_INDEX, SKIPPED, is_waiting_component
+from .file_status import DISCOVERED, DUPLICATE, OUT_OF_INDEX, SKIPPED, in_params, is_waiting_component
 from .file_types import (
     HEAD_BYTES,
     REASON_NOT_SELECTED,
@@ -370,6 +370,43 @@ def _holds_old_data(conn: sqlite3.Connection, relative_path: str) -> bool:
     return row["status"] != DISCOVERED or bool(row["has_pages"])
 
 
+def _release_copies_of_old_content(
+    conn: sqlite3.Connection, old_hash: str | None, name: str, language,
+) -> None:
+    """As cópias (`duplicate`) do conteúdo que `name` tinha antes de mudar.
+
+    A cópia nunca foi indexada: ela se apoiava no original. Com o conteúdo
+    novo gravado, nenhum documento do índice guarda mais o antigo, e a cópia
+    ficaria `duplicate` de algo que saiu do índice (a varredura e o plano
+    não reexaminam uma cópia inalterada) enquanto os bytes continuam na
+    pasta. A linha dela sai, como na remoção do original
+    (`invalidation._apply`), e a próxima atualização a enxerga como
+    documento novo, com a invalidação do grupo de sempre. Chamada depois da
+    gravação do conteúdo novo, dentro da mesma operação do lote."""
+    if not old_hash:
+        return
+    marks, values = in_params(OUT_OF_INDEX)
+    still_held = conn.execute(
+        f"SELECT 1 FROM file WHERE sha256 = ? AND status NOT IN ({marks}) LIMIT 1", (old_hash, *values)
+    ).fetchone()
+    if still_held is not None:
+        return
+    copies = [
+        row[0] for row in conn.execute(
+            "SELECT relative_path FROM file WHERE status = ? AND sha256 = ? ORDER BY relative_path",
+            (DUPLICATE, old_hash),
+        )
+    ]
+    if not copies:
+        return
+    conn.execute("DELETE FROM file WHERE status = ? AND sha256 = ?", (DUPLICATE, old_hash))
+    record_event(
+        conn, "scan", "info", "log.scan.duplicate_released",
+        {"name": name, "count": len(copies), "files": ", ".join(copies)},
+        language=language, commit=False,
+    )
+
+
 def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
     """Pages, full-text rows and converted intermediate of one file."""
     row = conn.execute(
@@ -561,6 +598,8 @@ def _record_scanned_file(
                     lambda c: discard_changed_file(c, config, relative_path, name, size, language)
                 )
 
+        old_hash = existing_row["sha256"]
+
         def op(c) -> None:
             _update_file(
                 c, relative_path, name, extension_no_dot, size, file_hash,
@@ -570,6 +609,7 @@ def _record_scanned_file(
                 c, "scan", "warning", "log.scan.content_changed", {"name": name},
                 language=language, commit=False,
             )
+            _release_copies_of_old_content(c, old_hash, name, language)
 
         result.updated += 1
 
