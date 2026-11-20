@@ -16,9 +16,12 @@ validated to prevent escaping it (including via `..`), per section 7.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import re
+import threading
+import time
 from pathlib import Path
 
 
@@ -255,19 +258,41 @@ def _remove_if_empty(path: Path) -> None:
         pass
 
 
+# Duas gravações ao mesmo tempo dividiam o mesmo `.tmp` (as rotas rodam em
+# várias threads) e quase todas falhavam; uma de cada vez basta, os arquivos
+# são pequenos.
+_ATOMIC_WRITE_LOCK = threading.Lock()
+# No NTFS, `os.replace` sobre um arquivo que alguém tem aberto para leitura
+# (outra rota lendo o catálogo, o antivírus, o cliente do Drive) dá
+# `PermissionError`, coisa que `write_text` não dava. A leitura dura
+# milissegundos: tentar de novo por menos de um segundo resolve.
+_REPLACE_RETRY_SECONDS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5)
+
+
 def write_text_atomic(path: Path, text: str) -> None:
     """Grava num temporário ao lado, força para o disco (`fsync`) e troca
     com `os.replace`: uma queda no meio deixa o arquivo antigo inteiro,
-    nunca um pela metade nem um vazio. Usado pelo diário da mudança de
-    pasta, pelos catálogos e pelo registro de sincronização."""
+    nunca um pela metade nem um vazio. Usado pelos registros JSON da
+    máquina (catálogos, sincronização, conjuntos, preferências, diário e
+    adiamento da mudança de pasta)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    with open(temporary, "w", encoding="utf-8") as file:
-        file.write(text)
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(temporary, path)
+    with _ATOMIC_WRITE_LOCK:
+        with open(temporary, "w", encoding="utf-8") as file:
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        for wait in (*_REPLACE_RETRY_SECONDS, None):
+            try:
+                os.replace(temporary, path)
+                return
+            except PermissionError:
+                if wait is None:
+                    with contextlib.suppress(OSError):
+                        temporary.unlink()
+                    raise
+                time.sleep(wait)
 
 
 def sqlite_readonly_uri(path) -> str:

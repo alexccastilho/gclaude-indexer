@@ -218,12 +218,7 @@ def _relative_to_catalog(output_folder: str, folder: Path | None) -> str:
 
 
 def _write(entries: list[CatalogEntry]) -> None:
-    path = catalog_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps([asdict(entry) for entry in entries], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_atomic(catalog_path(), entries)
 
 
 def register_project(name: str, output_folder: str) -> CatalogEntry:
@@ -298,12 +293,7 @@ def remove_project(project_id: int) -> None:
         return
     kept_local = [entry for entry in local if _folder_key(entry.output_folder) not in removed_folders]
     if len(kept_local) != len(local):
-        path = _local_catalog_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps([asdict(entry) for entry in kept_local], ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _write_atomic(_local_catalog_path(), kept_local)
 
 
 def adopt_local_projects() -> int:

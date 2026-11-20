@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .paths import machine_local_folder
+from .paths import machine_local_folder, write_text_atomic
 
 SETTINGS_FILE_NAME = "settings.json"
 
@@ -67,9 +67,7 @@ def save_settings(values: dict) -> None:
         current = {}
 
     current.update({key: value for key, value in values.items() if isinstance(value, str)})
-    path = settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_text_atomic(settings_path(), json.dumps(current, ensure_ascii=False, indent=2))
 
 
 def shared_catalog_folder() -> Path | None:

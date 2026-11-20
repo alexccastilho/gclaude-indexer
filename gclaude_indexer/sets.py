@@ -30,7 +30,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 
-from .paths import machine_local_folder
+from .paths import machine_local_folder, write_text_atomic
 
 SETS_FILE_NAME = "sets.json"
 
@@ -120,9 +120,7 @@ def _read() -> list[SetEntry]:
 
 
 def _write(entries: list[SetEntry]) -> None:
-    path = sets_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([asdict(e) for e in entries], ensure_ascii=False, indent=2), encoding="utf-8")
+    write_text_atomic(sets_path(), json.dumps([asdict(e) for e in entries], ensure_ascii=False, indent=2))
 
 
 def list_sets() -> list[SetEntry]:
