@@ -254,3 +254,36 @@ def test_catalogo_nao_junta_pastas_que_o_windows_distingue(tmp_path, pasta_local
     assert len(catalog.list_projects()) == 2
     # Só a caixa diferente continua sendo o mesmo projeto.
     assert catalog.register_project("Rua", str(tmp_path / "straße")).id == primeiro.id
+
+
+def test_sincronizacao_acha_a_data_gravada_com_outra_caixa(tmp_path, pasta_local):
+    """No Google Drive, `resolve` não acerta a caixa: a chave gravada é a
+    grafia digitada. Outra caixa da mesma pasta tem de achar a mesma data,
+    senão o aviso de sincronização incompleta some sem ninguém saber."""
+    import json
+
+    saida = _projeto(tmp_path)
+    futuro = (saida / paths.PROJECT_DB_NAME).stat().st_mtime + 3600
+    (pasta_local / sync.REGISTRY_FILE_NAME).write_text(
+        json.dumps({str(saida).upper(): futuro}), encoding="utf-8"
+    )
+
+    resultado = sync.check_sync(saida)
+
+    assert not resultado.ok
+    assert resultado.message_key == "sync.incomplete"
+
+
+def test_sincronizacao_segue_a_pasta_que_mudou_escrita_com_outra_caixa(tmp_path, pasta_local):
+    """A pasta antiga já não existe quando a mudança termina, então
+    `resolve` devolve a grafia recebida: com outra caixa, a data ficava na
+    chave velha e a pasta nova começava sem aviso."""
+    saida = _projeto(tmp_path, "Saida")
+    sync.mark_synced(saida)
+    nova = tmp_path / "Nova"
+    saida.rename(nova)
+
+    sync.rename_key(str(tmp_path / "SAIDA"), nova)
+
+    registro = sync._read_registry()
+    assert list(registro) == [sync._key(nova)]
