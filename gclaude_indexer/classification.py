@@ -17,13 +17,11 @@ item is written.
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from typing import Protocol
 
 from .config import ProjectConfig
@@ -32,7 +30,7 @@ from .engine_names import ENGINE_CLAUDE_CODE, ENGINE_LOCAL, ENGINE_RULES, ENGINE
 from .events import record_event
 from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .file_types import is_whole_document_file
-from .paths import RAW_ITEMS_FILE_NAME
+from . import raw_items
 from .windows_prep import pages_for_group
 
 VALID_ENGINES = {ENGINE_RULES, ENGINE_LOCAL, ENGINE_CLAUDE_CODE, ENGINE_STRUCTURED}
@@ -292,20 +290,6 @@ def normalize_confidence(value: object, fallback: str = "low") -> str:
     return value if isinstance(value, str) and value in VALID_CONFIDENCES else fallback
 
 
-# The `files` field of a `raw_items.jsonl` line: the item's file names
-# joined by `", "`. A name with a comma in it reads back as two names.
-_FILES_SEPARATOR = ", "
-
-
-def files_field(files: Iterable[str]) -> str:
-    return _FILES_SEPARATOR.join(files)
-
-
-def files_from_field(value: object) -> list[str]:
-    """The file names of a `files` field, stripped, empty ones dropped."""
-    return [name.strip() for name in str(value).split(_FILES_SEPARATOR.strip()) if name.strip()]
-
-
 # Words a model sometimes returns instead of leaving `type` empty. Stored
 # as-is they become their own document type in the index, sitting next to
 # the real ones and inflating the "types found" count with nothing.
@@ -331,23 +315,24 @@ def normalize_type(type_: object) -> str | None:
 
 
 def item_to_dict(item: ClassifiedItem, window_key: str, group: str) -> dict:
-    return {
-        "window": window_key,
-        "group": group,
-        "ref_start": item.start_ref,
-        "ref_end": item.end_ref,
-        "order_start": item.start_order,
-        "order_end": item.end_order,
-        "type": normalize_type(item.type),
-        "date": normalize_date(item.date),
-        "author": item.author,
-        "summary": item.summary,
-        "has_table": bool(item.has_table),
-        "has_image": bool(item.has_image),
-        "engine": item.engine,
-        "confidence": item.confidence,
-        "files": files_field(item.files),
-    }
+    """The item's `raw_items.jsonl` line, type and date normalized."""
+    return raw_items.make_line(
+        window_key,
+        group,
+        ref_start=item.start_ref,
+        ref_end=item.end_ref,
+        order_start=item.start_order,
+        order_end=item.end_order,
+        type=normalize_type(item.type),
+        date=normalize_date(item.date),
+        author=item.author,
+        summary=item.summary,
+        has_table=bool(item.has_table),
+        has_image=bool(item.has_image),
+        engine=item.engine,
+        confidence=item.confidence,
+        files=item.files,
+    )
 
 
 _ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -540,14 +525,14 @@ def classify_windows(
     One commit every couple of seconds (`BatchWriter`) instead of one per
     window plus one per event: each commit on a Drive-synced database costs
     seconds and locks the screens out."""
-    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    jsonl_path = raw_items.path_in(config.output_folder)
     pending_windows = conn.execute(
         "SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)
     ).fetchall()
 
     loader = WindowPageLoader(conn)  # One read of each group's order
     writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
-    with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
+    with raw_items.open_for_append(jsonl_path) as jsonl_file:
         try:
             for window in pending_windows:
                 if should_stop is not None and should_stop():
@@ -572,7 +557,7 @@ def classify_windows(
                             c, "classification", "error", key, params, language=language, commit=False,
                         ))
                         return False
-                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
+                    raw_items.append(jsonl_file, item_dict)
                     result.count_written(item.confidence)
                     return True
 

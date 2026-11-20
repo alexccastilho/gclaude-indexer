@@ -44,7 +44,8 @@ from .ollama_backend import OLLAMA_SERVE_LOG_NAME
 from .subprocess_utils import start_in_background
 from . import language_detect, planalto
 from .file_status import WINDOW_PENDING
-from .paths import RAW_ITEMS_FILE_NAME, machine_local_folder
+from . import raw_items
+from .paths import machine_local_folder
 from .tools import find as find_tool
 
 # Was 120. A full window in the per-page mode answers ~1,800
@@ -1862,7 +1863,6 @@ def _classify_in_parts(engine: "LocalEngine", pages: list[WindowPage]) -> list[C
 
 MODEL_MAX_OUTAGES = 10
 WINDOW_MAX_ATTEMPTS = 3
-FALLBACK_FIELD = "fallback"
 
 
 def _has_dedicated_gpu() -> bool:
@@ -1880,34 +1880,28 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
     was down (their lines carry `"fallback": true`) go back to 'pending',
     and their lines leave `raw_items.jsonl`. Returns how many.
 
-    The file is rewritten under a temporary name and swapped in, so a crash
-    leaves the old file or the new one, never half of each. The database
-    is committed before the swap: a crash between the two leaves the
-    windows pending with their old lines still in the file, which the next
-    call removes. The other way round left them done with no lines, and
-    nothing would ever classify them again. A window with any line not
-    marked is left alone."""
+    The database is committed before the file is pruned (`raw_items.
+    prune`, which swaps in a complete new file): a crash between the two
+    leaves the windows pending with their old lines still in the file,
+    which the next call removes. The other way round left them done with
+    no lines, and nothing would ever classify them again. A window with
+    any line not marked is left alone.
+
+    Two passes over the file, holding only window keys: on a large
+    collection it has gigabytes, and this runs at every classification."""
     if not jsonl_path.exists():
         return 0
-    lines = [line for line in jsonl_path.read_text(encoding="utf-8").split("\n") if line.strip()]
     marked: set = set()
     unmarked: set = set()
-    parsed = []
-    for line in lines:
-        try:
-            data = json.loads(line)
-        except ValueError:
-            parsed.append((line, None))
+    for _, text in raw_items.iter_lines(jsonl_path):
+        data = raw_items.parse(text)
+        if data is None:
             continue
-        window_key = data.get("window")
-        parsed.append((line, window_key))
-        (marked if data.get(FALLBACK_FIELD) else unmarked).add(window_key)
+        window_key = data.get(raw_items.WINDOW)
+        (marked if data.get(raw_items.FALLBACK) else unmarked).add(window_key)
     to_requeue = marked - unmarked
     if not to_requeue:
         return 0
-    kept = [line for line, window_key in parsed if window_key not in to_requeue]
-    temporary = jsonl_path.with_name(jsonl_path.name + ".requeue.tmp")
-    temporary.write_text("".join(line + "\n" for line in kept), encoding="utf-8")
     keys = sorted(to_requeue)
     for start in range(0, len(keys), 500):
         chunk = keys[start:start + 500]
@@ -1915,7 +1909,9 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
             f"UPDATE window SET status = ? WHERE key IN ({','.join('?' * len(chunk))})", (WINDOW_PENDING, *chunk)
         )
     conn.commit()
-    temporary.replace(jsonl_path)
+    raw_items.prune(
+        jsonl_path, lambda line: line.get(raw_items.WINDOW) in to_requeue, temporary_suffix=".requeue.tmp"
+    )
     return len(to_requeue)
 
 
@@ -1959,7 +1955,7 @@ def classify_pending(
     if not ollama_available:
         ollama_available = _try_restart_ollama(conn, local_engine, language=language)
 
-    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    jsonl_path = raw_items.path_in(config.output_folder)
     if ollama_available or model_required:
         # What the Rules engine stood in for last time goes back to the model.
         requeued = requeue_fallback_windows(conn, jsonl_path)
@@ -2111,7 +2107,7 @@ def classify_pending(
         return WindowItems(
             blank_items + structured_items + items,
             # So the next run gives it back to the model.
-            {FALLBACK_FIELD: True} if via_fallback else {},
+            {raw_items.FALLBACK: True} if via_fallback else {},
         )
 
     # The window's events and its "done" go in one batch (`BatchWriter`)

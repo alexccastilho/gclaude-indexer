@@ -21,7 +21,6 @@ version left behind.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Callable
@@ -31,7 +30,8 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_status import EXTRACTED, WINDOW_DONE, WINDOW_PENDING
-from .paths import RAW_ITEMS_FILE_NAME, natural_sort_key, resolve_within
+from . import raw_items
+from .paths import natural_sort_key, resolve_within
 
 
 @dataclass
@@ -274,24 +274,15 @@ def mark_answered_windows(conn, output_folder: Path | str) -> int:
     was removed (2.0.0). Used once, when a project saved with that engine is
     opened, so the automatic classification does not redo them. Returns how
     many windows were marked."""
-    jsonl_path = Path(output_folder) / RAW_ITEMS_FILE_NAME
+    answered: set[str] = set()
     try:
-        # `split("\n")`, not `splitlines()` (1.5.9, see `import_items`).
-        lines = jsonl_path.read_text(encoding="utf-8").split("\n")
+        for _, text in raw_items.iter_lines(raw_items.path_in(output_folder)):
+            data = raw_items.parse(text)
+            key = data.get(raw_items.WINDOW) if data is not None else None
+            if isinstance(key, str) and key:
+                answered.add(key)
     except (OSError, UnicodeDecodeError):
         return 0
-    answered: set[str] = set()
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        key = data.get("window") if isinstance(data, dict) else None
-        if isinstance(key, str) and key:
-            answered.add(key)
     if not answered:
         return 0
     marked = 0

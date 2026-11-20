@@ -44,12 +44,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from .classification import files_field, files_from_field, validate_item
+from . import raw_items
+from .classification import validate_item
 from .config import ProjectConfig
 from .events import record_event
 from .item_normalize import clean_authors, clean_placeholders, fill_structured_authors, normalize_types
 from .windows_prep import pages_for_group
-from .paths import RAW_ITEMS_FILE_NAME
+from .raw_items import files_field, files_from_field
 from .run_control import checkpoint
 
 _CONFIDENCE_ORDER = {"high": 3, "medium": 2, "low": 1}
@@ -116,14 +117,7 @@ def _read_and_validate_lines(
     # Shared across the whole file so each group's pages are read once.
     page_ranges: dict[str, tuple[int, int] | None] = {}
 
-    # `split("\n")`, not `splitlines()`: the latter also breaks on
-    # U+0085, U+2028 and U+2029, which `json.dumps(ensure_ascii=False)`
-    # leaves unescaped inside strings. Text from HTML decoded as latin-1
-    # carries U+0085, and each one cut an item in two "corrupt" lines.
-    for line_number, line in enumerate(jsonl_path.read_text(encoding="utf-8").split("\n"), start=1):
-        line = line.strip()
-        if not line:
-            continue
+    for line_number, line in raw_items.iter_lines(jsonl_path):
         result.lines_read += 1
 
         try:
@@ -297,7 +291,7 @@ def import_and_consolidate(
     """`should_stop` is checked before the item table is touched:
     `_write_items` replaces it in one transaction, so a stop either comes
     before it (nothing changed) or not at all."""
-    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    jsonl_path = raw_items.path_in(config.output_folder)
     result = ImportResult()
 
     if not jsonl_path.exists():
