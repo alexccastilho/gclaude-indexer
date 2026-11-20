@@ -163,7 +163,7 @@ def test_token_nao_ascii_e_recusado_sem_excecao():
             (b"host", f"127.0.0.1:{state.SERVER_PORT}".encode()),
         ],
     }
-    assert modulo_app._sensor_request_allowed(Request(escopo)) is False
+    assert routes_run._sensor_request_allowed(Request(escopo)) is False
 
 
 # --- Task 5: só o SuperIO decide a ventoinha da CPU --------------------------------
@@ -172,6 +172,7 @@ from gclaude_indexer import sensors
 from tests.test_phase32 import _Computer, _Hardware, _Sensor, _como_admin, _nct
 from gclaude_indexer.web import state
 from gclaude_indexer.web import operations
+from gclaude_indexer.web import routes_run
 
 
 def test_sub_hardware_que_nao_e_superio_nao_decide_a_ventoinha(monkeypatch):

@@ -161,7 +161,7 @@ from tests.test_phase31 import _app_com_projeto
 
 def _guardas():
     return {
-        "X-GClaude-Sensor-Token": modulo_app.SENSOR_REQUEST_TOKEN,
+        "X-GClaude-Sensor-Token": routes_run.SENSOR_REQUEST_TOKEN,
         "Sec-Fetch-Site": "same-origin",
         "Host": f"127.0.0.1:{state.SERVER_PORT}",
     }
@@ -249,7 +249,7 @@ def test_pedido_recusado_libera_novo_pedido(tmp_path, monkeypatch):
         assert _espera(lambda: len(chamadas) == vez)
         # O pedido em voo segura a trava até o helper responder; o segundo
         # clique só conta como novo pedido depois disso (revisão final).
-        assert _espera(lambda: not modulo_app._SENSOR_REQUEST_IN_FLIGHT.locked())
+        assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
     assert chamadas == [os.getpid(), os.getpid()]
 
 
@@ -279,13 +279,13 @@ def test_request_helper_now_ignora_o_sinalizador_do_atalho(monkeypatch, tmp_path
 def test_tela_executar_traz_o_token_e_o_botao(tmp_path, monkeypatch):
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     html = cliente.get(f"/projects/{pid}/run").text
-    assert modulo_app.SENSOR_REQUEST_TOKEN in html
+    assert routes_run.SENSOR_REQUEST_TOKEN in html
     assert 'id="sensor-request"' in html and 'id="sensor-request-button"' in html
 
 
 def test_resources_devolve_o_status_do_helper(tmp_path, monkeypatch):
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    monkeypatch.setattr(modulo_app, "read_launch_status", lambda: "refused")
+    monkeypatch.setattr(routes_run, "read_launch_status", lambda: "refused")
     assert cliente.get(f"/projects/{pid}/run/resources").json()["helper_status"] == "refused"
 
 
@@ -368,6 +368,7 @@ def test_clear_launch_status_nunca_levanta(monkeypatch, tmp_path):
 
 from pathlib import Path as _Path
 from gclaude_indexer.web import state
+from gclaude_indexer.web import routes_run
 
 _TEMPLATES = _Path(__file__).resolve().parent.parent / "gclaude_indexer" / "web" / "templates"
 
@@ -554,7 +555,7 @@ def test_segundo_clique_com_pedido_em_voo_nao_abre_segundo_prompt(tmp_path, monk
         assert chamadas == [os.getpid()]
     finally:
         libera.set()
-    assert _espera(lambda: not modulo_app._SENSOR_REQUEST_IN_FLIGHT.locked())
+    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
     assert cliente.post("/sensors/request-elevation", headers=_guardas()).json()["outcome"] == "requested"
     assert _espera(lambda: len(chamadas) == 2)
 
@@ -578,7 +579,7 @@ def test_recusa_antiga_some_antes_do_novo_pedido(tmp_path, monkeypatch):
         assert sensor_service.read_launch_status() is None, "apagado pela rota, antes de disparar"
     finally:
         libera.set()
-    assert _espera(lambda: not modulo_app._SENSOR_REQUEST_IN_FLIGHT.locked())
+    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
 
 
 def test_helper_que_levanta_deixa_o_status_unavailable(tmp_path, monkeypatch):
@@ -596,7 +597,7 @@ def test_helper_que_levanta_deixa_o_status_unavailable(tmp_path, monkeypatch):
 
     assert cliente.post("/sensors/request-elevation", headers=_guardas()).status_code == 202
     assert _espera(lambda: sensor_service.read_launch_status() == "unavailable")
-    assert _espera(lambda: not modulo_app._SENSOR_REQUEST_IN_FLIGHT.locked())
+    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
 
 
 def test_botao_sai_dos_becos_sem_saida(tmp_path, monkeypatch):

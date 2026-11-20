@@ -33,6 +33,7 @@ from gclaude_indexer.web import app as modulo_app
 from gclaude_indexer.web import state
 from gclaude_indexer.web import operations
 from gclaude_indexer.web import caches
+from gclaude_indexer.web import routes_run
 
 
 def _parar_sempre():
@@ -164,8 +165,8 @@ def test_o_pedido_que_comeca_manda_para_a_tela_com_o_numero_da_operacao(tmp_path
     def demorado(conn, config, language=None, should_stop=None):
         liberar.wait(5)
 
-    monkeypatch.setattr(modulo_app, "import_and_consolidate", demorado)
-    monkeypatch.setattr(modulo_app, "generate_all_artifacts", lambda *a, **k: {})
+    monkeypatch.setattr(routes_run, "import_and_consolidate", demorado)
+    monkeypatch.setattr(routes_run, "generate_all_artifacts", lambda *a, **k: {})
     resposta = cliente.post(
         f"/projects/{pid}/import-and-generate", follow_redirects=False,
         headers={"referer": f"http://127.0.0.1:8000/projects/{pid}/result"},
@@ -180,8 +181,8 @@ def test_quem_termina_rapido_vai_direto_ao_resultado(tmp_path, monkeypatch):
     from tests.test_phase32 import _app_com_projeto
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    monkeypatch.setattr(modulo_app, "import_and_consolidate", lambda *a, **k: None)
-    monkeypatch.setattr(modulo_app, "generate_all_artifacts", lambda *a, **k: {})
+    monkeypatch.setattr(routes_run, "import_and_consolidate", lambda *a, **k: None)
+    monkeypatch.setattr(routes_run, "generate_all_artifacts", lambda *a, **k: {})
 
     resposta = cliente.post(f"/projects/{pid}/import-and-generate", follow_redirects=False)
 
@@ -350,13 +351,13 @@ def test_tela_parada_reaproveita_a_resposta_e_renova_quando_algo_comeca(tmp_path
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     monkeypatch.setattr(caches, "IDLE_FRAGMENT_SECONDS", 30.0)
     chamadas = []
-    original = modulo_app._steps_context
+    original = routes_run._steps_context
 
     def contando(*args, **kwargs):
         chamadas.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(modulo_app, "_steps_context", contando)
+    monkeypatch.setattr(routes_run, "_steps_context", contando)
     for _ in range(3):
         assert cliente.get(f"/projects/{pid}/run/steps").status_code == 200
     assert len(chamadas) == 1, "parado, o banco não é lido de novo a cada 2 s"

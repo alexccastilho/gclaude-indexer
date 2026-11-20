@@ -20,6 +20,7 @@ from __future__ import annotations
 from gclaude_indexer.import_items import import_and_consolidate
 
 from .test_phase6 import _escrever_jsonl, _peca, _projeto_com_paginas
+from gclaude_indexer.web import routes_run
 
 
 class _ContadorDeConsultas:
@@ -120,8 +121,8 @@ def test_importar_e_gerar_nao_roda_duas_vezes_ao_mesmo_tempo(tmp_path, monkeypat
         entrou.set()
         liberar.wait(timeout=10)
 
-    monkeypatch.setattr(app_module, "import_and_consolidate", _import_lento)
-    monkeypatch.setattr(app_module, "generate_all_artifacts", lambda *a, **k: None)
+    monkeypatch.setattr(routes_run, "import_and_consolidate", _import_lento)
+    monkeypatch.setattr(routes_run, "generate_all_artifacts", lambda *a, **k: None)
 
     cliente = TestClient(app_module.app)
     rota = f"/projects/{project_id}/import-and-generate"
