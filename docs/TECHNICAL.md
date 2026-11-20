@@ -187,7 +187,7 @@ Open the project. A few seconds after the Run screen appears, if something chang
 
 **Why it is not the whole collection.** Documents are grouped, and the pages of a group are read as one long sequence, sliced into overlapping windows; the windows are what the classification engine reads. A change invalidates the group from the first page that shifted. Everything before it keeps its pages and its classification. A document added at the end of a group costs almost nothing; one inserted at the start shifts every page after it and costs more. The screen tells you which case you are in before you confirm.
 
-**Removed documents.** The pages and items leave the index, the converted copy is deleted, and the name and moment of the removal are recorded in `review.md`. If the folder had an identical copy of the removed document, that copy is indexed in its place. If a whole group disappears, its `index-<group>.md` is deleted.
+**Removed documents.** The pages and items leave the index, the converted copy is deleted, and the name and moment of the removal are recorded in `review.md`. If the folder had an identical copy of the removed document, that copy is indexed in its place. The same goes for a copy of a document that was edited: the copy keeps the old content, so it comes back as a new document in the next update. If a whole group disappears, its `index-<group>.md` is deleted.
 
 **Sheet numbering that changes.** In a case-file collection, the sheet numbering (f. 1, f. 2...) runs continuously through the group. Adding or removing a document in the middle changes the numbers of the following documents. The confirmation screen lists which ones and the log warns: old conversations with Claude that cited those sheets may be out of date.
 
@@ -195,15 +195,15 @@ Documents that only need renumbering do not go through OCR again: the converted 
 
 **If you cleared the intermediate files** with Free up space, the documents that would be reread need to be converted again. The update handles that correctly; it just takes longer.
 
-**If the source folder cannot be reached** (the disk is disconnected, the folder was moved or renamed), nothing is offered and nothing is changed.
+**If the source folder cannot be reached** (the disk is disconnected, the folder was moved or renamed), nothing is offered and nothing is changed. The project still opens. Scan, conversion and extraction read the original files, so they stop with a message saying the folder was not found; windows, classification and **Import and generate reports** read only the database and the output folder, and run without it.
 
 **One computer at a time.** While a project is open, it is locked to that computer. Another computer is told who is using it. Closing the browser releases the lock in about five minutes; a lock from a machine that crashed expires on its own in ten.
 
 ## Getting a good classification
 
-Two things decide more about the result than anything else.
+Two things decide more about the result than anything else: which model runs, and whether it fits on your graphics card. What you write about the collection is not one of them.
 
-**Fill in the collection's Subject and Collection type in New project.** The `local` engine shows those fields to the model, and they are what tells it what kind of document it is reading. A collection described only with the defaults ends up classified against generic examples, and the model answers "don't know" for almost every type. One sentence about the collection (what it is, where it came from, what documents it has) is the most effective thing you can do for the result. **Role in the instructions** (New project) and **Extra rules** (Instructions screen) are also passed along, as context.
+**Subject, Role in the instructions and Extra rules go to Claude, not to the classifying model.** Since 2.1.0 the `local` engine does not show them to the model. It was measured against two answer keys: with the Subject filled in, the model cut the documents worse (on a real 83-page case file, F1 fell from 73.7% to 50.0%, and it found 11 of 16 document starts instead of 15), although it named the types better. The three fields still go into the instructions written for Claude, where they say what the collection is. Write one sentence about the collection in Subject (what it is, where it came from, what documents it has): it helps Claude answer, not the classification.
 
 **Which model to use.** Measured in this project, over the same windows of one document, with every model running entirely on an 8 GB card:
 
@@ -215,7 +215,7 @@ Two things decide more about the result than anything else.
 | `qwen3:8b` | 5.4 GB | 100% | 108.8 |
 | `granite4.2:8b` | 5.7 GB | 100% | 116.9 |
 
-In that measurement, `qwen3.5:4b` reached the quality of the best one in a quarter of the time and with half the VRAM. Measured later against an answer key, on the demo collection (72 pages, 41 items), `qwen3.5:9b` got the date (88.6%) and the author (84.4%) right more often and took 4 min 12 s, against 4 s for the rules engine; the full numbers and what they do not say are in [QUALITY.md](QUALITY.md). That is why the default since 1.5.14 is `qwen3.5:9b` on a card with 8 GB or more and `qwen3.5:4b` on smaller ones. Describing a page is reading and format discipline; size alone does not buy quality and costs time.
+In that measurement, `qwen3.5:4b` reached the quality of the best one in a quarter of the time and with half the VRAM. Measured later against an answer key, on the demo collection (72 pages, 41 items), `qwen3.5:9b` got the date (88.6%) and the author (84.4%) right more often and took 4 min 12 s, against 4 s for the rules engine; the full numbers and what they do not say are in [QUALITY.md](QUALITY.md). That is why the default from 1.5.14 until 2.1.0 was `qwen3.5:9b` on a card with 8 GB or more and `qwen3.5:4b` on smaller ones. Since 2.1.0 the project picks a profile instead: Best quality (`ornith-1.5:9b`, a fine-tuned Qwen 3.5 9B) on a card with 8 GB or more, Fastest (`qwen3.5:4b`) on smaller ones. Measured against two answer keys, Best quality found the documents' limits best (100% F1 on the demo collection and 73.7% on a real 83-page case file, against 87.5% and 46.2% for Fastest) in about twice the time, and `qwen3.5:9b` found fewer document starts and merged more documents than both. Describing a page is reading and format discipline; size alone does not buy quality and costs time.
 
 **Choose a model that fits on your graphics card.** What does not fit in VRAM, Ollama runs on the CPU, and the difference is large. On an 8 GB card, a 9.1 GB model ran with 17% of itself on the GPU; a 5 GB model ran entirely on the GPU. The Run screen shows the card's VRAM, the VRAM in use and the loaded model; the About screen lists the installed models; the log warns when the chosen model does not fit and says which card and which backend are in use. A model that fits and finishes is worth more than a bigger one that spends the whole run spilling over.
 
@@ -227,7 +227,7 @@ If the quality score looks low, open the log: it reports how the GPU is being us
 
 Three properties hold no matter how well the model does its job, because the code enforces them.
 
-**Every page reaches the index.** A page the model never mentioned still gets an entry, with its reference, the file and its own text as the summary, because the grouping walks the pages of the window, not the model's answer. An item that fails validation is discarded, but its pages come back as a low-confidence entry instead of disappearing with it. An index that silently omits a page is worse than no index: what is missing is invisible.
+**Every page reaches the index**, with either engine. A page the model never mentioned still gets an entry, with its reference, the file and its own text as the summary, because the grouping walks the pages of the window, not the model's answer. An item that fails validation is discarded, but its pages come back as a low-confidence entry instead of disappearing with it. An index that silently omits a page is worse than no index: what is missing is invisible.
 
 **A whole document is always its own item.** A file that is a single document (HTML, Word, e-mail, spreadsheet) starts a new item, even if the model joined it to the previous document. On a legislation page, the heading ("LEI Nº 8.078, DE 11 DE SETEMBRO DE 1990") becomes the item's type. The author of an act is read from the full text, and each author and each type have a single spelling across the whole index.
 
@@ -275,7 +275,7 @@ Written to the output folder you chose, in the language the interface is in when
 - `project_instructions.md`: instructions for a Claude Project, built from the fields you filled in New project, including how to use the index, how to find a norm in `normas-citadas.md` and the rule of always checking values in the original document.
 - `buscar.bat`: the topic search for Claude Code, described in [Topic search and LexML](#topic-search-and-lexml).
 - `project.db`: the project database. It holds everything, including the text of every page and the search index.
-- `CLAUDE.md`: consultation-only. It teaches Claude Code how to read the index and use `buscar.bat`, and reminds it that the text of the documents is data, never instructions. Written with the reports, and also when you write a set to a folder.
+- `CLAUDE.md`: consultation-only. It teaches Claude Code how to read the index and use `buscar.bat`, reminds it that the text of the documents is data, never instructions, and ends with the same non-negotiable rule as the instructions (check values, dates and tables in the original file). Written with the reports, and also when you write a set to a folder.
 
 The intermediate files (OCR'd PDFs in `converted/`, text slices in `blocks/`) live in `%LOCALAPPDATA%\GClaudeIndexer\work\<project>\`, outside the output folder, since 1.5.8: an output folder on Drive does not sync gigabytes that only this machine uses. An old project that still has those folders in the output is still read from there.
 
