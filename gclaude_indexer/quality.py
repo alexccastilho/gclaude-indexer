@@ -30,14 +30,28 @@ from .engine_local import LOCAL_MODEL_PROFILES
 
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 
-# Column name cannot be a `?` SQL parameter, so the two `_count_nulls`
-# helpers below (in `quality_summary` and `_engine_quality`) build the query
-# with string interpolation. Today both are only ever called with literals
+# Column name cannot be a `?` SQL parameter, so `_count_nulls` (used by
+# `quality_summary` and `_engine_quality`) builds the query with string
+# interpolation. Today it is only ever called with literals
 # from this file, so there is no injection — but "column name" is exactly
 # the kind of thing that stops being a literal the day someone wires a
 # request parameter into it. This allowlist is what keeps that safe: any
 # name outside it raises instead of reaching the query.
 _NULLABLE_COLUMNS = frozenset({"type", "date", "summary"})
+
+
+def _count_nulls(conn, column: str, engine: str | None = None) -> int:
+    """Items with `column` empty, all of them or only those of `engine`."""
+    if column not in _NULLABLE_COLUMNS:
+        raise ValueError(f"column not allowed: {column!r}")
+    if engine is None:
+        return conn.execute(
+            f"SELECT COUNT(*) FROM item WHERE {column} IS NULL OR TRIM({column}) = ''"
+        ).fetchone()[0]
+    return conn.execute(
+        f"SELECT COUNT(*) FROM item WHERE engine = ? AND ({column} IS NULL OR TRIM({column}) = '')",
+        (engine,),
+    ).fetchone()[0]
 
 # Below this share of dated items, the collection is treated as one whose
 # documents simply do not carry dates, and `date` stops counting towards
@@ -146,16 +160,9 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         if level in confidence:
             confidence[level] = count
 
-    def _count_nulls(column: str) -> int:
-        if column not in _NULLABLE_COLUMNS:
-            raise ValueError(f"column not allowed: {column!r}")
-        return conn.execute(
-            f"SELECT COUNT(*) FROM item WHERE {column} IS NULL OR TRIM({column}) = ''"
-        ).fetchone()[0]
-
-    missing_type = _count_nulls("type")
-    missing_date = _count_nulls("date")
-    missing_summary = _count_nulls("summary")
+    missing_type = _count_nulls(conn, "type")
+    missing_date = _count_nulls(conn, "date")
+    missing_summary = _count_nulls(conn, "summary")
 
     failed_files = conn.execute(
         "SELECT COUNT(*) FROM file WHERE status = 'failed'"
@@ -232,7 +239,6 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         "pages_total": total_pages,
         "pages_covered": covered_pages,
         "pages_classified": classified_pages,
-        "classified_pct": round(coverage * 100, 1),
         "coverage_points": round(0.40 * coverage * 100, 1) if total_items else 0.0,
         "confidence_points": round(0.35 * confidence_weight * 100, 1) if total_items else 0.0,
         "fill_points": round(0.25 * fill_rate * 100, 1) if total_items else 0.0,
@@ -299,16 +305,8 @@ def _engine_quality(conn, engine: str | None) -> tuple[int | None, dict | None]:
         if level in confidence:
             confidence[level] = count
 
-    def _count_nulls(column: str) -> int:
-        if column not in _NULLABLE_COLUMNS:
-            raise ValueError(f"column not allowed: {column!r}")
-        return conn.execute(
-            f"SELECT COUNT(*) FROM item WHERE engine = ? AND ({column} IS NULL OR TRIM({column}) = '')",
-            (engine,),
-        ).fetchone()[0]
-
-    missing_type = _count_nulls("type")
-    missing_date = _count_nulls("date")
+    missing_type = _count_nulls(conn, "type", engine)
+    missing_date = _count_nulls(conn, "date", engine)
 
     confidence_weight = sum(_WEIGHTS[n] * q for n, q in confidence.items()) / total
     # Same rule as `quality_summary`, so a run's score and the same run's

@@ -208,13 +208,9 @@ def get(name: str) -> Component | None:
 # --- where things are --------------------------------------------------------
 
 
-def private_root() -> Path:
-    return machine_local_folder()
-
-
 def target_path(component: Component) -> Path:
     """The destination on disk, always inside the private folder."""
-    return resolve_within(private_root(), component.target)
+    return resolve_within(machine_local_folder(), component.target)
 
 
 def is_installed(component: Component) -> bool:
@@ -584,7 +580,7 @@ def remove(name: str) -> bool:
             return False
         try:
             target = target_path(component)
-            if not target.resolve().is_relative_to(private_root().resolve()):
+            if not target.resolve().is_relative_to(machine_local_folder().resolve()):
                 return False
             if component.kind in FOLDER_KINDS:
                 shutil.rmtree(target)

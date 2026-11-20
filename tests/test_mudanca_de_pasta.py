@@ -38,6 +38,7 @@ def local(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(pasta))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(pasta / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
+    monkeypatch.setattr(app_mod, "catalog_folder", lambda: None)
     return pasta
 
 

@@ -106,9 +106,6 @@ def _cell(value) -> str:
 # docstring. Shared with `web/app.py` (Result screen listing/preview) and
 # `claude_package.py` (Claude Project zip) so the four names live in one
 # place.
-# Quebra de linha dos artefatos, nomeada para nao se perder em escapes.
-NL = chr(10)
-
 INDEX_FILENAME = "index.md"
 TIMELINE_FILENAME = "timeline.md"
 REVIEW_FILENAME = "review.md"
@@ -598,7 +595,7 @@ def generate_cited_norms_md(conn, config: ProjectConfig, language: str) -> Path 
             norm_url(norma["kind"], norma["number"], norma["date"]),
             _cell("; ".join(norma["groups"])), _cell("; ".join(norma["pages"])),
         )) + " |")
-    write_if_changed(caminho, NL.join(linhas) + NL)
+    write_if_changed(caminho, "\n".join(linhas) + "\n")
     return caminho
 
 
@@ -607,7 +604,7 @@ def _legislation_count(conn) -> int:
     return sum(1 for item in conn.execute("SELECT group_key, engine, files FROM item") if e_legislacao(item))
 
 
-def _show_confidence(conn, config: ProjectConfig) -> bool:
+def _show_confidence(conn) -> bool:
     """A coluna Confiança entra quando existe ao menos uma peça abaixo de
     `high` (fase 31); a opção de revisar confiança baixa deixou de existir."""
     duvidosas = conn.execute(
@@ -660,7 +657,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
     # Fase 31: a coluna Confiança só quando informa algo — num acervo grande
     # de legislação, era `high` em quase todas as linhas. Decidido pelo projeto inteiro, porque
     # `project_instructions.md` descreve as colunas uma vez só.
-    show_confidence = _show_confidence(conn, config)
+    show_confidence = _show_confidence(conn)
     assinaturas = _signature_notes(conn, t)
     colunas = ["table_range", "table_type", "table_date", "table_author"]
     if show_confidence:
@@ -717,11 +714,11 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
                 blocos.append([])
                 anterior = fonte
             blocos[-1].append(item)
-        base = len((NL.join(cabecalho) + NL).encode("utf-8"))
+        base = len(("\n".join(cabecalho) + "\n").encode("utf-8"))
         partes: list[list] = [[]]
         tamanho = base
         for bloco in blocos:
-            bytes_bloco = sum(len((linha(p) + NL).encode("utf-8")) for p in bloco)
+            bytes_bloco = sum(len((linha(p) + "\n").encode("utf-8")) for p in bloco)
             if partes[-1] and tamanho + bytes_bloco > INDEX_PART_BYTES:
                 partes.append([])
                 tamanho = base
@@ -751,7 +748,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
                 nome = _unique_name(f"{raiz}-{n}.md", group, usados, bases)
             caminho = saida / nome
             corpo = [f"# {t('artifact.index.title')} — {group}", "", *cabecalho, *(linha(p) for p in parte)]
-            write_if_changed(caminho, NL.join(corpo) + NL)
+            write_if_changed(caminho, "\n".join(corpo) + "\n")
             escritos.append((caminho, parte))
         return escritos
 
@@ -801,7 +798,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
         resumo += ["", t("artifact.index.summary_legislation_note")]
 
     principal = saida / INDEX_FILENAME
-    write_if_changed(principal, NL.join(resumo) + NL)
+    write_if_changed(principal, "\n".join(resumo) + "\n")
 
     # O índice de um grupo que sumiu do acervo não pode ficar para trás: o
     # pacote do Claude leva todo `index-*.md` da pasta, e o Claude acharia
@@ -876,12 +873,12 @@ def generate_timeline_md(conn, config: ProjectConfig, language: str) -> list[Pat
         nome = _unique_name(group_timeline_filename(group), group, usados)
         pecas = [i for i in items if i["group_key"] == group]
         caminho = saida / nome
-        write_if_changed(caminho, NL.join(documento(group, pecas)) + NL)
+        write_if_changed(caminho, "\n".join(documento(group, pecas)) + "\n")
         extras.append(caminho)
         principal_linhas.append(t("artifact.timeline.group_split_row", group=group, count=len(pecas), file=nome))
 
     principal = saida / TIMELINE_FILENAME
-    write_if_changed(principal, NL.join(principal_linhas) + NL)
+    write_if_changed(principal, "\n".join(principal_linhas) + "\n")
 
     # Mesma razão da limpeza de `index-*.md`: a cronologia de um grupo que
     # sumiu, ou que voltou a caber no arquivo principal, não pode ficar.
@@ -1166,7 +1163,7 @@ def project_instructions_sections(
         "",
         t(
             "artifact.project_instructions.columns_index_confidence"
-            if _show_confidence(conn, config) else "artifact.project_instructions.columns_index",
+            if _show_confidence(conn) else "artifact.project_instructions.columns_index",
             prefix=names.prefix,
         ),
         "",

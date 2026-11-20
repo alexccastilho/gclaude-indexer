@@ -228,24 +228,14 @@ def looks_binary(head: bytes) -> bool:
     return controls / len(head) > _BINARY_CONTROL_RATIO
 
 
-def _has_private_key_marker(head: bytes) -> bool:
-    start = head.find(_SECRET_MARKER_BEGIN)
-    return start != -1 and any(marker in head[start:] for marker in _SECRET_MARKERS_END)
-
-
 def has_private_key_marker(content: bytes) -> bool:
     """Whether `content` holds a PEM private key (the scan only looks at the
     start of a file; text taken out of a container is checked whole)."""
-    return _has_private_key_marker(content)
+    start = content.find(_SECRET_MARKER_BEGIN)
+    return start != -1 and any(marker in content[start:] for marker in _SECRET_MARKERS_END)
 
 
 def file_extension(name: str) -> str:
-    """The extension the scan would store for `name` (dotfiles such as `.env`
-    included)."""
-    return _extension(name)
-
-
-def _extension(name: str) -> str:
     """Same extension the scan stores (`Path.suffix`, lower case), except
     that a bare dotfile such as `.env` counts as being its own extension."""
     lower = name.lower()
@@ -289,7 +279,7 @@ def name_decision(name: str, categories: list[str] | None = None) -> str | None:
     """The part of `index_decision` that needs only the file name, in the
     same order. `None` means "not decided by the name"."""
     lower = name.lower()
-    extension = _extension(lower)
+    extension = file_extension(lower)
     if is_system_file(Path(name)):
         return REASON_SYSTEM
     if extension in GOOGLE_DOC_EXTENSIONS:
@@ -322,12 +312,12 @@ def index_decision(
     reason = name_decision(name, categories)
     if reason is not None:
         return reason
-    extension = _extension(name)
+    extension = file_extension(name)
     known = category_of_extension(extension) is not None
     if head_bytes is None:
         return None
     head = head_bytes[:HEAD_BYTES]
-    if _has_private_key_marker(head):
+    if has_private_key_marker(head):
         return REASON_SECRET
     if not known and looks_binary(head):
         return REASON_BINARY
@@ -340,7 +330,7 @@ def needs_head(name: str, categories: list[str] | None = None) -> bool:
     candidate (unknown extension, or a plain text one that might hold a key)."""
     if name_decision(name, categories) is not None:
         return False
-    category = category_of_extension(_extension(name))
+    category = category_of_extension(file_extension(name))
     return category is None or category in ("text", "web_dados")
 
 

@@ -216,7 +216,6 @@ def _current_count(conn, step: str) -> int:
 # step. Shared by the count and the weight queries so the two can never
 # disagree about what counts as finished.
 _DONE_STATUSES = {
-    "scan": None,  # every row in `file` counts, whatever its status
     "conversion": ("converted", "extracted", "failed"),
     "extraction": ("extracted",),
 }
@@ -231,17 +230,14 @@ def _weight_done(conn, step: str) -> float | None:
     counting them is the right unit there, and `None` tells the caller to
     fall back to it.
     """
-    statuses = _DONE_STATUSES.get(step, "unmeasured")
-    if statuses == "unmeasured":
+    statuses = _DONE_STATUSES.get(step)
+    if statuses is None:
         return None
     try:
-        if statuses is None:
-            row = conn.execute("SELECT COALESCE(SUM(size), 0) FROM file").fetchone()
-        else:
-            placeholders = ",".join("?" for _ in statuses)
-            row = conn.execute(
-                f"SELECT COALESCE(SUM(size), 0) FROM file WHERE status IN ({placeholders})", statuses
-            ).fetchone()
+        placeholders = ",".join("?" for _ in statuses)
+        row = conn.execute(
+            f"SELECT COALESCE(SUM(size), 0) FROM file WHERE status IN ({placeholders})", statuses
+        ).fetchone()
     except sqlite3.Error:
         return None
     return float(row[0] or 0)
@@ -452,11 +448,9 @@ class TaskManager:
         return max(of_project, key=lambda task: task.started_at)
 
     def start_step(
-        self, project_id: int, entry_output_folder: str, config: ProjectConfig, step: str,
+        self, project_id: int, entry_output_folder: str, step: str,
         stop_signal: StopSignal | None = None, language: str | None = None,
     ) -> StepTask:
-        # `config` é só o do chamador: a etapa recarrega a configuração do banco
-        # ao começar (ver `body`), para valer o que a varredura resolveu.
         # Registered first, measured afterwards, inside the task. Measuring
         # used to happen here, on the request: for the scan that is a walk
         # of the whole source folder — minutes on a large Google
@@ -500,7 +494,7 @@ class TaskManager:
                     # sqlite3 does not allow sharing a connection between
                     # threads.
                     engine = resolve_effective_engine(work_conn, current_config, language=language)
-                    model = model_to_use(work_conn, current_config) if engine == "local" else None
+                    model = model_to_use(current_config) if engine == "local" else None
                     cursor = work_conn.execute(
                         """
                         INSERT INTO run (step, engine, model, parallelism, started_at, items, ok)
@@ -607,7 +601,7 @@ class TaskManager:
         return files
 
     def start_all(
-        self, project_id: int, entry_output_folder: str, config: ProjectConfig, language: str | None = None,
+        self, project_id: int, entry_output_folder: str, language: str | None = None,
         first_step: str | None = None,
     ) -> StopSignal:
         """Chains the steps from `first_step` (default: the scan) to the
@@ -628,7 +622,7 @@ class TaskManager:
                     if stop_signal.should_stop():
                         break
                     task = self.start_step(
-                        project_id, entry_output_folder, config, step, stop_signal=stop_signal, language=language
+                        project_id, entry_output_folder, step, stop_signal=stop_signal, language=language
                     )
                     while task.running:
                         time.sleep(0.3)
@@ -645,17 +639,16 @@ class TaskManager:
         threading.Thread(target=body, daemon=True).start()
         return stop_signal
 
-    def pause(self, project_id: int, step: str | None = None) -> bool:
-        """Pauses the given step, or — if `step` is None — every step
-        currently running for this project (used by the single pause button
-        on the Execution screen, which stops whatever is in progress)."""
+    def pause(self, project_id: int) -> bool:
+        """Pauses every step currently running for this project (the single
+        pause button on the Execution screen, which stops whatever is in
+        progress)."""
         paused_any = False
         with self._lock:
             targets = [
-                task for (pid, key), task in self._tasks.items()
-                if pid == project_id and task.running and (step is None or key == step)
+                task for (pid, _key), task in self._tasks.items() if pid == project_id and task.running
             ]
-            chains = list(self._chains.get(project_id, ())) if step is None else []
+            chains = list(self._chains.get(project_id, ()))
         for task in targets:
             task.stop_signal.request_stop()
             paused_any = True

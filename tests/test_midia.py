@@ -520,7 +520,7 @@ def test_vulkan_e_reconhecido_pelo_backend_ao_lado_do_binario(tmp_path):
 def test_prepare_baixa_so_o_modelo_escolhido(tmp_path, monkeypatch):
     pedidos: list = []
     raiz = tmp_path / "componentes"
-    monkeypatch.setattr(components, "private_root", lambda: raiz)
+    monkeypatch.setattr(components, "machine_local_folder", lambda: raiz)
 
     def ensure(nomes, download=True, **_k):
         pedidos.append(list(nomes))
@@ -545,7 +545,7 @@ def test_prepare_baixa_so_o_modelo_escolhido(tmp_path, monkeypatch):
 
 
 def test_prepare_sem_rede_diz_o_que_faltou_e_aproveita_modelo_ja_instalado(tmp_path, monkeypatch):
-    monkeypatch.setattr(components, "private_root", lambda: tmp_path / "vazio")
+    monkeypatch.setattr(components, "machine_local_folder", lambda: tmp_path / "vazio")
     monkeypatch.setattr(media, "_measure_hardware", lambda: (16384, 0))
     ferramentas, faltando = media.prepare()  # a rede é a fechada pelo conftest
     assert ferramentas is None
@@ -553,7 +553,7 @@ def test_prepare_sem_rede_diz_o_que_faltou_e_aproveita_modelo_ja_instalado(tmp_p
 
     # Com ffmpeg e whisper.cpp presentes, o modelo `base` já instalado serve no lugar do `small`.
     raiz = tmp_path / "parcial"
-    monkeypatch.setattr(components, "private_root", lambda: raiz)
+    monkeypatch.setattr(components, "machine_local_folder", lambda: raiz)
     for nome in ("ffmpeg", "whisper-cpp"):
         componente = components.get(nome)
         alvo = components.target_path(componente)

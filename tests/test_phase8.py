@@ -268,7 +268,7 @@ def test_modelo_para_usar_respeita_valor_manual(tmp_path):
     config, conn = _projeto_pronto_para_classificar(
         tmp_path, [TEXTO_LONGO_SEM_MARCADOR], local_model="qwen2.5:7b-instruct-q4_K_M"
     )
-    assert model_to_use(conn, config) == "qwen2.5:7b-instruct-q4_K_M"
+    assert model_to_use(config) == "qwen2.5:7b-instruct-q4_K_M"
     conn.close()
 
 
@@ -276,7 +276,7 @@ def test_modelo_para_usar_automatico_e_sempre_o_padrao_fixo(tmp_path):
     """Por pedido explícito do usuário: em qualquer hardware, 'automatic'
     resolve sempre para o mesmo modelo — não consulta mais o diagnóstico."""
     config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
-    assert model_to_use(conn, config) == engine_local.DEFAULT_LOCAL_MODEL
+    assert model_to_use(config) == engine_local.DEFAULT_LOCAL_MODEL
     assert engine_local.DEFAULT_LOCAL_MODEL == "qwen3.5:4b"
     conn.close()
 

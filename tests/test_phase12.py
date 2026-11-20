@@ -703,7 +703,7 @@ def test_limpeza_pausa_etapas_em_andamento_antes_de_apagar(cliente, tmp_path, mo
     original_limpar = app_mod.clear_intermediates
     monkeypatch.setattr(
         task_manager, "pause",
-        lambda pid, step=None: (ordem.append("pausar"), original_pausar(pid, step))[1],
+        lambda pid: (ordem.append("pausar"), original_pausar(pid))[1],
     )
     monkeypatch.setattr(
         app_mod, "clear_intermediates",

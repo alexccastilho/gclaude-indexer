@@ -39,7 +39,7 @@ def resolve_effective_engine(
     if config.classification_engine != "automatic":
         return config.classification_engine
     diagnostics = diagnose(conn, language=language)
-    choice = choose_model(conn, diagnostics, model_to_use(conn, config), language=language)
+    choice = choose_model(conn, diagnostics, model_to_use(config), language=language)
     return "rules" if choice.use_rules_engine else "local"
 
 

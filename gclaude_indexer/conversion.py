@@ -86,12 +86,6 @@ class OcrError(ConversionError):
     while a corrupt or password-protected file stays failed."""
 
 
-def _destination_path(output_dir: Path, subfolder: str, relative_path: str, new_extension: str) -> Path:
-    # In the per-machine work folder, never in the (Drive-synced)
-    # output folder — see `workdir.py`.
-    return workdir.destination(output_dir, subfolder, relative_path, new_extension)
-
-
 def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
     """Returns `(pages, page_count)`: the 1-based pages with fewer than 100
     characters of text, which need OCR (section 5, step 2).
@@ -295,10 +289,6 @@ def _extract_text_pptx(path: Path) -> str:
     return "\n".join(parts)
 
 
-# Mora em `light_formats` (a caixa `.mbox` lê mensagens do mesmo jeito).
-_message_part_text = light_formats.message_part_text
-
-
 def _extract_text_eml(path: Path) -> str:
     with open(path, "rb") as file:
         message = email.message_from_binary_file(file, policy=policy.default)
@@ -306,7 +296,7 @@ def _extract_text_eml(path: Path) -> str:
     parts = [f"From: {message.get('From', '')}", f"Subject: {message.get('Subject', '')}"]
     body = message.get_body(preferencelist=("plain", "html"))
     if body is not None:
-        parts.append(_message_part_text(body))
+        parts.append(light_formats.message_part_text(body))
     return "\n\n".join(parts)
 
 
@@ -339,11 +329,11 @@ def _extract_text_mhtml(data: bytes) -> str:
         if part.is_multipart():
             continue
         if part.get_content_type() == "text/html":
-            return _message_part_text(part)
+            return light_formats.message_part_text(part)
         if plain is None and part.get_content_type() == "text/plain":
             plain = part
     if plain is not None:
-        return _message_part_text(plain)
+        return light_formats.message_part_text(plain)
     text, _ = decode_markup(data)
     return html_to_text(text)
 
@@ -687,7 +677,7 @@ def _ocr_pdf_pages(
     elif detect:
         # Uma leitura só: as páginas sem texto e a amostra do texto nativo.
         try:
-            ocr_pages, page_count, native = ocr_detection.scan_pdf(source_pdf, MIN_AVG_CHARS_PER_PAGE)
+            ocr_pages, page_count, native = ocr_detection.scan_pdf(source_pdf)
         except Exception as exc:
             raise ConversionError(f"PDF ilegível ou corrompido: {exc}") from exc
         if page_count == 0:
@@ -1086,7 +1076,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             # done again when the OCR language is there.
             text = ""
             ocr_failed = True
-        destination = _destination_path(output_dir, "converted", relative_path, text_suffix(row["extension"]))
+        destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(row["extension"]))
         destination.write_text(text, encoding="utf-8")
         sql = (
             "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 1,"
@@ -1097,7 +1087,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     elif category in _TEXT_CATEGORIES:
         extension = row["extension"].lower()
         text = _extract_light_text(category, extension, source_path)
-        destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
+        destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
         destination.write_text(text, encoding="utf-8")
         # A caixa `.mbox` tem uma página por mensagem.
         pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == "mbox" else 1
@@ -1117,7 +1107,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             text = ""
         else:
             text = decode_bytes(source_path.read_bytes())[0]
-        destination = _destination_path(output_dir, "converted", relative_path, ".txt")
+        destination = workdir.destination(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
         sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
         params = (row["id"],)
@@ -1701,7 +1691,7 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
     extension = row["extension"].lower()
     output_dir = Path(config.output_folder)
     source_path = Path(config.source_folder) / relative_path
-    destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
+    destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
     attachments_root = workdir.work_folder(output_dir) / "converted" / relative_path / "anexos"
     events: list[tuple[str, str, str, dict]] = []
     notes: Counter = Counter()
@@ -1799,7 +1789,7 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
     extension = row["extension"].lower()
     output_dir = Path(config.output_folder)
     source_path = Path(config.source_folder) / relative_path
-    destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
+    destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
     work = workdir.work_folder(output_dir) / "converted" / relative_path / "midia"
     try:
         outcome = media.transcribe(source_path, destination, work, tools, should_stop, on_estimate)
@@ -1989,7 +1979,7 @@ def _run_detection(config: ProjectConfig, rows: list[dict], present: frozenset[s
 
     def submit(executor, row):
         return executor.submit(
-            ocr_detection.detect_file, row, config.source_folder, present, osd_ready, MIN_AVG_CHARS_PER_PAGE,
+            ocr_detection.detect_file, row, config.source_folder, present, osd_ready,
         )
 
     try:
@@ -2297,8 +2287,6 @@ def convert(
     # `PATH` never got the installer's entry — both seen in practice)
     # failed every image with "tesseract is not installed". Idempotent:
     # a `PATH` already correct is left exactly as it is.
-    from . import tools
-
     tools.ensure_on_path()
 
     result = ConversionResult()

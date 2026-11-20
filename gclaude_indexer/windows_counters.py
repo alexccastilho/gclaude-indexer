@@ -307,14 +307,3 @@ def memory_clock_mhz() -> int | None:
         return max(0, int(float(raw.replace(",", "."))))
     except ValueError:
         return None
-
-
-def clock_gpu_mhz() -> int | None:
-    """GPU core frequency.
-
-    Windows exposes this through **neither** a Performance Counter nor WMI
-    for any vendor. Stays `None` here and is filled in by the sensors module
- when LibreHardwareMonitor is available. Exists as a function so
-    the UI has a single place to query.
-    """
-    return None

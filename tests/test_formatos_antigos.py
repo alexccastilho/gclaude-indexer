@@ -206,7 +206,7 @@ def test_pdf_do_libreoffice_sem_texto_passa_pelo_ocr(tmp_path, simulador, monkey
     # texto nativo de uma vez (`ocr_detection.scan_pdf`).
     from gclaude_indexer import ocr_detection
 
-    monkeypatch.setattr(ocr_detection, "scan_pdf", lambda _p, _minimo: ([1], 1, ""))
+    monkeypatch.setattr(ocr_detection, "scan_pdf", lambda _p: ([1], 1, ""))
 
     scan(conn, config)
     resultado = convert(conn, config)

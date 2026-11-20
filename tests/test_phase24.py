@@ -160,21 +160,15 @@ def _criar_projeto(cliente, tmp_path):
 
 def _varrer(cliente, projeto_id):
     task_manager._tasks.clear()
-    task_manager.start_step(
-        projeto_id, *_saida_e_config(cliente, projeto_id), "scan"
-    )
+    task_manager.start_step(projeto_id, _saida(projeto_id), "scan")
     _esperar(lambda: not task_manager.get(projeto_id, "scan").running)
     assert task_manager.get(projeto_id, "scan").finished_ok
 
 
-def _saida_e_config(cliente, projeto_id):
+def _saida(projeto_id):
     from gclaude_indexer.catalog import find_project
-    from gclaude_indexer.project import load_project
 
-    entrada = find_project(projeto_id)
-    config, conn = load_project(entrada.output_folder)
-    conn.close()
-    return entrada.output_folder, config
+    return find_project(projeto_id).output_folder
 
 
 def test_barra_da_segunda_varredura_conta_os_arquivos_conferidos(cliente, tmp_path):

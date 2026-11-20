@@ -77,12 +77,10 @@ LARGE_MODEL_MIN_VRAM_MB = 7680
 # as many documents. `qwen3.5:9b` lost to both on the real file (it found
 # fewer document starts and merged more), so it is no longer a default.
 # A model name still works as a value, for whoever wants to compare.
-FAST_LOCAL_MODEL = DEFAULT_LOCAL_MODEL
 QUALITY_LOCAL_MODEL = "ornith-1.5:9b"
 PROFILE_FAST = "fast"
 PROFILE_QUALITY = "quality"
-LOCAL_MODEL_PROFILES: dict[str, str] = {PROFILE_FAST: FAST_LOCAL_MODEL, PROFILE_QUALITY: QUALITY_LOCAL_MODEL}
-LARGE_LOCAL_MODEL = QUALITY_LOCAL_MODEL
+LOCAL_MODEL_PROFILES: dict[str, str] = {PROFILE_FAST: DEFAULT_LOCAL_MODEL, PROFILE_QUALITY: QUALITY_LOCAL_MODEL}
 
 _vram_cache: list[int] = []
 
@@ -277,7 +275,7 @@ def _try_restart_ollama(
     return False
 
 
-def model_to_use(conn: sqlite3.Connection | None, config: ProjectConfig) -> str:
+def model_to_use(config: ProjectConfig) -> str:
     """Model the 'local' engine will use.
 
     The user's choice in the form wins; `DEFAULT_LOCAL_MODEL` is just the
@@ -1428,9 +1426,7 @@ _SECTION_TYPE_WORDS = frozenset({
 })
 
 
-def _group_pages_into_items(
-    pages: list[WindowPage], rows: list[dict], model_engine: str = "local"
-) -> list[ClassifiedItem]:
+def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[ClassifiedItem]:
     """Junta as linhas por página em peças, agrupando páginas seguidas do
     mesmo assunto.
 
@@ -1492,7 +1488,7 @@ def _group_pages_into_items(
             summary=resumo,
             has_table=any(bool(d.get("has_table")) or p.has_table for p, d in atual),
             has_image=any(bool(d.get("has_image")) or bool(p.image_count) for p, d in atual),
-            engine=model_engine,
+            engine="local",
             confidence=confianca,
             files=sorted({p.file_name for p, _d in atual}),
         ))
@@ -1974,7 +1970,7 @@ def _log_backend(conn: sqlite3.Connection, language: str | None = None) -> None:
 
 
 MODEL_RETRY_SECONDS = 60.0
-def _prepare_second_attempts(conn: sqlite3.Connection, config: ProjectConfig, local_engine) -> None:
+def _prepare_second_attempts(conn: sqlite3.Connection, local_engine) -> None:
     """Dá ao motor de onde ler o texto inteiro de uma página (o índice de
     busca). Um motor que não tem esse campo (um dublê de teste, outro motor)
     segue como antes. O perfil do acervo não vai mais ao prompt (2.1.0, ver
@@ -2076,11 +2072,11 @@ def classify_pending(
 
     if local_engine is None:
         local_engine = LocalEngine(
-            model=model_to_use(conn, config), num_gpu=_num_gpu_for(config.processing_mode),
+            model=model_to_use(config), num_gpu=_num_gpu_for(config.processing_mode),
             config=config,
         )
 
-    _prepare_second_attempts(conn, config, local_engine)
+    _prepare_second_attempts(conn, local_engine)
 
     rules_fallback_engine = RulesEngine(load_rules())
     # 1.5.12, explicit request: with a graphics card the model is the only

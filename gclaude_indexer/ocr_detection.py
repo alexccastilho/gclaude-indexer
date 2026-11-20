@@ -227,7 +227,7 @@ def _spread(pages: list[int], count: int) -> list[int]:
     return sorted({pages[round(index * step)] for index in range(count)})
 
 
-def scan_pdf(path: Path, min_chars: int) -> tuple[list[int], int, str]:
+def scan_pdf(path: Path) -> tuple[list[int], int, str]:
     """`(páginas que precisam de OCR, total, amostra do texto nativo)`. A
     regra das páginas é a de `conversion._pdf_pages_needing_ocr`."""
     import fitz
@@ -240,7 +240,7 @@ def scan_pdf(path: Path, min_chars: int) -> tuple[list[int], int, str]:
         for number, page in enumerate(document, start=1):
             text = page.get_text()
             stripped = text.strip()
-            if len(stripped) < min_chars and (page.get_images() or page.get_drawings()):
+            if len(stripped) < MIN_AVG_CHARS_PER_PAGE and (page.get_images() or page.get_drawings()):
                 pages.append(number)
             elif size < _NATIVE_SAMPLE_CHARS and stripped:
                 sample.append(stripped)
@@ -351,34 +351,33 @@ def native_is_enough(text: str) -> bool:
     return sum(counts.values()) >= _NATIVE_ENOUGH_LETTERS or cjk >= _NATIVE_ENOUGH_CJK
 
 
-def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_ready: bool, min_chars: int) -> dict:
+def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_ready: bool) -> dict:
     """O trabalho pesado da detecção de um PDF ou imagem, num processo do
     conjunto (só argumentos serializáveis; nunca toca o banco). Devolve
     textos e escritas; o idioma é decidido por quem chama.
 
     Chaves: `ocr_pages`/`page_count` (PDF), `native` (texto nativo),
-    `scripts`, `rotate`, `samples`, `needs` (modelos de escrita a baixar) e
-    `probed` (se o OSD rodou)."""
+    `scripts`, `rotate`, `samples` e `needs` (modelos de escrita a baixar)."""
     path = Path(source_folder) / row["relative_path"]
     category = category_of_extension("." + row["extension"])
     result: dict = {
         "id": row["id"], "category": category, "ocr_pages": None, "page_count": None, "native": "",
-        "scripts": {}, "rotate": {}, "samples": {}, "needs": [], "probed": False,
+        "scripts": {}, "rotate": {}, "samples": {}, "needs": [],
     }
     stored = bool(row.get("ocr_lang"))
     if category == "pdf":
         if stored:
             return result  # o plano já existe; as páginas o `_process_file` conta
-        ocr_pages, page_count, native = scan_pdf(path, min_chars)
+        ocr_pages, page_count, native = scan_pdf(path)
         result.update(ocr_pages=ocr_pages, page_count=page_count, native=native)
         if not ocr_pages or native_is_enough(native) or not osd_ready:
             return result
-        result.update(probe_pdf(path, ocr_pages, present), probed=True)
+        result.update(probe_pdf(path, ocr_pages, present))
         return result
     if not osd_ready:
         return result
     # Imagem com plano guardado (refeita): só a rotação, sem amostra.
-    result.update(probe_image(path, present if not stored else frozenset()), probed=True)
+    result.update(probe_image(path, present if not stored else frozenset()))
     if stored:
         result["needs"] = []
         result["samples"] = {}

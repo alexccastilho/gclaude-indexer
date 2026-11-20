@@ -229,12 +229,12 @@ def tools_present() -> bool:
     return any(components.path_of(component) is not None for component in MODEL_COMPONENTS.values())
 
 
-def prepare(download: bool = True, should_stop=None, on_download=None) -> tuple[Toolset | None, list[str]]:
+def prepare(should_stop=None, on_download=None) -> tuple[Toolset | None, list[str]]:
     """Os três componentes (baixando o que falta): `(ferramentas, [])` ou
     `(None, nomes do que faltou)`. Nunca levanta; só o modelo escolhido é
     baixado (um modelo já instalado serve quando o escolhido não vem).
     `should_stop` e `on_download` vão para `components.ensure`."""
-    fetch = {"download": download, "should_stop": should_stop, "on_download": on_download}
+    fetch = {"should_stop": should_stop, "on_download": on_download}
     components.ensure([COMPONENT_FFMPEG, COMPONENT_WHISPER], **fetch)
     ffmpeg = _executable(COMPONENT_FFMPEG)
     whisper = _executable(COMPONENT_WHISPER)
@@ -398,14 +398,13 @@ def check_container(tools: Toolset, source: Path, process: _Process, work: Path)
 
 
 def extract_audio(
-    tools: Toolset, source: Path, wav: Path, process: _Process, container: str, size: int | None = None
+    tools: Toolset, source: Path, wav: Path, process: _Process, container: str
 ) -> bool:
     """Grava o WAV de `source`; `False` quando o arquivo não tem faixa de
     áudio. Levanta `MediaError` para um arquivo ilegível."""
     partial = wav.with_name(wav.name + ".part")
     partial.unlink(missing_ok=True)
-    size = source.stat().st_size if size is None else size
-    timeout = EXTRACT_TIMEOUT_MIN_S + size / EXTRACT_READ_BYTES_PER_S
+    timeout = EXTRACT_TIMEOUT_MIN_S + source.stat().st_size / EXTRACT_READ_BYTES_PER_S
     code, log = process.run(ffmpeg_command(tools.ffmpeg, source, partial, container), timeout, wav.with_name("ffmpeg.log"))
     if code != 0 and "does not contain any stream" in log.lower():
         # `-map 0:a:0?` deixa a saída sem nenhuma faixa: o arquivo não tem áudio.

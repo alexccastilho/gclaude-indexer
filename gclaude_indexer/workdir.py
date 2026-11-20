@@ -46,7 +46,6 @@ _ORIGINAL_EXTENSIONS = frozenset({
     "eml", "msg",
 })
 
-INTERMEDIATE_SUBFOLDERS: tuple[str, ...] = ("converted", "blocks")
 WORK_FOLDER_NAME = "work"
 ORIGIN_FILE_NAME = "origin.txt"
 

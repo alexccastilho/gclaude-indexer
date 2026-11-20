@@ -24,7 +24,6 @@ from dataclasses import dataclass
 
 from .windows_counters import (
     clock_cpu_mhz,
-    clock_gpu_mhz,
     memory_clock_mhz,
     gpu_usage_percent,
     vram_total_mb,
@@ -167,13 +166,9 @@ def sample_resources() -> ResourceSample:
     cpu, ram_percent, ram_used, ram_total = _sample_cpu_ram()
     gpu_percent, gpu_used, gpu_total = _sample_gpu()
     sensors = read_sensors()
-    # GPU clock preferably comes from the sensors (LibreHardwareMonitor);
-    # `windows_counters.clock_gpu_mhz()` today always returns `None` (Task 2
-    # — no native Windows API exposes this), but the fallback stays here for
-    # the day it gets some source.
+    # GPU clock only comes from the sensors (LibreHardwareMonitor): no
+    # Performance Counter nor WMI exposes it, for any vendor.
     gpu_clock = sensors["clock_gpu_mhz"]
-    if gpu_clock is None:
-        gpu_clock = clock_gpu_mhz()
     # Fase 34: the VRAM pair preferably comes from the library too — the
     # card's own report, any vendor, no PowerShell — so the chart line and
     # the VRAM row among the sensors show one and the same number. The
