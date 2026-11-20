@@ -28,6 +28,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from .paths import resolved_folder
+
 LOCK_FILE_NAME = "project.lock"
 MINUTES_UNTIL_ABANDONED = 10
 HEARTBEAT_INTERVAL_S = 60
@@ -174,7 +176,7 @@ class LockManager:
 
     @staticmethod
     def _key(output_folder) -> str:
-        return str(Path(output_folder).resolve())
+        return resolved_folder(output_folder)
 
     def set_keep_alive(self, keep_alive) -> None:
         """`keep_alive(output_folder) -> bool`: whether work the browser

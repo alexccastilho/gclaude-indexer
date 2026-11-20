@@ -37,14 +37,13 @@ machine that has it.
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import settings
-from .paths import machine_local_folder, write_text_atomic
+from . import json_store, settings
+from .paths import machine_local_folder
 
 CATALOG_FILE_NAME = "projects.json"
 
@@ -121,14 +120,7 @@ def _read(path: Path) -> list[CatalogEntry]:
     `TypeError: unexpected keyword argument`, and a missing one must not
     lose the whole file. Unreadable entries are skipped individually.
     """
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
+    data = json_store.read_json(path, [])
     if not isinstance(data, list):
         return []
 
@@ -323,8 +315,7 @@ def adopt_local_projects() -> int:
 
 
 def _write_atomic(path: Path, entries: list[CatalogEntry]) -> None:
-    """Temporário com `fsync` e `os.replace` (`paths.write_text_atomic`)."""
-    write_text_atomic(path, json.dumps([asdict(entry) for entry in entries], ensure_ascii=False, indent=2))
+    json_store.write_json(path, [asdict(entry) for entry in entries])
 
 
 def relocate_project(old_folder: str, new_folder: str) -> int:

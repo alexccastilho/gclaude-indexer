@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -21,7 +20,7 @@ from .config import ConfigError, ProjectConfig, config_data_to_json, config_to_j
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .engine_names import ENGINE_AUTOMATIC, ENGINE_CLAUDE_CODE, ENGINE_RULES
 from .events import record_event
-from .paths import PROJECT_DB_NAME, sqlite_readonly_uri
+from .paths import PROJECT_DB_NAME, folder_spelling_key, sqlite_readonly_uri
 from .windows_prep import mark_answered_windows
 
 
@@ -278,10 +277,10 @@ def load_project(
     # outro computador, por outra unidade) depois da criação. O que vale é
     # a pasta realmente aberta: devolver o caminho gravado faria os
     # artefatos serem escritos num lugar que já não é este projeto.
+    # Pela grafia, sem resolver: uma junção ou outra letra de unidade para a
+    # mesma pasta também passa a ser o caminho gravado.
     opened = str(Path(output_folder))
-    if os.path.normcase(os.path.normpath(config.output_folder)) != os.path.normcase(
-        os.path.normpath(opened)
-    ):
+    if folder_spelling_key(config.output_folder) != folder_spelling_key(opened):
         config.output_folder = opened
         try:
             _write_config(

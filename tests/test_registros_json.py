@@ -155,3 +155,82 @@ def test_gravacao_espera_leitor_que_segura_o_arquivo(tmp_path):
     paths.write_text_atomic(alvo, '{"novo": true}')
 
     assert alvo.read_text(encoding="utf-8") == '{"novo": true}'
+
+
+# --- json_store e chaves de pasta ------------------------------------------------
+
+
+def test_registro_lido_e_gravado_por_threads_ao_mesmo_tempo(tmp_path):
+    """Leituras e gravações pelo `json_store` passam uma de cada vez: um
+    leitor com o arquivo aberto não faz a troca atômica falhar."""
+    import threading
+
+    from gclaude_indexer import json_store
+
+    alvo = tmp_path / "registro.json"
+    json_store.write_json(alvo, {})
+    erros: list[BaseException] = []
+    parar = threading.Event()
+
+    def ler():
+        while not parar.is_set():
+            if not isinstance(json_store.read_json(alvo, None), dict):
+                erros.append(AssertionError("leitura viu arquivo incompleto"))
+
+    def gravar(n):
+        for i in range(20):
+            try:
+                json_store.write_json(alvo, {"n": n, "i": i})
+            except OSError as exc:
+                erros.append(exc)
+
+    leitores = [threading.Thread(target=ler) for _ in range(2)]
+    gravadores = [threading.Thread(target=gravar, args=(n,)) for n in range(3)]
+    for thread in leitores + gravadores:
+        thread.start()
+    for thread in gravadores:
+        thread.join()
+    parar.set()
+    for thread in leitores:
+        thread.join()
+
+    assert erros == []
+
+
+def test_json_store_grava_no_formato_de_sempre(tmp_path):
+    import json
+
+    from gclaude_indexer import json_store
+
+    dados = [{"id": 1, "name": "Ação", "output_folder": "H:/Saídas/X"}]
+    json_store.write_json(tmp_path / "novo.json", dados)
+    (tmp_path / "antigo.json").write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    assert (tmp_path / "novo.json").read_bytes() == (tmp_path / "antigo.json").read_bytes()
+
+
+def test_chaves_de_pasta(tmp_path):
+    real = tmp_path / "Saida Longa"
+    real.mkdir()
+    for grafia in (str(real).upper(), str(real) + "\\", str(real).replace("\\", "/"), str(real / ".." / real.name)):
+        assert paths.folder_key(grafia) == paths.folder_key(real)
+        assert paths.folder_spelling_key(grafia) == paths.folder_spelling_key(real)
+    # A pasta pode já não existir (mudou de lugar).
+    assert paths.folder_key(tmp_path / "SUMIU") == paths.folder_key(tmp_path / "sumiu")
+
+
+def test_juncao_e_a_mesma_pasta_so_para_folder_key(tmp_path):
+    import subprocess
+    import sys
+
+    if sys.platform != "win32":
+        pytest.skip("junção é do Windows")
+    real = tmp_path / "Saida"
+    real.mkdir()
+    juncao = tmp_path / "atalho"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(juncao), str(real)], check=True, capture_output=True)
+
+    assert paths.folder_key(juncao) == paths.folder_key(real)
+    # A grafia não segue o link: é o que nomeia a pasta de trabalho e o que
+    # a mudança de pasta usa para recusar mover uma junção.
+    assert paths.folder_spelling_key(juncao) != paths.folder_spelling_key(real)

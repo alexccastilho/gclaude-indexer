@@ -23,14 +23,14 @@ dois cliques (spec da fase 38, seção 3.1).
 
 from __future__ import annotations
 
-import json
 import re
 import unicodedata
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 
-from .paths import machine_local_folder, write_text_atomic
+from . import json_store
+from .paths import machine_local_folder
 
 SETS_FILE_NAME = "sets.json"
 
@@ -93,11 +93,7 @@ def unique_aliases(members: list[SetMember]) -> list[SetMember]:
 def _read() -> list[SetEntry]:
     """Os conjuntos gravados, tolerando o que não for o que escrevemos
     (mesmo critério do catálogo)."""
-    path = sets_path()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return []
+    data = json_store.read_json(sets_path(), [])
     if not isinstance(data, list):
         return []
 
@@ -120,7 +116,7 @@ def _read() -> list[SetEntry]:
 
 
 def _write(entries: list[SetEntry]) -> None:
-    write_text_atomic(sets_path(), json.dumps([asdict(e) for e in entries], ensure_ascii=False, indent=2))
+    json_store.write_json(sets_path(), [asdict(e) for e in entries])
 
 
 def list_sets() -> list[SetEntry]:
