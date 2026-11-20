@@ -20,6 +20,7 @@ from gclaude_indexer.web.layout import AVAILABLE_LAYOUTS, DEFAULT_LAYOUT, LAYOUT
 from gclaude_indexer.web.theme import AVAILABLE_THEMES, DEFAULT_THEME
 from tests.test_phase9 import _criar_projeto, cliente  # noqa: F401
 from gclaude_indexer.web import project_access
+from gclaude_indexer.web import routes_projects
 
 _STATIC = Path(modulo_app.__file__).parent / "static"
 
@@ -82,7 +83,7 @@ def test_barra_lateral_nao_abre_banco(cliente, tmp_path, monkeypatch):
         raise AssertionError("the side bar must not open a database")
 
     monkeypatch.setattr(step_state, "project_status", proibido)
-    monkeypatch.setattr(modulo_app, "project_status", proibido)
+    monkeypatch.setattr(routes_projects, "project_status", proibido)
     monkeypatch.setattr(project_access, "_open_project", proibido)
     corpo = cliente.get("/about").text
     assert 'class="ws-side"' in corpo and "Projeto de teste" in corpo

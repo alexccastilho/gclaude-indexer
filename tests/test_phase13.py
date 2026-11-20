@@ -527,7 +527,7 @@ def test_formulario_reexibido_com_so_algumas_categorias_nao_marca_as_outras(clie
 def test_openrouter_nao_existe_mais_em_lugar_nenhum():
     from gclaude_indexer.classification import VALID_ENGINES
     from gclaude_indexer.config import CLASSIFICATION_ENGINES
-    from gclaude_indexer.web.app import CLASSIFICATION_ENGINES_ORDER
+    from gclaude_indexer.web.routes_projects import CLASSIFICATION_ENGINES_ORDER
     from gclaude_indexer.web.i18n import _TRANSLATIONS
 
     assert "openrouter" not in CLASSIFICATION_ENGINES

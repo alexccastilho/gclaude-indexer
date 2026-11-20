@@ -12,6 +12,7 @@ import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
 from gclaude_indexer.web.app import _validate_host, app
 from gclaude_indexer.web.background_runs import task_manager
+from gclaude_indexer.web import routes_projects
 
 
 def _esperar_etapa_terminar(projeto_id: int, etapa: str, timeout: float = 30):
@@ -107,7 +108,7 @@ def test_formulario_novo_projeto_tem_todos_os_campos_da_tabela(cliente, monkeypa
     # Determinístico independente do Ollama estar de pé nesta máquina
     # (Tarefa 8, fase 12): o formulário lista os modelos instalados num
     # <select>, mas o teste não pode depender do serviço real.
-    monkeypatch.setattr(app_mod, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
+    monkeypatch.setattr(routes_projects, "list_installed_models", lambda: ["qwen3.5:4b", "qwen3:8b"])
 
     resposta = cliente.get("/projects/new")
     assert resposta.status_code == 200
