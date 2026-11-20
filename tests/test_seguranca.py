@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 from gclaude_indexer.catalog import CatalogEntry
 from gclaude_indexer.deletion import delete_project
 from gclaude_indexer.managed_block import BEGIN_MARK, END_MARK
-from gclaude_indexer.web.app import _back_to, app
+from gclaude_indexer.web.app import app
+from gclaude_indexer.web.routes_settings import _back_to
 
 
 @pytest.fixture
