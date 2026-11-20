@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from gclaude_indexer.config import ProjectConfig, ConfigError, load_config
+from gclaude_indexer.config import ProjectConfig, ConfigError, config_from_input, load_config
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import record_event, list_events
 from gclaude_indexer.paths import app_root, resolve_within
@@ -86,9 +86,16 @@ def test_carregar_config_aplica_defaults(tmp_path):
 
 def test_carregar_config_pasta_origem_inexistente():
     with pytest.raises(ConfigError):
-        load_config(
+        config_from_input(
             {"name": "X", "source_folder": "Z:/nao/existe", "output_folder": "Z:/saida"}
         )
+
+
+def test_config_salva_abre_com_a_origem_fora_do_ar():
+    """Pendrive, rede ou Drive de outra máquina fora do ar: a configuração
+    gravada continua carregando. Só a criação confere a pasta."""
+    config = load_config({"name": "X", "source_folder": "Z:/nao/existe", "output_folder": "Z:/saida"})
+    assert config.source_folder == "Z:/nao/existe"
 
 
 def test_config_error_carrega_chave_e_parametros_no_lugar_de_texto_fixo():
@@ -102,7 +109,7 @@ def test_config_error_carrega_chave_e_parametros_no_lugar_de_texto_fixo():
     from gclaude_indexer.i18n import translate
 
     with pytest.raises(ConfigError) as info:
-        load_config({"name": "X", "source_folder": "Z:/nao/existe/xyz", "output_folder": "Z:/saida"})
+        config_from_input({"name": "X", "source_folder": "Z:/nao/existe/xyz", "output_folder": "Z:/saida"})
 
     erros = info.value.errors
     assert all(isinstance(e, ConfigErrorMessage) for e in erros)

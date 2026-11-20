@@ -102,7 +102,7 @@ class ProjectConfig:
     timeline_split_items: int = 2000
 
 
-def _validate(config: ProjectConfig) -> list[ConfigErrorMessage]:
+def _validate(config: ProjectConfig, *, check_source: bool) -> list[ConfigErrorMessage]:
     errors: list[ConfigErrorMessage] = []
 
     if not config.name or not config.name.strip():
@@ -110,7 +110,7 @@ def _validate(config: ProjectConfig) -> list[ConfigErrorMessage]:
 
     if not config.source_folder or not config.source_folder.strip():
         errors.append(ConfigErrorMessage("config_error.source_folder_required"))
-    else:
+    elif check_source:
         folder = Path(config.source_folder)
         if not folder.exists():
             errors.append(
@@ -208,10 +208,28 @@ _RETIRED_FIELDS = frozenset({"planalto_in_package", "review_low_confidence"})
 
 
 def load_config(data: dict) -> ProjectConfig:
-    """Merges `data` with section 6's defaults, validates and returns the configuration.
+    """Rebuilds a *saved* configuration (`project.config_json`): merges
+    `data` with section 6's defaults, validates and returns it.
+
+    Does not check that the source folder exists: a pen drive, a network
+    share or another computer's Drive may be out of reach right now, and
+    that must not lock the project (its database lives in the output
+    folder). Whoever reads the source reports it there (`SourceFolderUnavailable`).
+    New projects go through `config_from_input`, which does check.
 
     Raises `ConfigError` with the full list of problems found.
     """
+    return _build(data, check_source=False)
+
+
+def config_from_input(data: dict) -> ProjectConfig:
+    """Builds a configuration typed by the user (the New project form, the
+    command-line script): the same rules as `load_config`, plus the source
+    folder has to exist and be a folder."""
+    return _build(data, check_source=True)
+
+
+def _build(data: dict, *, check_source: bool) -> ProjectConfig:
     # Chaves que já foram campo e não são mais. `planalto_in_package` (fases
     # 31 a 37) ficou gravada no `config_json` de todo projeto criado até a
     # 1.7.5; sem isto, esses projetos não abririam mais.
@@ -232,7 +250,7 @@ def load_config(data: dict) -> ProjectConfig:
         # parameter of a translated key rather than left as a bare string.
         raise ConfigError([ConfigErrorMessage("config_error.type_error", {"detail": str(exc)})])
 
-    errors = _validate(config)
+    errors = _validate(config, check_source=check_source)
     if errors:
         raise ConfigError(errors)
 
