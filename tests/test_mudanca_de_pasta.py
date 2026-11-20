@@ -30,6 +30,7 @@ from gclaude_indexer.web.app import app
 from gclaude_indexer.web import state
 from gclaude_indexer.web import readers
 from gclaude_indexer.web import project_access
+from gclaude_indexer.web import routes_relocation
 
 HEADERS = {"Origin": "http://testserver"}
 
@@ -639,7 +640,7 @@ def test_sincronizacao_com_aviso_recusa(cliente, tmp_path, monkeypatch):
     origem = tmp_path / "Acervo"
     saida = origem / "saida"
     entrada = _criar(origem, saida)
-    monkeypatch.setattr(app_mod, "check_sync", lambda pasta: sync.SyncCheckResult(False, "sync.incomplete"))
+    monkeypatch.setattr(routes_relocation, "check_sync", lambda pasta: sync.SyncCheckResult(False, "sync.incomplete"))
 
     resposta = cliente.post(f"/projects/{entrada.id}/relocate", headers=HEADERS, follow_redirects=False)
     assert resposta.status_code == 409
@@ -651,7 +652,7 @@ def test_origem_na_raiz_mostra_aviso_sem_botao_de_mover(cliente, tmp_path, monke
     saida = origem / "saida"
     entrada = _criar(origem, saida)
     monkeypatch.setattr(relocation.paths, "suggest_output_folder", lambda origem: None)
-    monkeypatch.setattr(app_mod, "suggest_output_folder", lambda origem: None)
+    monkeypatch.setattr(routes_relocation, "suggest_output_folder", lambda origem: None)
 
     tela = cliente.get(f"/projects/{entrada.id}/run")
     assert tela.status_code == 409
