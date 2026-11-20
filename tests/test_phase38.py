@@ -92,12 +92,10 @@ def _app_com_projeto(tmp_path, monkeypatch):
     """Servidor de teste com um projeto pronto e um ato do Planalto."""
     from fastapi.testclient import TestClient
 
-    from gclaude_indexer import paths
     from gclaude_indexer.catalog import register_project
     from gclaude_indexer.config import config_to_json
     from gclaude_indexer.web.app import app
 
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     origem = tmp_path / "origem"
     origem.mkdir()
     saida = tmp_path / "saida"
@@ -701,9 +699,6 @@ def _projeto_pronto(tmp_path, nome: str, pasta: str, *, grupo="Processo", papel=
 def _dois_projetos(tmp_path, monkeypatch, *, volumes=1):
     """Dois projetos de mesmo nome e mesmo grupo: o caso em que todo nome
     colide. Catálogo, conjuntos e preferências ficam na pasta local de teste."""
-    from gclaude_indexer import paths
-
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     a = _projeto_pronto(tmp_path, "Atas", "saida-a", papel="Você responde sobre atas.", regras="Cite a data da sessão.",
                         volumes=volumes)
     b = _projeto_pronto(tmp_path, "Atas", "saida-b")
@@ -750,13 +745,12 @@ def test_conjunto_e_gravado_e_lido_no_catalogo_local(tmp_path, monkeypatch):
     from gclaude_indexer import paths
     from gclaude_indexer.sets import SetEntry, SetMember, find_set, list_sets, remove_set, save_set
 
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
     assert list_sets() == []
 
     gravado = save_set(SetEntry(id=0, name="Conselho", personal_instructions="Texto meu",
                                 members=[SetMember(1, "atas"), SetMember(2, "oficios")]))
     assert gravado.id == 1 and gravado.created_at
-    assert (tmp_path / "local" / "sets.json").exists()
+    assert (paths.machine_local_folder() / "sets.json").exists()
 
     lido = find_set(1)
     assert lido == gravado

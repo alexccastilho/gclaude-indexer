@@ -69,11 +69,10 @@ def test_validacao_de_intervalo_consulta_as_paginas_uma_vez_por_agrupador(tmp_pa
 
 def _projeto_registrado(tmp_path, monkeypatch):
     """A project the web app can open, the way `test_phase17` builds one."""
-    from gclaude_indexer import db, paths
+    from gclaude_indexer import db
     from gclaude_indexer.catalog import register_project
     from gclaude_indexer.config import config_to_json, load_config
 
-    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
 
     origem = tmp_path / "origem"
     origem.mkdir()
