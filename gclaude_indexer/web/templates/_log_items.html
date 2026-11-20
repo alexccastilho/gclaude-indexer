@@ -2,7 +2,7 @@
 
    Included by `_log.html` for the first load and returned on its own by
    `/run/log?since=<id>` so the Execution screen can *append* new lines
-   instead of rebuilding the whole panel — see `log_fragment` in `app.py`.
+   instead of rebuilding the whole panel — see `log_fragment` in `routes_run.py`.
 
    `data-event-id` is what makes that work: the screen reads the last one
    it holds and asks only for what came after it. #}
