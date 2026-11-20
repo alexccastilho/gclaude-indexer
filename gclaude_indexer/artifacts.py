@@ -78,6 +78,22 @@ def _now_iso() -> str:
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 _changed_files: ContextVar[list[Path] | None] = ContextVar("changed_files", default=None)
 _removed_files: ContextVar[list[str] | None] = ContextVar("removed_files", default=None)
+# What several reports of one generation read from the same database, read
+# once (`generate_all_artifacts`): the item table, the physical-page map and
+# the legislation map used to be read two to five times each. Nothing in a
+# generation writes to `file`, `page` or `item`. Outside a generation (a
+# single report, the search screen), each call reads as before.
+_generation_reads: ContextVar[dict | None] = ContextVar("generation_reads", default=None)
+
+
+def _read_once(name: str, conn, read):
+    reads = _generation_reads.get()
+    if reads is None:
+        return read()
+    key = (name, conn)
+    if key not in reads:
+        reads[key] = read()
+    return reads[key]
 
 
 def _remove_output(path: Path) -> None:
@@ -114,7 +130,9 @@ def write_if_changed(path: Path, text: str, *, newline: str | None = None) -> bo
 
 
 def _items(conn):
-    return conn.execute("SELECT * FROM item ORDER BY group_key, start_order").fetchall()
+    return _read_once(
+        "items", conn, lambda: conn.execute("SELECT * FROM item ORDER BY group_key, start_order").fetchall()
+    )
 
 
 def _cell(value) -> str:
@@ -214,6 +232,10 @@ def _legislation_map(conn) -> tuple[dict[tuple[str, str], tuple[str, str]], dict
     """`(arquivos, raizes)`: cada arquivo por `(grupo, nome)` com caminho e
     extensão, e a pasta comum dos atos reconhecidos de cada grupo. Base dos
     dois predicados abaixo."""
+    return _read_once("legislation_map", conn, lambda: _read_legislation_map(conn))
+
+
+def _read_legislation_map(conn) -> tuple[dict[tuple[str, str], tuple[str, str]], dict[str, str]]:
     arquivos = {
         (row["group_key"], row["name"]): (
             (row["relative_path"] or "").replace("\\", "/"),
@@ -665,6 +687,10 @@ def _physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
     só o nome do arquivo, e num grupo de 21 volumes isso não diz onde
     abrir — `f. 417` é a página 145 do Vol 2.
     """
+    return _read_once("physical_pages", conn, lambda: _read_physical_pages(conn))
+
+
+def _read_physical_pages(conn) -> dict[tuple[str, int], tuple[str, int]]:
     from .windows_prep import group_page_positions
 
     mapa: dict[tuple[str, int], tuple[str, int]] = {}
@@ -1452,6 +1478,7 @@ def generate_all_artifacts(
     removed: list[str] = []
     token = _changed_files.set(changed)
     removed_token = _removed_files.set(removed)
+    reads_token = _generation_reads.set({})
     cancelled = False
     written: dict[str, Path] = {}
     try:
@@ -1461,6 +1488,7 @@ def generate_all_artifacts(
     finally:
         _changed_files.reset(token)
         _removed_files.reset(removed_token)
+        _generation_reads.reset(reads_token)
     # Which files this generation actually changed — the ones to send
     # to the Claude Project again. The others are byte for byte what was
     # already there.
