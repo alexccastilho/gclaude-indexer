@@ -87,12 +87,27 @@ UNSPACED_SCRIPTS = frozenset({"han", "kana", "hangul", "thai", "lao", "khmer", "
 # alfabética: o limite de caracteres por página é menor (`auto_settings`).
 CJK_SCRIPTS = frozenset({"han", "kana", "hangul"})
 
-# Classe de caracteres das escritas sem espaço, para expressões regulares.
-_UNSPACED_CLASS = (
-    "\u0e00-\u0eff\u0f00-\u0fff\u1000-\u109f\u1100-\u11ff\u1780-\u17ff\u2e80-\u2fdf\u3005-\u3007"
-    "\u3040-\u30ff\u3130-\u318f\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7af"
-    "\uf900-\ufaff\uff66-\uff9f\U00020000-\U000323af"
-)
+# Faixa de `_RANGES` que ficou de fora da classe abaixo quando ela era uma
+# cópia escrita à mão (o hangul de meia largura).
+_OUTSIDE_UNSPACED_CLASS = frozenset({(0xFFA0, 0xFFDC)})
+
+
+def _unspaced_ranges() -> list[tuple[int, int]]:
+    """As faixas de `_RANGES` das escritas sem espaço, contíguas unidas."""
+    merged: list[tuple[int, int]] = []
+    for start, end, script in _RANGES:
+        if script not in UNSPACED_SCRIPTS or (start, end) in _OUTSIDE_UNSPACED_CLASS:
+            continue
+        if merged and merged[-1][1] + 1 >= start:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+# Classe de caracteres das escritas sem espaço (`[...]` de expressão regular
+# e do `GLOB` do SQLite, que entendem `a-b` do mesmo jeito).
+_UNSPACED_CLASS = "".join(f"{chr(start)}-{chr(end)}" for start, end in _unspaced_ranges())
 _UNSPACED_CHAR = re.compile(f"[{_UNSPACED_CLASS}]")
 _SPACE_BETWEEN_UNSPACED = re.compile(f"(?<=[{_UNSPACED_CLASS}])[ \\t\u3000]+(?=[{_UNSPACED_CLASS}])")
 
@@ -130,6 +145,11 @@ def dominant_script(text: str) -> str | None:
     if counts["kana"] and counts["kana"] * 20 >= counts["kana"] + counts["han"]:
         counts["kana"] += counts.pop("han", 0)
     return counts.most_common(1)[0][0]
+
+
+def cjk_count(counts: Counter) -> int:
+    """Quantas letras de `script_counts` são de `CJK_SCRIPTS`."""
+    return sum(counts[script] for script in CJK_SCRIPTS)
 
 
 def is_unspaced(text: str) -> bool:
@@ -238,7 +258,7 @@ def east_asian_language(text: str) -> str | None:
 
 def _chunk_language(chunk: str, counts: Counter) -> str | None:
     script = counts.most_common(1)[0][0]
-    if script in ("han", "kana", "hangul"):
+    if script in CJK_SCRIPTS:
         return _east_asian(counts)
     identifier = _model()
     if identifier is None:
@@ -260,7 +280,7 @@ def detect_languages(text: str, max_languages: int = MAX_LANGUAGES) -> list[str]
     demais para dizer."""
     text = text or ""
     total = script_counts(text)
-    cjk = total["han"] + total["kana"] + total["hangul"]
+    cjk = cjk_count(total)
     letters = sum(total.values())
     if letters < MIN_LETTERS and cjk < MIN_CJK_CHARS:
         return []
@@ -332,6 +352,25 @@ SCRIPT_MODELS = {
     "cherokee": "Cherokee", "canadian_aboriginal": "Canadian_Aboriginal", "khmer": "Khmer",
     "kana": "Japanese", "han": "HanS",
 }
+
+# Idiomas de cada escrita cujo modelo, já presente, pode ler uma amostra dela
+# no lugar do modelo da escrita (`ocr_detection.sample_model`), do preferido
+# ao último. Cada código é de um idioma daquela escrita (`_LANGUAGE_SCRIPT`;
+# `tests/test_idiomas.py` confere) e o modelo sai de `TESSERACT_CODES`.
+_STAND_IN_LANGUAGES = {
+    "latin": ("en", "pt", "es", "fr", "de", "it"),
+    "cyrillic": ("ru", "uk", "bg", "sr"), "greek": ("el",), "arabic": ("ar", "fa", "ur"),
+    "hebrew": ("he",), "kana": ("ja",), "han": ("zh", "yue"), "hangul": ("ko",),
+    "devanagari": ("hi", "mr", "ne"), "thai": ("th",), "bengali": ("bn",), "tamil": ("ta",),
+    "georgian": ("ka",), "armenian": ("hy",),
+}
+
+
+def stand_in_models(script: str) -> tuple[str, ...]:
+    """Os modelos de idioma que leem uma amostra da escrita, do preferido ao
+    último (`_STAND_IN_LANGUAGES`)."""
+    return tuple(dict.fromkeys(TESSERACT_CODES[code] for code in _STAND_IN_LANGUAGES.get(script, ())))
+
 
 # Nome que o OSD do Tesseract dá à escrita ("Script: Han") → a nossa.
 _OSD_ALIASES = {

@@ -25,7 +25,7 @@ import json
 import os
 from pathlib import Path
 
-from .light_formats import MBOX_PAGE_SEPARATOR
+from .workdir import PAGE_SEPARATOR
 
 PROGRESS_SUFFIX = ".progress"
 PARTIAL_SUFFIX = ".partial"
@@ -97,7 +97,7 @@ class PageWriter:
 
     def write(self, text: str) -> None:
         page = text.replace("\x0c", " ")[:MAX_PAGE_CHARS]
-        chunk = ((MBOX_PAGE_SEPARATOR if self.pages else "") + page).encode("utf-8")
+        chunk = ((PAGE_SEPARATOR if self.pages else "") + page).encode("utf-8")
         self._handle.write(chunk)
         self.size += len(chunk)
         self.pages += 1

@@ -35,7 +35,6 @@ from . import language_detect, legacy_office, light_formats, media, no_window, o
 from .workdir import converted_artifact_path, text_suffix
 from .config import ProjectConfig
 from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
-from .ocr_detection import MIN_AVG_CHARS_PER_PAGE
 from .subprocess_utils import run_hidden
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
@@ -96,12 +95,7 @@ def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
     Decided page by page, not by the file's average: a native-text PDF
     with a few scanned pages in the middle (a signed minute, an annex) has
     an average well above the threshold, and those pages used to reach the
-    index blank.
-
-    A page with little text and nothing drawn on it — no image, no vector
-    drawing (text converted to outlines is a drawing) — has nothing for OCR
-    to find: the blank verso or the "Chapter 2" divider of a book. It does
-    not count, or a whole native book would go through OCR for it."""
+    index blank. The rule for one page is `ocr_detection.page_needs_ocr`."""
     try:
         document = fitz.open(path)
     except Exception as exc:
@@ -114,8 +108,7 @@ def _pdf_pages_needing_ocr(path: Path) -> tuple[list[int], int]:
 
         pages = [
             number for number, page in enumerate(document, start=1)
-            if len(page.get_text().strip()) < MIN_AVG_CHARS_PER_PAGE
-            and (page.get_images() or page.get_drawings())
+            if ocr_detection.page_needs_ocr(page, page.get_text().strip())
         ]
         return pages, page_count
     finally:
@@ -346,16 +339,6 @@ def _extract_text_web(path: Path, extension: str) -> str:
     return text
 
 
-def _register_heif() -> None:
-    """Ensina o Pillow a abrir `.heic`/`.heif` (`pillow-heif`). Idempotente.
-    Sem a biblioteca, o arquivo falha ao abrir, como qualquer imagem corrompida."""
-    try:
-        from pillow_heif import register_heif_opener
-    except ImportError:
-        return
-    register_heif_opener()
-
-
 # Teto do `tesseract` numa imagem inteira. Sem ele, uma imagem que trava o
 # Tesseract travava a conversão: as imagens comuns e as de dentro de um `.p7m`
 # rodam num processo do conjunto, mas os anexos de imagem de um PST rodam
@@ -370,7 +353,7 @@ def _extract_text_image(path: Path, ocr_language: str, rotate: int = 0) -> str:
     from PIL import Image
     import pytesseract
 
-    _register_heif()
+    ocr_detection.register_heif()
     with Image.open(path) as image:
         image.load()
         if rotate:
@@ -409,7 +392,7 @@ if set(_LIGHT_TEXT_EXTRACTORS) != _TEXT_CATEGORIES:
 
 def _extract_light_text(category: str, extension: str, source_path: Path) -> str:
     """O texto de um arquivo que vira uma página (ou, na caixa `.mbox`, uma
-    página por mensagem, separadas por `MBOX_PAGE_SEPARATOR`)."""
+    página por mensagem, separadas por `workdir.PAGE_SEPARATOR`)."""
     return _LIGHT_TEXT_EXTRACTORS[category](source_path, extension)
 
 
@@ -565,7 +548,7 @@ def _reread_image(
     from PIL import Image
 
     try:
-        _register_heif()
+        ocr_detection.register_heif()
         with Image.open(path) as image:
             image.load()
             prepared = ocr_detection._prepared(image)
@@ -1079,7 +1062,7 @@ def _convert_light_file(job: _FileJob) -> dict:
     destination = workdir.converted_destination(job.output_dir, row["relative_path"], text_suffix(extension))
     destination.write_text(text, encoding="utf-8")
     # A caixa `.mbox` tem uma página por mensagem.
-    pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == MBOX_CATEGORY else 1
+    pages = text.count(workdir.PAGE_SEPARATOR) + 1 if category == MBOX_CATEGORY else 1
     return {"sql": file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG, "params": (pages, row["id"]), "ocr_applied": False}
 
 

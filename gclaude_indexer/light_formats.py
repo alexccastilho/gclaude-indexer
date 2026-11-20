@@ -34,6 +34,7 @@ from struct import error as struct_error
 from .file_types import looks_binary
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
+from .workdir import PAGE_SEPARATOR
 
 # Tetos do que se lê de dentro de um ZIP (OpenDocument, OOXML, o conteúdo de um
 # `.p7m`): um pacote malicioso (bomba de descompressão, milhões de membros, um
@@ -85,11 +86,6 @@ def _read_member(archive: zipfile.ZipFile, name: str, limit: int | None = None) 
     if len(data) > limit:
         raise LightFormatError("membro do pacote grande demais")
     return data
-# Separador das páginas no texto intermediário de uma caixa `.mbox`. O
-# form feed não aparece em e-mail de verdade; é tirado do corpo, por garantia.
-MBOX_PAGE_SEPARATOR = "\n\x0c\n"
-
-
 class LightFormatError(Exception):
     """Falha ao ler um formato leve. A mensagem não traz conteúdo do documento."""
 
@@ -395,7 +391,7 @@ def iter_pages(path: Path, chunk_chars: int = 1 << 20):
             buffer += piece
             # O separador pode ter sido cortado entre dois pedaços: a última
             # parte fica no buffer até chegar o resto.
-            *complete, buffer = buffer.split(MBOX_PAGE_SEPARATOR)
+            *complete, buffer = buffer.split(PAGE_SEPARATOR)
             yield from complete
     yield buffer
 
@@ -513,7 +509,7 @@ def _mbox_message_text(message) -> str:
 
 
 def extract_text_mbox(path: Path) -> str:
-    """Uma página por mensagem, separadas por `MBOX_PAGE_SEPARATOR`."""
+    """Uma página por mensagem, separadas por `PAGE_SEPARATOR`."""
     box = mailbox.mbox(
         str(path), create=False,
         factory=lambda handle: email.message_from_binary_file(handle, policy=policy.default),
@@ -524,7 +520,7 @@ def extract_text_mbox(path: Path) -> str:
         raise LightFormatError("caixa .mbox ilegível") from exc
     finally:
         box.close()
-    return MBOX_PAGE_SEPARATOR.join(pages)
+    return PAGE_SEPARATOR.join(pages)
 
 
 # --- DXF -----------------------------------------------------------------------

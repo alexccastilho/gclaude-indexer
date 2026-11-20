@@ -200,7 +200,7 @@ class CategoryTraits:
     `paged`: páginas reais — o limite de caracteres por página do projeto
     vale para ela, e o documento pode continuar no arquivo seguinte.
     `page_per_message`: uma página por mensagem (separadas por
-    `light_formats.MBOX_PAGE_SEPARATOR` no texto intermediário).
+    `workdir.PAGE_SEPARATOR` no texto intermediário).
     `read_as_pdf`: extração e busca leem um PDF (o original ou o
     intermediário `<nome>.<ext>.pdf`).
     `light_text`: um extrator leve tira o texto (`conversion._extract_light_text`).

@@ -325,7 +325,7 @@ def convert_pst(
     on_note: Callable[[str, dict], None] | None = None,
 ) -> PstResult:
     """Escreve em `destination` o texto do arquivo, uma página por mensagem (e
-    uma por anexo com texto), separadas por `MBOX_PAGE_SEPARATOR`.
+    uma por anexo com texto), separadas por `workdir.PAGE_SEPARATOR`.
 
     Levanta `Interrupted` quando Parar é pedido (o que já foi escrito fica
     para a retomada), `ReaderUnavailable` sem a biblioteca e `OutlookError`
