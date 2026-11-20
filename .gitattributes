@@ -38,3 +38,6 @@
 *.pdf  binary
 *.docx binary
 *.xlsx binary
+
+# Amostras da caracterização dos despachos (rodada 3): bytes exatos.
+tests/fixtures/despachos/** -text
