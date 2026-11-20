@@ -43,7 +43,7 @@ import os
 import threading
 from typing import Callable
 
-from ..conversion import ocr_retry_count
+from ..conversion import ocr_retry_files
 from ..file_status import (
     CONVERSION_SUCCEEDED, DISCOVERED, EXTRACTED, FAILED, SKIPPED, WINDOW_DONE, WINDOW_PENDING,
 )
@@ -51,6 +51,38 @@ from ..paths import PROJECT_DB_NAME
 from ..project import load_project
 
 STATUSES: tuple[str, ...] = ("not_started", "pending", "running", "done")
+
+
+# What a step still has to do, counted once for the step cards (`step_status`)
+# and for the progress bar and time estimate (`background_runs._measure`), so
+# the two never disagree.
+
+def conversion_pending(conn, discovered: int | None = None) -> tuple[int, int]:
+    """`(files, bytes)` the conversion still has to read: the files in
+    `discovered` plus those whose OCR failed, which the next conversion sends
+    back to the queue (`conversion.ocr_retry_files`). `discovered`: the count
+    when the caller already has it (one pass over `file` in `step_status`);
+    the bytes are then not read and come back as 0."""
+    retry = ocr_retry_files(conn)
+    if discovered is not None:
+        return discovered + len(retry), 0
+    files, size = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM file WHERE status = ?", (DISCOVERED,)
+    ).fetchone()
+    return files + len(retry), int(size) + sum(int(row["size"] or 0) for row in retry)
+
+
+def window_counts(conn) -> tuple[int, int]:
+    """`(windows, classified)`."""
+    total = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
+    done = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
+    return total, done
+
+
+def classification_pending(conn) -> int:
+    """Windows not classified yet: every window that is not `done`."""
+    total, done = window_counts(conn)
+    return total - done
 
 
 def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
@@ -76,8 +108,7 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     total_files = sum(by_status.values())
     # Plus the files whose OCR failed: the next conversion sends
     # them back to the queue, so the step is not done while they wait.
-    # The progress bar (`background_runs`) counts `discovered` only and `failed` as done: differs; see decisoes.md B.
-    discovered = by_status.get(DISCOVERED, 0) + ocr_retry_count(conn)
+    discovered, _bytes = conversion_pending(conn, by_status.get(DISCOVERED, 0))
     converted = sum(by_status.get(status, 0) for status in CONVERSION_SUCCEEDED)
     failed = by_status.get(FAILED, 0)
     extracted = by_status.get(EXTRACTED, 0)
@@ -90,9 +121,8 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
         "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id"
         " WHERE file.status = ?", (EXTRACTED,),
     ).fetchone()[0])
-    total_windows = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
-    windows_done = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
-    # Total minus done, where the progress bar counts `pending` rows: differs; see decisoes.md B.
+    total_windows, windows_done = window_counts(conn)
+    # Total minus done, as `classification_pending` (the progress bar).
     windows_pending = total_windows - windows_done
 
     def done_or(ready: bool, started: bool) -> str:

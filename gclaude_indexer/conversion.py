@@ -1457,7 +1457,7 @@ def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
     windowed = _groups_with_windows(conn) if has_windows else set()
     marks, finished = file_status.in_params(file_status.CONVERSION_FINISHED)
     rows = conn.execute(
-        "SELECT id, name, status, error, group_key, extension FROM file WHERE ocr_failed = 1"
+        "SELECT id, name, status, error, group_key, extension, size FROM file WHERE ocr_failed = 1"
         f" AND (status IN ({marks})"
         # Um `skipped` só volta à fila se foi a falta do componente que o
         # deixou assim; o que a varredura recusou (segredo, binário,
@@ -1485,10 +1485,15 @@ def components_held_back(conn) -> list:
     return [row for row in rows if _waiting_component(row, windowed)]
 
 
+def ocr_retry_files(conn) -> list:
+    """The files the next conversion will send back to the queue (`id`,
+    `size`...) — the Execution screen counts them as pending conversion."""
+    return _ocr_retry_candidates(conn)[0]
+
+
 def ocr_retry_count(conn) -> int:
-    """How many files the next conversion will send back to the queue —
-    the Execution screen counts them as pending conversion."""
-    return len(_ocr_retry_candidates(conn)[0])
+    """How many files the next conversion will send back to the queue."""
+    return len(ocr_retry_files(conn))
 
 
 def requeue_ocr_failures(conn, language: str | None = None) -> int:
