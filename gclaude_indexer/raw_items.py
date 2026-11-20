@@ -43,6 +43,7 @@ def path_in(output_folder: Path | str) -> Path:
 
 
 def files_field(files: Iterable[str]) -> str:
+    """The `files` field as written; `files_from_field` reads it back."""
     return _FILES_SEPARATOR.join(files)
 
 
@@ -96,6 +97,8 @@ def open_for_append(path: Path) -> IO[str]:
 
 
 def append(file: IO[str], line: dict) -> None:
+    """Writes one line. Non-ASCII text goes unescaped, U+2028 and U+0085
+    included, which is why `iter_lines` splits on `\\n` only."""
     file.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 

@@ -77,6 +77,7 @@ def write_progress(destination: Path, source: Path, **fields) -> None:
 
 
 def discard(destination: Path) -> None:
+    """Drops the partial and its progress: the next run starts from zero."""
     partial_path(destination).unlink(missing_ok=True)
     progress_path(destination).unlink(missing_ok=True)
 
