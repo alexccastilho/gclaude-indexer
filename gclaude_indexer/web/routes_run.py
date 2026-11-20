@@ -242,7 +242,7 @@ def _progress_context(project_id: int) -> dict:
     button, so both draw exactly the same box."""
     with _read_project(project_id) as (entry, _config, conn):
         task = task_manager.latest_for_project(project_id)
-        progress = compute_progress(entry.output_folder, task)
+        progress = compute_progress(entry.output_folder, task, conn)
         if task is None:
             elapsed = None
         elif task.finished_at is not None:

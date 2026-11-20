@@ -113,20 +113,24 @@ def _scan_totals(
     return found, sum(item.size for item in found)
 
 
-def _ignored_count(output_folder) -> int:
+def _ignored_count(output_folder, conn=None) -> int:
     """Files the scan left out (`status = 'skipped'`), for the "N ignored"
     next to the scan's progress. A busy or unreadable project answers 0:
-    this is only a figure on a progress line."""
-    try:
-        _config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
-    except Exception:
-        return 0
+    this is only a figure on a progress line. `conn`: the screen's reader,
+    already open; without it, a connection of its own."""
+    own = conn is None
+    if own:
+        try:
+            _config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
+        except Exception:
+            return 0
     try:
         return conn.execute("SELECT COUNT(*) FROM file WHERE status = ?", (SKIPPED,)).fetchone()[0]
     except Exception:
         return 0
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
 # The `file.status` a file waits in for each step. The conversion also has
@@ -211,7 +215,9 @@ def _total_and_baseline(conn, step: str) -> tuple[int, int]:
     return 0, 0
 
 
-def compute_progress(output_folder: str, task: StepTask | None) -> dict:
+def compute_progress(output_folder: str, task: StepTask | None, conn=None) -> dict:
+    """`conn`: the screen's reader, already open (`_progress_context`), read
+    instead of opening another connection on every poll."""
     if task is None:
         return {
             "status": "none", "percentual": 0, "concluidos": 0, "total": 0, "eta_segundos": None, "error": None,
@@ -229,12 +235,14 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
 
     if task.step == "scan":
         progress = _progress_dict(task, task.scanned, float(task.scanned_bytes))
-        progress["ignorados"] = _ignored_count(output_folder)
+        progress["ignorados"] = _ignored_count(output_folder, conn)
         return progress
 
     weight_done: float | None = None
+    own = conn is None
     try:
-        config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
+        if own:
+            _config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
         try:
             current = done_count(conn, task.step)
             if task.weight_total > 0:
@@ -243,7 +251,8 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
             if task.step == "extraction" and task.running and current - task.baseline >= task.total:
                 fulltext = fulltext_coverage(conn)
         finally:
-            conn.close()
+            if own:
+                conn.close()
         task.last_count = current
         task.last_fulltext = fulltext
         if fulltext is not None:
