@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from ..artifacts import generate_all_artifacts
 from ..config import ProjectConfig
-from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS
+from ..db import WRITER_TIMEOUT_SECONDS
 from ..events import list_events
 from ..import_items import import_and_consolidate
 from ..windows_prep import cleanup_legacy_window_files
@@ -125,7 +125,7 @@ def log_fragment(request: Request, project_id: int, since: int | None = None):
     language = _request_language(request)
     # Capped either way: a screen left open while a very long step ran must
     # not receive thousands of lines in one response.
-    with _open_project(project_id, timeout=READER_TIMEOUT_SECONDS) as (_entry, _config, conn):
+    with _read_project(project_id) as (_entry, _config, conn):
         events = list_events(conn, language=language, since=since, last=LOG_LINES)
 
     if since is None:
