@@ -436,7 +436,8 @@ def test_campos_forjados_sao_ignorados(cliente, tmp_path):
     )
     config, conn = load_project(saida)
     conn.close()
-    assert (config.pages_per_block, config.pages_per_window, config.overlap) == (80, 16, 2)
+    assert not hasattr(config, "pages_per_block")
+    assert (config.pages_per_window, config.overlap) == (16, 2)
     assert (config.chars_per_page, config.ocr_language) == (2000, "por")
 
 

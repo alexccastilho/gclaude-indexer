@@ -313,7 +313,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.group_pattern_required": (
             "group_pattern é obrigatório quando group_mode é 'name_pattern'"
         ),
-        "config_error.pages_per_block_positive": "pages_per_block deve ser maior que zero",
         "config_error.pages_per_window_positive": "pages_per_window deve ser maior que zero",
         "config_error.overlap_invalid": "overlap deve ser >= 0 e menor que pages_per_window",
         "config_error.chars_per_page_positive": "chars_per_page deve ser maior que zero",
@@ -1593,7 +1592,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.group_pattern_required": (
             "group_pattern is required when group_mode is 'name_pattern'"
         ),
-        "config_error.pages_per_block_positive": "pages_per_block must be greater than zero",
         "config_error.pages_per_window_positive": "pages_per_window must be greater than zero",
         "config_error.overlap_invalid": "overlap must be >= 0 and less than pages_per_window",
         "config_error.chars_per_page_positive": "chars_per_page must be greater than zero",
@@ -2851,7 +2849,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "config_error.group_pattern_required": (
             "group_pattern es obligatorio cuando group_mode es 'name_pattern'"
         ),
-        "config_error.pages_per_block_positive": "pages_per_block debe ser mayor que cero",
         "config_error.pages_per_window_positive": "pages_per_window debe ser mayor que cero",
         "config_error.overlap_invalid": "overlap debe ser >= 0 y menor que pages_per_window",
         "config_error.chars_per_page_positive": "chars_per_page debe ser mayor que cero",

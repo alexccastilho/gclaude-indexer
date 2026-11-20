@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -78,10 +79,62 @@ def test_carregar_config_aplica_defaults(tmp_path):
     )
     assert isinstance(config, ProjectConfig)
     assert config.collection_type == "processo"
-    assert config.pages_per_block == 80
     assert config.pages_per_window == 16
     assert config.overlap == 2
     assert config.extensions == ["all"]
+
+
+def test_pages_per_block_aposentado_continua_aceito_na_carga(tmp_path):
+    """Gravado em todo projeto criado até a 2.1, sem efeito: a chave é
+    tolerada na carga e não volta mais a ser gravada."""
+    from gclaude_indexer.config import config_to_json
+
+    config = load_config({
+        "name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "saida"),
+        "pages_per_block": 80,
+    })
+    assert "pages_per_block" not in json.loads(config_to_json(config))
+
+
+def test_tipo_errado_na_carga_e_convertido_ou_tolerado(tmp_path):
+    """Configuração gravada: o que abria continua abrindo com o mesmo valor;
+    texto de inteiro vira inteiro (antes estourava `TypeError`)."""
+    base = {"name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "saida")}
+    assert load_config({**base, "overlap": 2.0}).overlap == 2.0
+    assert load_config({**base, "subject": None}).subject is None
+    assert load_config({**base, "timeline_split_items": "2000"}).timeline_split_items == 2000
+
+
+def test_tipo_errado_na_entrada_e_recusado(tmp_path):
+    base = {"name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "saida")}
+    with pytest.raises(ConfigError) as info:
+        config_from_input({**base, "subject": 5, "pages_per_window": "dezesseis"})
+    assert [e.key for e in info.value.errors] == ["config_error.type_error"] * 2
+    assert config_from_input({**base, "pages_per_window": "8", "overlap": "1"}).pages_per_window == 8
+
+
+def test_bool_nunca_vira_verdadeiro_por_ser_texto():
+    """Não há campo bool hoje; o mecanismo vale para o primeiro que vier."""
+    from gclaude_indexer.config import _coerce
+
+    assert _coerce(bool, "false") == (True, False)
+    assert _coerce(bool, "on") == (True, True)
+    assert _coerce(bool, 1) == (True, True)
+    assert _coerce(bool, "talvez") == (False, "talvez")
+    assert _coerce(int, True) == (False, True)
+
+
+def test_campos_do_formulario_e_padroes_vem_do_dataclass():
+    from dataclasses import fields
+
+    from gclaude_indexer.config import FORM_FIELDS, default_value, defaults
+
+    nomes = {f.name for f in fields(ProjectConfig)}
+    assert set(FORM_FIELDS) <= nomes
+    assert not {"pages_per_window", "overlap", "chars_per_page", "ocr_language", "extra_rules"} & set(FORM_FIELDS)
+    assert defaults()["extensions"] == ["all"] and defaults()["extensions"] is not defaults()["extensions"]
+    assert default_value("package_token_limit") == 2_000_000
+    assert not {"name", "source_folder", "output_folder"} & set(defaults())
 
 
 def test_carregar_config_pasta_origem_inexistente():
@@ -299,3 +352,19 @@ def test_fase1_fluxo_completo(tmp_path):
     eventos_persistidos = list_events(conn2)
     assert len(eventos_persistidos) == 3
     conn2.close()
+
+
+def test_um_formato_para_toda_gravacao_da_config(tmp_path):
+    from gclaude_indexer.config import config_to_json
+    from gclaude_indexer.project import create_project, merge_project_config, save_project_config
+
+    config = load_config({"name": "Acao", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "s"),
+                          "subject": "Prescricao"})
+    conn, _ = create_project(config)
+    gravado = lambda: conn.execute("SELECT config_json FROM project").fetchone()[0]  # noqa: E731
+    assert gravado() == config_to_json(config)
+    merge_project_config(conn, {"overlap": config.overlap})
+    assert gravado() == config_to_json(config)
+    save_project_config(conn, config)
+    assert gravado() == config_to_json(config)
+    conn.close()

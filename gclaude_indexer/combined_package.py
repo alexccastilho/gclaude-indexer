@@ -45,7 +45,7 @@ from .artifacts import (
 )
 from .catalog import CatalogEntry, find_project
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
-from .config import ConfigError, ProjectConfig
+from .config import ConfigError, ProjectConfig, default_value
 from .i18n import DEFAULT_LANGUAGE, translate
 from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed, write_managed
 from .output_names import (
@@ -198,7 +198,7 @@ def _rename_map(member: Member) -> dict[str, str]:
 
 
 def _default_limit() -> int:
-    return ProjectConfig.__dataclass_fields__["package_token_limit"].default
+    return default_value("package_token_limit")
 
 
 def plan(entry: SetEntry, language: str = DEFAULT_LANGUAGE) -> CombinedPlan:
