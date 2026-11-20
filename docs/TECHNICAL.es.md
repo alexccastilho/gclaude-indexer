@@ -31,11 +31,31 @@ Este documento es para quien instala, mantiene o quiere entender el programa por
 - **Windows 10 u 11, obligatorio.** El programa habla directamente con interfaces de Windows: PowerShell, WMI (detección de hardware y recursos), el registro (datos de Tesseract e idioma de visualización) y Performance Counters (gráficos de CPU y GPU). No corre en Linux ni en macOS.
 - **Python 3.12**, instalado por usted si falta. El proyecto fija versiones de dependencias que los Python más nuevos (3.13, 3.14) rompen. El instalador busca la 3.12 y, si la máquina no la tiene, descarga e instala la 3.12.10 oficial para el usuario actual: sin administrador, sin paso manual. Cualquier otro Python ya instalado queda donde está.
 - **OCR** (documentos escaneados sin capa de texto) necesita Tesseract y Ghostscript. El instalador instala los dos cuando puede.
-- **El motor `local`** necesita [Ollama](https://ollama.com), instalado por el instalador si usted acepta. El modelo predeterminado depende de la tarjeta de video: `qwen3.5:9b` (5,3 GB) en una tarjeta con 8 GB de VRAM o más, `qwen3.5:4b` (3,2 GB) en las menores. La tarjeta de video no es obligatoria: Ollama pone en la GPU lo que cabe y el resto va a la RAM, bastante más lento. Con poca memoria en los dos, el programa pasa solo al motor `rules` y dice el motivo en pantalla.
+- **El motor `local`** necesita [Ollama](https://ollama.com), instalado por el instalador si usted acepta. El perfil predeterminado depende de la tarjeta de video: Mejor calidad (`ornith-1.5:9b`, 6,6 GB) en una tarjeta con 8 GB de VRAM o más, Más rápido (`qwen3.5:4b`, 3,2 GB) en las menores. La tarjeta de video no es obligatoria: Ollama pone en la GPU lo que cabe y el resto va a la RAM, bastante más lento. Con poca memoria en los dos, el programa pasa solo al motor `rules` y dice el motivo en pantalla.
 - **El motor `rules`** no necesita nada de eso: corre en cualquier Windows capaz de correr Python, sin GPU, sin descarga y sin software extra.
 - Algunos gigabytes libres en disco para el entorno Python y, si lo usa, el modelo de Ollama. Los archivos intermedios (PDF con OCR y trozos de texto) quedan en la carpeta local de la máquina, en `%LOCALAPPDATA%\GClaudeIndexer\work\`, y no en la carpeta de salida: un acervo grande genera gigabytes allí.
 - La interfaz está en portugués de Brasil, inglés y español, en un menú del encabezado. El valor predeterminado sigue el idioma de visualización de Windows.
 - El instalador es una comodidad para la primera preparación. El programa no está compilado en un único `.exe`: sigue siendo script Python y PowerShell legible, y un acceso directo en el escritorio lo abre con doble clic.
+
+### Hardware mínimo y recomendado
+
+| | Mínimo | Recomendado |
+|---|---|---|
+| Sistema operativo | Windows 10, 64 bits (x64) | Windows 11, 64 bits, actualizado |
+| Procesador | cualquier procesador x64 que ejecute Windows 10 | 6 núcleos o más (la conversión, el OCR y el motor `rules` se ejecutan en el procesador) |
+| Memoria (RAM) | 4 GB solo con el motor `rules`; 8 GB con el motor `local` sin tarjeta de video | 16 GB |
+| Tarjeta de video | no es obligatoria | tarjeta dedicada con 8 GB de VRAM o más, NVIDIA o AMD |
+| Disco libre | 1 GB para Python y el programa, más el espacio de la carpeta de trabajo; con el motor `local`, 6,5 GB más para descargar el modelo Más rápido | SSD con 30 GB libres |
+| Internet | solo para instalar y, una vez, para descargar un modelo o un componente opcional | lo mismo |
+
+De dónde salen los números:
+
+- **Windows 10 de 64 bits** es el piso que exige el instalador (`MinVersion=10.0`, solo x64). Linux y macOS no son compatibles (vea arriba).
+- **El motor `rules`** no tiene verificación de hardware propia: basta lo que ya pide Windows. El entorno Python privado ocupa unos 330 MB.
+- **El motor `local`** comprueba, antes de cada ejecución, que la memoria de la tarjeta de video sumada a la RAM total del equipo alcance para el modelo con un 20% de margen: unos 3,9 GB en el perfil Más rápido (`qwen3.5:4b`, 3,2 GB) y unos 7,6 GB en el perfil Mejor calidad (`ornith-1.5:9b`, 6,6 GB). Por debajo de eso pasa solo al motor `rules` y dice el motivo. La comprobación pasa con 4 GB de RAM y sin tarjeta, pero el propio Windows usa parte de eso y la ejecución es muy lenta: 8 GB es el piso realista.
+- **8 GB de VRAM** es donde el modelo Mejor calidad cabe entero en la tarjeta (el programa cuenta la tarjeta desde 7,5 GB, porque las tarjetas de 8 GB informan un poco menos). Es el perfil que elige por defecto en una tarjeta así; en las menores elige Más rápido. Las tarjetas NVIDIA usan CUDA; las AMD usan Vulkan (una tarjeta AMD cuenta como tarjeta de video desde 2 GB de VRAM).
+- **Disco:** descargar un modelo exige el doble de su tamaño libre (6,5 GB en Más rápido, 13 GB en Mejor calidad). Los componentes opcionales suman unos 2,5 GB si se usan todos (LibreOffice 370 MB, FFmpeg 80 MB, modelos de whisper hasta 1,5 GB). La carpeta de trabajo (`%LOCALAPPDATA%\GClaudeIndexer\work\`) crece con el acervo, gigabytes en uno grande. Un SSD hace bastante más rápidos la lectura, el OCR y el índice de búsqueda.
+- **16 GB de RAM** dejan espacio para Ollama, que guarda una caché de prompts y mapea el modelo en memoria además de lo que va a la tarjeta, mientras la conversión y el navegador siguen funcionando.
 
 ## Instalación sin el instalador
 
