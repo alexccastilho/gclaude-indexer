@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import json
 import os
 import shutil
 import sqlite3
@@ -54,7 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import paths, sync, workdir
+from . import json_store, paths, sync, workdir
 from .catalog import relocate_project as relocate_catalog_entry
 from .db import connect
 from .deletion import GENERATED_FILES, SHARED_FILES
@@ -132,18 +131,6 @@ def output_inside_source(source_folder: str, output_folder: str) -> bool:
         return False
 
 
-def _key(folder) -> str:
-    """Chave de uma pasta no diário, no adiamento e na marca de "em mudança".
-    Resolvida (nome curto 8.3, junção no caminho, `..`): o catálogo pode ter
-    gravado uma grafia e o plano, outra, e as duas têm de achar o mesmo
-    diário. `strict=False`: a pasta pode não existir (já mudou de lugar)."""
-    try:
-        resolved = Path(os.path.abspath(str(folder))).resolve(strict=False)
-    except (OSError, RuntimeError):
-        resolved = Path(os.path.abspath(str(folder)))
-    return os.path.normcase(os.path.normpath(str(resolved)))
-
-
 # --- adiamento (por máquina) -------------------------------------------------
 
 
@@ -151,44 +138,33 @@ def _postponed_path() -> Path:
     return paths.machine_local_folder() / POSTPONED_FILE_NAME
 
 
-def _read_json(path: Path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return default
-
-
-def _write_json_atomic(path: Path, data) -> None:
-    paths.write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
-
-
 def is_postponed(output_folder) -> bool:
-    data = _read_json(_postponed_path(), {})
-    return isinstance(data, dict) and _key(output_folder) in data
+    data = json_store.read_json(_postponed_path(), {})
+    return isinstance(data, dict) and paths.folder_key(output_folder) in data
 
 
 def postpone(output_folder) -> None:
     """O usuário escolheu "Adiar": sem prazo (decisão do usuário). Fica
     nesta máquina, não na pasta compartilhada — outra máquina pergunta de
     novo, e a tela de Execução segue mostrando o aviso."""
-    data = _read_json(_postponed_path(), {})
+    data = json_store.read_json(_postponed_path(), {})
     if not isinstance(data, dict):
         data = {}
-    data[_key(output_folder)] = datetime.now().isoformat(timespec="seconds")
-    _write_json_atomic(_postponed_path(), data)
+    data[paths.folder_key(output_folder)] = datetime.now().isoformat(timespec="seconds")
+    json_store.write_json(_postponed_path(), data)
 
 
 def _forget_postponement(*folders) -> None:
-    data = _read_json(_postponed_path(), {})
+    data = json_store.read_json(_postponed_path(), {})
     if not isinstance(data, dict):
         return
     changed = False
     for folder in folders:
-        if data.pop(_key(folder), None) is not None:
+        if data.pop(paths.folder_key(folder), None) is not None:
             changed = True
     if changed:
         try:
-            _write_json_atomic(_postponed_path(), data)
+            json_store.write_json(_postponed_path(), data)
         except OSError:
             pass
 
@@ -369,13 +345,12 @@ def _components_below_source(source_folder: str, output_folder: str) -> list[Pat
     `resolve`, para fora da origem; nenhuma pode ser link. Se a saída não
     está abaixo da origem pela grafia, só ela mesma é conferida."""
     written = Path(os.path.normpath(os.path.abspath(output_folder)))
-    source = Path(os.path.normpath(os.path.abspath(source_folder)))
+    source_key = paths.folder_spelling_key(source_folder)
     components = [written]
-    if not Path(os.path.normcase(str(written))).is_relative_to(Path(os.path.normcase(str(source)))):
+    if not Path(paths.folder_spelling_key(written)).is_relative_to(Path(source_key)):
         return components
-    source_key = os.path.normcase(str(source))
     for parent in written.parents:
-        if os.path.normcase(str(parent)) == source_key:
+        if paths.folder_spelling_key(parent) == source_key:
             break
         components.append(parent)
     return components
@@ -436,7 +411,7 @@ def build_plan(source_folder: str, output_folder: str, destination: str | None =
 
     # A origem nunca muda de nome inteira: se a saída é a própria origem,
     # os documentos do usuário estão nela.
-    same_as_source = _key(old) == _key(source)
+    same_as_source = paths.folder_key(old) == paths.folder_key(source)
     mode = "rename" if kept == 0 and not same_as_source else "items"
     if mode == "rename":
         carried = carried + instructions_ours + instructions_mixed
@@ -485,7 +460,7 @@ def _journal_path() -> Path:
 
 
 def _read_journals() -> dict[str, dict]:
-    data = _read_json(_journal_path(), {})
+    data = json_store.read_json(_journal_path(), {})
     if not isinstance(data, dict) or not isinstance(data.get("moves"), dict):
         return {}
     return {k: v for k, v in data["moves"].items() if isinstance(v, dict)}
@@ -494,17 +469,17 @@ def _read_journals() -> dict[str, dict]:
 def _write_journal(journal: dict) -> None:
     with _journal_lock:
         moves = _read_journals()
-        moves[_key(journal["old"])] = journal
-        _write_json_atomic(_journal_path(), {"version": JOURNAL_VERSION, "moves": moves})
+        moves[paths.folder_key(journal["old"])] = journal
+        json_store.write_json(_journal_path(), {"version": JOURNAL_VERSION, "moves": moves})
 
 
 def _drop_journal(journal: dict) -> None:
     with _journal_lock:
         moves = _read_journals()
-        if moves.pop(_key(journal["old"]), None) is None:
+        if moves.pop(paths.folder_key(journal["old"]), None) is None:
             return
         if moves:
-            _write_json_atomic(_journal_path(), {"version": JOURNAL_VERSION, "moves": moves})
+            json_store.write_json(_journal_path(), {"version": JOURNAL_VERSION, "moves": moves})
         else:
             _journal_path().unlink(missing_ok=True)
 
@@ -512,9 +487,9 @@ def _drop_journal(journal: dict) -> None:
 def pending_for(output_folder) -> dict | None:
     """O diário de uma mudança interrompida que envolve esta pasta (como
     origem ou como destino), ou `None`."""
-    key = _key(output_folder)
+    key = paths.folder_key(output_folder)
     for journal in _read_journals().values():
-        if key in (_key(journal.get("old", "")), _key(journal.get("new", ""))):
+        if key in (paths.folder_key(journal.get("old", "")), paths.folder_key(journal.get("new", ""))):
             return journal
     return None
 
@@ -522,7 +497,7 @@ def pending_for(output_folder) -> dict | None:
 def in_flight(output_folder) -> bool:
     """Uma mudança desta pasta está em andamento neste processo agora."""
     with _in_flight_lock:
-        return _key(output_folder) in _in_flight
+        return paths.folder_key(output_folder) in _in_flight
 
 
 @contextmanager
@@ -530,7 +505,7 @@ def flying(*folders):
     """Marca as pastas como em mudança enquanto o bloco roda. Os pedidos que
     chegarem nesse meio tempo (a tela de Execução pergunta a cada 2 s)
     respondem "ocupado" em vez de abrir o banco no meio da troca."""
-    keys = {_key(folder) for folder in folders}
+    keys = {paths.folder_key(folder) for folder in folders}
     me = threading.get_ident()
     with _in_flight_lock:
         if any(_in_flight.get(key, me) != me for key in keys):
@@ -833,7 +808,7 @@ def _finish(journal: dict, on_finalize) -> None:
     _remove_own_stray_lock(old)
     if journal["mode"] == "rename" and not journal["same_volume"]:
         _remove_if_empty(old)
-    elif journal["mode"] == "items" and old.exists() and _key(old) != _key(journal.get("source", "")):
+    elif journal["mode"] == "items" and old.exists() and paths.folder_key(old) != paths.folder_key(journal.get("source", "")):
         # A pasta antiga só sai se ficou vazia; os arquivos do usuário ficam.
         # Nunca a própria origem: mesmo vazia, a pasta é do usuário.
         _remove_if_empty(old)
@@ -917,7 +892,7 @@ def _rename_work_folder(old: Path, new: Path) -> None:
     já existir, nada é sobrescrito."""
     source = workdir.work_folder(old)
     target = workdir.work_folder(new)
-    if _key(source) == _key(target):
+    if paths.folder_key(source) == paths.folder_key(target):
         return
     if source.exists() and not _is_link(source) and not target.exists():
         os.rename(source, target)

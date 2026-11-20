@@ -35,7 +35,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 
 from .file_types import PDF_CATEGORY, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, TEXT_CATEGORY, category_of_extension
-from .paths import machine_local_folder
+from .paths import folder_spelling_key, machine_local_folder
 
 # Extensões que já existiam antes da 2.0.0: o texto intermediário delas
 # continua `<nome>.txt`, para não refazer a conversão de projetos existentes.
@@ -62,11 +62,6 @@ ATTACHMENTS_FOLDER = "anexos"
 MEDIA_FOLDER = "midia"
 
 
-def _normalized(output_folder: str | Path) -> str:
-    path = os.path.normpath(os.path.abspath(str(output_folder)))
-    return os.path.normcase(path)
-
-
 def work_folder(output_folder: str | Path) -> Path:
     """The local folder holding this project's intermediates.
 
@@ -74,7 +69,8 @@ def work_folder(output_folder: str | Path) -> Path:
     catalog: the id is per machine, the path is what identifies the
     project's files. `origin.txt` inside says which project it belongs to,
     for whoever opens the folder by hand."""
-    normalized = _normalized(output_folder)
+    # A grafia, sem resolver: é o que sempre deu nome a estas pastas.
+    normalized = folder_spelling_key(output_folder)
     key = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
     name = Path(normalized).name or "project"
     safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip() or "project"

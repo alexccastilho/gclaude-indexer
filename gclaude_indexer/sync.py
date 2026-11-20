@@ -18,11 +18,11 @@ warns before letting it continue.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import PROJECT_DB_NAME, machine_local_folder, write_text_atomic
+from . import json_store
+from .paths import PROJECT_DB_NAME, machine_local_folder, resolved_folder
 
 REGISTRY_FILE_NAME = "sincronizacao.json"
 SLACK_SECONDS = 1.0  # tolerance for minimal mtime differences between filesystems
@@ -44,19 +44,16 @@ def _read_registry() -> dict:
     """The registry, or `{}` when it is missing, unreadable (no permission,
     not UTF-8) or not a JSON object. It only feeds a warning: a registry
     that cannot be read must not keep every project from opening."""
-    try:
-        data = json.loads(_registry_path().read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
+    data = json_store.read_json(_registry_path(), {})
     return data if isinstance(data, dict) else {}
 
 
 def _write_registry(registry: dict) -> None:
-    write_text_atomic(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=2))
+    json_store.write_json(_registry_path(), registry)
 
 
 def _key(output_folder) -> str:
-    return str(Path(output_folder).resolve())
+    return resolved_folder(output_folder)
 
 
 def check_sync(output_folder) -> SyncCheckResult:

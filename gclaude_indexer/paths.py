@@ -122,9 +122,41 @@ def _normalize_folder(text: str) -> Path | None:
     return path
 
 
+def folder_key(folder) -> str:
+    """Identidade de uma pasta para "é a mesma pasta?": absoluta, resolvida
+    pelo disco (nome curto 8.3, junção, unidade de `subst`, `..`, barra no
+    fim) e sem distinção de maiúsculas, que no Windows não distinguem pastas
+    (`normcase`, não `casefold`: `Straße` e `STRASSE` são pastas
+    diferentes). `strict=False`: a pasta pode não existir (já mudou de
+    lugar). É a chave gravada no diário e no adiamento da mudança de pasta:
+    mudar a normalização perde os registros que já existem."""
+    try:
+        resolved = Path(os.path.abspath(str(folder))).resolve(strict=False)
+    except (OSError, RuntimeError):
+        resolved = Path(os.path.abspath(str(folder)))
+    return os.path.normcase(os.path.normpath(str(resolved)))
+
+
+def folder_spelling_key(folder) -> str:
+    """A pasta como foi escrita: absoluta, normalizada (`..`, barras, barra
+    no fim) e sem distinção de maiúsculas, *sem* perguntar ao disco. Para
+    quando a grafia é o que conta: achar uma junção (que `folder_key`
+    seguiria), decidir se a pasta aberta é a gravada, e o nome da pasta de
+    trabalho (`workdir.work_folder`), que é derivado desta chave e não pode
+    mudar."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(str(folder))))
+
+
+def resolved_folder(folder) -> str:
+    """A pasta resolvida pelo disco, na grafia que ele devolve (no Google
+    Drive, a caixa digitada fica). Chave gravada em `sincronizacao.json` e
+    usada em memória pela trava e pelos leitores das telas, que a usam
+    também como caminho; por isso não passa por `normcase`."""
+    return str(Path(folder).resolve())
+
+
 def _key(path: Path) -> Path:
-    # Maiúsculas/minúsculas não distinguem pastas no Windows.
-    return Path(os.path.normcase(str(path)))
+    return Path(folder_spelling_key(path))
 
 
 def _same_folder(a: Path, b: Path) -> bool:

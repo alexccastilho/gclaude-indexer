@@ -22,10 +22,10 @@ before anyone set it.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from .paths import machine_local_folder, write_text_atomic
+from . import json_store
+from .paths import machine_local_folder
 
 SETTINGS_FILE_NAME = "settings.json"
 
@@ -43,11 +43,7 @@ def settings_path() -> Path:
 def load_settings() -> dict:
     """Every preference, with defaults filled in. Never raises."""
     values = dict(_DEFAULTS)
-    try:
-        raw = settings_path().read_text(encoding="utf-8")
-        stored = json.loads(raw)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return values
+    stored = json_store.read_json(settings_path(), None)
     if isinstance(stored, dict):
         for key in _DEFAULTS:
             value = stored.get(key)
@@ -58,16 +54,12 @@ def load_settings() -> dict:
 
 def save_settings(values: dict) -> None:
     """Writes the preferences, keeping any key this version does not know."""
-    current = {}
-    try:
-        current = json.loads(settings_path().read_text(encoding="utf-8"))
-        if not isinstance(current, dict):
-            current = {}
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    current = json_store.read_json(settings_path(), {})
+    if not isinstance(current, dict):
         current = {}
 
     current.update({key: value for key, value in values.items() if isinstance(value, str)})
-    write_text_atomic(settings_path(), json.dumps(current, ensure_ascii=False, indent=2))
+    json_store.write_json(settings_path(), current)
 
 
 def shared_catalog_folder() -> Path | None:
