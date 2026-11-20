@@ -9,6 +9,73 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.1] - 2026-11-20
+
+A clean-up release: the code was reorganised so that each rule has one
+owner, with no change to what the model receives (the request to Ollama is
+byte for byte the same). Along the way 45 defects were found and fixed,
+each with a test that failed before the fix.
+
+### Added
+
+- **Minimum and recommended hardware and operating system** in
+  TECHNICAL.md (and its translations), with a link from the README and the
+  manual: Windows 10 64-bit at least, 4 GB of RAM with the rules engine or
+  8 GB with the local model without a graphics card, 16 GB of RAM and a
+  card with 8 GB of VRAM recommended.
+
+### Changed
+
+- **The Run screen is lighter**: each refresh went from about 27 to 15 ms,
+  "Run all" starts 2 PowerShell processes instead of 12, and building the
+  windows of a large project went from 4.5 to 1.0 s. The graphics card is
+  read once per run, the reports read the database once per generation and
+  the window groups come out of an index.
+
+### Fixed
+
+- **A saved project opens while its source folder is offline**; windows,
+  classification and generation still run, because they only read the
+  project's database.
+- **Run screen**: the bar and the remaining time count what is left the
+  same way as the stage cards; the waiting panel shows clean-up, search
+  indexing, retries and deletion in progress; the screen refreshes right
+  after cleaning, indexing, deleting or deduplicating; "Next stage", "Run
+  all" and "Continue" answer "busy" during an operation instead of starting
+  a second one, and "Move now" no longer hangs.
+- **Projects and settings**: a project written by a newer version opens
+  instead of failing with error 500, and opening or saving it in an older
+  version keeps the newer settings; the project lock and the sync warning
+  recognise the same folder written with different letter case; the
+  catalogue no longer merges folders that Windows tells apart; a Set no
+  longer points at a project that inherited the id of a deleted one; JSON
+  records are written atomically; an unreadable sync record or a full disk
+  no longer prevents opening a project.
+- **Classification**: a window returned to the queue before a crash no
+  longer leaves its items twice; reprocessing failed windows writes the
+  database before replacing `raw_items.jsonl`; a copy of a document that
+  changed comes back to the collection; a document that becomes ignored
+  takes its windows along; a file returned to the queue loses its "OCR
+  failed" mark on every path; the rules engine no longer leaves a page out
+  of the index when an item is discarded; an item dated only by month or
+  year keeps its date with the local model; both engines write the summary
+  with the same limit and list an item's files in page order.
+- **Generated package**: the project's CLAUDE.md carries the
+  non-negotiable rule; the combined package keeps the security section and
+  falls back to Portuguese for an unknown language, like the simple one; a
+  multi-file item shows its signature and counts as legislation; the log
+  lists CLAUDE.md when it changes and shows each stage translated, and
+  review.md names the stage of each error in the report's language.
+- **Result and Instructions screens**: "Compare engines" shows the same
+  score as the quality board, which names the model that actually runs and
+  is no longer left stale; the Instructions screen no longer promises the
+  local model the first 700 characters of the extra rules; the screen and
+  the manual say that "force GPU" is the same as automatic; the retired
+  openrouter engine warning appears once, not on every opening.
+- **Search** finds text in half-width hangul, and a migrated project
+  rebuilds the search index once for scripts written without spaces.
+- Whatever an Outlook file leaves out always shows in the log.
+
 ## [2.1.0] - 2026-11-18
 
 ### Added

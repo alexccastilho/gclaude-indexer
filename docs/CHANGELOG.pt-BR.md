@@ -15,6 +15,73 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.1] - 2026-11-20
+
+Uma versão de arrumação: o código foi reorganizado para que cada regra tenha
+um dono só, sem mudar o que o modelo recebe (o pedido ao Ollama é idêntico
+byte a byte). No caminho, 45 defeitos foram achados e corrigidos, cada um
+com um teste que falhava antes da correção.
+
+### Adicionado
+
+- **Hardware e sistema operacional mínimos e recomendados** no
+  TECHNICAL.pt-BR.md (e nas traduções), com link no README e no manual:
+  Windows 10 64 bits no mínimo, 4 GB de RAM com o motor de regras ou 8 GB
+  com o modelo local sem placa de vídeo, e 16 GB de RAM com uma placa de
+  8 GB de VRAM como recomendado.
+
+### Mudado
+
+- **A tela de Execução ficou mais leve**: cada atualização caiu de cerca de
+  27 para 15 ms, "Executar tudo" abre 2 processos do PowerShell em vez de 12
+  e montar as janelas de um projeto grande caiu de 4,5 para 1,0 s. A placa
+  de vídeo é lida uma vez por execução, os relatórios leem o banco uma vez
+  por geração e as janelas de um grupo saem por índice.
+
+### Corrigido
+
+- **Projeto salvo abre com a pasta de origem fora do ar**; janelas,
+  classificação e geração continuam rodando, porque só leem o banco do
+  projeto.
+- **Tela de Execução**: a barra e o tempo restante contam o que falta como
+  os cartões das etapas; o painel de espera mostra limpeza, indexação da
+  busca, repetições e exclusão em curso; a tela se atualiza logo depois de
+  limpar, indexar, excluir ou deduplicar; "Próxima etapa", "Executar tudo" e
+  "Continuar" respondem "ocupado" durante uma operação em vez de começar
+  outra, e "Mover agora" não trava mais.
+- **Projetos e configuração**: projeto gravado por versão mais nova abre em
+  vez de dar erro 500, e abrir ou salvar numa versão mais velha preserva a
+  configuração da mais nova; a trava do projeto e o aviso de sincronização
+  reconhecem a mesma pasta escrita com outra caixa; o catálogo não junta
+  pastas que o Windows distingue; um Conjunto não passa a apontar para o
+  projeto que herdou o id de um excluído; registros JSON gravados de forma
+  atômica; registro de sincronização ilegível ou disco cheio não impedem
+  abrir o projeto.
+- **Classificação**: janela devolvida antes de uma queda não fica com peças
+  em dobro; reprocessar janelas com falha grava o banco antes de trocar o
+  `raw_items.jsonl`; cópia de um documento que mudou volta ao acervo;
+  documento que vira ignorado leva junto as suas janelas; arquivo devolvido
+  à fila perde a marca de OCR com falha em qualquer caminho; o motor de
+  regras não deixa página fora do índice quando uma peça é descartada; peça
+  datada só por mês ou ano guarda a data no motor local; os dois motores
+  gravam o resumo com o mesmo teto e listam os arquivos da peça na ordem das
+  páginas.
+- **Pacote gerado**: o CLAUDE.md do projeto traz a regra inegociável; o
+  pacote combinado mantém a seção de segurança e cai no português em idioma
+  desconhecido, como o simples; peça de vários arquivos mostra a assinatura
+  e conta como legislação; o log lista o CLAUDE.md quando ele muda e mostra
+  cada etapa traduzida, e o review.md diz a etapa de cada erro no idioma do
+  relatório.
+- **Telas de Resultado e Instruções**: "Comparar motores" mostra a mesma
+  nota do quadro de qualidade, que diz o modelo que de fato roda e não fica
+  mais desatualizado; a tela de Instruções não promete ao modelo local os
+  primeiros 700 caracteres das regras extras; a tela e o manual dizem que
+  "forçar GPU" é igual ao automático; o aviso do motor openrouter aposentado
+  aparece uma vez, não a cada abertura.
+- **Busca** acha trecho em hangul de meia largura, e o projeto migrado refaz
+  uma vez o índice da busca para escritas sem espaço.
+- O que fica de fora de um arquivo do Outlook sempre aparece no log.
+
 ## [2.1.0] - 2026-11-18
 
 ### Adicionado
