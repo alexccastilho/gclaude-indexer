@@ -380,6 +380,13 @@ def config_to_json(config: ProjectConfig) -> str:
     return config_data_to_json(asdict(config))
 
 
+def unknown_fields_of(data: dict) -> dict:
+    """The keys of a saved `config_json` this version does not know (written
+    by a newer one), with their values. Retired keys are known: not here."""
+    known = set(_field_kinds()) | _RETIRED_FIELDS
+    return {key: value for key, value in data.items() if key not in known}
+
+
 def config_data_to_json(data: dict) -> str:
     """O texto de `project.config_json`: o mesmo formato para quem grava a
     configuração inteira e para quem mescla chaves no JSON cru."""

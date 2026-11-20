@@ -16,7 +16,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import ConfigError, ProjectConfig, config_data_to_json, config_to_json, extra_rules_errors, load_config
+from .config import (
+    ConfigError, ProjectConfig, config_data_to_json, config_to_json, extra_rules_errors, load_config,
+    unknown_fields_of,
+)
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .engine_names import ENGINE_AUTOMATIC, ENGINE_CLAUDE_CODE, ENGINE_RULES
 from .events import record_event
@@ -291,9 +294,8 @@ def load_project(
     if folder_spelling_key(config.output_folder) != folder_spelling_key(opened):
         config.output_folder = opened
         try:
-            _write_config(
-                conn, row["id"], asdict(config), json.loads(row["config_json"]), output_folder=opened
-            )
+            previous = json.loads(row["config_json"])
+            _write_config(conn, row["id"], _rewrite_data(config, previous), previous, output_folder=opened)
         except sqlite3.Error:
             # Banco travado por outro processo: vale só nesta abertura, e a
             # próxima tenta de novo.
@@ -308,7 +310,16 @@ def save_project_config(conn: sqlite3.Connection, config: ProjectConfig) -> None
     row = conn.execute("SELECT id, config_json FROM project ORDER BY id LIMIT 1").fetchone()
     if row is None:
         raise ValueError("nenhum projeto para gravar a configuração")
-    _write_config(conn, row["id"], asdict(config), json.loads(row["config_json"]))
+    previous = json.loads(row["config_json"])
+    _write_config(conn, row["id"], _rewrite_data(config, previous), previous)
+
+
+def _rewrite_data(config: ProjectConfig, previous: dict) -> dict:
+    """The whole configuration to write over `previous`: `config`, plus the
+    keys of `previous` this version does not know (a newer version wrote
+    them; `load_config` ignored them), so opening the project here does not
+    erase them."""
+    return unknown_fields_of(previous) | asdict(config)
 
 
 def merge_project_config(conn: sqlite3.Connection, values: dict) -> None:
