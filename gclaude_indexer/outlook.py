@@ -83,6 +83,10 @@ class PstMessage:
 
 
 class PstReader(Protocol):
+    # Mensagens e pastas que o leitor não conseguiu abrir (arquivo
+    # danificado): ficam fora do texto, e a conversão avisa quantas.
+    unreadable: int
+
     def messages(self) -> Iterator[PstMessage]: ...
 
     def close(self) -> None: ...
@@ -186,6 +190,7 @@ class _PypffReader:
     def __init__(self, path: Path) -> None:
         import pypff
 
+        self.unreadable = 0
         self._file = pypff.file()
         try:
             self._file.open(str(path))
@@ -201,9 +206,11 @@ class _PypffReader:
             folder, path, depth = stack.pop()
             for index in range(_safe(lambda: int(folder.number_of_sub_messages), 0)):
                 try:
-                    yield _PypffMessage(folder.get_sub_message(index), path)
+                    message = _PypffMessage(folder.get_sub_message(index), path)
                 except Exception:
+                    self.unreadable += 1
                     continue
+                yield message
             if depth >= MAX_FOLDER_DEPTH:
                 continue
             children = []
@@ -211,6 +218,7 @@ class _PypffReader:
                 try:
                     child = folder.get_sub_folder(index)
                 except Exception:
+                    self.unreadable += 1
                     continue
                 name = _safe(lambda: _text(child.name)) or f"pasta-{index + 1}"
                 children.append((child, f"{path}/{name}" if path else name, depth + 1))
@@ -296,6 +304,8 @@ class PstResult:
     messages: int
     # Por que a leitura parou antes do fim: "messages", "output" ou `None`.
     truncated: str | None = None
+    # Mensagens e pastas que o leitor não conseguiu abrir.
+    unreadable: int = 0
 
 
 # `attachment_text(path, original_name)` devolve o texto de um anexo já
@@ -364,12 +374,13 @@ def convert_pst(
                     save()
             writer.flush()
             pages = writer.pages
+        unreadable = reader.unreadable
     finally:
         reader.close()
         shutil.rmtree(attachments_root, ignore_errors=True)
 
     pages = resumable.finish(destination, pages)
-    return PstResult(pages=pages, messages=written, truncated=truncated)
+    return PstResult(pages=pages, messages=written, truncated=truncated, unreadable=unreadable)
 
 
 def _attachments(
@@ -409,19 +420,32 @@ def _attachments(
         try:
             data = attachment.read(MAX_ATTACHMENT_BYTES)
         except Exception:
+            if on_note is not None:
+                on_note("attachment_unreadable", {"name": label})
             continue
-        if not data or used + len(data) > budget:
+        if not data:
+            continue
+        if used + len(data) > budget:
+            # O tamanho declarado mentiu: o teto vale pelo que foi lido.
+            if on_note is not None:
+                on_note("attachment_too_large", {"name": label})
             continue
         folder.mkdir(parents=True, exist_ok=True)
         target = (folder / label).resolve()
         if not target.is_relative_to(folder.resolve()):
+            if on_note is not None:
+                on_note("attachment_unreadable", {"name": label})
             continue
         target.write_bytes(data)
         used += len(data)
         try:
             text = attachment_text(target, raw_name)
         except Exception:
+            # Um tipo que não é lido devolve `None` sem erro; um erro aqui é um
+            # anexo que devia ter texto e não pôde ser lido.
             text = None
+            if on_note is not None:
+                on_note("attachment_unreadable", {"name": label})
         finally:
             # O extrator pode ter renomeado o arquivo (tipo real diferente da
             # extensão): a pasta da mensagem inteira vai embora, não só o alvo.
