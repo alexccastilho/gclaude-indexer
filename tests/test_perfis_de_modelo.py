@@ -5,11 +5,12 @@ from __future__ import annotations
 import gclaude_indexer.web.app as modulo_app
 import gclaude_indexer.web.rendering as rendering
 from tests.test_phase9 import cliente  # noqa: F401
+from gclaude_indexer.web import routes_projects
 
 
 def test_formulario_mostra_os_dois_perfis_e_os_outros_modelos(cliente, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(modulo_app, "list_installed_models", lambda: ["gemma4:e4b", "ornith-1.5:9b", "qwen3.5:4b"])
-    monkeypatch.setattr(modulo_app, "default_local_profile", lambda: "quality")
+    monkeypatch.setattr(routes_projects, "list_installed_models", lambda: ["gemma4:e4b", "ornith-1.5:9b", "qwen3.5:4b"])
+    monkeypatch.setattr(routes_projects, "default_local_profile", lambda: "quality")
     corpo = cliente.get("/projects/new").text
     assert "Mais rápido (qwen3.5:4b)" in corpo and 'value="fast"' in corpo
     assert 'value="quality" selected' in corpo

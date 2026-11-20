@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from gclaude_indexer.web import app as modulo_app
+from gclaude_indexer.web import app as modulo_app, routes_projects
 from tests.test_phase31 import _app_com_projeto
 from tests.test_phase32 import _arranque_isolado
 
@@ -82,6 +82,14 @@ _ROTAS = [
     ("clear-intermediates", {}, "clear_intermediates", "result.cleanup_button"),
 ]
 
+# Onde cada rota procura a função que o teste troca.
+_DONO = {
+    "apply_update_plan": modulo_app,
+    "delete_project": routes_projects,
+    "index_fulltext": modulo_app,
+    "clear_intermediates": modulo_app,
+}
+
 
 def _ocupado_por_geracao(pid):
     return state._generation_slot(pid, "run.import_and_generate")
@@ -92,7 +100,7 @@ def test_operacao_com_slot_ocupado_recebe_409_e_nao_faz_nada(tmp_path, monkeypat
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     efeitos: list[str] = []
     for nome in ("apply_update_plan", "delete_project", "index_fulltext", "clear_intermediates"):
-        monkeypatch.setattr(modulo_app, nome, lambda *a, _n=nome, **k: efeitos.append(_n))
+        monkeypatch.setattr(_DONO[nome], nome, lambda *a, _n=nome, **k: efeitos.append(_n))
     monkeypatch.setattr(state.task_manager, "pause", lambda *a, **k: efeitos.append("pause"))
     monkeypatch.setattr(state.lock_manager, "close", lambda *a, **k: efeitos.append("close"))
 
@@ -121,7 +129,7 @@ def test_operacao_ocupa_o_slot_com_a_chave_do_botao(tmp_path, monkeypatch, rota,
         vistos.append(state._OPERATIONS_IN_PROGRESS.get(pid, (None,))[0])
         return None
 
-    monkeypatch.setattr(modulo_app, interno, observa)
+    monkeypatch.setattr(_DONO[interno], interno, observa)
     monkeypatch.setattr(state.task_manager, "pause", lambda *a, **k: None)
     monkeypatch.setattr(state.lock_manager, "close", lambda *a, **k: None)
 

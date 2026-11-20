@@ -24,6 +24,7 @@ from gclaude_indexer.paths import (
 from gclaude_indexer.project import create_project, load_project
 from gclaude_indexer.web import app as app_mod
 from gclaude_indexer.web.app import app
+from gclaude_indexer.web import routes_projects
 
 HEADERS = {"Origin": "http://testserver", "HX-Request": "true"}
 
@@ -201,7 +202,7 @@ def test_falha_do_banco_remove_a_pasta_criada(cliente, tmp_path, origem, monkeyp
     def quebrar(config):
         raise sqlite3.OperationalError("disco cheio")
 
-    monkeypatch.setattr(app_mod, "create_project", quebrar)
+    monkeypatch.setattr(routes_projects, "create_project", quebrar)
     saida = tmp_path / "Nova" / "Saida"
     resposta = cliente.post("/projects/new", data=_dados(origem, str(saida)), headers=HEADERS, follow_redirects=False)
     assert resposta.status_code == 400
@@ -248,14 +249,14 @@ def test_rota_de_sugestao_fica_sob_a_protecao_das_demais(cliente, origem):
 
 
 def test_procurar_a_origem_preenche_a_saida(cliente, tmp_path, origem, monkeypatch):
-    monkeypatch.setattr(app_mod, "choose_folder", lambda **_kw: str(origem))
+    monkeypatch.setattr(routes_projects, "choose_folder", lambda **_kw: str(origem))
     resposta = cliente.post("/select-folder", data={"field": "source_folder", "source_folder": ""}, headers=HEADERS)
     assert 'hx-swap-oob="innerHTML"' in resposta.text
     assert str(tmp_path / "Acervo-AI") in resposta.text
 
 
 def test_procurar_a_origem_nao_sobrescreve_saida_editada(cliente, origem, monkeypatch):
-    monkeypatch.setattr(app_mod, "choose_folder", lambda **_kw: str(origem))
+    monkeypatch.setattr(routes_projects, "choose_folder", lambda **_kw: str(origem))
     resposta = cliente.post(
         "/select-folder", data={"field": "source_folder", "source_folder": "", "output_touched": "1"}, headers=HEADERS,
     )

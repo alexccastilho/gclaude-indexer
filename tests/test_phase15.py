@@ -429,7 +429,15 @@ def test_nenhuma_rota_http_pode_disparar_uac(monkeypatch):
     from gclaude_indexer import sensor_service, sensors
     from gclaude_indexer.web import app as modulo_app
 
-    pontas = {getattr(rota, "endpoint", None) for rota in modulo_app.app.routes}
+    def _rotas(rotas):
+        for rota in rotas:
+            if hasattr(rota, "original_router"):  # router incluído (`app.include_router`)
+                yield from _rotas(rota.original_router.routes)
+            else:
+                yield rota
+
+    pontas = {getattr(rota, "endpoint", None) for rota in _rotas(modulo_app.app.routes)}
+    assert modulo_app.api_version in pontas and len(pontas) > 60, "a busca enxerga as rotas dos routers"
     assert modulo_app._request_cpu_sensor_helper not in pontas
 
     fonte = (RAIZ / "gclaude_indexer" / "web" / "app.py").read_text(encoding="utf-8")

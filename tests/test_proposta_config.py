@@ -20,6 +20,7 @@ from gclaude_indexer.project import create_project, load_project
 from gclaude_indexer.scanning import scan
 from gclaude_indexer.pipeline import _scan_step
 from gclaude_indexer.windows_prep import prepare_windows
+from gclaude_indexer.web import routes_projects
 
 PT = (
     "O servidor público que, no exercício de suas atribuições, praticar ato de improbidade "
@@ -406,7 +407,7 @@ def test_rota_de_proposta_nao_existe_mais(cliente):
 def test_escolher_a_pasta_nao_dispara_mais_a_proposta(cliente, monkeypatch, tmp_path):
     from gclaude_indexer.web import app as modulo
 
-    monkeypatch.setattr(modulo, "choose_folder", lambda **_kw: str(tmp_path))
+    monkeypatch.setattr(routes_projects, "choose_folder", lambda **_kw: str(tmp_path))
     resposta = cliente.post(
         "/select-folder", data={"field": "source_folder", "source_folder": ""}, headers=_CABECALHOS,
     )
