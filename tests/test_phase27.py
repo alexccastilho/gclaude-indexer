@@ -10,11 +10,11 @@ Agora a saída é um PDF comum, e todo arquivo cujo OCR falhou fica marcado
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 
 import fitz
 
-from gclaude_indexer import conversion
 from gclaude_indexer import workdir
 from gclaude_indexer.conversion import convert, ocr_retry_count, requeue_ocr_failures
 from gclaude_indexer.db import SCHEMA_SQL, connect, init_schema
@@ -26,7 +26,7 @@ from gclaude_indexer.web.step_state import step_status
 from .test_phase3 import _criar_pdf_escaneado, _criar_pdf_misto, _preparar_projeto
 
 
-_run_original = conversion.subprocess.run
+_run_original = subprocess.run
 
 
 class _Resultado:
@@ -41,7 +41,7 @@ def _falso_ocrmypdf(monkeypatch, returncode: int, comandos: list | None = None):
             comandos.append(comando)
         return _Resultado(returncode, "ColorConversionNeededError: unusual color space")
 
-    monkeypatch.setattr(conversion.subprocess, "run", _run)
+    monkeypatch.setattr(subprocess, "run", _run)
 
 
 def _linha(conn, nome):
@@ -87,7 +87,7 @@ def test_falha_parcial_de_ocr_fica_marcada_e_e_refeita_na_proxima_conversao(tmp_
     # O ocrmypdf de verdade de volta. Não `monkeypatch.undo()`: desfaria
     # também a pasta de trabalho temporária do conftest, e o OCR iria para
     # a pasta real da máquina.
-    monkeypatch.setattr(conversion.subprocess, "run", _run_original)
+    monkeypatch.setattr(subprocess, "run", _run_original)
     resultado = convert(conn, config, language="pt-BR")
 
     linha = _linha(conn, "ata_mista.pdf")

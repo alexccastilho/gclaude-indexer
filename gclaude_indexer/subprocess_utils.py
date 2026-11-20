@@ -11,7 +11,9 @@
 Requirement from section 10: "the installer handles everything and reports
 progress in the UI, never in a console window." Used by `hardware.py` and
 `installer.py` for `nvidia-smi`, PowerShell/WMI, `winget`, silent installers
-and the `--version` checks.
+and the `--version` checks, and — through `popen_hidden` — by every process
+this code starts itself: LibreOffice, ffmpeg/whisper.cpp, `msiexec`, the
+OCR runner (Tesseract, Ghostscript) and `ollama serve`.
 """
 
 from __future__ import annotations
@@ -21,16 +23,41 @@ import signal
 import subprocess
 import sys
 
+from .no_window import hidden_startupinfo
 
-def run_hidden(command: list[str], timeout: int | None = None) -> subprocess.CompletedProcess:
-    """`subprocess.run` with an argument list, `shell=False`, no console."""
-    kwargs: dict = {}
+
+def _hidden_kwargs(extra_flags: int = 0, new_session: bool = False) -> dict:
+    """The arguments that keep a child without a console: a hidden
+    `STARTUPINFO` plus `CREATE_NO_WINDOW` on Windows (with `extra_flags`
+    OR-ed in). Off Windows, `new_session` puts the child in its own process
+    group, which is what lets `kill_tree` reach its children there."""
     if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        return {
+            "startupinfo": hidden_startupinfo(),
+            "creationflags": subprocess.CREATE_NO_WINDOW | extra_flags,
+        }
+    return {"start_new_session": True} if new_session else {}
+
+
+def popen_hidden(
+    command, *, extra_flags: int = 0, new_session: bool = False, **kwargs
+) -> subprocess.Popen:
+    """`subprocess.Popen` without a shell and without a console window.
+
+    `command` goes to `Popen` as it is (a list, or the hand-quoted string
+    `msiexec` needs). `extra_flags` adds Windows creation flags (e.g.
+    `DETACHED_PROCESS` for a server that outlives the request). Pass
+    `new_session=True` for a child that may be ended with `kill_tree`."""
+    return subprocess.Popen(command, shell=False, **_hidden_kwargs(extra_flags, new_session), **kwargs)
+
+
+def run_hidden(
+    command: list[str], timeout: int | None = None, env: dict | None = None
+) -> subprocess.CompletedProcess:
+    """`subprocess.run` with an argument list, `shell=False`, no console."""
+    kwargs = _hidden_kwargs()
+    if env is not None:
+        kwargs["env"] = env
     return subprocess.run(command, shell=False, capture_output=True, text=True, timeout=timeout, **kwargs)
 
 
@@ -61,14 +88,9 @@ def start_in_background(
             kwargs["stderr"] = subprocess.STDOUT
     if env is not None:
         kwargs["env"] = env
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+    detached = subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
     try:
-        return subprocess.Popen(command, shell=False, **kwargs)
+        return popen_hidden(command, extra_flags=detached, **kwargs)
     finally:
         if kwargs.get("stdout") not in (None, subprocess.DEVNULL):
             kwargs["stdout"].close()
@@ -79,11 +101,7 @@ def kill_tree(process: subprocess.Popen) -> None:
     orphan `soffice.bin` holding its temporary profile and the memory."""
     if sys.platform == "win32":
         try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                shell=False, capture_output=True, timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            run_hidden(["taskkill", "/T", "/F", "/PID", str(process.pid)], timeout=30)
         except (OSError, subprocess.SubprocessError):
             pass
     else:

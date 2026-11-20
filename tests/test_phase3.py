@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 
 import fitz
 import pytest
@@ -183,8 +184,6 @@ def test_pdf_misto_recebe_ocr_so_na_pagina_escaneada(tmp_path):
 
 
 def test_ocr_do_pdf_misto_e_limitado_as_paginas_sem_texto(tmp_path, monkeypatch):
-    from gclaude_indexer import conversion
-
     origem, saida, config, conn = _preparar_projeto(tmp_path)
     _criar_pdf_misto(origem / "ata_mista.pdf")
     comandos = []
@@ -197,7 +196,7 @@ def test_ocr_do_pdf_misto_e_limitado_as_paginas_sem_texto(tmp_path, monkeypatch)
         comandos.append(comando)
         return _Resultado()
 
-    monkeypatch.setattr(conversion.subprocess, "run", _falso_run)
+    monkeypatch.setattr(subprocess, "run", _falso_run)
     scan(conn, config)
     convert(conn, config)
 

@@ -56,7 +56,7 @@ from typing import Callable
 from . import components
 from . import resumable
 from .resumable import Interrupted
-from .subprocess_utils import kill_tree
+from .subprocess_utils import kill_tree, popen_hidden
 
 COMPONENT_FFMPEG = "ffmpeg"
 COMPONENT_WHISPER = "whisper-cpp"
@@ -281,16 +281,7 @@ def _popen(command: list[str], stderr, stdout=subprocess.DEVNULL) -> subprocess.
     Sem shell, sem janela, sem entrada; a saída padrão é descartada (o
     `whisper-cli` a usaria para imprimir o texto transcrito) e os avisos vão
     para o arquivo `stderr`."""
-    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": stdout, "stderr": stderr}
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    else:
-        kwargs["start_new_session"] = True
-    return subprocess.Popen(command, shell=False, **kwargs)
+    return popen_hidden(command, new_session=True, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
 
 
 class _Process:

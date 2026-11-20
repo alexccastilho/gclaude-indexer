@@ -21,7 +21,6 @@ from __future__ import annotations
 import email
 import os
 import sqlite3
-import subprocess
 import sys
 from collections import Counter
 from collections.abc import Callable
@@ -37,6 +36,7 @@ from .workdir import converted_artifact_path, text_suffix
 from .config import ProjectConfig
 from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
 from .ocr_detection import MIN_AVG_CHARS_PER_PAGE
+from .subprocess_utils import run_hidden
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
@@ -211,15 +211,7 @@ def _run_ocrmypdf(
         str(source),
         str(destination),
     ]
-    result = subprocess.run(
-        command,
-        shell=False,
-        capture_output=True,
-        text=True,
-        env=_ocr_environment(),
-        startupinfo=no_window.hidden_startupinfo(),
-        creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
-    )
+    result = run_hidden(command, env=_ocr_environment())
 
     if result.returncode != 0:
         raise OcrError(
@@ -1410,6 +1402,36 @@ def _minutes(seconds: float) -> int:
     return max(1, round(seconds / 60))
 
 
+@dataclass(frozen=True)
+class _ExternalComponent:
+    """O componente externo de que os arquivos de uma categoria dependem.
+
+    `display_name`: como o log o mostra (parâmetro gravado dos eventos).
+    `ready`: se ele está nesta máquina agora, sem rede.
+    `obtain`: baixa o que falta (`should_stop`, `on_download`)."""
+
+    display_name: str
+    ready: Callable[[], bool]
+    obtain: Callable[..., object]
+
+
+# Categoria → componente externo. Categoria fora daqui não depende de
+# nenhum. A ordem é a em que `_obtain_held_components` tenta obtê-los. As
+# funções são chamadas pelo nome do módulo na hora (a suíte as troca).
+_CATEGORY_COMPONENTS: dict[str, _ExternalComponent] = {
+    LEGACY_CATEGORY: _ExternalComponent(
+        "LibreOffice",
+        lambda: legacy_office.soffice_path() is not None,
+        lambda **fetch: legacy_office.ensure_available(**fetch),
+    ),
+    MEDIA_CATEGORY: _ExternalComponent(
+        "ffmpeg/whisper.cpp",
+        lambda: media.tools_present(),
+        lambda **fetch: media.prepare(**fetch),
+    ),
+}
+
+
 def component_ready(extension: str) -> bool:
     """Se o componente de que um arquivo desta extensão depende está nesta
     máquina agora — o LibreOffice (o baixado ou um do sistema) para os
@@ -1422,12 +1444,8 @@ def component_ready(extension: str) -> bool:
     grupo perderia as janelas em toda execução (revisão final, I1). Com a
     resposta `False`, o plano deixa o arquivo em espera quieto mesmo que
     ele tenha sido editado, sem ler os bytes (`update_plan.detect_changes`)."""
-    category = category_of_extension("." + extension.lstrip("."))
-    if category == LEGACY_CATEGORY:
-        return legacy_office.soffice_path() is not None
-    if category == MEDIA_CATEGORY:
-        return media.tools_present()
-    return True
+    component = _CATEGORY_COMPONENTS.get(category_of_extension("." + extension.lstrip(".")))
+    return True if component is None else component.ready()
 
 
 def _groups_with_windows(conn) -> set[str]:
@@ -1535,7 +1553,7 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
 def component_display_name(name: str) -> str:
     """O nome de um componente do manifesto como o log o mostra."""
     if name == legacy_office.COMPONENT_NAME:
-        return "LibreOffice"
+        return _CATEGORY_COMPONENTS[LEGACY_CATEGORY].display_name
     return media.DISPLAY_NAMES.get(name, name)
 
 
@@ -1564,17 +1582,13 @@ def _obtain_held_components(conn, should_stop, language) -> None:
     held = components_held_back(conn)
     if not held:
         return
-    legacy = [row["name"] for row in held if category_of_extension("." + row["extension"]) == LEGACY_CATEGORY]
-    media_names = [row["name"] for row in held if category_of_extension("." + row["extension"]) == MEDIA_CATEGORY]
     fetch = {"should_stop": should_stop, "on_download": _announce_download(conn, language)}
-    for names, component, obtain in (
-        (legacy, "LibreOffice", lambda: legacy_office.ensure_available(**fetch)),
-        (media_names, "ffmpeg/whisper.cpp", lambda: media.prepare(**fetch)),
-    ):
+    for category, component in _CATEGORY_COMPONENTS.items():
+        names = [row["name"] for row in held if category_of_extension("." + row["extension"]) == category]
         if not names or (should_stop is not None and should_stop()):
             continue
         try:
-            obtain()
+            component.obtain(**fetch)
         except Exception:
             # `ensure` nunca levanta; isto é só para que um imprevisto aqui
             # não derrube a conversão dos outros arquivos.
@@ -1583,7 +1597,7 @@ def _obtain_held_components(conn, should_stop, language) -> None:
             return
         record_event(
             conn, "conversion", "warning", "log.conversion.component_held",
-            {"component": component, "count": len(names), "names": ", ".join(names[:20])},
+            {"component": component.display_name, "count": len(names), "names": ", ".join(names[:20])},
             language=language,
         )
 
@@ -1971,7 +1985,7 @@ def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, lang
     if soffice is None:
         record_event(
             conn, "conversion", "warning", "log.conversion.component_unavailable",
-            {"component": "LibreOffice", "count": len(rows)}, language=language,
+            {"component": _CATEGORY_COMPONENTS[LEGACY_CATEGORY].display_name, "count": len(rows)}, language=language,
         )
     jobs = max(1, _physical_cores() // 2)
     _convert_sequential(conn, config, rows, jobs, should_stop, result, language=language)
