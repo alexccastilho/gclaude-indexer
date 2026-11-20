@@ -29,6 +29,7 @@ from gclaude_indexer.web import app as app_mod, rendering
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web import state
 from gclaude_indexer.web import readers
+from gclaude_indexer.web import project_access
 
 HEADERS = {"Origin": "http://testserver"}
 
@@ -48,7 +49,7 @@ def local(tmp_path, monkeypatch):
 @pytest.fixture
 def deteccao_ligada(monkeypatch):
     monkeypatch.setattr(
-        app_mod, "_relocation_due",
+        project_access, "_relocation_due",
         lambda config: relocation.output_inside_source(config.source_folder, config.output_folder),
     )
 
@@ -747,7 +748,7 @@ def _religar(monkeypatch, local, tmp_path):
     pasta = tmp_path / "_relocation_local"
     monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
     monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
-    monkeypatch.setattr(app_mod, "_relocation_due", lambda config: False)
+    monkeypatch.setattr(project_access, "_relocation_due", lambda config: False)
 
 
 def test_colisao_numa_copia_entre_volumes_nao_apaga_o_intruso(local, tmp_path, monkeypatch):
