@@ -73,6 +73,7 @@ O idioma de cada documento é detectado um a um, qualquer que seja, e o tipo e o
 - Alguns gigabytes livres em disco.
 - Não precisa instalar nada antes. O instalador traz o Python, o OCR (Tesseract e Ghostscript, que leem páginas digitalizadas), o Ollama, que é o programa que roda o modelo local, e o próprio modelo; o que é opcional, ele mostra numa lista antes de baixar. A internet só é usada nessa hora e, depois, para os componentes opcionais descritos acima.
 - Uma placa de vídeo com 6 GB ou mais deixa o modelo local bem mais rápido. Sem placa, ele roda devagar na memória comum, e o motor de regras faz o serviço em segundos.
+- O computador mínimo e o recomendado, item por item, estão em [Hardware mínimo e recomendado](TECHNICAL.pt-BR.md#hardware-mínimo-e-recomendado).
 
 O programa classifica as peças de dois jeitos. O motor de regras reconhece cada peça por padrões do texto, como os títulos das peças, e termina em segundos. O modelo local é um programa de inteligência artificial que lê cada trecho, acerta mais a data e o autor, e demora mais. A opção padrão, Automático, usa o modelo local quando o computador aguenta e as regras quando não.
 

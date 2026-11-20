@@ -73,6 +73,7 @@ The language of each document is detected one by one, whatever it is, and the ty
 - A few gigabytes of free disk.
 - Nothing to install beforehand. The installer brings Python, the OCR (Tesseract and Ghostscript, which read scanned pages), Ollama, the program that runs the local model, and the model itself; what is optional, it shows in a list before downloading. The internet is used only then, and later for the optional components described above.
 - A graphics card with 6 GB or more makes the local model much faster. Without a card, it runs slowly in ordinary memory, and the rules engine does the job in seconds.
+- The minimum and the recommended computer, item by item, are in [Minimum and recommended hardware](docs/TECHNICAL.md#minimum-and-recommended-hardware).
 
 The program classifies the items in two ways. The rules engine recognizes each item by patterns in the text, such as the titles of the items, and finishes in seconds. The local model is an artificial intelligence program that reads each passage, gets the date and the author right more often, and takes longer. The default option, Automatic, uses the local model when the computer can handle it and the rules when it cannot.
 

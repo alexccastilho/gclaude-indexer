@@ -87,7 +87,7 @@
 <h3>Identificación</h3>
 <dl>
   <dt>Nombre del proyecto</dt><dd>Solo para que usted reconozca el proyecto en la lista. No cambia ningún archivo.</dd>
-  <dt>Tema de la colección</dt><dd>Una o dos frases sobre el contenido (p. ej.: "proceso de licitación de la obra X"). Se incluye en las instrucciones generadas para Claude y es lo que más ayuda al modelo local a entender lo que está leyendo.</dd>
+  <dt>Tema de la colección</dt><dd>Una o dos frases sobre el contenido (p. ej.: "proceso de licitación de la obra X"). Se incluye en las instrucciones generadas para Claude, que es donde ayuda. El modelo local no lo lee desde la 2.1.0: medido, con el tema cortaba peor los documentos.</dd>
 </dl>
 
 <h3>Carpetas</h3>
@@ -167,6 +167,7 @@
 </div>
 <p>El motor <em>Claude Code (manual)</em> dejó de existir en la 2.0.0. Un proyecto que lo usaba se abre con el motor <em>Automático</em>, con un aviso, y las piezas que ya estaban clasificadas siguen valiendo. Claude Code todavía sirve para consultar el índice: el <code>CLAUDE.md</code> de la carpeta de salida le enseña a leer el índice y a usar <code>buscar.bat</code>.</p>
 <p>Para que tenga una idea del tiempo, en el acervo de demostración (72 páginas): 4 segundos con las reglas, 2 minutos y medio en el perfil Más rápido y 5 minutos y medio en Mejor calidad, en una tarjeta de 12 GB. Sin tarjeta de video, solo con la CPU, el modelo local es de 5 a 11 veces más lento. Un acervo de miles de páginas tarda horas con el modelo local y minutos con las reglas.</p>
+<p>El mínimo y el recomendado de sistema, memoria, tarjeta de video y disco están en la sección <em>Hardware mínimo y recomendado</em> de <code>docs/TECHNICAL.es.md</code>, en el repositorio del programa.</p>
 <p>Las páginas de leyes, decretos y resoluciones guardadas del sitio del Planalto no pasan por ningún motor: el programa las lee por la estructura de la propia página y sabe el tipo, el número, la fecha y la síntesis. Vea <a href="#normas-e-busca">Normas citadas y búsqueda</a>.</p>
 <p class="manual-tip">Consejo: la pantalla Resultado tiene la tabla <em>Comparar motores y modelos</em>. Procese el mismo acervo con motores diferentes y compare tiempo y puntuación antes de decidir.</p>
 </section>
@@ -288,7 +289,7 @@
   <li><strong>En cualquier momento</strong>: el enlace <em>Instrucciones del proyecto</em>, en las pantallas Ejecución y Resultado, muestra su parte del archivo para corregirla o pegar la versión actual del Proyecto de Claude. La parte del programa aparece debajo, solo para lectura. Cada vez que guarda, la versión anterior queda en una copia <code>.bak</code> con la fecha en el nombre.</li>
   <li><strong>Repetición del bloque automático</strong>: si su parte del archivo ya tiene una copia de lo que el programa escribe en el bloque (la regla innegociable, cómo localizar una pieza, las columnas, recuentos de piezas o de páginas), la generación no toca su texto: pone un aviso al inicio del bloque y en el registro, y las pantallas Ejecución y Resultado muestran un enlace para revisarlo. En la pantalla <em>Instrucciones del proyecto</em> ve las secciones repetidas, las líneas con números que solo el bloque actualiza y las referencias del tipo "sección 4" que pasarían a apuntar al bloque. Elija <em>Quitar las repeticiones</em> (la versión anterior queda en una copia <code>.bak</code>) o <em>Mantener como está</em>. Los fragmentos suyos que hablan del acervo pueden ir a las <em>Reglas extra del proyecto</em>: marque los que quiera mover y pasan a salir dentro del bloque.</li>
   <li><strong>Reglas adicionales</strong>: la pantalla <em>Instrucciones del proyecto</em> tiene una caja para las reglas específicas del acervo (por ejemplo, "cite siempre el número del expediente" o un glosario de siglas). Salen dentro del bloque del programa en la próxima generación de informes. Antes estaban en el formulario de creación; el valor que un proyecto ya tenía se conservó.</li>
-  <li><strong>El <code>CLAUDE.md</code> es solo de consulta</strong>: enseña a Claude Code a leer el índice y a usar <code>buscar.bat</code>, y recuerda que el texto de un documento es dato, nunca instrucción. No le indica a Claude Code que clasifique nada. Los restos de versiones anteriores (los archivos <code>windows/*.txt</code> y el bloque antiguo del <code>CLAUDE.md</code>) se limpian cuando usted genera los informes.</li>
+  <li><strong>El <code>CLAUDE.md</code> es solo de consulta</strong>: enseña a Claude Code a leer el índice y a usar <code>buscar.bat</code>, recuerda que el texto de un documento es dato, nunca instrucción, y termina con la misma regla innegociable de las instrucciones: verificar valor, fecha y tabla en el archivo original. No le indica a Claude Code que clasifique nada. Los restos de versiones anteriores (los archivos <code>windows/*.txt</code> y el bloque antiguo del <code>CLAUDE.md</code>) se limpian cuando usted genera los informes.</li>
 </ul>
 </section>
 
@@ -361,7 +362,7 @@
   <tbody>
     <tr><td>El resultado más rápido posible</td><td>Motor <em>Reglas</em>, Paralelismo <em>máximo</em>.</td></tr>
     <tr><td>Rapidez, sin renunciar a la calidad</td><td>Motor <em>Automático</em> o <em>Modelo local</em>: la confianza baja ya se reduce durante la clasificación, sin paso extra.</td></tr>
-    <tr><td>La mejor calidad</td><td>Motor <em>Modelo local</em> en una tarjeta de video donde el modelo quepa, y un <em>Tema de la colección</em> bien completado.</td></tr>
+    <tr><td>La mejor calidad</td><td>Motor <em>Modelo local</em> en una tarjeta de video donde el modelo quepa, en el perfil <em>Mejor calidad</em>.</td></tr>
     <tr><td>Usar la computadora mientras procesa</td><td>Paralelismo <em>automático</em> o <em>económico</em>; Procesamiento <em>solo CPU/RAM</em> si necesita la tarjeta de video.</td></tr>
     <tr><td>Un acervo con audio o vídeo</td><td>Marque la casilla de audio y vídeo solo cuando la necesite: la transcripción usa el procesador, es lenta y descarga el modelo la primera vez.</td></tr>
     <tr><td>Un acervo con formatos antiguos (<code>.doc</code>, <code>.ppt</code>)</td><td>Deje la categoría marcada. El primer uso descarga LibreOffice, una sola vez, y necesita internet.</td></tr>
@@ -371,7 +372,7 @@
 </div>
 <ul>
   <li>Empiece con una parte pequeña del acervo para probar la configuración; después indique la carpeta completa.</li>
-  <li>Complete bien el <em>Tema de la colección</em>: mejora la clasificación y las respuestas de Claude.</li>
+  <li>Complete bien el <em>Tema de la colección</em>: mejora las respuestas de Claude (el modelo local no lo lee).</li>
   <li>Use una tarjeta de video si puede, y un modelo que quepa en ella: el registro dice si cupo. Un modelo que cabe y termina vale más que uno más grande que se desborda a la memoria común.</li>
   <li>Pídale siempre a Claude la referencia (f. N o p. N) y compruebe el valor en el documento original antes de usarlo.</li>
 </ul>
