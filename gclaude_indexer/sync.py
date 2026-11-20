@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import json_store
-from .paths import PROJECT_DB_NAME, machine_local_folder, resolved_folder
+from .paths import PROJECT_DB_NAME, folder_key, machine_local_folder, resolved_folder
 
 REGISTRY_FILE_NAME = "sincronizacao.json"
 SLACK_SECONDS = 1.0  # tolerance for minimal mtime differences between filesystems
@@ -53,7 +53,23 @@ def _write_registry(registry: dict) -> None:
 
 
 def _key(output_folder) -> str:
+    # The form written to the registry; kept so existing files stay valid.
     return resolved_folder(output_folder)
+
+
+def _registry_key_for(registry: dict, output_folder) -> str | None:
+    """The key under which `output_folder` is in the registry, or `None`.
+
+    The key written is the folder as the disk resolves it, and Google Drive
+    keeps the case it was typed in (so does any folder that no longer
+    exists): `H:\\Saidas\\X` and `h:\\saidas\\x` were two projects here and
+    one in the catalog and the relocation journal. The exact key first,
+    then `paths.folder_key`, the comparison those use."""
+    exact = _key(output_folder)
+    if exact in registry:
+        return exact
+    wanted = folder_key(output_folder)
+    return next((key for key in registry if folder_key(key) == wanted), None)
 
 
 def check_sync(output_folder) -> SyncCheckResult:
@@ -67,7 +83,9 @@ def check_sync(output_folder) -> SyncCheckResult:
         return SyncCheckResult(True, "")
 
     current_mtime = db_path.stat().st_mtime
-    known_mtime = _read_registry().get(_key(output_folder))
+    registry = _read_registry()
+    known_key = _registry_key_for(registry, output_folder)
+    known_mtime = registry.get(known_key) if known_key is not None else None
 
     if known_mtime is not None and current_mtime < known_mtime - SLACK_SECONDS:
         return SyncCheckResult(False, "sync.incomplete")
@@ -98,8 +116,8 @@ def rename_key(old_folder, new_folder) -> None:
     passa para a chave nova, para o aviso de sincronização incompleta
     continuar valendo."""
     registry = _read_registry()
-    old_key, new_key = _key(old_folder), _key(new_folder)
-    if old_key not in registry or old_key == new_key:
+    old_key, new_key = _registry_key_for(registry, old_folder), _key(new_folder)
+    if old_key is None or old_key == new_key:
         return
     value = registry.pop(old_key)
     registry.setdefault(new_key, value)
