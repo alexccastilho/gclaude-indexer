@@ -41,13 +41,14 @@ def _registry_path() -> Path:
 
 
 def _read_registry() -> dict:
-    path = _registry_path()
-    if not path.exists():
-        return {}
+    """The registry, or `{}` when it is missing, unreadable (no permission,
+    not UTF-8) or not a JSON object. It only feeds a warning: a registry
+    that cannot be read must not keep every project from opening."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+        data = json.loads(_registry_path().read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _write_registry(registry: dict) -> None:
@@ -88,7 +89,13 @@ def mark_synced(output_folder) -> None:
         return
     registry = _read_registry()
     registry[_key(output_folder)] = db_path.stat().st_mtime
-    _write_registry(registry)
+    try:
+        _write_registry(registry)
+    except OSError:
+        # Disk full or no permission in the local folder. The date not
+        # recorded only makes the next warning less sensitive (the known
+        # date stays older); failing here would leave the project unopenable.
+        pass
 
 
 def rename_key(old_folder, new_folder) -> None:
