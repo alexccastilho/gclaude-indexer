@@ -117,6 +117,30 @@ def test_a_cobertura_do_review_cobre_todos_os_status_que_o_pipeline_grava(tmp_pa
         assert f"- {status}: 1" in texto, status
 
 
+def test_os_erros_do_review_saem_no_idioma_do_relatorio(tmp_path):
+    """A seção de erros copiava o `message` gravado, no idioma em que o
+    evento foi registrado; a tela de log retraduz pela chave. Agora o
+    relatório também retraduz, e evento sem chave sai como foi gravado."""
+    from gclaude_indexer.artifacts import generate_review_md
+    from gclaude_indexer.events import record_event
+
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    record_event(
+        conn, "conversion", "error", "log.conversion.failed", {"name": "a.pdf", "error": "x"}, language="en",
+    )
+    record_event(conn, "conversion", "error", "texto solto sem chave", language="en")
+
+    em_pt = generate_review_md(conn, _config(tmp_path, saida), "pt").read_text(encoding="utf-8")
+    assert "(conversion) Não foi possível preparar a.pdf: x." in em_pt
+    assert "Could not prepare" not in em_pt
+    assert "(conversion) texto solto sem chave" in em_pt
+
+    em_es = generate_review_md(conn, _config(tmp_path, saida), "es").read_text(encoding="utf-8")
+    assert "(conversion) No se pudo preparar a.pdf: x." in em_es
+
+
 # --- o estado que os artefatos descrevem -----------------------------------
 
 
