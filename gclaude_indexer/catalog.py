@@ -247,6 +247,28 @@ def find_project(project_id: int) -> CatalogEntry | None:
     return None
 
 
+def find_member(project_id: int, created_at: str = "") -> CatalogEntry | None:
+    """The project a set member points to, resolved like `find_project`.
+
+    The id alone is not the project: a new project takes the id of a
+    deleted one (`max + 1`) and `_with_unique_ids` renumbers ids that
+    collide. With the catalog entry's `created_at` recorded in the member,
+    the same id counts only with the same stamp; otherwise the one entry
+    with that stamp (a renumbered id); otherwise the project is gone, and
+    never the one that inherited the id. A member without a stamp (a set
+    saved before it existed) resolves by id, as before."""
+    if not created_at:
+        return find_project(project_id)
+    entries = list_projects()
+    match = next((e for e in entries if e.id == project_id and e.created_at == created_at), None)
+    if match is None:
+        stamped = [e for e in entries if e.created_at == created_at]
+        match = stamped[0] if len(stamped) == 1 else None
+    if match is None:
+        return None
+    return replace(match, output_folder=match.resolved_output_folder(catalog_folder()))
+
+
 def remove_project(project_id: int) -> None:
     """Takes the project out of the catalog (explicit user request —
     "delete project"). Does not touch the output folder: whether that also
