@@ -163,6 +163,7 @@ def test_token_nao_ascii_e_recusado_sem_excecao():
 from gclaude_indexer import sensors
 from tests.test_phase32 import _Computer, _Hardware, _Sensor, _como_admin, _nct
 from gclaude_indexer.web import state
+from gclaude_indexer.web import operations
 
 
 def test_sub_hardware_que_nao_e_superio_nao_decide_a_ventoinha(monkeypatch):
@@ -228,7 +229,7 @@ def test_ocupado_sem_dono_vai_para_o_resultado(tmp_path, monkeypatch):
     escopo = {"type": "http", "method": "POST", "path": f"/projects/{pid}/delete", "headers": [],
               "query_string": b"", "scheme": "http", "server": ("127.0.0.1", 8000), "root_path": ""}
 
-    resposta = modulo_app._operation_busy_response(Request(escopo), pid)
+    resposta = operations._operation_busy_response(Request(escopo), pid)
 
     assert resposta.status_code == 303 and resposta.headers["location"] == f"/projects/{pid}/result"
 

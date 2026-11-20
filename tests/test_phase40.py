@@ -31,6 +31,7 @@ from gclaude_indexer.i18n import translate
 from gclaude_indexer.run_control import OperationCancelled
 from gclaude_indexer.web import app as modulo_app
 from gclaude_indexer.web import state
+from gclaude_indexer.web import operations
 
 
 def _parar_sempre():
@@ -123,7 +124,7 @@ def test_operacao_em_segundo_plano_aparece_e_para_pelo_botao(tmp_path, monkeypat
     from tests.test_phase32 import _app_com_projeto
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    monkeypatch.setattr(modulo_app, "OPERATION_INLINE_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(operations, "OPERATION_INLINE_WAIT_SECONDS", 0.0)
     comecou = threading.Event()
 
     def trabalho(should_stop):
@@ -132,10 +133,10 @@ def test_operacao_em_segundo_plano_aparece_e_para_pelo_botao(tmp_path, monkeypat
             time.sleep(0.01)
         raise OperationCancelled()
 
-    operacao = modulo_app._start_operation(pid, "update.confirm", trabalho, f"/projects/{pid}/run")
+    operacao = operations._start_operation(pid, "update.confirm", trabalho, f"/projects/{pid}/run")
     assert operacao is not None and comecou.wait(5)
     # A second operation of the same project is refused while it runs.
-    assert modulo_app._start_operation(pid, "run.import_and_generate", trabalho, "/") is None
+    assert operations._start_operation(pid, "run.import_and_generate", trabalho, "/") is None
 
     vistas = cliente.get("/activity").json()["operations"]
     assert [v["status"] for v in vistas if v["project_id"] == pid] == ["running"]
@@ -156,7 +157,7 @@ def test_o_pedido_que_comeca_manda_para_a_tela_com_o_numero_da_operacao(tmp_path
     from tests.test_phase32 import _app_com_projeto
 
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
-    monkeypatch.setattr(modulo_app, "OPERATION_INLINE_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(operations, "OPERATION_INLINE_WAIT_SECONDS", 0.0)
     liberar = threading.Event()
 
     def demorado(conn, config, language=None, should_stop=None):
