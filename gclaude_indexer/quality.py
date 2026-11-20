@@ -41,17 +41,12 @@ _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 _NULLABLE_COLUMNS = frozenset({"type", "date", "summary"})
 
 
-def _count_nulls(conn, column: str, engine: str | None = None) -> int:
-    """Items with `column` empty, all of them or only those of `engine`."""
+def _count_nulls(conn, column: str) -> int:
+    """Items with `column` empty."""
     if column not in _NULLABLE_COLUMNS:
         raise ValueError(f"column not allowed: {column!r}")
-    if engine is None:
-        return conn.execute(
-            f"SELECT COUNT(*) FROM item WHERE {column} IS NULL OR TRIM({column}) = ''"
-        ).fetchone()[0]
     return conn.execute(
-        f"SELECT COUNT(*) FROM item WHERE engine = ? AND ({column} IS NULL OR TRIM({column}) = '')",
-        (engine,),
+        f"SELECT COUNT(*) FROM item WHERE {column} IS NULL OR TRIM({column}) = ''"
     ).fetchone()[0]
 
 # Below this share of dated items, the collection is treated as one whose
