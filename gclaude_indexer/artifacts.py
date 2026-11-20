@@ -40,7 +40,7 @@ from .file_status import (
     ALL_FILE_STATUSES, CONVERSION_SUCCEEDED, FAILED, SKIPPED, WINDOW_DONE, WINDOW_PENDING, in_params,
 )
 from .html_text import STRUCK_MARK
-from .i18n import _REFERENCE_LANGUAGE, translate
+from .i18n import _REFERENCE_LANGUAGE, has_key, translate
 from .instructions_dedup import detect, is_only_generated
 from .managed_block import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE, has_managed_block, user_part, write_managed
 from .output_names import (
@@ -1043,14 +1043,24 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     if not error_events:
         lines.append(t("artifact.review.errors_none"))
     else:
-        # Retranslated into the report's language, as the live log does;
-        # the step stays the raw id, like the status codes above.
+        # Retranslated into the report's language, as the live log does,
+        # and so is the step (`_log_items.html`): its title when it has one,
+        # the stored id otherwise.
         for event in error_events:
-            lines.append(f"- [{event['created_at']}] ({event['step']}) {event_message(event, language)}")
+            lines.append(
+                f"- [{event['created_at']}] ({_step_title(event['step'], t)}) {event_message(event, language)}"
+            )
 
     path = Path(config.output_folder) / REVIEW_FILENAME
     write_if_changed(path, "\n".join(lines) + "\n")
     return path
+
+
+def _step_title(step: str, t) -> str:
+    """O nome da etapa de um evento no idioma do relatório (`step.<id>.title`),
+    ou o id gravado quando a etapa não tem nome."""
+    key = f"step.{step}.title"
+    return t(key) if has_key(key) else step
 
 
 IGNORED_NAMES_SHOWN = 10
