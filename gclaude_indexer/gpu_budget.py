@@ -50,6 +50,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+from . import ollama_models
+
 MB = 1024 * 1024
 
 # Room left on the card for what this model does not account for: the
@@ -325,11 +327,8 @@ def _model_size_bytes(model: str, url_base: str) -> int:
     may have configured `gemma4:e4b` while the listing shows
     `gemma4:e4b` — or, after a pull by digest, only the bare family name.
     """
-    listing = _get_json(f"{url_base}/api/tags")
-    if not isinstance(listing, dict):
-        return 0
-    models = listing.get("models")
-    if not isinstance(models, list):
+    models = ollama_models.installed_models(timeout_s=5.0, url_base=url_base)
+    if models is None:
         return 0
 
     wanted = model.strip()

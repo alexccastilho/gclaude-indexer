@@ -152,17 +152,16 @@ def installed_ocr_languages() -> frozenset[str] | None:
     """Languages Tesseract has data for on this machine, or `None` when it
     cannot be asked (not installed, or it failed) — then nothing is
     filtered out."""
-    from . import tools
-    from .subprocess_utils import run_hidden
+    from . import ocr_languages, tools
 
     executable = tools.find("tesseract")
     if not executable:
         return None
     try:
-        result = run_hidden([executable, "--list-langs"], timeout=15)
+        stdout, _stderr = ocr_languages.list_langs_output(executable, timeout=15)
     except Exception:
         return None
-    lines = (result.stdout or "").splitlines()
+    lines = stdout.splitlines()
     languages = {line.strip() for line in lines[1:] if line.strip()}
     return frozenset(languages) or None
 

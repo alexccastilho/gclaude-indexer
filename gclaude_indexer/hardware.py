@@ -17,6 +17,7 @@ read without opening a console window (see `subprocess_utils.run_hidden`).
 from __future__ import annotations
 
 import ctypes
+import functools
 import json
 import shutil
 import subprocess
@@ -31,7 +32,7 @@ from . import ollama_models
 from .ollama_models import DEFAULT_LOCAL_MODEL
 from .i18n import nested
 from .paths import machine_local_folder
-from .tools import find as find_tool
+from .tools import find as find_tool, find_ghostscript
 from .subprocess_utils import run_hidden
 
 GB_MB = 1024
@@ -103,6 +104,33 @@ def _recorded_recently(conn, message_key: str) -> bool:
     return (datetime.now() - last).total_seconds() < _REPEAT_WINDOW_S
 
 
+# Hardware facts that do not change while the program runs (the card, its
+# memory, the processor's name) are measured once per process, through
+# `measured_once`; every other reading here is taken on each call, on
+# purpose (the diagnosis and the GPU budget follow a card swap). One way to
+# keep them and one way to drop them: `forget_measurements()`.
+_measured: list = []
+
+
+def measured_once(function):
+    """Caches the zero-argument `function` for the rest of the process. A
+    call that raises is not cached and is tried again next time."""
+    cached = functools.lru_cache(maxsize=1)(function)
+    _measured.append(cached)
+    return cached
+
+
+def forget_measurements() -> None:
+    """Drops every cached hardware fact, so the next call measures again."""
+    for cached in _measured:
+        cached.cache_clear()
+
+
+# `windows_counters` sits below this module and cannot import it; its one
+# fact measured once is kept the same way and dropped with the others.
+_measured.append(windows_counters.memory_clock_mhz)
+
+
 @dataclass
 class GpuInfo:
     name: str
@@ -131,7 +159,7 @@ class ModelChoice:
     use_rules_engine: bool
 
 
-def _detect_nvidia_gpu() -> GpuInfo | None:
+def detect_nvidia_gpu() -> GpuInfo | None:
     path = find_tool("nvidia-smi")
     if not path:
         return None
@@ -152,7 +180,7 @@ def _detect_nvidia_gpu() -> GpuInfo | None:
     return GpuInfo(name=name.strip(), vendor="NVIDIA", vram_mb=int(digits))
 
 
-def _detect_wmi_gpu() -> GpuInfo | None:
+def detect_wmi_gpu() -> GpuInfo | None:
     """Fallback with no `nvidia-smi`, via WMI (also detects AMD/Intel).
 
     `Win32_VideoController.AdapterRAM` is an old (32-bit) field and saturates
@@ -206,6 +234,12 @@ def _detect_wmi_gpu() -> GpuInfo | None:
         vendor=chosen.get("AdapterCompatibility") or "unknown",
         vram_mb=vram_mb,
     )
+
+
+def detect_gpu() -> GpuInfo | None:
+    """The graphics card: `nvidia-smi` first, then WMI (any vendor).
+    Measured on every call."""
+    return detect_nvidia_gpu() or detect_wmi_gpu()
 
 
 @dataclass
@@ -279,7 +313,7 @@ class _MemoryStatusEx(ctypes.Structure):
     ]
 
 
-def _total_memory_mb() -> int:
+def total_memory_mb() -> int:
     if sys.platform != "win32":
         return 0
     status = _MemoryStatusEx()
@@ -305,11 +339,12 @@ def _check_presence(binary_names: tuple[str, ...]) -> tuple[bool, str | None]:
 def diagnose(conn, space_folder: Path | None = None, language: str | None = None) -> HardwareDiagnostic:
     space_folder = space_folder or machine_local_folder()
 
-    gpu = _detect_nvidia_gpu() or _detect_wmi_gpu()
-    ram = _total_memory_mb()
+    gpu = detect_gpu()
+    ram = total_memory_mb()
     free_space = _free_space_mb(space_folder)
     tesseract_ok, tesseract_path = _check_presence(("tesseract",))
-    ghostscript_ok, ghostscript_path = _check_presence(("gswin64c", "gswin32c", "gs"))
+    ghostscript_path = find_ghostscript() or None
+    ghostscript_ok = ghostscript_path is not None
     ollama_ok, ollama_path = _check_presence(("ollama",))
 
     diagnostic = HardwareDiagnostic(

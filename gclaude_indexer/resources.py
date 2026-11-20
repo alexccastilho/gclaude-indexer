@@ -14,7 +14,6 @@ this, with no compiler required on Windows).
 
 from __future__ import annotations
 
-import functools
 import platform
 import subprocess
 import sys
@@ -31,7 +30,7 @@ from .windows_counters import (
 )
 from . import ollama_models
 from .gpu_budget import loaded_model_share
-from .hardware import _detect_nvidia_gpu, _detect_wmi_gpu
+from .hardware import detect_gpu, measured_once
 from .sensors import read_sensors
 from .subprocess_utils import run_hidden
 from .tools import find as find_tool
@@ -111,7 +110,7 @@ def _sample_gpu() -> tuple[float | None, int | None, int | None]:
     return usage, vram_used_mb(), _vram_total_mb()
 
 
-@functools.lru_cache(maxsize=1)
+@measured_once
 def _vram_total_mb() -> int | None:
     """Total VRAM, cached (does not change while running).
 
@@ -124,11 +123,11 @@ def _vram_total_mb() -> int | None:
     if total is not None:
         return total
 
-    gpu = _detect_nvidia_gpu() or _detect_wmi_gpu()
+    gpu = detect_gpu()
     return getattr(gpu, "vram_mb", None) if gpu else None
 
 
-@functools.lru_cache(maxsize=1)
+@measured_once
 def _cpu_name() -> str:
     """Commercial processor name — does not change while running, so it is
     looked up only once (WMI is slow: ~0.5-1s per call)."""
@@ -147,12 +146,12 @@ def _cpu_name() -> str:
     return platform.processor() or platform.machine() or "unknown"
 
 
-@functools.lru_cache(maxsize=1)
+@measured_once
 def _gpu_name() -> str | None:
     """Commercial GPU name (same detection as the phase 7 hardware
     diagnostics), cached for the same reason as `_cpu_name`. `None` = no GPU
     detected — the caller shows something like "No GPU"."""
-    gpu = _detect_nvidia_gpu() or _detect_wmi_gpu()
+    gpu = detect_gpu()
     return gpu.name if gpu else None
 
 

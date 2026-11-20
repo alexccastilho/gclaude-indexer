@@ -185,6 +185,16 @@ def present_models(tesseract_path: str | None) -> frozenset[str]:
     return frozenset(found)
 
 
+def list_langs_output(tesseract_path: str, timeout: float) -> tuple[str, str]:
+    """`tesseract --list-langs`, as `(stdout, stderr)`: the languages
+    Tesseract itself reports, one per line after a heading. Raises what
+    `run_hidden` raises; each caller reads the answer its own way."""
+    from .subprocess_utils import run_hidden
+
+    result = run_hidden([tesseract_path, "--list-langs"], timeout=timeout)
+    return result.stdout or "", result.stderr or ""
+
+
 def ensure(ocr_language: str | None, tesseract_path: str | None, download: bool = True) -> list[str]:
     """Makes every language of `ocr_language` readable by Tesseract in this
     process, and returns the ones still missing (empty: all set).

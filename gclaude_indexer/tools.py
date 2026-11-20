@@ -154,6 +154,20 @@ def find(name: str) -> str | None:
     return _from_known_locations(name)
 
 
+# Ghostscript's console executable goes by three names: 64-bit and 32-bit
+# Windows builds, and `gs` elsewhere.
+GHOSTSCRIPT_NAMES = ("gswin64c", "gswin32c", "gs")
+
+
+def find_ghostscript() -> str | None:
+    """Absolute path of Ghostscript under the first of its names found."""
+    for name in GHOSTSCRIPT_NAMES:
+        path = find(name)
+        if path:
+            return path
+    return None
+
+
 def bin_folders() -> list[str]:
     """Folders holding the programs we know about, for adding to a child
     process's `PATH`.

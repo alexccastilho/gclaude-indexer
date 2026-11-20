@@ -53,11 +53,15 @@ OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_LOCAL_MODEL = "qwen3.5:4b"
 
 
-def installed_models(timeout_s: float = 2.0) -> list[dict] | None:
+def installed_models(timeout_s: float = 2.0, url_base: str | None = None) -> list[dict] | None:
     """The `models` entries of Ollama's `/api/tags`, or `None` on any
-    failure (Ollama stopped, unexpected response, timed out) — never raises."""
+    failure (Ollama stopped, unexpected response, timed out) — never raises.
+
+    The one reader of `/api/tags`; each caller matches names its own way.
+    `url_base` defaults to `OLLAMA_BASE_URL`, read at call time."""
+    base = OLLAMA_BASE_URL if url_base is None else url_base
     try:
-        with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=timeout_s) as response:
+        with urllib.request.urlopen(f"{base}/api/tags", timeout=timeout_s) as response:
             data = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, TimeoutError):
         return None
