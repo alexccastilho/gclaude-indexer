@@ -28,7 +28,7 @@ from pathlib import Path
 from .classification import (
     STOP_CLASSIFYING, WindowItems, WindowPage, WindowRunCounts, ClassifiedItem, classify_windows,
     page_order, starts_new_document, normalize_type,
-    SUMMARY_CHAR_LIMIT, files_sorted, is_calendar_day, item_for_pages, normalize_confidence,
+    SUMMARY_CHAR_LIMIT, files_sorted, item_for_pages, normalize_confidence, normalize_date,
 )
 from .config import ProjectConfig
 from .engine_names import ENGINE_LOCAL
@@ -1539,9 +1539,11 @@ def _dict_to_item(
     if not isinstance(type_, str):
         type_ = None
 
-    # Only a full calendar day: unlike `classification.normalize_date`,
-    # which keeps `AAAA` and `AAAA-MM`, this mode drops a partial date.
-    date_value = raw.get("date") if is_calendar_day(raw.get("date")) else None
+    # The same date rule as every other path (`classification.normalize_date`):
+    # `AAAA-MM` and `AAAA` stay, a day that does not exist falls back to its
+    # month. Dropping a partial date lost the period of every document dated
+    # by month ("jan/2020"), which the model returns as `2020-01`.
+    date_value = normalize_date(raw.get("date"))
 
     author = raw.get("author") if isinstance(raw.get("author"), str) else None
     summary = raw.get("summary") if isinstance(raw.get("summary"), str) else None
