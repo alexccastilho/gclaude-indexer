@@ -50,6 +50,7 @@ class LeitorSimulado:
     def __init__(self, mensagens):
         self._mensagens = mensagens
         self.fechado = False
+        self.unreadable = 0
 
     def messages(self):
         yield from self._mensagens
@@ -647,3 +648,63 @@ def test_indexacao_de_caixa_de_mensagens_e_preguicosa_e_em_lotes(tmp_path, monke
     intervalo = conn.execute("SELECT first_rowid, last_rowid FROM fulltext_file").fetchone()
     assert intervalo[1] - intervalo[0] == 59
     conn.close()
+
+
+# --- o que fica fora de um arquivo do Outlook sempre aparece no log -----------------------------
+
+
+class _AnexoIlegivel:
+    name = "quebrado.txt"
+    size = 10
+
+    def read(self, limit: int) -> bytes:
+        raise OSError("bloco corrompido")
+
+
+def test_anexo_que_nao_pode_ser_lido_e_avisado(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Anexo.pst").write_bytes(b"!BDN")
+    _com_leitor(monkeypatch, [PstMessage(subject="M1", plain="corpo", attachments=[_AnexoIlegivel()])])
+    scan(conn, config)
+    assert convert(conn, config, language="pt-BR").failed == 0
+    avisos = [r["message"] for r in conn.execute("SELECT message FROM event WHERE level = 'warning'")]
+    assert any("Anexo.pst" in a and "1 anexo(s) não puderam ser lidos" in a for a in avisos), avisos
+    conn.close()
+
+
+def test_mensagens_ou_pastas_ilegiveis_sao_avisadas(tmp_path, monkeypatch):
+    origem, saida, config, conn = _projeto(tmp_path)
+    (origem / "Danificada.pst").write_bytes(b"!BDN")
+    leitor = _com_leitor(monkeypatch, [PstMessage(subject="M1", plain="ok")])
+    leitor.unreadable = 2
+    scan(conn, config)
+    assert convert(conn, config, language="pt-BR").failed == 0
+    avisos = [r["message"] for r in conn.execute("SELECT message FROM event WHERE level = 'warning'")]
+    assert any("Danificada.pst" in a and "2 mensagem(ns) ou pasta(s)" in a for a in avisos), avisos
+    conn.close()
+
+
+def test_avisos_de_conteudo_ilegivel_nos_tres_idiomas():
+    for idioma in ("pt-BR", "en", "es"):
+        for chave in ("log.conversion.outlook_attachments_unreadable", "log.conversion.outlook_items_unreadable"):
+            assert translate(idioma, chave) != chave
+
+
+def test_anexo_que_o_extrator_nao_consegue_ler_e_avisado_e_o_tipo_nao_lido_nao(tmp_path):
+    notas: list = []
+    leituras: list = []
+    mensagens = [PstMessage(subject="M", plain="c", attachments=[
+        Anexo("corrompido.docx", b"nao e docx", leituras), Anexo("pacote.zip", b"PK", leituras),
+    ])]
+
+    def extrair(caminho, nome):
+        if nome.endswith(".docx"):
+            raise ValueError("docx corrompido")
+        return None  # tipo que não é lido
+
+    (tmp_path / "x.pst").write_bytes(b"1")
+    outlook.convert_pst(
+        tmp_path / "x.pst", tmp_path / "saida.txt", tmp_path / "anexos", extrair,
+        reader_factory=lambda _p: LeitorSimulado(mensagens), on_note=lambda tipo, dados: notas.append((tipo, dados["name"])),
+    )
+    assert notas == [("attachment_unreadable", "corrompido.docx")]

@@ -1704,12 +1704,10 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
     destination = _destination_path(output_dir, "converted", relative_path, text_suffix(extension))
     attachments_root = workdir.work_folder(output_dir) / "converted" / relative_path / "anexos"
     events: list[tuple[str, str, str, dict]] = []
-    skipped_attachments = 0
+    notes: Counter = Counter()
 
     def on_note(kind: str, params: dict) -> None:
-        nonlocal skipped_attachments
-        if kind == "attachment_too_large":
-            skipped_attachments += 1
+        notes[kind] += 1
 
     try:
         result = outlook.convert_pst(
@@ -1737,10 +1735,20 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
             "conversion", "warning", "log.conversion.outlook_output_limit",
             {"name": name, "limit_mb": outlook.MAX_OUTPUT_BYTES // (1024 * 1024)},
         ))
-    if skipped_attachments:
+    if notes["attachment_too_large"]:
         events.append((
             "conversion", "warning", "log.conversion.outlook_attachments_skipped",
-            {"name": name, "count": skipped_attachments},
+            {"name": name, "count": notes["attachment_too_large"]},
+        ))
+    if notes["attachment_unreadable"]:
+        events.append((
+            "conversion", "warning", "log.conversion.outlook_attachments_unreadable",
+            {"name": name, "count": notes["attachment_unreadable"]},
+        ))
+    if result.unreadable:
+        events.append((
+            "conversion", "warning", "log.conversion.outlook_items_unreadable",
+            {"name": name, "count": result.unreadable},
         ))
     return {
         "id": row["id"], "name": name, "events": events, "ocr_applied": False,
