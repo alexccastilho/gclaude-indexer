@@ -27,7 +27,10 @@ core → web dependency direction."""
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+import re
+import typing
+from dataclasses import MISSING, asdict, dataclass, field, fields
+from functools import cache
 from pathlib import Path
 
 from .parallelism import MODES as PARALLELISM_MODES
@@ -44,6 +47,23 @@ CLASSIFICATION_ENGINES = {"automatic", "rules", "local"}
 # max, overflows to RAM). Only affects the 'local' engine — see
 # `engine_local.py:_num_gpu_for`.
 PROCESSING_MODES = {"automatic", "gpu", "cpu"}
+
+# Teto do que a caixa "Regras extras do projeto" aceita. O prompt do modelo
+# local usa só os primeiros `EXTRA_RULES_PROMPT_LIMIT` caracteres; o resto
+# continua indo para as instruções do Claude, por isso o teto é maior. Texto
+# acima do teto é recusado, nunca cortado em silêncio.
+EXTRA_RULES_MAX_LENGTH = 4000
+
+# Campos do formulário Novo projeto, na ordem em que o POST é lido.
+# Janelas, sobreposição, caracteres por página e idioma do OCR não estão aqui
+# (2.0.0): `auto_settings.py` decide depois da varredura. As regras extras têm
+# tela própria (Instruções) e os limites do pacote e da linha do tempo não têm
+# tela. Ficam fora de propósito, para um POST forjado com eles ser ignorado.
+FORM_FIELDS = (
+    "name", "subject", "source_folder", "output_folder", "collection_type", "group_mode",
+    "group_pattern", "classification_engine", "local_model", "processing_mode",
+    "parallelism", "role_instructions", "existing_instructions", "extensions",
+)
 
 
 @dataclass
@@ -79,7 +99,6 @@ class ProjectConfig:
     group_mode: str = "subfolder"
     group_pattern: str = ""
     extensions: list[str] = field(default_factory=lambda: ["all"])
-    pages_per_block: int = 80
     pages_per_window: int = 16
     overlap: int = 2
     chars_per_page: int = 2000
@@ -157,9 +176,6 @@ def _validate(config: ProjectConfig, *, check_source: bool) -> list[ConfigErrorM
     if config.group_mode == "name_pattern" and not config.group_pattern.strip():
         errors.append(ConfigErrorMessage("config_error.group_pattern_required"))
 
-    if config.pages_per_block <= 0:
-        errors.append(ConfigErrorMessage("config_error.pages_per_block_positive"))
-
     if config.pages_per_window <= 0:
         errors.append(ConfigErrorMessage("config_error.pages_per_window_positive"))
 
@@ -204,7 +220,70 @@ def _validate(config: ProjectConfig, *, check_source: bool) -> list[ConfigErrorM
     return errors
 
 
-_RETIRED_FIELDS = frozenset({"planalto_in_package", "review_low_confidence"})
+# Chaves que já foram campo e não são mais. `planalto_in_package` (fases
+# 31 a 37) ficou gravada no `config_json` de todo projeto criado até a
+# 1.7.5; sem isto, esses projetos não abririam mais. `pages_per_block` não
+# tinha efeito desde que a janela passou a ser o corte; está gravada em todo
+# projeto criado até a 2.1.
+_RETIRED_FIELDS = frozenset({"planalto_in_package", "review_low_confidence", "pages_per_block"})
+
+
+@cache
+def _field_kinds() -> dict[str, type]:
+    """O tipo declarado de cada campo, lido das anotações do dataclass (com
+    `from __future__ import annotations`, `Field.type` é texto): `str`,
+    `int`, `bool` ou `list` (as listas são de `str`)."""
+    hints = typing.get_type_hints(ProjectConfig)
+    return {name: typing.get_origin(hint) or hint for name, hint in hints.items()}
+
+
+def field_kind(name: str) -> type:
+    return _field_kinds()[name]
+
+
+def defaults() -> dict[str, object]:
+    """Os padrões da seção 6, por campo que tem um (os obrigatórios ficam de
+    fora). Uma lista padrão é nova a cada chamada."""
+    values: dict[str, object] = {}
+    for item in fields(ProjectConfig):
+        if item.default is not MISSING:
+            values[item.name] = item.default
+        elif item.default_factory is not MISSING:
+            values[item.name] = item.default_factory()
+    return values
+
+
+def default_value(name: str) -> object:
+    return defaults()[name]
+
+
+_INTEGER_TEXT = re.compile(r"[+-]?\d+")
+_TRUE_TEXTS = frozenset({"true", "1", "on", "yes"})
+_FALSE_TEXTS = frozenset({"false", "0", "off", "no", ""})
+
+
+def _coerce(kind: type, value: object) -> tuple[bool, object]:
+    """`(ok, valor)`: o valor no tipo do campo, convertido só quando não há
+    perda (texto de inteiro para `int`; texto ou 0/1 para `bool`, nunca
+    `bool(texto)`, que faz de "false" verdadeiro). `ok=False` quando não é do
+    tipo nem conversível; aí o valor volta como veio."""
+    if kind is bool:
+        if isinstance(value, bool):
+            return True, value
+        if isinstance(value, int) and value in (0, 1):
+            return True, bool(value)
+        if isinstance(value, str) and value.strip().lower() in _TRUE_TEXTS | _FALSE_TEXTS:
+            return True, value.strip().lower() in _TRUE_TEXTS
+        return False, value
+    if kind is int:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return True, value
+        if isinstance(value, str) and _INTEGER_TEXT.fullmatch(value.strip()):
+            return True, int(value.strip())
+        return False, value
+    if kind is list:
+        return isinstance(value, list) and all(isinstance(item, str) for item in value), value
+    return isinstance(value, kind), value
 
 
 def load_config(data: dict) -> ProjectConfig:
@@ -225,21 +304,31 @@ def load_config(data: dict) -> ProjectConfig:
 def config_from_input(data: dict) -> ProjectConfig:
     """Builds a configuration typed by the user (the New project form, the
     command-line script): the same rules as `load_config`, plus the source
-    folder has to exist and be a folder."""
+    folder has to exist and be a folder, and each value has to be of its
+    field's type (text of an integer counts as an integer)."""
     return _build(data, check_source=True)
 
 
 def _build(data: dict, *, check_source: bool) -> ProjectConfig:
-    # Chaves que já foram campo e não são mais. `planalto_in_package` (fases
-    # 31 a 37) ficou gravada no `config_json` de todo projeto criado até a
-    # 1.7.5; sem isto, esses projetos não abririam mais.
     data = {chave: valor for chave, valor in data.items() if chave not in _RETIRED_FIELDS}
-    valid_fields = ProjectConfig.__dataclass_fields__.keys()
-    unknown_fields = set(data) - set(valid_fields)
+    # Campo desconhecido (por exemplo, gravado por uma versão mais nova)
+    # recusa a carga.
+    unknown_fields = set(data) - set(_field_kinds())
     if unknown_fields:
         raise ConfigError(
             [ConfigErrorMessage("config_error.unknown_field", {"field": c}) for c in sorted(unknown_fields)]
         )
+
+    # Tipo errado: a entrada do usuário (`check_source`) é recusada; a
+    # configuração gravada é convertida quando dá e, quando não dá, fica como
+    # veio, como sempre ficou: nenhum projeto que abria deixa de abrir.
+    type_errors = []
+    for name, value in list(data.items()):
+        ok, data[name] = _coerce(field_kind(name), value)
+        if not ok and check_source:
+            type_errors.append(ConfigErrorMessage("config_error.type_error", {"detail": f"{name}: {value!r}"}))
+    if type_errors:
+        raise ConfigError(type_errors)
 
     try:
         config = ProjectConfig(**data)
@@ -258,4 +347,10 @@ def _build(data: dict, *, check_source: bool) -> ProjectConfig:
 
 
 def config_to_json(config: ProjectConfig) -> str:
-    return json.dumps(asdict(config), ensure_ascii=False)
+    return config_data_to_json(asdict(config))
+
+
+def config_data_to_json(data: dict) -> str:
+    """O texto de `project.config_json`: o mesmo formato para quem grava a
+    configuração inteira e para quem mescla chaves no JSON cru."""
+    return json.dumps(data, ensure_ascii=False)

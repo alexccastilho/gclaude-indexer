@@ -32,7 +32,7 @@ import sys
 import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import MISSING, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -54,7 +54,10 @@ from ..artifacts import (
     stale_artifacts,
 )
 from ..catalog import CatalogEntry, catalog_folder, find_project, list_projects, register_project
-from ..config import ProjectConfig, ConfigError, config_from_input
+from ..config import (
+    EXTRA_RULES_MAX_LENGTH, FORM_FIELDS, ConfigError, ProjectConfig, config_from_input, default_value,
+    defaults, field_kind,
+)
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
 from ..events import list_events, record_event
@@ -438,16 +441,6 @@ def _handle_incomplete_sync(request: Request, exc: IncompleteSyncError):
         {"project": exc.entry, "message_key": exc.message_key, "message_params": exc.message_params}, status_code=409,
     )
 
-# Janelas, sobreposição, caracteres por página e idioma do OCR não são mais
-# campos do formulário (2.0.0): `auto_settings.py` decide depois da varredura.
-# Ficam fora destas listas de propósito, para um POST forjado com eles ser
-# ignorado.
-TEXT_FIELDS = (
-    "name", "subject", "source_folder", "output_folder", "collection_type", "group_mode",
-    "group_pattern", "classification_engine", "local_model", "processing_mode",
-    "parallelism", "role_instructions", "existing_instructions",
-)
-
 
 # --- utilities ---------------------------------------------------------------
 
@@ -578,14 +571,9 @@ def _format_time(seconds: float | None) -> str:
 def _config_to_form(data: dict | None = None) -> dict:
     """Values shown in the form: the section 6 defaults, overridden by
     whatever was submitted (to redisplay it on a validation error).
-    `name`, `source_folder` and `output_folder` have no `default` on the
-    dataclass (they are required) — without this, the displayed value would
-    be the `dataclasses.MISSING` sentinel, not an empty string."""
-    base = {
-        field.name: field.default if field.default is not MISSING else ""
-        for field in ProjectConfig.__dataclass_fields__.values()
-    }
-    base["extensions"] = ["all"]
+    `name`, `source_folder` and `output_folder` have no default (they are
+    required): they start empty."""
+    base = {name: "" for name in FORM_FIELDS} | defaults()
     if data:
         base.update(data)
     # "automatic" is the dataclass default, not the name of an installed
@@ -705,13 +693,18 @@ async def create_new_project(request: Request):
 def _create_new_project_body(request: Request, form):
 
     data: dict = {}
-    for field in TEXT_FIELDS:
-        if field in form:
-            data[field] = str(form[field])
+    for name in FORM_FIELDS:
+        kind = field_kind(name)
+        if kind is list:
+            data[name] = [str(value) for value in form.getlist(name)]
+        elif kind is bool:
+            data[name] = name in form  # caixa de seleção: só vem quando marcada
+        elif name in form:
+            data[name] = str(form[name])
     # "TODOS" já cobre as categorias específicas (menos áudio e vídeo,
     # que só entram marcando `midia`): o servidor garante a regra que o
     # formulário só garante em JavaScript.
-    data["extensions"] = normalize_categories([str(value) for value in form.getlist("extensions")])
+    data["extensions"] = normalize_categories(data["extensions"])
 
     # Saída em branco (o campo deixou de ser `required`, ou o POST veio sem
     # ele): o servidor calcula a mesma sugestão `<origem>-AI` que a tela
@@ -1471,13 +1464,6 @@ def _instructions_save_body(request: Request, project_id: int, form):
             entry, config, language, message=translate(language, "instructions.unchanged"),
             user_text=pasted if pasted.strip() else None,
         ))
-
-
-# Teto do que a caixa "Regras extras do projeto" aceita. O prompt do modelo
-# local usa só os primeiros `EXTRA_RULES_PROMPT_LIMIT` caracteres; o resto
-# continua indo para as instruções do Claude, por isso o teto é maior. Texto
-# acima do teto é recusado, nunca cortado em silêncio.
-EXTRA_RULES_MAX_LENGTH = 4000
 
 
 @app.post("/projects/{project_id}/instructions/extra-rules", response_class=HTMLResponse)
@@ -3038,7 +3024,7 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     from .. import ocr_languages
 
     ocr_languages.ensure_in_background(
-        ProjectConfig.__dataclass_fields__["ocr_language"].default, tools.find("tesseract")
+        default_value("ocr_language"), tools.find("tesseract")
     )
 
     # A impressão digital do código que este processo carregou. Comparada

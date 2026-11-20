@@ -29,13 +29,13 @@ não contam); só abre uma amostra de PDFs e de textos, como a antiga proposta.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ProjectConfig
+from .project import merge_project_config
 from .events import record_event
 from .file_types import PAGED_CATEGORIES, PDF_CATEGORY, TEXT_CATEGORY, category_of_extension
 from .file_status import SKIPPED
@@ -245,22 +245,6 @@ def decide(
     return decision
 
 
-def _save(conn: sqlite3.Connection, values: dict) -> None:
-    """Grava só estas chaves na primeira linha de `project` (a que
-    `load_project` lê). Relê o JSON do banco: a configuração em memória pode
-    ter minutos de idade (a varredura de um Drive grande é longa) e outra
-    tela pode ter gravado outra chave nesse intervalo."""
-    row = conn.execute("SELECT id, config_json FROM project ORDER BY id LIMIT 1").fetchone()
-    if row is None:
-        return
-    data = json.loads(row["config_json"])
-    data.update(values)
-    conn.execute(
-        "UPDATE project SET config_json = ? WHERE id = ?", (json.dumps(data, ensure_ascii=False), row["id"])
-    )
-    conn.commit()
-
-
 def resolve_auto_settings(
     conn: sqlite3.Connection, config: ProjectConfig, language: str | None = None, engine: str | None = None
 ) -> AutoSettings | None:
@@ -280,7 +264,7 @@ def resolve_auto_settings(
         values["chars_per_page"] = decision.chars_per_page
     if decision.ocr_language is not None:
         values["ocr_language"] = decision.ocr_language
-    _save(conn, values)
+    merge_project_config(conn, values)
 
     record_event(
         conn, "scan", "info", "log.settings.window",

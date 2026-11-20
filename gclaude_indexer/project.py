@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import ProjectConfig, load_config, config_to_json
+from .config import ProjectConfig, config_data_to_json, config_to_json, load_config
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .events import record_event
 from .paths import PROJECT_DB_NAME, sqlite_readonly_uri
@@ -283,11 +283,7 @@ def load_project(
     ):
         config.output_folder = opened
         try:
-            conn.execute(
-                "UPDATE project SET output_folder = ?, config_json = ? WHERE id = ?",
-                (opened, config_to_json(config), row["id"]),
-            )
-            conn.commit()
+            _write_config(conn, row["id"], asdict(config), output_folder=opened)
         except sqlite3.Error:
             # Banco travado por outro processo: vale só nesta abertura, e a
             # próxima tenta de novo.
@@ -302,7 +298,33 @@ def save_project_config(conn: sqlite3.Connection, config: ProjectConfig) -> None
     row = conn.execute("SELECT id FROM project ORDER BY id LIMIT 1").fetchone()
     if row is None:
         raise ValueError("nenhum projeto para gravar a configuração")
-    conn.execute(
-        "UPDATE project SET config_json = ? WHERE id = ?", (config_to_json(config), row["id"])
-    )
+    _write_config(conn, row["id"], asdict(config))
+
+
+def merge_project_config(conn: sqlite3.Connection, values: dict) -> None:
+    """Grava só estas chaves na primeira linha de `project` (a que
+    `load_project` lê). Relê o JSON do banco: a configuração em memória pode
+    ter minutos de idade (a varredura de um Drive grande é longa) e outra
+    tela pode ter gravado outra chave nesse intervalo. As demais chaves,
+    inclusive as aposentadas, ficam como estão."""
+    row = conn.execute("SELECT id, config_json FROM project ORDER BY id LIMIT 1").fetchone()
+    if row is None:
+        return
+    data = json.loads(row["config_json"])
+    data.update(values)
+    _write_config(conn, row["id"], data)
+
+
+def _write_config(
+    conn: sqlite3.Connection, row_id: int, data: dict, output_folder: str | None = None
+) -> None:
+    """O único `UPDATE` de `project.config_json` (a criação faz o `INSERT`
+    com o mesmo formato, `config_to_json`)."""
+    text = config_data_to_json(data)
+    if output_folder is None:
+        conn.execute("UPDATE project SET config_json = ? WHERE id = ?", (text, row_id))
+    else:
+        conn.execute(
+            "UPDATE project SET output_folder = ?, config_json = ? WHERE id = ?", (output_folder, text, row_id)
+        )
     conn.commit()
