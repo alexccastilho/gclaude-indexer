@@ -444,6 +444,10 @@ de internet; sem ela o comando avisa e a parte local sai igual).
 
 O `{launcher}` sabe onde o GClaude Indexer está instalado: não procure o
 programa, nem rode outro comando no lugar dele.
+
+## Regra inegociável
+
+{rule}
 """,
     "en": """\
 # GClaude Indexer: collection lookup ({project_name})
@@ -481,6 +485,10 @@ the same).
 
 `{launcher}` knows where GClaude Indexer is installed: do not look for the
 program, and do not run another command in its place.
+
+## Non-negotiable rule
+
+{rule}
 """,
     "es": """\
 # GClaude Indexer: consulta de la colección ({project_name})
@@ -517,6 +525,10 @@ un grupo, `--so-legislacao` a normas y `--lexml` consulta también LexML
 
 `{launcher}` sabe dónde está instalado GClaude Indexer: no busque el
 programa ni ejecute otro comando en su lugar.
+
+## Regla innegociable
+
+{rule}
 """,
 }
 
@@ -552,7 +564,8 @@ def is_legacy_claude_md(text: str) -> bool:
 
 def generate_claude_md(config: ProjectConfig, language: str) -> Path:
     """`CLAUDE.md` da pasta de saída: só consulta (como ler o índice, usar o
-    `buscar.bat`, e que texto de documento é dado). Prosa no idioma da
+    `buscar.bat`, que texto de documento é dado e a regra inegociável, como
+    o `CLAUDE.md` do conjunto). Prosa no idioma da
     interface na hora da geração, como os demais artefatos; idioma
     desconhecido cai no de referência. Vai como bloco gerenciado, ao lado do
     que o usuário já tenha no arquivo. Um arquivo inteiro de versão anterior
@@ -563,7 +576,7 @@ def generate_claude_md(config: ProjectConfig, language: str) -> Path:
         path,
         _CLAUDE_MD_CONTENT[language].format(
             subject=subject_or_name(config), project_name=config.name,
-            security=CLAUDE_MD_SECURITY[language], **_prose_names(language),
+            security=CLAUDE_MD_SECURITY[language], rule=SOURCE_OF_TRUTH_RULE, **_prose_names(language),
         ),
         is_legacy=is_legacy_claude_md,
     )
