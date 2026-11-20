@@ -339,11 +339,6 @@ def trigram_text(text: str) -> str:
     return language_detect.collapse_unspaced_spaces(text)
 
 
-# Filtro grosso, em C, do `backfill_trigram`: trecho com algum caractere de
-# escrita sem espaço (tailandesa, laosiana, birmanesa, khmer, kana, han, hangul).
-_UNSPACED_GLOB = "*[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]*"
-
-
 def _trigram_ready(conn: sqlite3.Connection) -> bool:
     """Se a `fulltext_trigram` existe e já tem todos os trechos: num projeto
     anterior à 2.0.0 todo indexado, ela fica vazia até `backfill_trigram`."""
@@ -356,8 +351,9 @@ def _trigram_ready(conn: sqlite3.Connection) -> bool:
 def backfill_trigram(conn: sqlite3.Connection) -> int:
     """Copia para a `fulltext_trigram` os trechos de escrita sem espaço que um
     projeto anterior à 2.0.0 já tinha na `fulltext` (uma vez só; o marcador
-    é de `db._ensure_fulltext_trigram_table`). O `GLOB` deixa para o Python
-    só os trechos com algum desses caracteres."""
+    é de `db._ensure_fulltext_trigram_table`). O `GLOB` (em C, com as
+    mesmas faixas da indexação) deixa para o Python só os trechos com algum
+    desses caracteres."""
     if not trigram_available(conn):
         return 0
     state = conn.execute("SELECT backfilled FROM fulltext_trigram_state WHERE id = 1").fetchone()
@@ -365,7 +361,7 @@ def backfill_trigram(conn: sqlite3.Connection) -> int:
         return 0
     batch = []
     try:
-        for rowid, text in conn.execute("SELECT rowid, text FROM fulltext WHERE text GLOB ?", (_UNSPACED_GLOB,)):
+        for rowid, text in conn.execute("SELECT rowid, text FROM fulltext WHERE text GLOB ?", (language_detect.UNSPACED_GLOB,)):
             if _unspaced(text):
                 batch.append((rowid, trigram_text(text)))
         conn.execute("DELETE FROM fulltext_trigram")
