@@ -328,6 +328,41 @@ def test_projeto_salvo_abre_com_a_origem_fora_do_ar(cliente, tmp_path, origem):
     assert tela.status_code == 200
 
 
+def test_telas_de_projeto_varrido_abrem_com_a_origem_fora_do_ar(cliente, tmp_path, origem):
+    import shutil
+    import time
+
+    from gclaude_indexer.web.background_runs import task_manager
+
+    (origem / "a.txt").write_text("conteúdo", encoding="utf-8")
+    dados = _dados(origem, "")
+    dados["extensions"] = ["all"]
+    resposta = cliente.post("/projects/new", data=dados, headers=HEADERS, follow_redirects=False)
+    projeto_id = int(resposta.headers["location"].split("/")[2])
+    task_manager._tasks.clear()
+    task_manager.start_step(projeto_id, str(tmp_path / "Acervo-AI"), "scan", language="pt")
+    limite = time.monotonic() + 30
+    while task_manager.get(projeto_id, "scan").running and time.monotonic() < limite:
+        time.sleep(0.05)
+    assert task_manager.get(projeto_id, "scan").finished_ok
+    task_manager._tasks.clear()
+    shutil.rmtree(origem)
+
+    lista = cliente.get("/projects")
+    assert lista.status_code == 200
+    from gclaude_indexer.web.step_state import project_status
+
+    assert project_status(str(tmp_path / "Acervo-AI"))[0] != "unavailable"
+    for tela in (
+        "/run", "/run/log", "/run/steps", "/run/progress", "/update/banner", "/result", "/search",
+        "/instructions", "/delete", "/activity",
+    ):
+        assert cliente.get(f"/projects/{projeto_id}{tela}").status_code == 200, tela
+    # A atualização é onde a origem é usada: explica, sem 500.
+    atualizacao = cliente.get(f"/projects/{projeto_id}/update")
+    assert atualizacao.status_code == 409 and "update.source_unavailable" not in atualizacao.text
+
+
 def test_etapa_com_a_origem_fora_do_ar_avisa_sem_rodar(cliente, tmp_path, origem):
     import shutil
     import time
@@ -349,6 +384,7 @@ def test_etapa_com_a_origem_fora_do_ar_avisa_sem_rodar(cliente, tmp_path, origem
     conn = sqlite3.connect(tmp_path / "Acervo-AI" / "project.db")
     assert conn.execute("SELECT COUNT(*) FROM run").fetchone()[0] == 0
     conn.close()
+    task_manager._tasks.clear()
 
 
 def test_projeto_antigo_com_saida_dentro_da_origem_continua_abrindo(tmp_path, origem):
