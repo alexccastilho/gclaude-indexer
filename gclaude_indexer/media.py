@@ -518,7 +518,7 @@ def transcribe(
     on_estimate: EstimateCallback | None = None,
 ) -> MediaResult:
     """Escreve em `destination` a transcrição, uma página por trecho de cerca
-    de 5 minutos, separadas por `MBOX_PAGE_SEPARATOR`.
+    de 5 minutos, separadas por `workdir.PAGE_SEPARATOR`.
 
     Levanta `Interrupted` quando Parar é pedido (o que já foi escrito fica
     para a retomada) e `MediaError` para um arquivo ilegível ou que passou do

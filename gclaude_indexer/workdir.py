@@ -47,6 +47,14 @@ _ORIGINAL_EXTENSIONS = frozenset({
     "eml", "msg",
 })
 
+# Separador das páginas no texto intermediário de um documento com uma página
+# por mensagem, anexo ou trecho de mídia (`.mbox`, `.pst`, áudio e vídeo:
+# `file_types.CategoryTraits.page_per_message`), gravado por
+# `light_formats.extract_text_mbox` e `resumable.PageWriter` e lido por
+# `light_formats.iter_pages`. O form feed não aparece em e-mail de verdade; é
+# tirado do corpo, por garantia.
+PAGE_SEPARATOR = "\n\x0c\n"
+
 WORK_FOLDER_NAME = "work"
 ORIGIN_FILE_NAME = "origin.txt"
 

@@ -27,9 +27,9 @@ from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.i18n import translate
-from gclaude_indexer.light_formats import MBOX_PAGE_SEPARATOR
 from gclaude_indexer.outlook import PstMessage, sanitize_attachment_name
 from gclaude_indexer.scanning import scan
+from gclaude_indexer.workdir import PAGE_SEPARATOR
 
 
 @dataclass
@@ -409,7 +409,7 @@ def test_rotulos_nos_tres_idiomas():
             "log.conversion.outlook_truncated", "log.conversion.outlook_attachments_skipped",
         ):
             assert translate(idioma, chave) != chave
-    assert MBOX_PAGE_SEPARATOR  # o mesmo separador da caixa .mbox
+    assert PAGE_SEPARATOR  # o mesmo separador da caixa .mbox
 
 
 # --- rodada de correções 1 ------------------------------------------------------------------------
@@ -534,7 +534,7 @@ def test_iter_pages_junta_separador_cortado_entre_pedaços(tmp_path):
 
     caminho = tmp_path / "caixa.txt"
     paginas = ["um", "dois\ncom linhas", "", "quatro"]
-    caminho.write_text(MBOX_PAGE_SEPARATOR.join(paginas), encoding="utf-8")
+    caminho.write_text(PAGE_SEPARATOR.join(paginas), encoding="utf-8")
     for pedaco in (1, 2, 3, 4, 7, 1000):
         assert list(iter_pages(caminho, pedaco)) == paginas, pedaco
 
@@ -577,11 +577,11 @@ def test_extensao_de_segredo_de_arquivo_com_ponto_inicial_e_reconhecida(tmp_path
 
 
 def _caixa_grande(tmp_path, paginas=60):
-    from gclaude_indexer.light_formats import MBOX_PAGE_SEPARATOR
+    from gclaude_indexer.workdir import PAGE_SEPARATOR
 
     caminho = tmp_path / "grande.txt"
     caminho.write_text(
-        MBOX_PAGE_SEPARATOR.join(f"Assunto: M{n}\n\ncorpo numero {n}" for n in range(paginas)), encoding="utf-8",
+        PAGE_SEPARATOR.join(f"Assunto: M{n}\n\ncorpo numero {n}" for n in range(paginas)), encoding="utf-8",
     )
     return caminho
 

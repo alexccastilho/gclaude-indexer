@@ -121,6 +121,20 @@ def test_todo_modelo_da_tabela_esta_no_manifesto():
     assert ocr_languages.downloadable("osd")
 
 
+def test_substitutos_de_cada_escrita_sao_idiomas_dela():
+    """Os modelos que leem a amostra no lugar do modelo da escrita saem da
+    tabela de idiomas: cada um lê aquela escrita."""
+    for escrita, codigos in language_detect._STAND_IN_LANGUAGES.items():
+        assert escrita in language_detect.SCRIPT_MODELS, escrita
+        for codigo in codigos:
+            assert language_detect._LANGUAGE_SCRIPT.get(codigo, "latin") == escrita, codigo
+        for modelo in language_detect.stand_in_models(escrita):
+            assert language_detect.model_script(modelo) == escrita, modelo
+    assert language_detect.stand_in_models("latin")[0] == "eng"
+    assert language_detect.stand_in_models("han") == ("chi_sim", "chi_tra")
+    assert language_detect.stand_in_models("tibetan") == ()
+
+
 def test_nomes_que_o_osd_da_viram_escritas():
     assert language_detect.script_from_osd("Latin") == "latin"
     assert language_detect.script_from_osd("Han") == "han"
@@ -663,6 +677,7 @@ def test_projeto_antigo_recebe_os_trechos_na_tabela_trigram_uma_vez(tmp_path):
     assert fulltext.search(conn, "学校")[1] == 1
     assert fulltext.backfill_trigram(conn) == 0  # uma vez só
     conn.close()
+
 
 
 def test_remover_arquivo_indexado_sem_faixa_tira_tambem_os_trechos_trigram(tmp_path):

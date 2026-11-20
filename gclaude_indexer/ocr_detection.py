@@ -57,15 +57,37 @@ TESSERACT_TIMEOUT = 60
 _MAX_SAMPLE_SIDE = 2400
 # Texto nativo bastante para dizer o idioma sem OCR.
 _NATIVE_SAMPLE_CHARS = 12000
-# O modelo de uma língua já presente que lê a amostra quando o modelo da
-# escrita não está aqui (e, na latina, no lugar dele: ver o passo 3 acima).
-_SCRIPT_STAND_INS = {
-    "latin": ("eng", "por", "spa", "fra", "deu", "ita"),
-    "cyrillic": ("rus", "ukr", "bul", "srp"), "greek": ("ell",), "arabic": ("ara", "fas", "urd"),
-    "hebrew": ("heb",), "kana": ("jpn",), "han": ("chi_sim", "chi_tra"), "hangul": ("kor",),
-    "devanagari": ("hin", "mar", "nep"), "thai": ("tha",), "bengali": ("ben",), "tamil": ("tam",),
-    "georgian": ("kat",), "armenian": ("hye",),
-}
+
+
+def page_needs_ocr(page, stripped_text: str) -> bool:
+    """Se uma página de PDF (`fitz`) precisa de OCR, dado o texto dela já
+    sem os brancos das pontas: pouco texto e algo desenhado. A conversão
+    (`conversion._pdf_pages_needing_ocr`) e a detecção de idioma
+    (`scan_pdf`) decidem com esta regra.
+
+    Página com pouco texto e nada desenhado — nem imagem, nem desenho
+    vetorial (texto convertido em curvas é desenho) — não tem o que o OCR
+    achar: o verso em branco, a folha de rosto "Capítulo 2" de um livro. Ela
+    não conta, ou um livro nativo inteiro passaria pelo OCR por causa dela."""
+    return len(stripped_text) < MIN_AVG_CHARS_PER_PAGE and bool(page.get_images() or page.get_drawings())
+
+
+_heif_registered = False
+
+
+def register_heif() -> None:
+    """Ensina o Pillow a abrir `.heic`/`.heif` (`pillow-heif`), uma vez por
+    processo. Sem a biblioteca, o arquivo falha ao abrir, como qualquer
+    imagem corrompida."""
+    global _heif_registered
+    if _heif_registered:
+        return
+    try:
+        from pillow_heif import register_heif_opener
+    except ImportError:
+        return
+    register_heif_opener()
+    _heif_registered = True
 
 
 # --- plano ----------------------------------------------------------------------
@@ -192,7 +214,7 @@ def sample_model(script: str, present: frozenset[str]) -> str | None:
     """O modelo que lê a amostra de uma escrita, entre os presentes aqui: o
     da escrita (na latina, antes uma língua latina já presente), senão uma
     língua dela. `None`: é preciso baixar o modelo da escrita."""
-    stand_ins = [model for model in _SCRIPT_STAND_INS.get(script, ()) if model in present]
+    stand_ins = [model for model in language_detect.stand_in_models(script) if model in present]
     if script == "latin" and stand_ins:
         return stand_ins[0]
     model = language_detect.script_model(script)
@@ -228,8 +250,7 @@ def _spread(pages: list[int], count: int) -> list[int]:
 
 
 def scan_pdf(path: Path) -> tuple[list[int], int, str]:
-    """`(páginas que precisam de OCR, total, amostra do texto nativo)`. A
-    regra das páginas é a de `conversion._pdf_pages_needing_ocr`."""
+    """`(páginas que precisam de OCR, total, amostra do texto nativo)`."""
     import fitz
 
     document = fitz.open(path)
@@ -240,7 +261,7 @@ def scan_pdf(path: Path) -> tuple[list[int], int, str]:
         for number, page in enumerate(document, start=1):
             text = page.get_text()
             stripped = text.strip()
-            if len(stripped) < MIN_AVG_CHARS_PER_PAGE and (page.get_images() or page.get_drawings()):
+            if page_needs_ocr(page, stripped):
                 pages.append(number)
             elif size < _NATIVE_SAMPLE_CHARS and stripped:
                 sample.append(stripped)
@@ -312,12 +333,7 @@ def probe_pdf(path: Path, ocr_pages: list[int], present: frozenset[str]) -> dict
 def probe_image(path: Path, present: frozenset[str]) -> dict:
     from PIL import Image
 
-    try:
-        from pillow_heif import register_heif_opener
-
-        register_heif_opener()
-    except ImportError:
-        pass
+    register_heif()
     with Image.open(path) as image:
         image.load()
         prepared = _prepared(image)
@@ -347,8 +363,7 @@ _NATIVE_ENOUGH_CJK = 60
 
 def native_is_enough(text: str) -> bool:
     counts = language_detect.script_counts(text)
-    cjk = counts["han"] + counts["kana"] + counts["hangul"]
-    return sum(counts.values()) >= _NATIVE_ENOUGH_LETTERS or cjk >= _NATIVE_ENOUGH_CJK
+    return sum(counts.values()) >= _NATIVE_ENOUGH_LETTERS or language_detect.cjk_count(counts) >= _NATIVE_ENOUGH_CJK
 
 
 def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_ready: bool) -> dict:
