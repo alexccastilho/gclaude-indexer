@@ -28,19 +28,21 @@ from __future__ import annotations
 import sqlite3
 
 from .config import ProjectConfig
+from .engine_names import ENGINE_AUTOMATIC, ENGINE_LOCAL, ENGINE_RULES
 from .hardware import diagnose, choose_model
-from .engine_local import classify_pending as classify_pending_local, model_to_use
+from .engine_local import classify_pending as classify_pending_local
+from .local_models import model_to_use
 from .engine_rules import classify_pending as classify_pending_rules
 
 
 def resolve_effective_engine(
     conn: sqlite3.Connection, config: ProjectConfig, language: str | None = None
 ) -> str:
-    if config.classification_engine != "automatic":
+    if config.classification_engine != ENGINE_AUTOMATIC:
         return config.classification_engine
     diagnostics = diagnose(conn, language=language)
     choice = choose_model(conn, diagnostics, model_to_use(config), language=language)
-    return "rules" if choice.use_rules_engine else "local"
+    return ENGINE_RULES if choice.use_rules_engine else ENGINE_LOCAL
 
 
 def run_classification(
@@ -49,14 +51,14 @@ def run_classification(
     """Runs step 6 (`rules`/`local`). Returns `(motor_usado, resultado)`."""
     effective_engine = resolve_effective_engine(conn, config, language=language)
 
-    if effective_engine == "local":
+    if effective_engine == ENGINE_LOCAL:
         # 2.1.0: the engine is built by `classify_pending` itself, from the
         # project. Built here, it used to lose `config` (no Subject, Collection
         # type, Role or Extra rules ever reached the prompt of a run started
         # from the interface) and `processing_mode` ("cpu" still loaded the
         # whole model on the card).
         result = classify_pending_local(conn, config, should_stop=should_stop, language=language)
-        return "local", result
+        return ENGINE_LOCAL, result
 
     result = classify_pending_rules(conn, config, should_stop=should_stop, language=language)
-    return "rules", result
+    return ENGINE_RULES, result

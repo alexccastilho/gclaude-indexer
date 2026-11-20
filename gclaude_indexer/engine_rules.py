@@ -38,6 +38,7 @@ from .classification import (
 )
 from .config import ProjectConfig
 from .db import BatchWriter
+from .engine_names import ENGINE_RULES
 from .events import record_event
 from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .html_text import without_struck_text
@@ -283,7 +284,7 @@ class RulesEngine:
             summary=self._find_summary(pages),
             has_table=any(p.has_table for p in pages),
             has_image=any(p.image_count > 0 for p in pages),
-            engine="rules",
+            engine=ENGINE_RULES,
             confidence=confidence,
             files=files,
         )
@@ -307,8 +308,8 @@ def classify_pending(
     language: str | None = None,
 ) -> RulesClassificationResult:
     """Classifies every `pending` window with the `rules` engine, writes the
-    items to `raw_items.jsonl` (same format used by the `claude_code`
-    engine, see `CLAUDE.md`) and marks the window as `done`."""
+    items to `raw_items.jsonl` (same format as the `local` engine) and
+    marks the window as `done`."""
     rules = rules or load_rules()
     engine = RulesEngine(rules)
 

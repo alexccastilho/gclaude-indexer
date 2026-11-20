@@ -8,7 +8,7 @@
 
 """Common classification interface (spec section 5, step 6).
 
-Every classification engine — `rules`, `local`, `claude_code` — receives the
+Every classification engine — `rules`, `local` — receives the
 text of one window and returns the same item structure, so that the import
 step (phase 6) does not need to know which engine ran. This module defines
 that common structure and the validation required by section 7 before any
@@ -23,10 +23,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
+from .engine_names import ENGINE_CLAUDE_CODE, ENGINE_LOCAL, ENGINE_RULES, ENGINE_STRUCTURED
 from .file_types import is_whole_document_file
 from .windows_prep import pages_for_group
 
-VALID_ENGINES = {"rules", "local", "claude_code", "structured"}  # structured: planalto.py
+VALID_ENGINES = {ENGINE_RULES, ENGINE_LOCAL, ENGINE_CLAUDE_CODE, ENGINE_STRUCTURED}
 VALID_CONFIDENCES = {"high", "medium", "low"}
 
 

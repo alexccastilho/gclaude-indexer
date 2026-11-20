@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ProjectConfig
+from .engine_names import ENGINE_LOCAL, ENGINE_RULES
 from .project import merge_project_config
 from .events import record_event
 from .file_types import PAGED_CATEGORIES, PDF_CATEGORY, TEXT_CATEGORY, category_of_extension
@@ -115,7 +116,7 @@ def _inventory(conn: sqlite3.Connection) -> list[tuple[str, str]]:
 
 
 def window_for_engine(engine: str) -> int:
-    return WINDOW_LOCAL if engine == "local" else WINDOW_RULES
+    return WINDOW_LOCAL if engine == ENGINE_LOCAL else WINDOW_RULES
 
 
 def overlap_for(window: int, multi_page_share: float) -> int:
@@ -143,12 +144,12 @@ def _effective_engine(conn: sqlite3.Connection, config: ProjectConfig, language:
 
         return resolve_effective_engine(conn, config, language=language)
     except Exception:
-        if config.classification_engine in ("local", "rules"):
+        if config.classification_engine in (ENGINE_LOCAL, ENGINE_RULES):
             return config.classification_engine
         try:
-            return "local" if list_installed_models() else "rules"
+            return ENGINE_LOCAL if list_installed_models() else ENGINE_RULES
         except Exception:
-            return "rules"
+            return ENGINE_RULES
 
 
 def _language_from_survey(survey: FolderSurvey) -> str | None:
@@ -227,7 +228,7 @@ def decide(
     window = window_for_engine(engine)
     overlap = overlap_for(window, share)
     decision = AutoSettings(scope=scope, pages_per_window=window, overlap=overlap, engine=engine)
-    decision.reasons["window"] = "auto.reason.window_local" if engine == "local" else "auto.reason.window_rules"
+    decision.reasons["window"] = "auto.reason.window_local" if engine == ENGINE_LOCAL else "auto.reason.window_rules"
     decision.reasons["overlap"] = (
         "auto.reason.overlap_zero" if overlap == 0 else "auto.reason.overlap_repeat"
     )

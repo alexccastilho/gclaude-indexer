@@ -6,7 +6,7 @@ import pytest
 
 from gclaude_indexer import hardware
 from gclaude_indexer.config import load_config
-from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
+from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.hardware import (

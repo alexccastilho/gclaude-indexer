@@ -25,9 +25,9 @@ def _sem_placa_de_video_por_padrao(monkeypatch):
 def _placa_pequena_por_padrao(monkeypatch):
     """1.5.14: o modelo automático depende da VRAM da máquina. Os testes
     partem de "sem placa" (modelo de 4B), seja qual for a máquina."""
-    from gclaude_indexer import engine_local
+    from gclaude_indexer import local_models
 
-    monkeypatch.setattr(engine_local, "gpu_vram_mb", lambda: 0)
+    monkeypatch.setattr(local_models, "gpu_vram_mb", lambda: 0)
 
 
 @pytest.fixture(autouse=True)

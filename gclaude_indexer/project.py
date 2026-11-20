@@ -19,6 +19,7 @@ from pathlib import Path
 
 from .config import ConfigError, ProjectConfig, config_data_to_json, config_to_json, extra_rules_errors, load_config
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
+from .engine_names import ENGINE_AUTOMATIC, ENGINE_CLAUDE_CODE, ENGINE_RULES
 from .events import record_event
 from .paths import PROJECT_DB_NAME, sqlite_readonly_uri
 from .windows_prep import mark_answered_windows
@@ -237,7 +238,7 @@ def load_project(
     # `rules`), but is recorded as a warning event so it doesn't disappear
     # without a trace.
     if data.get("classification_engine") == "openrouter":
-        data["classification_engine"] = "rules"
+        data["classification_engine"] = ENGINE_RULES
         # `load_project` has no request-scoped language to thread through
         # here — it is called from everywhere, on every
         # request, well before any endpoint reads the `language` cookie; a
@@ -245,7 +246,7 @@ def load_project(
         # call site. `record_event` falls back to `DEFAULT_LANGUAGE`.
         record_event(
             conn, "diagnostics", "warning", "log.project.classification_engine_converted",
-            {"engine": "openrouter", "replacement": "rules"},
+            {"engine": "openrouter", "replacement": ENGINE_RULES},
         )
 
     # 2.0.0: o motor "Claude Code (manual)" foi removido. Um projeto salvo
@@ -254,9 +255,9 @@ def load_project(
     # para a classificação automática não refazê-las; o que foi respondido
     # continua valendo na importação. O aviso sai uma vez só e a configuração
     # é regravada, senão a conversão se repetiria a cada requisição.
-    claude_code_converted = data.get("classification_engine") == "claude_code"
+    claude_code_converted = data.get("classification_engine") == ENGINE_CLAUDE_CODE
     if claude_code_converted:
-        data["classification_engine"] = "automatic"
+        data["classification_engine"] = ENGINE_AUTOMATIC
 
     config = load_config(data)
 
@@ -265,7 +266,7 @@ def load_project(
             mark_answered_windows(conn, Path(output_folder))
             _record_once(
                 conn, "log.project.classification_engine_converted",
-                {"engine": "claude_code", "replacement": "automatic"},
+                {"engine": ENGINE_CLAUDE_CODE, "replacement": ENGINE_AUTOMATIC},
             )
             save_project_config(conn, config)
         except sqlite3.Error:

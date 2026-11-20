@@ -34,9 +34,10 @@ from __future__ import annotations
 import re
 
 from .classification import ClassifiedItem, WindowPage
+from .engine_names import ENGINE_STRUCTURED
 from .html_text import STRUCK_MARK
 
-ENGINE = "structured"
+ENGINE = ENGINE_STRUCTURED
 
 _MONTHS = {
     "JANEIRO": 1, "FEVEREIRO": 2, "MARÇO": 3, "MARCO": 3, "ABRIL": 4, "MAIO": 5, "JUNHO": 6,

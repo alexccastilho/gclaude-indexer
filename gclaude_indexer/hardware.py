@@ -376,7 +376,7 @@ def choose_model(
     (combined VRAM+RAM, since Ollama uses as much GPU as fits and spills the
     rest into RAM on its own — this is not a table of VRAM tiers).
 
-    `model` is the name that will actually be used (`engine_local.model_to_use`,
+    `model` is the name that will actually be used (`local_models.model_to_use`,
     which respects `config.local_model`) — before this fix the function
     always reported `DEFAULT_LOCAL_MODEL`, even when the user had chosen a
     different model in the form, so the log named a model that was not the

@@ -33,6 +33,7 @@ from .classification import (
 )
 from .config import ProjectConfig
 from .db import BatchWriter
+from .engine_names import ENGINE_LOCAL
 from .file_types import PAGED_CATEGORIES, category_of_extension
 from .events import record_event
 from .i18n import nested
@@ -40,9 +41,8 @@ from .item_normalize import BLANK_PAGE_TYPE
 from .engine_rules import RulesEngine, load_rules
 from .gpu_budget import server_environment
 from .html_text import STRUCK_MARK
-from . import fulltext, hardware, ollama_backend, ollama_models
+from . import fulltext, hardware, local_models, ollama_backend, ollama_models
 from .ollama_backend import OLLAMA_SERVE_LOG_NAME
-from .ollama_models import DEFAULT_LOCAL_MODEL
 from .subprocess_utils import start_in_background
 from . import language_detect, planalto
 from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
@@ -61,59 +61,6 @@ PING_TIMEOUT_S = 5
 OLLAMA_RESTART_ATTEMPTS = 3
 WAIT_BETWEEN_ATTEMPTS_S = 4.0
 
-
-# A card with 8 GB or more of VRAM holds the 9B model whole, and the
-# bigger model reads names, signatures and dates better. Cards of 6 GB or
-# less keep `qwen3.5:4b`: measured on a 6 GB laptop card, every larger
-# model tried (bonsai-2:9b, ornith-1.5:9b, qwen3-vl:8b) spilled into system
-# RAM and ran 2x to 9x slower, some failing windows. 8 GB cards report a
-# little under 8192 MB, hence the margin.
-LARGE_MODEL_MIN_VRAM_MB = 7680
-
-# 2.1.0: two profiles the project chooses between, instead of a model name.
-# Measured on the demo collection and on a real 83-page case file,
-# with an answer key for each: `ornith-1.5:9b` (a Qwen 3.5 9B fine-tune)
-# finds the documents' limits best and slices them least, at about twice
-# the time of `qwen3.5:4b`, which is the fastest and finds the start of
-# as many documents. `qwen3.5:9b` lost to both on the real file (it found
-# fewer document starts and merged more), so it is no longer a default.
-# A model name still works as a value, for whoever wants to compare.
-QUALITY_LOCAL_MODEL = "ornith-1.5:9b"
-PROFILE_FAST = "fast"
-PROFILE_QUALITY = "quality"
-LOCAL_MODEL_PROFILES: dict[str, str] = {PROFILE_FAST: DEFAULT_LOCAL_MODEL, PROFILE_QUALITY: QUALITY_LOCAL_MODEL}
-
-_vram_cache: list[int] = []
-
-
-def gpu_vram_mb() -> int:
-    """Total VRAM of the dedicated graphics card, in MB (0 without one).
-    Measured once per process."""
-    if not _vram_cache:
-        vram = 0
-        try:
-            gpu = hardware._detect_nvidia_gpu() or hardware._detect_wmi_gpu()
-            vram = int(gpu.vram_mb) if gpu else 0
-        except Exception:
-            vram = 0
-        _vram_cache.append(vram)
-    return _vram_cache[0]
-
-
-def default_local_profile(vram_mb: int | None = None) -> str:
-    """The profile a new project starts with: best quality on a card with
-    8 GB of VRAM or more (the 9B model fits whole), fastest otherwise (a
-    larger model spills into system RAM there and runs several times
-    slower)."""
-    if vram_mb is None:
-        vram_mb = gpu_vram_mb()
-    return PROFILE_QUALITY if vram_mb >= LARGE_MODEL_MIN_VRAM_MB else PROFILE_FAST
-
-
-def recommended_local_model(vram_mb: int | None = None) -> str:
-    """The model of the default profile: `ornith-1.5:9b` for a card with
-    8 GB of VRAM or more, `qwen3.5:4b` otherwise."""
-    return LOCAL_MODEL_PROFILES[default_local_profile(vram_mb)]
 
 # NOTE (do not translate): this prompt is sent verbatim to the local model,
 # and the project owner's collections are in Portuguese. Translating it would
@@ -274,34 +221,6 @@ def _try_restart_ollama(
         {"attempts": OLLAMA_RESTART_ATTEMPTS}, language=language,
     )
     return False
-
-
-def model_to_use(config: ProjectConfig) -> str:
-    """Model the 'local' engine will use.
-
-    The user's choice in the form wins; `DEFAULT_LOCAL_MODEL` is just the
-    default. This function used to ignore `config.local_model` and always
-    return the default — the selector on the screen was decorative. It
-    started to matter when the user asked to compare the quality of
-    different models, which is impossible if every run uses the same one.
-    """
-    chosen = (config.local_model or "").strip()
-    if chosen in LOCAL_MODEL_PROFILES:
-        recommended = LOCAL_MODEL_PROFILES[chosen]
-    elif chosen and chosen != "automatic":
-        return chosen
-    else:
-        recommended = recommended_local_model()
-    if recommended != DEFAULT_LOCAL_MODEL:
-        # A machine upgraded from an older version may not have the 9B model
-        # yet; the 4B one it already has beats waiting for a download.
-        try:
-            downloaded = ollama_models.model_downloaded_on_disk
-            if not downloaded(recommended) and downloaded(DEFAULT_LOCAL_MODEL):
-                return DEFAULT_LOCAL_MODEL
-        except Exception:
-            pass
-    return recommended
 
 
 def _num_gpu_for(processing_mode: str) -> int:
@@ -1489,7 +1408,7 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
             summary=resumo,
             has_table=any(bool(d.get("has_table")) or p.has_table for p, d in atual),
             has_image=any(bool(d.get("has_image")) or bool(p.image_count) for p, d in atual),
-            engine="local",
+            engine=ENGINE_LOCAL,
             confidence=confianca,
             files=sorted({p.file_name for p, _d in atual}),
         ))
@@ -1651,7 +1570,7 @@ def _dict_to_item(
         summary=summary,
         has_table=bool(raw.get("has_table")) or any(p.has_table for p in item_pages),
         has_image=bool(raw.get("has_image")) or any(p.image_count > 0 for p in item_pages),
-        engine="local",
+        engine=ENGINE_LOCAL,
         confidence=confidence,
         files=files,
     )
@@ -1796,7 +1715,7 @@ def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], li
             start_ref=block[0].reference, end_ref=block[-1].reference,
             start_order=page_order(block[0]), end_order=page_order(block[-1]),
             type=BLANK_PAGE_TYPE, date=None, author=None, summary=BLANK_PAGE_SUMMARY,
-            has_table=False, has_image=False, engine="local", confidence="high",
+            has_table=False, has_image=False, engine=ENGINE_LOCAL, confidence="high",
             files=sorted({p.file_name for p in block}),
         ))
     return items, [page for page in pages if not is_blank_page(page)]
@@ -1866,7 +1785,7 @@ def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
             summary=resumo or None,
             has_table=any(p.has_table for p in bloco),
             has_image=any(p.image_count for p in bloco),
-            engine="local",
+            engine=ENGINE_LOCAL,
             confidence="low",
             files=sorted({p.file_name for p in bloco}),
         ))
@@ -2073,7 +1992,7 @@ def classify_pending(
 
     if local_engine is None:
         local_engine = LocalEngine(
-            model=model_to_use(config), num_gpu=_num_gpu_for(config.processing_mode),
+            model=local_models.model_to_use(config), num_gpu=_num_gpu_for(config.processing_mode),
             config=config,
         )
 

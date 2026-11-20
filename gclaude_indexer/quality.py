@@ -27,7 +27,7 @@ from datetime import datetime
 
 from .config import ProjectConfig
 from .file_status import FAILED, WINDOW_PENDING
-from .engine_local import LOCAL_MODEL_PROFILES
+from .local_models import LOCAL_MODEL_PROFILES
 
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 

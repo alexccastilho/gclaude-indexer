@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
-from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
+from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 import gclaude_indexer.sensors as sensors_mod
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
@@ -652,7 +652,8 @@ def test_conversao_paralela_processa_todos_os_arquivos(cliente, tmp_path):
 
 def test_modelo_para_usar_respeita_a_escolha(tmp_path):
     from gclaude_indexer.config import ProjectConfig
-    from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL, model_to_use
+    from gclaude_indexer.local_models import model_to_use
+    from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 
     base = dict(name="x", source_folder=str(tmp_path), output_folder=str(tmp_path / "s"))
     assert model_to_use(ProjectConfig(**base, local_model="qwen3:8b")) == "qwen3:8b"

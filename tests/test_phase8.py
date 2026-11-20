@@ -17,7 +17,9 @@ from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.windows_prep import prepare_windows
-from gclaude_indexer.engine_local import LocalEngine, _dict_to_item, _extract_items_json, classify_pending, model_to_use
+from gclaude_indexer.engine_local import LocalEngine, _dict_to_item, _extract_items_json, classify_pending
+from gclaude_indexer.local_models import model_to_use
+from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 from gclaude_indexer.scanning import scan
 
 
@@ -276,8 +278,8 @@ def test_modelo_para_usar_automatico_e_sempre_o_padrao_fixo(tmp_path):
     """Por pedido explícito do usuário: em qualquer hardware, 'automatic'
     resolve sempre para o mesmo modelo — não consulta mais o diagnóstico."""
     config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO_LONGO_SEM_MARCADOR])
-    assert model_to_use(config) == engine_local.DEFAULT_LOCAL_MODEL
-    assert engine_local.DEFAULT_LOCAL_MODEL == "qwen3.5:4b"
+    assert model_to_use(config) == DEFAULT_LOCAL_MODEL
+    assert DEFAULT_LOCAL_MODEL == "qwen3.5:4b"
     conn.close()
 
 
