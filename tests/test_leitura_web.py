@@ -442,14 +442,13 @@ def test_motor_de_regras_ignora_data_tachada():
 
 def test_prompt_local_explica_o_tachado_so_quando_ha_tachado():
     from gclaude_indexer.classification import WindowPage
-    from gclaude_indexer.engine_local import _build_page_prompt, _build_prompt
+    from gclaude_indexer.engine_local import _build_page_prompt
 
     com = [WindowPage(reference="p. 1", file_name="a.htm", text="~~Art. 1º~~", has_table=False, image_count=0)]
     sem = [WindowPage(reference="p. 1", file_name="a.pdf", text="Art. 1º", has_table=False, image_count=0)]
 
-    for construir in (_build_prompt, _build_page_prompt):
-        assert "tachado" in construir(com)
-        assert "tachado" not in construir(sem)
+    assert "tachado" in _build_page_prompt(com)
+    assert "tachado" not in _build_page_prompt(sem)
 
 
 @pytest.mark.parametrize("idioma", ["pt", "en", "es"])

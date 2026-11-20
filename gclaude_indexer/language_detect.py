@@ -451,7 +451,7 @@ def iso_from_tesseract(model: str) -> str | None:
 
 # --- nomes, para o classificador -------------------------------------------------
 
-# O prompt do motor local é em português de propósito (`engine_local._PROMPT`);
+# O prompt do motor local é em português de propósito (`engine_local._PAGE_PROMPT`);
 # o nome do idioma também. Fora desta lista vai o código ISO, que o modelo
 # entende do mesmo jeito.
 _NAMES_PT = {

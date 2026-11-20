@@ -1131,20 +1131,6 @@ def test_o_contexto_nao_engole_a_janela():
     assert len(linha_do_assunto) < _CONTEXT_FIELD_LIMIT + 50
 
 
-def test_o_prompt_pede_uma_peca_por_unidade_de_assunto():
-    """Fragmentação vista num acervo didático: pouco mais de uma página por peça.
-
-    A primeira redação desta regra dizia "UMA PEÇA POR DOCUMENTO" e curou
-    a fragmentação criando o extremo oposto — no benchmark do relatório, cinco
-    modelos colapsaram 31 páginas em até 3 peças. A regra atual nomeia os
-    dois erros; a cobertura é garantida à parte, pelo código.
-    """
-    from gclaude_indexer.engine_local import _PROMPT
-
-    assert "UNIDADE DE ASSUNTO" in _PROMPT
-    assert "fatiar um assunto contínuo" in _PROMPT
-
-
 def test_o_tipo_e_normalizado_para_nao_duplicar_no_indice():
     from gclaude_indexer.classification import normalize_type
 
@@ -1234,29 +1220,6 @@ def test_o_score_vem_decomposto_para_a_tela_poder_explicar(tmp_path):
     assert resumo["fill_points"] == pytest.approx(25.0, abs=0.1)  # tipo 100% preenchido
 
 
-def test_a_referencia_com_o_nome_do_arquivo_junto_e_aceita():
-    """Sem isto, o prompt corrigido produzia ZERO peças.
-
-    Cada página é apresentada ao modelo como `--- f. 2 (Arquivo.pdf) ---`,
-    e um modelo que copia o rótulo inteiro de volta — `"ref_start": "f. 2
-    (Arquivo.pdf)"` — identificou a página certa e escreveu numa forma que
-    a comparação por igualdade exata recusa. Medido: com o prompt novo, o
-    `qwen3:8b` devolveu uma peça de f. 2 a f. 16 (o documento inteiro,
-    exatamente como pedido) e ela foi descartada por isso, deixando a
-    janela com zero peças e nenhum motivo visível.
-    """
-    from gclaude_indexer.engine_local import _normalize_reference as normaliza
-
-    assert normaliza("f. 2 (Projeto Pedagógico do Curso.pdf)") == normaliza("f. 2")
-    assert normaliza("p. 5 (a.pdf)") == normaliza("p. 5")
-    # As tolerâncias que já existiam continuam valendo.
-    assert normaliza("F. 2") == normaliza("fl. 2") == normaliza("f.2") == "f.2"
-    # E prefixos diferentes continuam sendo referências diferentes.
-    assert normaliza("f. 1") != normaliza("p. 1")
-    # Texto que não começa por uma referência não vira uma por acidente.
-    assert normaliza("documento sem referência") == "documentosemreferência"
-
-
 # --- 11. cobertura: nenhuma página fica fora do índice ---------------------
 #
 # O índice existe para levar alguém ao PDF certo, na página certa. Uma
@@ -1333,23 +1296,6 @@ def test_o_resumo_de_cobertura_nao_copia_a_pagina_inteira():
     pecas = _coverage_items([_pagina(1, texto="palavra " * 5000)])
     assert len(pecas[0].summary) <= _FALLBACK_SUMMARY_CHARS + 1
     assert pecas[0].summary.endswith("…")
-
-
-def test_o_prompt_exige_cobertura_total_e_granularidade_por_assunto():
-    """As duas falhas opostas medidas no benchmark, ambas endereçadas.
-
-    A primeira versão da regra ("UMA PEÇA POR DOCUMENTO") corrigiu a
-    fragmentação do material didático e criou o extremo oposto: um relatório
-    com dezenas de seções virou uma peça só.
-    """
-    from gclaude_indexer.engine_local import _PROMPT
-
-    assert "COBERTURA TOTAL" in _PROMPT
-    assert "UNIDADE DE ASSUNTO" in _PROMPT
-    # E diz explicitamente que os DOIS extremos são errados.
-    assert "Os dois extremos são" in _PROMPT
-    # O resumo é o que o Claude vai ler para decidir abrir a página.
-    assert "decidir se vale abrir" in _PROMPT
 
 
 def test_a_cobertura_pesa_na_nota_de_qualidade(tmp_path):
@@ -1532,15 +1478,6 @@ def test_assuntos_iguais_com_pontuacao_diferente_casam():
     assert _same_topic_start(_subject_key("Instalacoes eletricas bloco A"),
                              _subject_key("Instalacoes eletricas bloco B"))
     assert not _same_topic_start(_subject_key("Fundação"), _subject_key("Cobertura"))
-
-
-def test_o_modo_por_pagina_e_o_padrao():
-    from gclaude_indexer.engine_local import LocalEngine
-
-    assert LocalEngine(model="x").per_page is True
-    # O modo de faixas continua acessível — é o que os testes da fase 8
-    # exercitam contra o servidor falso.
-    assert LocalEngine(model="x", per_page=False).per_page is False
 
 
 # --- 13. servidor rodando código velho ------------------------------------

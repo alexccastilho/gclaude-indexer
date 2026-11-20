@@ -540,40 +540,40 @@ def _paginas(*textos):
 
 
 def test_tipo_e_resumo_pedidos_no_idioma_do_documento():
-    from gclaude_indexer.engine_local import _build_page_prompt, _build_prompt
+    from gclaude_indexer.engine_local import _build_page_prompt
 
-    prompt = _build_prompt(_paginas(ALEMAO * 2))
+    prompt = _build_page_prompt(_paginas(ALEMAO * 2))
     assert "Idioma do texto desta janela: alemão (de)." in prompt
-    assert 'Escreva "type" e "summary" em alemão (de), o idioma do documento' in prompt
+    assert 'Escreva "subject", "type" e "detail" em alemão (de), o idioma do documento' in prompt
     # O prompt em si continua em português, de propósito.
-    assert "Você é um classificador de peças" in prompt
+    assert "Você é um indexador de um acervo documental" in prompt
 
     prompt = _build_page_prompt(_paginas(JAPONES * 3))
     assert 'Escreva "subject", "type" e "detail" em japonês (ja)' in prompt
 
 
 def test_janela_com_idiomas_misturados_usa_o_da_maior_parte():
-    from gclaude_indexer.engine_local import _build_prompt
+    from gclaude_indexer.engine_local import _build_page_prompt
 
-    prompt = _build_prompt(_paginas(RUSSO * 3, RUSSO * 3, ALEMAO))
+    prompt = _build_page_prompt(_paginas(RUSSO * 3, RUSSO * 3, ALEMAO))
     assert "Idioma do texto desta janela: russo (ru) na maior parte; também aparece alemão (de)." in prompt
     assert "use o da maior parte (russo (ru))" in prompt
 
 
 def test_janela_sem_texto_nao_ganha_linha_de_idioma():
-    from gclaude_indexer.engine_local import _build_prompt
+    from gclaude_indexer.engine_local import _build_page_prompt
 
-    assert "Idioma do texto" not in _build_prompt(_paginas("", "f. 3"))
+    assert "Idioma do texto" not in _build_page_prompt(_paginas("", "f. 3"))
 
 
 def test_janela_em_portugues_fica_com_o_prompt_de_sempre():
-    from gclaude_indexer.engine_local import _build_prompt
+    from gclaude_indexer.engine_local import _build_page_prompt
 
     portugues = (
         "O contrato de prestação de serviços foi assinado hoje pelas duas partes e entra em vigor "
         "imediatamente. O pagamento será feito no fim de cada mês, mediante nota fiscal. "
     )
-    assert "Idioma do texto" not in _build_prompt(_paginas(portugues * 3))
+    assert "Idioma do texto" not in _build_page_prompt(_paginas(portugues * 3))
 
 
 def test_agrupamento_por_assunto_em_escrita_sem_espaco():
