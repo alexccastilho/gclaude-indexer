@@ -28,7 +28,7 @@ from pathlib import Path
 
 from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
-from ..file_status import CONVERTED, DISCOVERED, EXTRACTED, SKIPPED, WINDOW_DONE, WINDOW_PENDING
+from ..file_status import CONVERTED, DISCOVERED, EXTRACTED, SKIPPED, WINDOW_DONE
 from ..i18n import DEFAULT_LANGUAGE, translate
 from ..run_control import StopSignal
 from ..conversion import requeue_ocr_failures
@@ -39,6 +39,7 @@ from ..project import load_project
 from .. import source_folder
 from ..fulltext import coverage as fulltext_coverage
 from .eta import ProgressEstimator
+from .step_state import classification_pending, conversion_pending
 
 @dataclass
 class StepTask:
@@ -128,8 +129,9 @@ def _ignored_count(output_folder) -> int:
         conn.close()
 
 
-# The `file.status` a file waits in for each step, beside its inverse above.
-# The Execution cards (`step_state.step_status`) count pending differently; see decisoes.md B.
+# The `file.status` a file waits in for each step. The conversion also has
+# the files whose OCR failed waiting: its pending side is
+# `step_state.conversion_pending`, the same count as its card.
 _PENDING_STATUS = {
     "conversion": DISCOVERED,
     "extraction": CONVERTED,
@@ -164,6 +166,8 @@ def _weight_pending(conn, step: str) -> float | None:
     if pending_status is None:
         return None
     try:
+        if step == "conversion":
+            return float(conversion_pending(conn)[1])
         row = conn.execute(
             "SELECT COALESCE(SUM(size), 0) FROM file WHERE status = ?", (pending_status,)
         ).fetchone()
@@ -190,7 +194,10 @@ def _weight_total_and_baseline(conn, step: str) -> tuple[float, float]:
 def _total_and_baseline(conn, step: str) -> tuple[int, int]:
     if step in DONE_STATUSES:
         baseline = count_files_in(conn, DONE_STATUSES[step])
-        pending = count_files_in(conn, (_PENDING_STATUS[step],))
+        if step == "conversion":
+            pending = conversion_pending(conn)[0]
+        else:
+            pending = count_files_in(conn, (_PENDING_STATUS[step],))
         return pending, baseline
     if step == "windows":
         baseline = conn.execute("SELECT COUNT(DISTINCT group_key) FROM window").fetchone()[0]
@@ -200,8 +207,7 @@ def _total_and_baseline(conn, step: str) -> tuple[int, int]:
         return pending, baseline
     if step == "classification":
         baseline = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)).fetchone()[0]
-        return pending, baseline
+        return classification_pending(conn), baseline
     return 0, 0
 
 
