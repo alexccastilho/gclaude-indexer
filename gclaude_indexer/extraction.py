@@ -49,7 +49,7 @@ from .worker_pool import (
 from .parallelism import workers_for
 from . import light_formats
 from .file_status import (
-    EXTRACTED, HAS_INTERMEDIATE, MARK_EXTRACTED, MARK_EXTRACTION_FAILED, RESET_TO_DISCOVERED_KEEP_LANGUAGE,
+    EXTRACTED, HAS_INTERMEDIATE, KEEP_SAME_BYTES, MARK_EXTRACTED, MARK_EXTRACTION_FAILED, reset_to_discovered,
     in_params,
 )
 from .file_types import (
@@ -281,8 +281,8 @@ def _queue_reconversion(writer: BatchWriter, row, result: ExtractionResult, lang
     'discovered', so the next conversion makes it again."""
 
     def op(conn) -> None:
-        # Same SQL as the OCR retry, but no page to delete: extraction never wrote any for this file.
-        conn.execute(RESET_TO_DISCOVERED_KEEP_LANGUAGE, (row["id"],))
+        # Same reset as the OCR retry, but no page to delete: extraction never wrote any for this file.
+        reset_to_discovered(conn, row["id"], keep=KEEP_SAME_BYTES)
         record_event(
             conn, "extraction", "warning", "log.extraction.intermediate_missing",
             {"name": row["name"]}, language=language, commit=False,

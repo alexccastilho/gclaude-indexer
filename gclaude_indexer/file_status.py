@@ -95,7 +95,8 @@ def is_waiting_component(status: str | None, error: str | None) -> bool:
 # --- transitions ---------------------------------------------------------------
 # Plain literals (this module owns the values); parameters in the order of the
 # `?`. Variants that differ in what they write keep separate names: merging them
-# would change behavior.
+# would change behavior. The return to `discovered` is the exception: one
+# function (`reset_to_discovered`), see below.
 
 # (page_count, needs_ocr, ocr_failed, id): PDF, paged, legacy, signed PDF.
 MARK_CONVERTED = (
@@ -147,19 +148,54 @@ MARK_EXTRACTION_FAILED = "UPDATE file SET status = 'failed', error = ? WHERE id 
 # (id)
 MARK_EXTRACTED = "UPDATE file SET status = 'extracted' WHERE id = ?"
 
-# Back to `discovered`. The copies differ on purpose (decisoes.md: merging is
-# a behavior change), each says what it clears:
-# (id): OCR retry and missing intermediate; keeps `ocr_lang`/`language`.
-RESET_TO_DISCOVERED_KEEP_LANGUAGE = (
-    "UPDATE file SET status = 'discovered', page_count = NULL, error = NULL WHERE id = ?"
+# Back to `discovered`: one reset for every caller (the OCR retry, a missing
+# intermediate, a changed file in the update or in the scan, renumbering
+# without the intermediate), so the next conversion starts from nothing an
+# earlier one wrote. Column -> the value it gets back. `ocr_failed` goes too:
+# the conversion sets it again if OCR fails again, and a `discovered` row
+# left with it set read as "changed" to the update plan
+# (`update_plan.detect_changes`) on every look until the conversion came.
+# `needs_ocr` is not here on purpose: it says where the old intermediate is
+# (`workdir.converted_artifact_path`), which is still on disk until the
+# conversion rewrites it, and removing or ignoring the file before that
+# deletes it by this column; the conversion writes the new value.
+_DISCOVERED_RESET: dict[str, str] = {
+    "page_count": "NULL", "error": "NULL", "ocr_failed": "0", "ocr_lang": "NULL", "language": "NULL",
+}
+# What a return with the same bytes keeps (OCR retry, missing intermediate,
+# renumbering): the OCR plan of the earlier conversion (`ocr_lang`, the
+# models the retry exists to download and apply) and the detected language.
+# A changed file keeps neither: they were the old bytes'.
+KEEP_SAME_BYTES: tuple[str, ...] = ("ocr_lang", "language")
+
+
+def reset_to_discovered(
+    conn, file_id: int | None = None, *, relative_path: str | None = None, keep: Iterable[str] = (),
+) -> None:
+    """Sends one file back to `discovered` (by `file_id` or `relative_path`),
+    clearing every column of `_DISCOVERED_RESET` except those in `keep`.
+    The caller deletes the file's pages and search rows first."""
+    kept = frozenset(keep)
+    unknown = kept - _DISCOVERED_RESET.keys()
+    if unknown:
+        raise ValueError(f"reset_to_discovered: not a reset column: {sorted(unknown)}")
+    if (file_id is None) == (relative_path is None):
+        raise ValueError("reset_to_discovered: give file_id or relative_path")
+    assignments = "".join(
+        f", {column} = {value}" for column, value in _DISCOVERED_RESET.items() if column not in kept
+    )
+    where = "id = ?" if file_id is not None else "relative_path = ?"
+    conn.execute(
+        f"UPDATE file SET status = 'discovered'{assignments} WHERE {where}",
+        (file_id if file_id is not None else relative_path,),
+    )
+
+
+# (id): renumbering with the intermediate still on disk: extraction re-reads
+# it, so `needs_ocr` (where it is) and the language stay.
+RENUMBER_FROM_INTERMEDIATE = (
+    "UPDATE file SET status = 'converted', page_count = NULL, error = NULL WHERE id = ?"
 )
-# (id): content changed; the language was the old bytes', so it goes too.
-RESET_TO_DISCOVERED_CLEAR_LANGUAGE = (
-    "UPDATE file SET status = 'discovered', page_count = NULL,"
-    " error = NULL, ocr_lang = NULL, language = NULL WHERE id = ?"
-)
-# (status, id): renumbering, to CONVERTED or DISCOVERED; keeps the language.
-RESET_FOR_RENUMBER = "UPDATE file SET status = ?, page_count = NULL, error = NULL WHERE id = ?"
 
 # (id): an engine answered the window.
 MARK_WINDOW_DONE = "UPDATE window SET status = 'done' WHERE id = ?"

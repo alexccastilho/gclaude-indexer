@@ -43,7 +43,7 @@ from .fulltext import remove_file as remove_from_search
 from .workdir import converted_artifact_path
 from .events import record_event
 from .file_status import (
-    CONVERTED, DISCOVERED, DUPLICATE, RESET_FOR_RENUMBER, RESET_TO_DISCOVERED_CLEAR_LANGUAGE,
+    CONVERTED, DISCOVERED, DUPLICATE, KEEP_SAME_BYTES, RENUMBER_FROM_INTERMEDIATE, reset_to_discovered,
 )
 from . import raw_items
 from .paths import resolve_within
@@ -603,7 +603,7 @@ def _apply(
             # the expensive half of the update, and the only half that
             # should be expensive.
             # The language is the content's, so it goes with the old bytes.
-            conn.execute(RESET_TO_DISCOVERED_CLEAR_LANGUAGE, (file_id,))
+            reset_to_discovered(conn, file_id)
             result.files_reset += 1
 
         changed_paths = {change.relative_path for change in current.changed}
@@ -636,7 +636,11 @@ def _apply(
                 # rows is the very disagreement
                 # `update_plan._stored_geometry` documents at length.
                 status = _renumber_status(config, relative_path, row)
-                conn.execute(RESET_FOR_RENUMBER, (status, file_id))
+                if status == CONVERTED:
+                    conn.execute(RENUMBER_FROM_INTERMEDIATE, (file_id,))
+                else:
+                    # Same bytes: the OCR plan and the language stay.
+                    reset_to_discovered(conn, file_id, keep=KEEP_SAME_BYTES)
                 renumbered.append(relative_path)
                 if status == CONVERTED:
                     result.files_renumbered += 1
