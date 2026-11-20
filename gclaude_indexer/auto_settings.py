@@ -37,7 +37,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import category_of_extension
+from .file_types import PAGED_CATEGORIES, PDF_CATEGORY, TEXT_CATEGORY, category_of_extension
 from .file_status import SKIPPED
 from .i18n import nested
 from .ollama_models import list_installed_models
@@ -73,7 +73,7 @@ CJK_CHARS_PER_PAGE = 800
 # documentos inteiros e a sobreposição só repete páginas: não há peça partida
 # na borda de duas janelas.
 _MULTI_PAGE_SHARE_FOR_OVERLAP = 0.05
-_MULTI_PAGE_CATEGORIES = ("pdf", "imagens", "paginados", "legados")
+_MULTI_PAGE_CATEGORIES = PAGED_CATEGORIES
 
 
 @dataclass
@@ -106,7 +106,7 @@ def _inventory(conn: sqlite3.Connection) -> list[tuple[str, str]]:
         "SELECT relative_path, extension FROM file WHERE status != ?", (SKIPPED,)
     ).fetchall()
     return [
-        (row["relative_path"], category_of_extension("." + (row["extension"] or "")) or "text")
+        (row["relative_path"], category_of_extension("." + (row["extension"] or "")) or TEXT_CATEGORY)
         for row in rows
     ]
 
@@ -213,7 +213,7 @@ def decide(
         for relative_path, category in inventory:
             found.setdefault(category, []).append(source / relative_path)
         try:
-            texts = _survey_pdfs(found.get("pdf", []), survey) + _survey_text_files(found)
+            texts = _survey_pdfs(found.get(PDF_CATEGORY, []), survey) + _survey_text_files(found)
             _count_languages(texts, survey)
             share = survey.multi_page_share()
         except Exception:

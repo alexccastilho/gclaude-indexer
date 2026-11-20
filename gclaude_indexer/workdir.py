@@ -33,7 +33,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from .file_types import category_of_extension
+from .file_types import PDF_CATEGORY, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, category_of_extension
 from .paths import machine_local_folder
 
 # Extensões que já existiam antes da 2.0.0: o texto intermediário delas
@@ -151,14 +151,15 @@ def converted_artifact_path(
     """
     extension = extension.lstrip(".").lower()
     category = category_of_extension("." + extension)
-    if category == "pdf":
+    if category == PDF_CATEGORY:
         if not needs_ocr:
             return None
         return intermediate_path(output_folder, "converted", relative_path, ".pdf")
-    if category in ("paginados", "legados"):
-        # Sempre há um PDF intermediário (o original não é PDF).
+    if category in READ_AS_PDF_CATEGORIES:
+        # Os outros lidos como PDF: sempre há um PDF intermediário (o
+        # original não é PDF).
         return intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")
-    if category == "assinados":
+    if category == SIGNED_CATEGORY:
         # Só o conteúdo envelopado diz qual: PDF dentro, PDF aqui; qualquer
         # outro tipo vira texto. Quem converte apaga o outro.
         as_pdf = intermediate_path(output_folder, "converted", relative_path, f".{extension}.pdf")

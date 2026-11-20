@@ -27,6 +27,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from .file_types import (
+    HTML_EXTENSIONS, IMAGE_CATEGORY, PAGED_CATEGORIES, PDF_CATEGORY, TEXT_CATEGORY, WEB_DATA_CATEGORY,
+)
 from .ocr_detection import MIN_AVG_CHARS_PER_PAGE
 
 
@@ -36,7 +39,7 @@ _TEXT_SAMPLE = 16
 _TEXT_BYTES = 64 * 1024
 
 
-_MULTI_PAGE_CATEGORIES = {"pdf", "imagens", "paginados", "legados"}
+_MULTI_PAGE_CATEGORIES = set(PAGED_CATEGORIES)
 
 @dataclass
 class FolderSurvey:
@@ -47,7 +50,7 @@ class FolderSurvey:
 
     @property
     def pdf_files(self) -> int:
-        return self.by_category["pdf"]
+        return self.by_category[PDF_CATEGORY]
 
     @property
     def whole_document_files(self) -> int:
@@ -60,13 +63,13 @@ class FolderSurvey:
         return round(average * self.pdf_files)
 
     def estimated_pages(self) -> int:
-        return self.estimated_pdf_pages() + self.by_category["imagens"] + self.whole_document_files
+        return self.estimated_pdf_pages() + self.by_category[IMAGE_CATEGORY] + self.whole_document_files
 
     def multi_page_share(self) -> float:
         total = self.estimated_pages()
         if not total:
             return 0.0
-        return (self.estimated_pdf_pages() + self.by_category["imagens"]) / total
+        return (self.estimated_pdf_pages() + self.by_category[IMAGE_CATEGORY]) / total
 
 
 # --- survey -----------------------------------------------------------------
@@ -111,7 +114,7 @@ def _survey_text_files(found: dict[str, list[Path]]) -> list[str]:
     from .html_text import html_to_text, looks_like_html
     from .text_decoding import decode_markup
 
-    candidates = found.get("web_dados", []) + found.get("text", [])
+    candidates = found.get(WEB_DATA_CATEGORY, []) + found.get(TEXT_CATEGORY, [])
     texts = []
     for path in _sample(candidates, _TEXT_SAMPLE):
         try:
@@ -120,7 +123,7 @@ def _survey_text_files(found: dict[str, list[Path]]) -> list[str]:
         except OSError:
             continue
         text, _ = decode_markup(data)
-        if path.suffix.lower() in (".htm", ".html", ".xhtml", ".xht", ".shtml") or looks_like_html(text):
+        if path.suffix.lower() in HTML_EXTENSIONS or looks_like_html(text):
             text = html_to_text(text)
         texts.append(text)
     return texts

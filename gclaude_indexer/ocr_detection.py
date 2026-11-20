@@ -39,7 +39,7 @@ import re
 from pathlib import Path
 
 from . import language_detect
-from .file_types import category_of_extension
+from .file_types import PDF_CATEGORY, category_of_extension
 
 # Below this many characters of text a PDF page needs OCR (section 5,
 # step 2). The conversion decides with it and the settings proposal
@@ -365,7 +365,7 @@ def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_read
         "scripts": {}, "rotate": {}, "samples": {}, "needs": [],
     }
     stored = bool(row.get("ocr_lang"))
-    if category == "pdf":
+    if category == PDF_CATEGORY:
         if stored:
             return result  # o plano já existe; as páginas o `_process_file` conta
         ocr_pages, page_count, native = scan_pdf(path)

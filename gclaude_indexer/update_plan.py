@@ -52,7 +52,10 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_status import DUPLICATE, OUT_OF_INDEX, STALE_PAGES_EXEMPT, in_params, is_waiting_component
-from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, name_decision
+from .file_types import (
+    MESSAGE_PAGE_CATEGORIES, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, category_of_extension, is_extension_allowed,
+    name_decision,
+)
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .source_folder import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -602,15 +605,18 @@ def _divergence_page(
     return page_offset
 
 
+# Not `PAGED_CATEGORIES`: an image is one page, and a signed file (it may
+# hold a PDF) and the message categories may have several.
+_MAYBE_SEVERAL_PAGES = (*READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, *MESSAGE_PAGE_CATEGORIES)
+
+
 def _always_one_page(relative_path: str) -> bool:
     """Extraction gives exactly one page to every file that is not a PDF
     (`extraction._extract_file_pages`): its text, whatever its length. The
     exceptions are the formats with pages of their own: PDF, the paged ones
     (EPUB, XPS…), a signed file (it may hold a PDF) and the mailbox (a page
     per message)."""
-    return category_of_extension(Path(relative_path).suffix) not in (
-        "pdf", "paginados", "legados", "assinados", *MESSAGE_PAGE_CATEGORIES,
-    )
+    return category_of_extension(Path(relative_path).suffix) not in _MAYBE_SEVERAL_PAGES
 
 
 def _in_place_windows(
