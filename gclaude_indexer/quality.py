@@ -151,7 +151,10 @@ def _coverage(conn) -> tuple[int, int, int]:
     return total, cobertas, classificadas
 
 
-def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) -> dict:
+def _measure(conn) -> dict:
+    """A nota de qualidade e as medidas que a compõem, sobre as peças
+    atuais. A única conta da nota: o cabeçalho do Resultado, o aviso de
+    conclusão e a tabela "Comparar motores" leem daqui."""
     total_items = conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]
 
     confidence = {"high": 0, "medium": 0, "low": 0}
@@ -171,14 +174,6 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
     windows_pending = conn.execute(
         "SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)
     ).fetchone()[0]
-
-    from .artifacts import pending_items
-
-    # The Result screen computes `pending_items` once and hands it
-    # over; on a 2.3 GB project on Google Drive each call is ~5 s.
-    if pending is None:
-        pending = pending_items(conn)
-    gaps = len(pending.get("gaps", {}) or {})
 
     # Cobertura: quantas das páginas extraídas estão dentro de alguma peça.
     #
@@ -220,9 +215,6 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         )
 
     return {
-        "engine": config.classification_engine,
-        # 2.1.0: a profile ("fast"/"quality") is shown as the model it stands for.
-        "model": LOCAL_MODEL_PROFILES.get(config.local_model, config.local_model),
         "total_items": total_items,
         "confidence": confidence,
         "missing_type": missing_type,
@@ -230,7 +222,6 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         "missing_summary": missing_summary,
         "failed_files": failed_files,
         "windows_pending": windows_pending,
-        "gaps": gaps,
         "score": score,
         # The score broken into its parts. A single number the user cannot
         # take apart is a number they cannot act on: the review that led
@@ -245,6 +236,22 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         "fill_points": round(0.25 * fill_rate * 100, 1) if total_items else 0.0,
         "penalty_points": round(-penalty * 100, 1) if total_items else 0.0,
         "date_counted": date_counted if total_items else False,
+    }
+
+
+def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) -> dict:
+    from .artifacts import pending_items
+
+    # The Result screen computes `pending_items` once and hands it
+    # over; on a 2.3 GB project on Google Drive each call is ~5 s.
+    if pending is None:
+        pending = pending_items(conn)
+    return {
+        "engine": config.classification_engine,
+        # 2.1.0: a profile ("fast"/"quality") is shown as the model it stands for.
+        "model": LOCAL_MODEL_PROFILES.get(config.local_model, config.local_model),
+        **_measure(conn),
+        "gaps": len(pending.get("gaps", {}) or {}),
     }
 
 
@@ -291,33 +298,21 @@ def _last_classification_run(conn) -> tuple[str | None, str | None] | None:
     return row["engine"], row["model"]
 
 
-def _engine_quality(conn, engine: str | None) -> tuple[int | None, dict | None]:
-    """Score and confidence distribution of the items currently recorded for
-    this engine — `None` (not zero) when `peca` has none, which usually
-    means the last import came from a different engine."""
+def _engine_quality(conn, engine: str | None, summary: dict | None = None) -> tuple[int | None, dict | None]:
+    """Score and confidence distribution of the current items, by the same
+    computation as the Result screen's score (`_measure`), so a run's score
+    and the same run's row in the benchmark can never disagree. `None` (not
+    zero) when `item` holds nothing from this engine, which usually means
+    the last import came from a different engine. `summary`: the Result's
+    summary already computed, so the coverage is not read twice."""
     total = conn.execute("SELECT COUNT(*) FROM item WHERE engine = ?", (engine,)).fetchone()[0]
     if not total:
         return None, None
-
-    confidence = {"high": 0, "medium": 0, "low": 0}
-    for level, count in conn.execute(
-        "SELECT confidence, COUNT(*) FROM item WHERE engine = ? GROUP BY confidence", (engine,)
-    ):
-        if level in confidence:
-            confidence[level] = count
-
-    missing_type = _count_nulls(conn, "type", engine)
-    missing_date = _count_nulls(conn, "date", engine)
-
-    confidence_weight = sum(_WEIGHTS[n] * q for n, q in confidence.items()) / total
-    # Same rule as `quality_summary`, so a run's score and the same run's
-    # row in the benchmark can never disagree.
-    fill_rate, _date_counted = _fill_rate(total, missing_type, missing_date)
-    score = int(round(max(0.0, min(1.0, 0.7 * confidence_weight + 0.3 * fill_rate)) * 100))
-    return score, confidence
+    measured = summary if summary is not None else _measure(conn)
+    return measured["score"], dict(measured["confidence"])
 
 
-def compare_runs(conn) -> list[dict]:
+def compare_runs(conn, summary: dict | None = None) -> list[dict]:
     """Groups classification runs by (engine, model) and returns, for each
     one: total time, items per minute, quality score and confidence
     distribution — the basis for answering "is model X worth the extra time
@@ -380,7 +375,7 @@ def compare_runs(conn) -> list[dict]:
         # by `motor` alone would attribute one model's score to another
         # (C2, final Phase 13 review).
         if last_run is not None and (group["engine"], group["model"]) == last_run:
-            score, confidence = _engine_quality(conn, group["engine"])
+            score, confidence = _engine_quality(conn, group["engine"], summary)
         else:
             score, confidence = None, None
 
