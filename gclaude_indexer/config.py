@@ -27,6 +27,7 @@ core → web dependency direction."""
 from __future__ import annotations
 
 import json
+import logging
 import re
 import typing
 from dataclasses import MISSING, asdict, dataclass, field, fields
@@ -43,6 +44,11 @@ GROUP_MODES = {"subfolder", "name_pattern", "all_together"}
 # "claude_code" (manual) saiu na 2.0.0: `project.load_project` converte um
 # projeto salvo com ele para "automatic" antes de validar.
 CLASSIFICATION_ENGINES = {ENGINE_AUTOMATIC, ENGINE_RULES, ENGINE_LOCAL}
+
+_log = logging.getLogger(__name__)
+# Campos desconhecidos já avisados neste processo: `load_project` roda a
+# cada pedido, e o aviso não pode virar uma parede de linhas iguais.
+_warned_unknown_fields: set[str] = set()
 # Explicit user request: an option to force CPU/RAM even with a GPU
 # available, in addition to the automatic default (uses the GPU to the
 # max, overflows to RAM). Only affects the 'local' engine — see
@@ -325,13 +331,21 @@ def config_from_input(data: dict) -> ProjectConfig:
 
 def _build(data: dict, *, check_source: bool) -> ProjectConfig:
     data = {chave: valor for chave, valor in data.items() if chave not in _RETIRED_FIELDS}
-    # Campo desconhecido (por exemplo, gravado por uma versão mais nova)
-    # recusa a carga.
+    # Campo desconhecido: na entrada do usuário, recusa; na configuração
+    # gravada (por exemplo, por uma versão mais nova), é ignorado com um
+    # aviso no log do app, e o projeto abre normalmente.
     unknown_fields = set(data) - set(_field_kinds())
     if unknown_fields:
-        raise ConfigError(
-            [ConfigErrorMessage("config_error.unknown_field", {"field": c}) for c in sorted(unknown_fields)]
-        )
+        if check_source:
+            raise ConfigError(
+                [ConfigErrorMessage("config_error.unknown_field", {"field": c}) for c in sorted(unknown_fields)]
+            )
+        if not unknown_fields <= _warned_unknown_fields:
+            _warned_unknown_fields.update(unknown_fields)
+            _log.warning(
+                "config_json com campo(s) desconhecido(s), ignorado(s): %s", ", ".join(sorted(unknown_fields))
+            )
+        data = {chave: valor for chave, valor in data.items() if chave not in unknown_fields}
 
     # Tipo errado: a entrada do usuário (`check_source`) é recusada; a
     # configuração gravada é convertida quando dá e, quando não dá, fica como
