@@ -1904,6 +1904,66 @@ def test_escolher_modelo_cai_para_estimativa_e_avisa_quando_ollama_nao_informa_t
 # faixas: o modo por página identifica a página por número.)
 
 
+def test_classificar_pendentes_registra_aviso_quando_o_modelo_esquece_paginas(tmp_path, monkeypatch):
+    """Defeito 3, ponto 2: descarte silencioso é inaceitável. Na execução
+    real com qwen3.5:9b (7 janelas, 0 peças) nada ficou no log. Hoje a
+    perda que a janela sobrevive (páginas sem resposta do modelo, que entram
+    no índice mesmo assim) vira evento de aviso: `last_window_warnings`
+    lido por `classify_pending`."""
+    from gclaude_indexer.config import load_config
+    from gclaude_indexer.conversion import convert
+    from gclaude_indexer.db import connect, init_schema
+    from gclaude_indexer.events import list_events
+    from gclaude_indexer.extraction import extract_pages
+    from gclaude_indexer.windows_prep import prepare_windows
+    from gclaude_indexer.engine_local import Generation, LocalEngine, classify_pending
+    from gclaude_indexer.scanning import scan
+
+    origem = tmp_path / "origem"
+    (origem / "volume_1").mkdir(parents=True)
+    saida = tmp_path / "origem_indexado"
+
+    documento = fitz.open()
+    pagina = documento.new_page()
+    pagina.insert_textbox(
+        (50, 50, 550, 750),
+        "Texto de teste longo o bastante para nao acionar OCR nem nada esquisito por aqui, so texto normal mesmo.",
+        fontsize=12,
+    )
+    documento.save(str(origem / "volume_1" / "doc.pdf"))
+    documento.close()
+
+    config = load_config({"name": "Defeito 3", "source_folder": str(origem), "output_folder": str(saida)})
+    conn = connect(saida / "project.db")
+    init_schema(conn)
+    scan(conn, config)
+    convert(conn, config)
+    extract_pages(conn, config)
+    prepare_windows(conn, config)
+
+    motor = LocalEngine(model="fake-model")
+    monkeypatch.setattr(motor, "is_available", lambda: True)
+    # O modelo responde, mas sem linha nenhuma para a página.
+    monkeypatch.setattr(motor, "_generate", lambda prompt, schema=None: Generation('{"pages": []}'))
+
+    resultado = classify_pending(conn, config, local_engine=motor)
+
+    # A página não fica de fora do índice: entra como peça de cobertura,
+    # sem confiança alta.
+    assert resultado.items_generated == 1, "a página tem de entrar no índice, ainda que como cobertura"
+    assert resultado.low_confidence + resultado.medium_confidence == 1
+    assert resultado.high_confidence == 0, "a página sem resposta não pode virar uma classificação confiante"
+    assert resultado.windows_via_rules_fallback == 0, "ollama respondeu; não é uma queda de conexão"
+
+    avisos = [
+        e for e in list_events(conn, step="classification")
+        if e["level"] == "warning" and e["message_key"] == "log.local_engine.window_rejection"
+    ]
+    assert avisos, "página sem resposta não pode sumir sem nenhum evento"
+    assert "1 de 1 página" in " ".join(a["message"] for a in avisos)
+    conn.close()
+
+
 def test_motor_local_usa_thinking_quando_response_vem_vazio():
     """Causa real do Defeito 3 (achada rodando o prompt real do sistema
     contra gemma4:e4b e qwen3.5:9b via Ollama nesta máquina): modelos com
