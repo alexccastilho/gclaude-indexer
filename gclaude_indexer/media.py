@@ -196,9 +196,9 @@ def _measure_hardware() -> tuple[int, int]:
     """`(RAM total, VRAM livre)` em MB, 0 quando não dá para medir: as
     mesmas medições que escolhem o modelo do Ollama."""
     try:
-        from .hardware import _total_memory_mb
+        from .hardware import total_memory_mb
 
-        ram = int(_total_memory_mb())
+        ram = int(total_memory_mb())
     except Exception:
         ram = 0
     try:

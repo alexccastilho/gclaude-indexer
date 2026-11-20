@@ -35,21 +35,15 @@ PROFILE_FAST = "fast"
 PROFILE_QUALITY = "quality"
 LOCAL_MODEL_PROFILES: dict[str, str] = {PROFILE_FAST: DEFAULT_LOCAL_MODEL, PROFILE_QUALITY: QUALITY_LOCAL_MODEL}
 
-_vram_cache: list[int] = []
-
-
+@hardware.measured_once
 def gpu_vram_mb() -> int:
     """Total VRAM of the dedicated graphics card, in MB (0 without one).
     Measured once per process."""
-    if not _vram_cache:
-        vram = 0
-        try:
-            gpu = hardware._detect_nvidia_gpu() or hardware._detect_wmi_gpu()
-            vram = int(gpu.vram_mb) if gpu else 0
-        except Exception:
-            vram = 0
-        _vram_cache.append(vram)
-    return _vram_cache[0]
+    try:
+        gpu = hardware.detect_gpu()
+        return int(gpu.vram_mb) if gpu else 0
+    except Exception:
+        return 0
 
 
 def default_local_profile(vram_mb: int | None = None) -> str:

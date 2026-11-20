@@ -27,11 +27,11 @@ from __future__ import annotations
 
 import re
 
-from .hardware import _detect_nvidia_gpu, _detect_wmi_gpu, gpu_driver
+from .hardware import detect_gpu, gpu_driver
 from .local_models import recommended_local_model
 from .i18n import DEFAULT_LANGUAGE, translate
 from .sensors import DLL_NAME, dll_path, unavailable_reason
-from .tools import find as find_tool
+from .tools import find as find_tool, find_ghostscript
 from .subprocess_utils import run_hidden
 from .ollama_models import list_installed_models, model_downloaded_on_disk
 
@@ -142,8 +142,10 @@ def _diagnose_tesseract(language: str) -> tuple[dict, dict]:
         except Exception:
             pass
         try:
-            result = run_hidden([path, "--list-langs"], timeout=10)
-            output = (result.stdout or "") + (result.stderr or "")
+            from . import ocr_languages
+
+            stdout, stderr = ocr_languages.list_langs_output(path, timeout=10)
+            output = stdout + stderr
             tessdata_pt = any(line.strip() == "por" for line in output.splitlines())
         except Exception:
             tessdata_pt = False
@@ -156,15 +158,10 @@ def _diagnose_tesseract(language: str) -> tuple[dict, dict]:
 
 
 def _diagnose_ghostscript() -> dict:
-    path = None
-    for name in ("gswin64c", "gswin32c", "gs"):
-        try:
-            found = find_tool(name)
-        except Exception:
-            found = None
-        if found:
-            path = found
-            break
+    try:
+        path = find_ghostscript()
+    except Exception:
+        path = None
     present = bool(path)
     version = _version_via_flag(path, "--version") if present else None
     return _entry("ghostscript", present, version, True, _GHOSTSCRIPT_COMMAND)
@@ -207,7 +204,7 @@ def _diagnose_ollama() -> tuple[dict, dict]:
 
 def _detect_gpu_for_diagnostics():
     try:
-        return _detect_nvidia_gpu() or _detect_wmi_gpu()
+        return detect_gpu()
     except Exception:
         return None
 

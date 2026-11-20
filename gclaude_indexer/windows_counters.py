@@ -105,9 +105,10 @@ _TIMEOUT_S = 6
 #
 # Time-based cache (not `lru_cache`, which never expires) with the same
 # pattern as `sensors.py` (`_last_reading` + timestamp): each value fetched
-# via PowerShell is reused for `_CACHE_TTL_S`. `memory_clock_mhz` and
-# `vram_total_mb`, below, still use a real `lru_cache` — they do not change
-# while running.
+# via PowerShell is reused for `_CACHE_TTL_S`. `memory_clock_mhz`, below,
+# does not change while running and is kept for the whole process
+# (`hardware.forget_measurements` drops it); `vram_total_mb` is measured
+# on every call (see `present_adapters`).
 _CACHE_TTL_S = 1.0
 
 _cache: dict[str, tuple[float, object]] = {}

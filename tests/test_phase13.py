@@ -256,8 +256,7 @@ def test_total_cai_no_adapterram_quando_o_registro_falha(monkeypatch):
     class _Gpu:
         vram_mb = 4095
 
-    monkeypatch.setattr(resources_mod, "_detect_nvidia_gpu", lambda: None)
-    monkeypatch.setattr(resources_mod, "_detect_wmi_gpu", lambda: _Gpu())
+    monkeypatch.setattr(resources_mod, "detect_gpu", lambda: _Gpu())
 
     assert resources_mod._vram_total_mb() == 4095
 
@@ -958,8 +957,11 @@ def test_diagnostico_lista_todas_as_dependencias():
 
 def test_diagnostico_nunca_levanta(monkeypatch):
     import gclaude_indexer.install_diagnostics as dm
+    from gclaude_indexer import tools
 
     monkeypatch.setattr(dm, "find_tool", lambda _n: (_ for _ in ()).throw(OSError("boom")))
+    # O Ghostscript é procurado por `tools.find_ghostscript`, que usa `tools.find`.
+    monkeypatch.setattr(tools, "find", lambda _n: (_ for _ in ()).throw(OSError("boom")))
     itens = dm.check_installation()
     assert isinstance(itens, list) and itens, "o diagnostico tem de degradar, nao explodir"
 
@@ -983,8 +985,7 @@ def test_diagnostico_gpu_rdna1_e_sensores_traduz_por_idioma(monkeypatch):
     from gclaude_indexer.hardware import GpuInfo
     from gclaude_indexer.i18n import translate
 
-    monkeypatch.setattr(dm, "_detect_nvidia_gpu", lambda: None)
-    monkeypatch.setattr(dm, "_detect_wmi_gpu", lambda: GpuInfo("AMD Radeon RX 5000 (8 GB)", "AMD", 8192))
+    monkeypatch.setattr(dm, "detect_gpu", lambda: GpuInfo("AMD Radeon RX 5000 (8 GB)", "AMD", 8192))
     monkeypatch.setattr(dm, "dll_path", lambda: type("FakePath", (), {"is_file": lambda self: True})())
     monkeypatch.setattr(dm, "unavailable_reason", lambda: "sem_privilegio")
 
@@ -1020,8 +1021,7 @@ def test_tela_sobre_em_espanhol_nao_vaza_codigo_cru_do_sensor(cliente, monkeypat
     from gclaude_indexer.hardware import GpuInfo
     import gclaude_indexer.install_diagnostics as dm
 
-    monkeypatch.setattr(dm, "_detect_nvidia_gpu", lambda: None)
-    monkeypatch.setattr(dm, "_detect_wmi_gpu", lambda: GpuInfo("AMD Radeon RX 5000 (8 GB)", "AMD", 8192))
+    monkeypatch.setattr(dm, "detect_gpu", lambda: GpuInfo("AMD Radeon RX 5000 (8 GB)", "AMD", 8192))
     monkeypatch.setattr(dm, "dll_path", lambda: type("FakePath", (), {"is_file": lambda self: True})())
     monkeypatch.setattr(dm, "unavailable_reason", lambda: "sem_privilegio")
 
@@ -1726,7 +1726,7 @@ def test_detectar_gpu_wmi_usa_vram_do_registro_em_vez_do_adapter_ram_saturado(mo
     monkeypatch.setattr(hardware_mod, "run_hidden", lambda *a, **k: _resultado_wmi_fake())
     monkeypatch.setattr(hardware_mod.windows_counters, "present_adapters", lambda: [("AMD Radeon RX 5000 (8 GB)", 8176)])
 
-    gpu = hardware_mod._detect_wmi_gpu()
+    gpu = hardware_mod.detect_wmi_gpu()
 
     assert gpu is not None
     assert gpu.vram_mb == 8176, "usou o AdapterRAM saturado (4095) em vez da VRAM real do registro"
@@ -1739,7 +1739,7 @@ def test_detectar_gpu_wmi_cai_para_adapter_ram_quando_registro_indisponivel(monk
     monkeypatch.setattr(hardware_mod, "run_hidden", lambda *a, **k: _resultado_wmi_fake())
     monkeypatch.setattr(hardware_mod.windows_counters, "present_adapters", lambda: [])
 
-    gpu = hardware_mod._detect_wmi_gpu()
+    gpu = hardware_mod.detect_wmi_gpu()
 
     assert gpu is not None
     assert gpu.vram_mb == 4095
@@ -1752,7 +1752,7 @@ def test_diagnosticar_registra_vram_real_no_evento_nao_o_adapter_ram(tmp_path, m
     from gclaude_indexer.db import connect, init_schema
     from gclaude_indexer.events import list_events
 
-    monkeypatch.setattr(hardware_mod, "_detect_nvidia_gpu", lambda: None)
+    monkeypatch.setattr(hardware_mod, "detect_nvidia_gpu", lambda: None)
     monkeypatch.setattr(hardware_mod, "run_hidden", lambda *a, **k: _resultado_wmi_fake())
     monkeypatch.setattr(hardware_mod.windows_counters, "present_adapters", lambda: [("AMD Radeon RX 5000 (8 GB)", 8176)])
 

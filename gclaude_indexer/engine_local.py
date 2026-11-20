@@ -1868,9 +1868,9 @@ FALLBACK_FIELD = "fallback"
 def _has_dedicated_gpu() -> bool:
     """A graphics card Ollama runs on (NVIDIA through `nvidia-smi`, or an
     AMD card reported by Windows). Integrated graphics do not count."""
-    if hardware._detect_nvidia_gpu() is not None:
+    if hardware.detect_nvidia_gpu() is not None:
         return True
-    gpu = hardware._detect_wmi_gpu()
+    gpu = hardware.detect_wmi_gpu()
     vendor = (gpu.vendor if gpu else "").lower()
     return gpu is not None and ("amd" in vendor or "advanced micro" in vendor) and gpu.vram_mb >= 2048
 

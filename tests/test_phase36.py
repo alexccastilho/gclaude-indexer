@@ -68,6 +68,11 @@ def test_describe_model_le_as_camadas_de_atencao_plena(monkeypatch):
         gb, "_get_json",
         lambda url, payload=None, timeout=5.0: next(v for k, v in respostas.items() if url.endswith(k)),
     )
+    # `/api/tags` tem um leitor só, em `ollama_models`.
+    monkeypatch.setattr(
+        gb.ollama_models, "installed_models",
+        lambda timeout_s=2.0, url_base=None: respostas["/api/tags"]["models"],
+    )
     forma = gb.describe_model("qwen3.5:9b", "http://127.0.0.1:9")
     assert forma is not None and forma.attention_layer_count == 8
 

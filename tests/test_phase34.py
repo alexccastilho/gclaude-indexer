@@ -331,7 +331,7 @@ def test_igpu_e_dedicada_a_maior_da_o_nome_e_o_total(monkeypatch):
     monkeypatch.setattr(hardware, "run_hidden", lambda *a, **k: _Saida(json.dumps(wmi)))
     monkeypatch.setattr(hardware.sys, "platform", "win32")
 
-    gpu = hardware._detect_wmi_gpu()
+    gpu = hardware.detect_wmi_gpu()
 
     # Revisão final: o total é o do maior adaptador, não a soma (Important 5).
     assert (gpu.name, gpu.vendor, gpu.vram_mb) == ("NVIDIA GeForce RTX 4070", "NVIDIA", 12288)
@@ -345,7 +345,7 @@ def test_sem_chave_de_driver_o_diagnostico_cai_no_adapterram(monkeypatch):
     monkeypatch.setattr(hardware, "run_hidden", lambda *a, **k: _Saida(json.dumps(wmi)))
     monkeypatch.setattr(hardware.sys, "platform", "win32")
 
-    gpu = hardware._detect_wmi_gpu()
+    gpu = hardware.detect_wmi_gpu()
 
     assert (gpu.name, gpu.vram_mb) == ("Placa X", 2048)
 
@@ -353,7 +353,7 @@ def test_sem_chave_de_driver_o_diagnostico_cai_no_adapterram(monkeypatch):
 def test_sem_controlador_de_video_o_diagnostico_nao_inventa_placa(monkeypatch):
     monkeypatch.setattr(hardware, "run_hidden", lambda *a, **k: _Saida(""))
     monkeypatch.setattr(hardware.sys, "platform", "win32")
-    assert hardware._detect_wmi_gpu() is None
+    assert hardware.detect_wmi_gpu() is None
 
 
 # --- Task 4: VRAM usada entre os sensores da placa --------------------------------
