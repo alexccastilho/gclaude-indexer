@@ -23,13 +23,13 @@ from gclaude_indexer.artifacts import (
     generate_all_artifacts,
     generate_index_md,
     generate_project_instructions_md,
-    group_index_filename,
 )
 from gclaude_indexer.claude_package import budget, generate_claude_project_package
 from gclaude_indexer.config import ProjectConfig, load_config
 from gclaude_indexer.db import connect, init_schema
+from gclaude_indexer.output_names import group_index_filename
 
-_RAIZ = Path(__file__).resolve().parent.parent
+_RAIZ =Path(__file__).resolve().parent.parent
 
 
 def _config(tmp_path, **extra) -> ProjectConfig:
@@ -227,7 +227,8 @@ def _linhas_da_tabela(texto: str) -> list[str]:
 
 
 def test_normas_citadas_tem_uma_linha_por_ato_com_link(tmp_path):
-    from gclaude_indexer.artifacts import NORMS_FILENAME, generate_cited_norms_md
+    from gclaude_indexer.artifacts import generate_cited_norms_md
+    from gclaude_indexer.output_names import NORMS_FILENAME
 
     conn = _acervo_com_duas_normas(tmp_path)
     caminho = generate_cited_norms_md(conn, _config(tmp_path), "pt")
@@ -305,12 +306,12 @@ def test_pacote_e_orcamento_levam_normas_citadas(tmp_path):
 def test_guia_e_exclusao_conhecem_normas_citadas():
     from fnmatch import fnmatch
 
-    from gclaude_indexer.claude_package import _GUIDE
+    from gclaude_indexer.claude_package import _GUIDE, _guide_names
     from gclaude_indexer.deletion import GENERATED_FILES
 
     assert any(fnmatch("normas-citadas.md", padrao) for padrao in GENERATED_FILES)
     for idioma, guia in _GUIDE.items():
-        assert "normas-citadas.md" in guia, idioma
+        assert "normas-citadas.md" in guia.format(name="x", **_guide_names(idioma)), idioma
 
 
 # --- Task 3: busca por tema para o Claude Code e LexML ------------------------
@@ -531,7 +532,8 @@ def test_buscar_main_imprime_markdown_e_avisa_pasta_sem_projeto(tmp_path, capsys
 
 
 def test_buscar_bat_aponta_para_o_python_e_o_modulo(tmp_path):
-    from gclaude_indexer.artifacts import SEARCH_LAUNCHER_FILENAME, generate_search_launcher
+    from gclaude_indexer.artifacts import generate_search_launcher
+    from gclaude_indexer.output_names import SEARCH_LAUNCHER_FILENAME
 
     caminho = generate_search_launcher(_config(tmp_path))
 
@@ -861,7 +863,8 @@ def test_membro_indisponivel_fica_fora_e_e_explicado(tmp_path, monkeypatch):
 
 
 def test_reescrita_de_links_nao_toca_texto_parecido():
-    from gclaude_indexer.combined_package import prefixed_name, rewrite_links
+    from gclaude_indexer.combined_package import rewrite_links
+    from gclaude_indexer.output_names import prefixed_name
 
     nomes = {"index-Atas.md": prefixed_name("x", "index-Atas.md"), "index.md": "x__index.md"}
     texto = (

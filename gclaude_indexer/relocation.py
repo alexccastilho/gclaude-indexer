@@ -60,6 +60,7 @@ from .db import connect
 from .deletion import GENERATED_FILES, SHARED_FILES
 from .lock import LOCK_FILE_NAME, machine_identity, read_lock
 from .managed_block import BACKUP_SUFFIX, without_managed_block
+from .output_names import PROJECT_DB_JOURNAL, PROJECT_DB_SIDECARS
 from .events import LOG_FILE_NAME, LOG_FOLDER_NAME, record_event
 from .project import load_project
 from .windows_prep import LEGACY_WINDOW_FILE
@@ -90,7 +91,6 @@ INSTRUCTION_FILES = tuple(SHARED_FILES)
 # gravamos; qualquer outra coisa nelas fica onde está.
 OBSOLETE_FOLDERS = ("windows", workdir.BLOCKS_FOLDER)
 
-_DB_SIDECARS = ("project.db-wal", "project.db-shm", "project.db-journal")
 _COPY_CHUNK = 1024 * 1024
 # Folga além do tamanho a copiar: o sistema de arquivos arredonda por
 # cluster e o Drive guarda metadados à parte.
@@ -448,7 +448,7 @@ def build_plan(source_folder: str, output_folder: str, destination: str | None =
         folded = name.lower()
         if folded == paths.PROJECT_DB_NAME:
             return (2, folded)
-        if folded in _DB_SIDECARS:
+        if folded in PROJECT_DB_SIDECARS:
             return (1, folded)
         return (0, folded)
 
@@ -666,7 +666,7 @@ def execute(plan: RelocationPlan, should_stop=None, on_finalize=None) -> str:
         if pending_for(old) is not None or pending_for(new) is not None:
             raise RelocationError("relocation.error.pending")
         _check_space(plan)
-        journal_file = old / "project.db-journal"
+        journal_file = old / PROJECT_DB_JOURNAL
         try:
             if journal_file.is_file() and journal_file.stat().st_size > 0:
                 raise RelocationError("relocation.error.db_busy")

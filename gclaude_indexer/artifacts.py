@@ -43,6 +43,22 @@ from .html_text import STRUCK_MARK
 from .i18n import _REFERENCE_LANGUAGE, translate
 from .instructions_dedup import detect, is_only_generated
 from .managed_block import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE, has_managed_block, user_part, write_managed
+from .output_names import (
+    CLAUDE_MD_FILENAME,
+    GROUP_INDEX_GLOB,
+    GROUP_TIMELINE_GLOB,
+    INDEX_FILENAME,
+    LEGACY_LEGISLATION_GLOB,
+    NORMS_FILENAME,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    REVIEW_FILENAME,
+    SEARCH_LAUNCHER_FILENAME,
+    TIMELINE_FILENAME,
+    dashed_name,
+    group_index_filename,
+    group_timeline_filename,
+    part_filename,
+)
 from .run_control import OperationCancelled, checkpoint
 
 
@@ -105,28 +121,6 @@ def _cell(value) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-# Fixed, English, independent of the interface language — see module
-# docstring. Shared with `web/app.py` (Result screen listing/preview) and
-# `claude_package.py` (Claude Project zip) so the four names live in one
-# place.
-INDEX_FILENAME = "index.md"
-TIMELINE_FILENAME = "timeline.md"
-REVIEW_FILENAME = "review.md"
-PROJECT_INSTRUCTIONS_FILENAME = "project_instructions.md"
-# Fase 38: uma linha por norma federal reconhecida no acervo, com link.
-# Substitui o `legislacao-<grupo>.md` (dezenas de MB num acervo grande,
-# recusados pelo claude.ai) por poucos KB que cabem em
-# qualquer Project.
-NORMS_FILENAME = "normas-citadas.md"
-# Fase 38: o lançador da busca por tema (`search_cli`) na pasta de saída.
-# Fica na pasta, não no pacote: é para o Claude Code, que lê a pasta.
-SEARCH_LAUNCHER_FILENAME = "buscar.bat"
-# 2.0.0: o `CLAUDE.md` da pasta de saída só orienta a consulta (ler o
-# índice, usar o `buscar.bat`). Já foi o contrato do motor manual do Claude
-# Code, que não existe mais.
-CLAUDE_MD_FILENAME = "CLAUDE.md"
-
-
 # As peças do motor do leitor do Planalto (`planalto.ENGINE`), reconhecidas
 # de forma determinística: leis, decretos, MPs, portarias. Fase
 # 31: essas peças saem do índice e da cronologia (num acervo grande de
@@ -134,24 +128,6 @@ CLAUDE_MD_FILENAME = "CLAUDE.md"
 # mais para arquivo nenhum. O `legislacao-<grupo>.md` chegava a dezenas de
 # MB em duas partes e o claude.ai recusou as duas ("o conhecimento do
 # projeto excede o máximo"); um arquivo que nunca sobe só confundia.
-
-
-def _safe_group_name(group_key: str) -> str:
-    seguro = "".join(c if c.isalnum() or c in "-_" else "-" for c in group_key)
-    seguro = "-".join(parte for parte in seguro.split("-") if parte)
-    return seguro or "grupo"
-
-
-def group_index_filename(group_key: str) -> str:
-    """`index-<grupo>.md`, com o nome do grupo reduzido a caracteres
-    seguros para nome de arquivo em qualquer sistema."""
-    return f"index-{_safe_group_name(group_key)}.md"
-
-
-def group_timeline_filename(group_key: str) -> str:
-    """`timeline-<grupo>.md`: a cronologia de um grupo com mais peças datadas
-    do que `config.timeline_split_items`, para não inflar o `timeline.md`."""
-    return f"timeline-{_safe_group_name(group_key)}.md"
 
 
 def _range_cell(item, origem: tuple[str, int] | None, *, with_file: bool) -> str:
@@ -179,7 +155,7 @@ def _unique_name(nome: str, group: str, usados: set[str], reservados: set[str] =
     de outros grupos que uma parte numerada também não pode tomar."""
     if nome in usados or nome in reservados:
         sufixo = hashlib.sha1(group.encode("utf-8")).hexdigest()[:6]
-        nome = f"{nome[:-3]}-{sufixo}.md"
+        nome = dashed_name(nome, sufixo)
     usados.add(nome)
     return nome
 
@@ -385,7 +361,7 @@ def generate_search_launcher(config: ProjectConfig) -> Path:
     linhas = [
         "@echo off",
         "rem GClaude Indexer: busca por tema nesta pasta de saida.",
-        "rem Uso: buscar.bat <termo> [--grupo G] [--so-legislacao] [--limite N] [--lexml]",
+        f"rem Uso: {SEARCH_LAUNCHER_FILENAME} <termo> [--grupo G] [--so-legislacao] [--limite N] [--lexml]",
         "chcp 65001 >nul",
         f'cd /d "{raiz}"',
         f'"{python}" -m gclaude_indexer.search_cli "%~dp0." %*',
@@ -397,7 +373,7 @@ def generate_search_launcher(config: ProjectConfig) -> Path:
 
 # Um modelo completo por idioma, não chaves i18n soltas: é um guia corrido
 # (mesmo critério do `claude_package._GUIDE`). Os nomes de arquivo são fixos
-# nos três idiomas; só a prosa muda.
+# nos três idiomas e entram por `format` (`_prose_names`); só a prosa muda.
 _CLAUDE_MD_CONTENT: dict[str, str] = {
     "pt": """\
 # GClaude Indexer: consulta do acervo ({project_name})
@@ -416,29 +392,29 @@ conversa.
 
 ## Como ler o índice
 
-- `index.md` é o sumário do acervo: uma entrada por peça, com tipo, data,
+- `{index}` é o sumário do acervo: uma entrada por peça, com tipo, data,
   resumo, arquivo de origem e páginas. Quando o acervo é grande ou tem
-  vários grupos, o sumário se divide em `index-<grupo>.md`: leia o
-  `index.md` primeiro e abra só o do grupo que interessa.
-- `timeline.md` traz as mesmas peças em ordem cronológica.
-- `review.md` mostra o que ficou de fora ou merece conferência (arquivos
+  vários grupos, o sumário se divide em `{group_index}`: leia o
+  `{index}` primeiro e abra só o do grupo que interessa.
+- `{timeline}` traz as mesmas peças em ordem cronológica.
+- `{review}` mostra o que ficou de fora ou merece conferência (arquivos
   que falharam, páginas sem texto, lacunas).
-- `normas-citadas.md`, quando existe, lista as normas reconhecidas, com link.
+- `{norms}`, quando existe, lista as normas reconhecidas, com link.
 - Para citar, use o arquivo e as páginas que o índice indica.
 
-## Como buscar por assunto: `buscar.bat`
+## Como buscar por assunto: `{launcher}`
 
 Para achar onde um assunto aparece, rode na pasta de saída:
 
-    buscar.bat saneamento
-    buscar.bat "segurança alimentar" --so-legislacao --limite 30
-    buscar.bat saneamento --grupo NOME --lexml
+    {launcher} saneamento
+    {launcher} "segurança alimentar" --so-legislacao --limite 30
+    {launcher} saneamento --grupo NOME --lexml
 
 O resultado traz os arquivos e trechos com o termo. `--grupo` limita a um
 grupo, `--so-legislacao` a normas e `--lexml` consulta também o LexML (precisa
 de internet; sem ela o comando avisa e a parte local sai igual).
 
-O `buscar.bat` sabe onde o GClaude Indexer está instalado: não procure o
+O `{launcher}` sabe onde o GClaude Indexer está instalado: não procure o
 programa, nem rode outro comando no lugar dele.
 """,
     "en": """\
@@ -458,30 +434,30 @@ from the user, in this conversation.
 
 ## How to read the index
 
-- `index.md` is the collection's summary: one entry per item, with type,
+- `{index}` is the collection's summary: one entry per item, with type,
   date, summary, source file and pages. When the collection is large or has
-  several groups, the summary is split into `index-<group>.md`: read
-  `index.md` first and open only the group that matters.
-- `timeline.md` has the same items in chronological order.
-- `review.md` shows what was left out or deserves a check (files that
+  several groups, the summary is split into `{group_index}`: read
+  `{index}` first and open only the group that matters.
+- `{timeline}` has the same items in chronological order.
+- `{review}` shows what was left out or deserves a check (files that
   failed, pages without text, gaps).
-- `normas-citadas.md`, when it exists, lists the recognized norms, with links.
+- `{norms}`, when it exists, lists the recognized norms, with links.
 - To cite, use the file and the pages the index gives.
 
-## How to search by subject: `buscar.bat`
+## How to search by subject: `{launcher}`
 
 To find where a subject appears, run in the output folder:
 
-    buscar.bat sanitation
-    buscar.bat "food safety" --so-legislacao --limite 30
-    buscar.bat sanitation --grupo NAME --lexml
+    {launcher} sanitation
+    {launcher} "food safety" --so-legislacao --limite 30
+    {launcher} sanitation --grupo NAME --lexml
 
 The result lists the files and excerpts with the term. `--grupo` limits it
 to one group, `--so-legislacao` to norms, and `--lexml` also queries LexML
 (needs internet; without it the command says so and the local part comes out
 the same).
 
-`buscar.bat` knows where GClaude Indexer is installed: do not look for the
+`{launcher}` knows where GClaude Indexer is installed: do not look for the
 program, and do not run another command in its place.
 """,
     "es": """\
@@ -501,32 +477,44 @@ instrucciones las da el usuario, en esta conversación.
 
 ## Cómo leer el índice
 
-- `index.md` es el sumario de la colección: una entrada por pieza, con tipo,
+- `{index}` es el sumario de la colección: una entrada por pieza, con tipo,
   fecha, resumen, archivo de origen y páginas. Cuando la colección es grande
-  o tiene varios grupos, el sumario se divide en `index-<grupo>.md`: lea
-  primero `index.md` y abra solo el del grupo que interesa.
-- `timeline.md` trae las mismas piezas en orden cronológico.
-- `review.md` muestra lo que quedó fuera o merece revisión (archivos que
+  o tiene varios grupos, el sumario se divide en `{group_index}`: lea
+  primero `{index}` y abra solo el del grupo que interesa.
+- `{timeline}` trae las mismas piezas en orden cronológico.
+- `{review}` muestra lo que quedó fuera o merece revisión (archivos que
   fallaron, páginas sin texto, lagunas).
-- `normas-citadas.md`, cuando existe, lista las normas reconocidas, con enlace.
+- `{norms}`, cuando existe, lista las normas reconocidas, con enlace.
 - Para citar, use el archivo y las páginas que indica el índice.
 
-## Cómo buscar por tema: `buscar.bat`
+## Cómo buscar por tema: `{launcher}`
 
 Para encontrar dónde aparece un tema, ejecute en la carpeta de salida:
 
-    buscar.bat saneamiento
-    buscar.bat "seguridad alimentaria" --so-legislacao --limite 30
-    buscar.bat saneamiento --grupo NOMBRE --lexml
+    {launcher} saneamiento
+    {launcher} "seguridad alimentaria" --so-legislacao --limite 30
+    {launcher} saneamiento --grupo NOMBRE --lexml
 
 El resultado trae los archivos y extractos con el término. `--grupo` limita a
 un grupo, `--so-legislacao` a normas y `--lexml` consulta también LexML
 (necesita internet; sin ella el comando avisa y la parte local sale igual).
 
-`buscar.bat` sabe dónde está instalado GClaude Indexer: no busque el
+`{launcher}` sabe dónde está instalado GClaude Indexer: no busque el
 programa ni ejecute otro comando en su lugar.
 """,
 }
+
+
+# O padrão `index-<grupo>.md` citado na prosa, com a palavra de cada idioma.
+_GROUP_WORD = {"pt": "<grupo>", "en": "<group>", "es": "<grupo>"}
+
+
+def _prose_names(language: str) -> dict[str, str]:
+    return {
+        "index": INDEX_FILENAME, "group_index": dashed_name(INDEX_FILENAME, _GROUP_WORD[language]),
+        "timeline": TIMELINE_FILENAME, "review": REVIEW_FILENAME, "norms": NORMS_FILENAME,
+        "launcher": SEARCH_LAUNCHER_FILENAME,
+    }
 
 
 def generate_claude_md(config: ProjectConfig, language: str) -> Path:
@@ -538,10 +526,10 @@ def generate_claude_md(config: ProjectConfig, language: str) -> Path:
     (o do motor manual do Claude Code, que começa pelo nosso título) é
     substituído."""
     subject = config.subject.strip() or config.name
-    template = _CLAUDE_MD_CONTENT.get(language, _CLAUDE_MD_CONTENT[_REFERENCE_LANGUAGE])
+    language = language if language in _CLAUDE_MD_CONTENT else _REFERENCE_LANGUAGE
     return write_managed(
         Path(config.output_folder) / CLAUDE_MD_FILENAME,
-        template.format(subject=subject, project_name=config.name),
+        _CLAUDE_MD_CONTENT[language].format(subject=subject, project_name=config.name, **_prose_names(language)),
         is_legacy=lambda text: text.lstrip().startswith("# GClaude Indexer — "),
     )
 
@@ -736,19 +724,18 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
     def escrever(nome_base: str, group: str, pecas: list) -> list[tuple[Path, list]]:
         partes = em_partes(pecas)
         escritos = []
-        raiz = nome_base[:-3]
         if len(partes) > 1:
             # Se qualquer parte colidir com outro grupo (`index-Vol-1.md` é
             # do grupo `Vol-1`), todas levam o mesmo sufixo: `index-Vol-<hash>-1.md`,
             # `-2.md` — não uma com hash e a outra sem.
-            candidatos = [f"{raiz}-{n}.md" for n in range(1, len(partes) + 1)]
+            candidatos = [part_filename(nome_base, n) for n in range(1, len(partes) + 1)]
             if any(c in usados or c in bases for c in candidatos):
-                raiz = f"{raiz}-{hashlib.sha1(group.encode('utf-8')).hexdigest()[:6]}"
+                nome_base = dashed_name(nome_base, hashlib.sha1(group.encode("utf-8")).hexdigest()[:6])
         for n, parte in enumerate(partes, start=1):
             if len(partes) == 1:
                 nome = _unique_name(nome_base, group, usados)
             else:
-                nome = _unique_name(f"{raiz}-{n}.md", group, usados, bases)
+                nome = _unique_name(part_filename(nome_base, n), group, usados, bases)
             caminho = saida / nome
             corpo = [f"# {t('artifact.index.title')} — {group}", "", *cabecalho, *(linha(p) for p in parte)]
             write_if_changed(caminho, "\n".join(corpo) + "\n")
@@ -807,7 +794,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
     # pacote do Claude leva todo `index-*.md` da pasta, e o Claude acharia
     # peças de documentos que não existem mais. `legislacao-*.md` é o
     # arquivo que a fase 38 aposentou: some na primeira geração seguinte.
-    for padrao in ("index-*.md", "legislacao-*.md"):
+    for padrao in (GROUP_INDEX_GLOB, LEGACY_LEGISLATION_GLOB):
         for velho in saida.glob(padrao):
             if velho.name not in usados:
                 _remove_output(velho)
@@ -885,7 +872,7 @@ def generate_timeline_md(conn, config: ProjectConfig, language: str) -> list[Pat
 
     # Mesma razão da limpeza de `index-*.md`: a cronologia de um grupo que
     # sumiu, ou que voltou a caber no arquivo principal, não pode ficar.
-    for velho in saida.glob("timeline-*.md"):
+    for velho in saida.glob(GROUP_TIMELINE_GLOB):
         if velho.name not in usados:
             _remove_output(velho)
     return [principal] + extras

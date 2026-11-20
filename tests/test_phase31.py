@@ -25,12 +25,11 @@ from gclaude_indexer.artifacts import (
     generate_index_md,
     generate_project_instructions_md,
     generate_timeline_md,
-    group_index_filename,
-    group_timeline_filename,
 )
 from gclaude_indexer.claude_package import generate_claude_project_package, package_files
 from gclaude_indexer.config import ProjectConfig, load_config
 from gclaude_indexer.db import connect, init_schema
+from gclaude_indexer.output_names import group_index_filename, group_timeline_filename
 
 
 def _config(tmp_path, **extra) -> ProjectConfig:

@@ -47,10 +47,6 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import Response
 
 from ..artifacts import (
-    INDEX_FILENAME,
-    PROJECT_INSTRUCTIONS_FILENAME,
-    REVIEW_FILENAME,
-    TIMELINE_FILENAME,
     generate_all_artifacts,
     generate_project_instructions_md,
     pending_items,
@@ -71,6 +67,13 @@ from ..update_plan import SCREEN_READ_DEADLINE_SECONDS, SourceFolderUnavailable,
 from ..cleanup import clear_intermediates, intermediates_size
 from .. import claude_package, combined_package, relocation
 from ..claude_package import generate_claude_project_package
+from ..output_names import (
+    INDEX_FILENAME,
+    PROJECT_DB_SIDECARS,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    REVIEW_FILENAME,
+    TIMELINE_FILENAME,
+)
 from ..paths import (
     check_new_project_folders, ensure_writable_folder, resolve_within, suggest_output_folder,
     PROJECT_DB_NAME as _PROJECT_DB_NAME,
@@ -804,9 +807,9 @@ def _undo_created_output_folder(folder: str, created: bool) -> None:
     if not created:
         return
     base = Path(folder)
-    for suffix in ("", "-wal", "-shm", "-journal"):
+    for name in (_PROJECT_DB_NAME, *PROJECT_DB_SIDECARS):
         try:
-            (base / f"{_PROJECT_DB_NAME}{suffix}").unlink()
+            (base / name).unlink()
         except OSError:
             pass
     try:

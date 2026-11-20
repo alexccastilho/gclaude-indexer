@@ -25,8 +25,8 @@ from gclaude_indexer import gpu_budget
 from gclaude_indexer.artifacts import (
     _physical_pages,
     generate_index_md,
-    group_index_filename,
 )
+from gclaude_indexer.output_names import group_index_filename
 from gclaude_indexer.classification import WindowPage
 from gclaude_indexer.engine_local import (
     Generation,

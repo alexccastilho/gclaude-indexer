@@ -48,12 +48,14 @@ Everything here is pure text in, text out.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
 
 from .i18n import AVAILABLE_LANGUAGES, translate
 from .managed_block import DEFAULT_ROLE, SOURCE_OF_TRUTH_RULE
+from .output_names import INDEX_FILENAME, NORMS_FILENAME, REVIEW_FILENAME, TIMELINE_FILENAME
 
 _HEADING_KEYS = (
     "artifact.project_instructions.title",
@@ -85,8 +87,8 @@ _VOLATILE_KEYS = (
     "artifact.project_instructions.legislation_rule",
 )
 _DEFAULTS = {
-    "index_file": "index.md", "timeline_file": "timeline.md", "review_file": "review.md",
-    "norms": "normas-citadas.md", "prefix": "", "total_items": 1, "total_files": 1, "count": 1,
+    "index_file": INDEX_FILENAME, "timeline_file": TIMELINE_FILENAME, "review_file": REVIEW_FILENAME,
+    "norms": NORMS_FILENAME, "prefix": "", "total_items": 1, "total_files": 1, "count": 1,
 }
 
 COPY_SHARE = 0.8
@@ -95,8 +97,21 @@ HEADING_COPY_SHARE = 0.5
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _NUMBERED_TITLE = re.compile(r"^\s*(\d+)\s*[.)\-:]?\s+(.*)$")
 _SECTION_REF = re.compile(r"\b(se[cç][aã]o|section|secci[oó]n)\s+(\d+)\b", re.IGNORECASE)
+
+
+def _with_group_part(name: str) -> str:
+    """`index.md` e o que se cita a partir dele: `index-<grupo>.md`, as
+    partes, o padrão `index-*.md`."""
+    stem, ext = os.path.splitext(name)
+    return re.escape(stem) + r"[-\w<>*]*" + re.escape(ext)
+
+
 _ARTIFACT_WORDS = re.compile(
-    r"index[-\w<>*]*\.md|timeline[-\w<>*]*\.md|review\.md|normas-citadas\.md", re.IGNORECASE,
+    "|".join((
+        _with_group_part(INDEX_FILENAME), _with_group_part(TIMELINE_FILENAME),
+        re.escape(REVIEW_FILENAME), re.escape(NORMS_FILENAME),
+    )),
+    re.IGNORECASE,
 )
 _ORIGINAL_WORDS = re.compile(
     r"arquivos? origina(l|is)|original files?|archivos? original(es)?|"

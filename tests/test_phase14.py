@@ -5,15 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from gclaude_indexer.artifacts import (
-    INDEX_FILENAME,
-    PROJECT_INSTRUCTIONS_FILENAME,
-    REVIEW_FILENAME,
-    TIMELINE_FILENAME,
     generate_all_artifacts,
     generate_claude_md,
     generate_index_md,
 )
 from gclaude_indexer.config import load_config
+from gclaude_indexer.output_names import (
+    INDEX_FILENAME,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    REVIEW_FILENAME,
+    TIMELINE_FILENAME,
+)
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.system_locale import (
     FALLBACK_LANGUAGE,

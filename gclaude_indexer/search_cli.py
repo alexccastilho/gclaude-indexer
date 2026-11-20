@@ -32,10 +32,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import lexml
-from .artifacts import NORMS_FILENAME, legislation_file_test, norm_links_by_file
+from .artifacts import legislation_file_test, norm_links_by_file
 from .fulltext import MATCH_END, MATCH_START
 from .fulltext import search as fulltext_search
 from .i18n import DEFAULT_LANGUAGE, translate
+from .output_names import NORMS_FILENAME
 from .paths import PROJECT_DB_NAME
 from .project import load_project
 
