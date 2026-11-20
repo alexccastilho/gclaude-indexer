@@ -11,21 +11,8 @@ from fastapi.testclient import TestClient
 import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
 from gclaude_indexer.web.app import _validate_host, app
-from gclaude_indexer.web.background_runs import task_manager
+from tests._espera import esperar_etapa_terminar
 from gclaude_indexer.web import routes_projects
-
-
-def _esperar_etapa_terminar(projeto_id: int, etapa: str, timeout: float = 30):
-    """As rotas de execução agora só disparam a etapa em segundo plano e
-    retornam na hora (barra de progresso + pausa dependem disso) — os
-    testes precisam esperar a tarefa terminar antes de checar o resultado."""
-    fim = time.monotonic() + timeout
-    while time.monotonic() < fim:
-        tarefa = task_manager.get(projeto_id, etapa)
-        if tarefa is not None and not tarefa.running:
-            return tarefa
-        time.sleep(0.05)
-    raise AssertionError(f"etapa '{etapa}' do projeto {projeto_id} não terminou em {timeout}s")
 
 
 @pytest.fixture
@@ -185,14 +172,14 @@ def test_executar_proxima_roda_uma_etapa_de_cada_vez(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
 
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
     html1 = cliente.get(f"/projects/{projeto_id}/run").text
     assert _situacao_da_etapa(html1, "1. Varredura") == "done"
     # só a varredura rodou — a conversão ainda não
     assert _situacao_da_etapa(html1, "2–3. Conversão") != "done"
 
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "conversion")
+    esperar_etapa_terminar(projeto_id, "conversion")
     html2 = cliente.get(f"/projects/{projeto_id}/run").text
     assert _situacao_da_etapa(html2, "2–3. Conversão") == "done"
     assert _situacao_da_etapa(html2, "4. Extração") != "done"
@@ -201,7 +188,7 @@ def test_executar_proxima_roda_uma_etapa_de_cada_vez(cliente, tmp_path):
 def test_executar_tudo_ate_classificacao(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
-    _esperar_etapa_terminar(projeto_id, "classification")
+    esperar_etapa_terminar(projeto_id, "classification")
 
     resposta = cliente.get(f"/projects/{projeto_id}/run")
     assert resposta.status_code == 200
@@ -222,7 +209,7 @@ def test_log_atualiza_lendo_a_tabela_evento(cliente, tmp_path):
     assert "Nenhum evento ainda" in vazio.text
 
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     com_eventos = cliente.get(f"/projects/{projeto_id}/run/log")
     assert "Nenhum evento ainda" not in com_eventos.text
@@ -284,7 +271,7 @@ def test_janelas_ja_respondidas_no_claude_code_nao_sao_refeitas(cliente, tmp_pat
     projeto_id = _criar_projeto(cliente, tmp_path, nome="Projeto CC Sync", classification_engine="rules")
     for etapa in ("scan", "conversion", "extraction", "windows"):
         cliente.post(f"/projects/{projeto_id}/run-next")
-        _esperar_etapa_terminar(projeto_id, etapa)
+        esperar_etapa_terminar(projeto_id, etapa)
 
     entry = find_project(projeto_id)
     config, conn = load_project(entry.output_folder)
@@ -318,7 +305,7 @@ def test_rota_de_reverificar_do_claude_code_nao_existe_mais(cliente, tmp_path):
 def test_resultado_mostra_os_quatro_artefatos_e_pendencias(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
-    _esperar_etapa_terminar(projeto_id, "classification")
+    esperar_etapa_terminar(projeto_id, "classification")
     cliente.post(f"/projects/{projeto_id}/import-and-generate", follow_redirects=False)
 
     resposta = cliente.get(f"/projects/{projeto_id}/result")
@@ -338,7 +325,7 @@ def test_resultado_pre_visualiza_artefatos_traduzidos_no_idioma_do_cookie(client
     nomes de arquivo fixos em inglês."""
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
-    _esperar_etapa_terminar(projeto_id, "classification")
+    esperar_etapa_terminar(projeto_id, "classification")
     cliente.cookies.set("language", "en")
     cliente.post(f"/projects/{projeto_id}/import-and-generate", follow_redirects=False)
 
@@ -437,7 +424,7 @@ def test_importar_e_gerar_limpa_as_janelas_antigas_e_escreve_o_claude_md(cliente
     )
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
         cliente.post(f"/projects/{projeto_id}/run-next")
-        _esperar_etapa_terminar(projeto_id, etapa)
+        esperar_etapa_terminar(projeto_id, etapa)
 
     cliente.post(f"/projects/{projeto_id}/import-and-generate", follow_redirects=False)
     fim = time.monotonic() + 30

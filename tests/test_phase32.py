@@ -157,6 +157,7 @@ import pytest
 from gclaude_indexer import sensor_service
 from gclaude_indexer.web import app as modulo_app
 from tests.test_phase31 import _app_com_projeto
+from tests._espera import esperar
 
 
 def _guardas():
@@ -165,15 +166,6 @@ def _guardas():
         "Sec-Fetch-Site": "same-origin",
         "Host": f"127.0.0.1:{state.SERVER_PORT}",
     }
-
-
-def _espera(condicao, segundos=3.0):
-    limite = time.monotonic() + segundos
-    while time.monotonic() < limite:
-        if condicao():
-            return True
-        time.sleep(0.02)
-    return condicao()
 
 
 def _sem_privilegio(monkeypatch, chamadas, resultado="started"):
@@ -233,7 +225,7 @@ def test_so_com_as_quatro_guardas_o_helper_dispara(tmp_path, monkeypatch, host):
 
     assert resposta.status_code == 202
     assert resposta.json()["outcome"] == "requested"
-    assert _espera(lambda: chamadas == [os.getpid()]), "o helper acompanha este servidor, numa thread"
+    esperar(lambda: chamadas == [os.getpid()], 3.0, "o helper acompanha este servidor, numa thread")
 
 
 def test_pedido_recusado_libera_novo_pedido(tmp_path, monkeypatch):
@@ -246,10 +238,10 @@ def test_pedido_recusado_libera_novo_pedido(tmp_path, monkeypatch):
     for vez in (1, 2):
         resposta = cliente.post("/sensors/request-elevation", headers=_guardas())
         assert resposta.status_code == 202 and resposta.json()["outcome"] == "requested"
-        assert _espera(lambda: len(chamadas) == vez)
+        esperar(lambda: len(chamadas) == vez, 3.0)
         # O pedido em voo segura a trava até o helper responder; o segundo
         # clique só conta como novo pedido depois disso (revisão final).
-        assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
+        esperar(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked(), 3.0)
     assert chamadas == [os.getpid(), os.getpid()]
 
 
@@ -548,16 +540,16 @@ def test_segundo_clique_com_pedido_em_voo_nao_abre_segundo_prompt(tmp_path, monk
     try:
         primeiro = cliente.post("/sensors/request-elevation", headers=_guardas())
         assert primeiro.status_code == 202 and primeiro.json()["outcome"] == "requested"
-        assert _espera(lambda: len(chamadas) == 1)
+        esperar(lambda: len(chamadas) == 1, 3.0)
         segundo = cliente.post("/sensors/request-elevation", headers=_guardas())
         assert segundo.status_code == 202 and segundo.json()["outcome"] == "pending"
         time.sleep(0.1)
         assert chamadas == [os.getpid()]
     finally:
         libera.set()
-    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
+    esperar(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked(), 3.0)
     assert cliente.post("/sensors/request-elevation", headers=_guardas()).json()["outcome"] == "requested"
-    assert _espera(lambda: len(chamadas) == 2)
+    esperar(lambda: len(chamadas) == 2, 3.0)
 
 
 def test_recusa_antiga_some_antes_do_novo_pedido(tmp_path, monkeypatch):
@@ -579,7 +571,7 @@ def test_recusa_antiga_some_antes_do_novo_pedido(tmp_path, monkeypatch):
         assert sensor_service.read_launch_status() is None, "apagado pela rota, antes de disparar"
     finally:
         libera.set()
-    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
+    esperar(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked(), 3.0)
 
 
 def test_helper_que_levanta_deixa_o_status_unavailable(tmp_path, monkeypatch):
@@ -596,8 +588,8 @@ def test_helper_que_levanta_deixa_o_status_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr(sensor_service, "request_helper_now", explode)
 
     assert cliente.post("/sensors/request-elevation", headers=_guardas()).status_code == 202
-    assert _espera(lambda: sensor_service.read_launch_status() == "unavailable")
-    assert _espera(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked())
+    esperar(lambda: sensor_service.read_launch_status() == "unavailable", 3.0)
+    esperar(lambda: not routes_run._SENSOR_REQUEST_IN_FLIGHT.locked(), 3.0)
 
 
 def test_botao_sai_dos_becos_sem_saida(tmp_path, monkeypatch):

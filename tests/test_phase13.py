@@ -14,6 +14,7 @@ from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 import gclaude_indexer.sensors as sensors_mod
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
+from tests._espera import esperar, esperar_etapa_terminar
 
 
 @pytest.fixture(autouse=True)
@@ -100,16 +101,6 @@ def _criar_projeto(cliente, tmp_path, nome="Projeto fase 13", **campos_extra):
     resposta = cliente.post("/projects/new", data=dados, follow_redirects=False)
     assert resposta.status_code == 303, resposta.text
     return int(resposta.headers["location"].split("/")[2])
-
-
-def _esperar_etapa_terminar(projeto_id: int, etapa: str, timeout: float = 30):
-    fim = time.monotonic() + timeout
-    while time.monotonic() < fim:
-        tarefa = task_manager.get(projeto_id, etapa)
-        if tarefa is not None and not tarefa.running:
-            return tarefa
-        time.sleep(0.05)
-    raise AssertionError(f"etapa '{etapa}' não terminou em {timeout}s")
 
 
 # --- Tarefa 1: GPU de qualquer fabricante ----------------------------------
@@ -632,7 +623,7 @@ def test_conversao_paralela_processa_todos_os_arquivos(cliente, tmp_path):
     # `tmp_path`, apagado logo em seguida) e pode colidir com o próximo
     # teste que reusar o mesmo id de projeto no `task_manager`.
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=180)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=180)
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:
@@ -676,7 +667,7 @@ def test_varredura_registra_duplicata_em_vez_de_sumir_com_ela(cliente, tmp_path)
 
     projeto_id = _criar_projeto(cliente, tmp_path, nome=nome)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:
@@ -700,7 +691,7 @@ def test_resumo_de_qualidade_conta_confianca_e_lacunas(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=60)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=60)
     # `peca` só é povoada por "Importar e gerar relatórios" (import_items.py) —
     # a classificação em si grava em raw_items.jsonl. quality_summary lê
     # a tabela `peca`, então o teste precisa desse passo antes de checar.
@@ -772,7 +763,7 @@ def test_tela_de_resultado_mostra_o_relatorio_de_qualidade(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=60)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=60)
 
     cliente.post(f"/projects/{projeto_id}/import-and-generate")
 
@@ -790,7 +781,7 @@ def test_execucao_registra_tempo_por_etapa(cliente, tmp_path):
 
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:
@@ -824,7 +815,7 @@ def test_execucao_registra_motor_efetivo_nao_automatico(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path, classification_engine="automatic")
     cliente.post(f"/projects/{projeto_id}/run-all")
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=120)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=120)
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:
@@ -846,7 +837,7 @@ def test_comparacao_agrupa_por_motor_e_modelo(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=120)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=120)
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:
@@ -888,7 +879,7 @@ def test_tarefa_so_termina_depois_de_gravar_o_fim_da_execucao(cliente, tmp_path,
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-all")
     for etapa in ("scan", "conversion", "extraction", "windows", "classification"):
-        _esperar_etapa_terminar(projeto_id, etapa, timeout=120)
+        esperar_etapa_terminar(projeto_id, etapa, timeout=120)
 
     assert primeiro_estado.get("classification") is True, (
         "a tarefa foi marcada como terminada antes de a linha de `run` ser fechada", primeiro_estado)
@@ -1133,8 +1124,6 @@ def test_cache_de_contadores_expira_apos_a_janela(monkeypatch):
     """O cache e curto (~1s) para nao travar a leitura por muito tempo depois
     que a maquina de verdade mudou de estado - so evita chamadas repetidas
     dentro do intervalo de poll (500ms)."""
-    import time
-
     from gclaude_indexer import windows_counters
 
     chamadas = []
@@ -1152,9 +1141,8 @@ def test_cache_de_contadores_expira_apos_a_janela(monkeypatch):
     monkeypatch.setattr(windows_counters, "_cache", {})
     monkeypatch.setattr(windows_counters, "_CACHE_TTL_S", 0.05)
     windows_counters.gpu_usage_percent()
-    time.sleep(0.1)
-    windows_counters.gpu_usage_percent()
-    assert len(chamadas) == 2, "cache nao pode durar para sempre"
+    esperar(lambda: windows_counters.gpu_usage_percent() is not None and len(chamadas) == 2, 5,
+            "cache nao pode durar para sempre")
 
 
 def test_cache_de_contadores_e_por_metrica(monkeypatch):
@@ -1681,7 +1669,6 @@ def test_amostrador_hiberna_sem_leituras(monkeypatch):
     `test_amostrador_continuo_mantem_amostra_anterior_se_coleta_falhar`
     acima. O que este teste prova é só o ciclo liga/hiberna/religa.
     """
-    import time
     from gclaude_indexer import resources as resources_mod
 
     monkeypatch.setattr(resources_mod, "sample_resources", lambda: resources_mod._partial_sample())
@@ -1691,8 +1678,7 @@ def test_amostrador_hiberna_sem_leituras(monkeypatch):
     resources_mod.latest_sample()
     assert resources_mod._sampler_active(), "a thread devia estar rodando após a leitura"
 
-    time.sleep(1.0)
-    assert not resources_mod._sampler_active(), "a thread devia ter hibernado sem leituras"
+    esperar(lambda: not resources_mod._sampler_active(), 5, "a thread devia ter hibernado sem leituras")
 
     resources_mod.latest_sample()
     assert resources_mod._sampler_active(), "uma nova leitura devia religar a thread"

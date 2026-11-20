@@ -14,6 +14,7 @@ import gclaude_indexer.hardware as hardware_mod
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.formatting import _format_time
 from gclaude_indexer.web.background_runs import task_manager
+from tests._espera import esperar_etapa_terminar
 from gclaude_indexer.web import routes_projects
 from gclaude_indexer.web import routes_result
 
@@ -65,16 +66,6 @@ def _criar_projeto(cliente, tmp_path, nome="Projeto fase 12", **campos_extra):
     return int(resposta.headers["location"].split("/")[2])
 
 
-def _esperar_etapa_terminar(projeto_id: int, etapa: str, timeout: float = 30):
-    fim = time.monotonic() + timeout
-    while time.monotonic() < fim:
-        tarefa = task_manager.get(projeto_id, etapa)
-        if tarefa is not None and not tarefa.running:
-            return tarefa
-        time.sleep(0.05)
-    raise AssertionError(f"etapa '{etapa}' não terminou em {timeout}s")
-
-
 # --- Tarefa 1: chaves estáveis de situação ---------------------------------
 
 
@@ -85,7 +76,7 @@ def test_status_etapas_devolve_chaves_ascii_e_nao_texto_de_tela(cliente, tmp_pat
 
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     from gclaude_indexer.catalog import find_project
     _config, conn = load_project(find_project(projeto_id).output_folder)
@@ -116,7 +107,7 @@ def test_proxima_etapa_pendente_usa_chave_e_nao_texto_traduzido():
 def test_tela_de_execucao_traduz_o_status_para_ingles(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     cliente.cookies.set("language", "en")
     corpo = cliente.get(f"/projects/{projeto_id}/run").text
@@ -144,7 +135,7 @@ def test_tela_de_execucao_traduz_o_status_para_ingles(cliente, tmp_path):
 def test_progresso_mostra_concluida_depois_que_a_etapa_termina(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     corpo = cliente.get(f"/projects/{projeto_id}/run/progress").text
 
@@ -162,7 +153,7 @@ def test_progresso_vazio_quando_o_projeto_nunca_rodou(cliente, tmp_path):
 def test_tempo_decorrido_congela_quando_a_etapa_termina(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    tarefa = _esperar_etapa_terminar(projeto_id, "scan")
+    tarefa = esperar_etapa_terminar(projeto_id, "scan")
 
     assert tarefa.finished_at is not None, "terminado_em tem que ser gravado ao acabar"
     congelado = tarefa.finished_at - tarefa.started_at
@@ -182,7 +173,7 @@ def test_tempo_decorrido_congela_quando_a_etapa_termina(cliente, tmp_path):
 def test_barra_de_progresso_mostra_o_titulo_da_etapa_e_nao_a_chave(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     corpo = cliente.get(f"/projects/{projeto_id}/run/progress").text
     assert "1. Varredura" in corpo
@@ -192,7 +183,7 @@ def test_barra_de_progresso_mostra_o_titulo_da_etapa_e_nao_a_chave(cliente, tmp_
 def test_barra_de_progresso_traduz_o_titulo_da_etapa(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     cliente.cookies.set("language", "es")
     corpo = cliente.get(f"/projects/{projeto_id}/run/progress").text
@@ -244,7 +235,7 @@ def test_barra_de_filtro_do_log_existe_mesmo_sem_eventos(cliente, tmp_path):
 def test_linhas_do_log_carregam_o_nivel_para_o_filtro(cliente, tmp_path):
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     corpo = cliente.get(f"/projects/{projeto_id}/run").text
 
@@ -774,7 +765,7 @@ def test_tela_de_resultado_traduz_as_pendencias(cliente, tmp_path):
 
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar_etapa_terminar(projeto_id, "scan")
+    esperar_etapa_terminar(projeto_id, "scan")
 
     _config, conn = load_project(find_project(projeto_id).output_folder)
     try:

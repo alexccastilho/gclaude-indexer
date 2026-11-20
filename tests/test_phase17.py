@@ -21,6 +21,7 @@ import pytest
 from gclaude_indexer import db
 from gclaude_indexer.paths import natural_sort_key
 from gclaude_indexer.windows_prep import pages_for_group
+from tests._espera import esperar
 
 # --- geometry of the oracle's collection (see `_config_do_oraculo`) --------
 ORACULO_PAGINAS_POR_JANELA = 4
@@ -643,14 +644,16 @@ def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path
     """O resultado da leitura abandonada é guardado por caminho, tamanho e
     data: o plano seguinte não lê de novo. Sem isso, um arquivo que leva
     mais que o prazo curto das telas nunca seria conferido por elas."""
-    import time
+    import os
+
+    from gclaude_indexer import update_plan
 
     conn, config = _plano_com_varios_mexidos(tmp_path, 1)
     leituras["espera"] = 0.5
     nao_conferidos: list[str] = []
     detect_changes(conn, config, unverified=nao_conferidos)
     assert nao_conferidos == ["d0.pdf"]
-    time.sleep(1.0)
+    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in update_plan._PENDING_READS), 5)
 
     nao_conferidos = []
     mudancas, inalterados, _ = detect_changes(conn, config, unverified=nao_conferidos)
@@ -661,7 +664,7 @@ def test_leitura_que_termina_depois_do_prazo_vale_para_o_plano_seguinte(tmp_path
 def test_leitura_tardia_de_arquivo_novo_tambem_vale_para_o_plano_seguinte(tmp_path, leituras):
     """Achado 8: o resultado guardado vale também para a conferência de cópia
     dos arquivos novos (com a data da caminhada)."""
-    import time
+    import os
 
     from gclaude_indexer import update_plan
 
@@ -676,7 +679,7 @@ def test_leitura_tardia_de_arquivo_novo_tambem_vale_para_o_plano_seguinte(tmp_pa
     leituras["espera"] = 0.5
 
     update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
-    time.sleep(1.0)
+    esperar(lambda: not any(k.startswith(os.path.normcase(str(tmp_path))) for k in update_plan._PENDING_READS), 5)
     update_plan.build_update_plan(conn, _config(origem, saida), record_warnings=False)
     assert leituras["chamadas"] == ["b.pdf"]
 

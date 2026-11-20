@@ -5,7 +5,6 @@ at 0% until the end."""
 from __future__ import annotations
 
 import os
-import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +17,7 @@ from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.scanning import scan
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
+from tests._espera import esperar
 
 
 def _config(origem, saida):
@@ -134,15 +134,6 @@ def limpar_gerenciador():
     task_manager._tasks.clear()
 
 
-def _esperar(condicao, timeout=30):
-    fim = time.monotonic() + timeout
-    while time.monotonic() < fim:
-        if condicao():
-            return
-        time.sleep(0.05)
-    raise AssertionError("condição não atingida a tempo")
-
-
 def _criar_projeto(cliente, tmp_path):
     origem = _acervo(tmp_path)
     dados = {
@@ -161,7 +152,7 @@ def _criar_projeto(cliente, tmp_path):
 def _varrer(cliente, projeto_id):
     task_manager._tasks.clear()
     task_manager.start_step(projeto_id, _saida(projeto_id), "scan")
-    _esperar(lambda: not task_manager.get(projeto_id, "scan").running)
+    esperar(lambda: not task_manager.get(projeto_id, "scan").running)
     assert task_manager.get(projeto_id, "scan").finished_ok
 
 
