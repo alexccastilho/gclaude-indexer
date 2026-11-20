@@ -43,12 +43,10 @@ from pathlib import Path
 from . import components
 from .paths import machine_local_folder
 
-# Same commit as `install.ps1` (tag 4.1.0, the build UB-Mannheim ships).
-# 2.0.0: every language and script of that commit is in the components
-# manifest (`manifests/tessdata_fast.json`, with its SHA-256), and the
-# download goes through `components.py`. Only a pinned file is ever
-# downloaded: the hash decides.
-TESSDATA_COMMIT = "65727574dfcd264acbb0c3e07860e4e9e9b22185"
+# 2.0.0: every language and script is in the components manifest
+# (`manifests/tessdata_fast.json`, with its SHA-256), and the download goes
+# through `components.py`. Only a pinned file is ever downloaded: the hash
+# decides.
 _lock = threading.Lock()
 
 

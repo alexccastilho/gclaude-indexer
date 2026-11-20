@@ -60,7 +60,6 @@ from .paths import natural_sort_key
 # estes têm um teto fixo, que ainda traz título, data e ementa para a
 # classificação (o texto completo vai para a busca de qualquer jeito).
 WHOLE_DOCUMENT_CHARS = 4000
-_PAGED_CATEGORIES = PAGED_CATEGORIES
 
 
 def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
@@ -71,7 +70,7 @@ def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
     exato; aqui, onde só se sabe a extensão, vale o maior."""
     if category == "assinados":
         return max(config.chars_per_page, WHOLE_DOCUMENT_CHARS)
-    return config.chars_per_page if category in _PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
+    return config.chars_per_page if category in PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
 
 
 def capped_text(text: str, limit: int) -> str:

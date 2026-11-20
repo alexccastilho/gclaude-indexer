@@ -247,13 +247,11 @@ def test_pausa_entre_etapas_impede_a_proxima_de_comecar(tmp_path, monkeypatch):
     `pause` precisa alcançar o sinal da cadeia mesmo assim."""
     import threading
 
-    from gclaude_indexer.config import ProjectConfig
-
     iniciadas: list[str] = []
     terminou = threading.Event()
     resultado_da_pausa: list[bool] = []
 
-    def start_step_falso(project_id, _pasta, _config, step, stop_signal=None, language=None):
+    def start_step_falso(project_id, _pasta, step, stop_signal=None, language=None):
         iniciadas.append(step)
         # A etapa já terminou quando o clique chega — exatamente o intervalo.
         resultado_da_pausa.append(task_manager.pause(project_id))
@@ -262,9 +260,7 @@ def test_pausa_entre_etapas_impede_a_proxima_de_comecar(tmp_path, monkeypatch):
     monkeypatch.setattr(task_manager, "start_step", start_step_falso)
     original = background_runs.STEP_ORDER
     monkeypatch.setattr(background_runs, "STEP_ORDER", original)
-    config = ProjectConfig(name="x", source_folder=str(tmp_path), output_folder=str(tmp_path))
-
-    sinal = task_manager.start_all(9034, str(tmp_path), config)
+    sinal = task_manager.start_all(9034, str(tmp_path))
     for _ in range(100):
         if 9034 not in task_manager._chains:
             terminou.set()
@@ -538,17 +534,14 @@ def test_consulta_de_frequencia_da_cpu_nao_depende_do_idioma_do_windows(monkeypa
 def test_continuar_retoma_a_cadeia_a_partir_da_etapa_pendente(tmp_path, monkeypatch):
     """Important 3: "Rodar tudo" sempre recomeça pelo scan (minutos numa
     pasta grande do Drive); Continuar tem de partir da etapa parada."""
-    from gclaude_indexer.config import ProjectConfig
-
     iniciadas: list[str] = []
 
-    def start_step_falso(project_id, _pasta, _config, step, stop_signal=None, language=None):
+    def start_step_falso(project_id, _pasta, step, stop_signal=None, language=None):
         iniciadas.append(step)
         return _tarefa(step=step, running=False, finished_ok=True, stop_signal=stop_signal or StopSignal())
 
     monkeypatch.setattr(task_manager, "start_step", start_step_falso)
-    config = ProjectConfig(name="x", source_folder=str(tmp_path), output_folder=str(tmp_path))
-    task_manager.start_all(9036, str(tmp_path), config, first_step="windows")
+    task_manager.start_all(9036, str(tmp_path), first_step="windows")
     for _ in range(100):
         if 9036 not in task_manager._chains:
             break

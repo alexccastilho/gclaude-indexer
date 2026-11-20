@@ -2263,7 +2263,7 @@ if ($OllamaPath) {
     # run. Names from `engine_local.LOCAL_MODEL_PROFILES`, the single source
     # of truth; the card's memory is still printed, since on less than 8 GB
     # the quality model spills into RAM (the form says so).
-    $ModelInfo = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import FAST_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb; print(FAST_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb())" })".Trim()
+    $ModelInfo = "$(Invoke-NativeCommand { & $VenvPython -B -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb; print(DEFAULT_LOCAL_MODEL, QUALITY_LOCAL_MODEL, gpu_vram_mb())" })".Trim()
     $ProfileModels = @()
     $DetectedVram = 0
     if ($ModelInfo -match '^(\S+)\s+(\S+)\s+(\d+)$') {

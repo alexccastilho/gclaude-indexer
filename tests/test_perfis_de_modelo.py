@@ -52,7 +52,7 @@ def test_execucao_pela_interface_leva_o_projeto_ao_motor(monkeypatch):
 
     monkeypatch.setattr(orchestrator, "resolve_effective_engine", lambda *a, **k: "local")
     monkeypatch.setattr(engine_local, "LocalEngine", MotorFalso)
-    monkeypatch.setattr(engine_local, "model_to_use", lambda conn, config: "qwen3.5:4b")
+    monkeypatch.setattr(engine_local, "model_to_use", lambda config: "qwen3.5:4b")
     config = ProjectConfig(name="x", source_folder=".", output_folder=".", processing_mode="cpu",
                            subject="Obras da escola municipal")
     try:

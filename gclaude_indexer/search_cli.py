@@ -58,7 +58,7 @@ def _snippet(text: str) -> str:
 
 def run(
     output_folder: Path | str, term: str, group: str | None, only_legislation: bool, limit: int,
-    lexml_flag: bool, language: str, lexml_search: Callable[..., lexml.LexmlResult | None] = lexml.search,
+    lexml_flag: bool, language: str, lexml_search: Callable[..., lexml.LexmlResult] = lexml.search,
 ) -> str:
     """O resultado em Markdown: a seção "No acervo" e, quando consultado, a
     seção do LexML. `lexml_search` é injetável para a suíte nunca sair
@@ -122,9 +122,7 @@ def run(
     if lexml_flag or normas_no_acervo == 0:
         resultado = lexml_search(term, limit=LEXML_LIMIT)
         linhas += ["", f"## {t('search.lexml_title')}", ""]
-        if resultado is None:
-            linhas.append(t("buscar.lexml_skipped"))
-        elif resultado.status == "ok" and resultado.records:
+        if resultado.status == "ok" and resultado.records:
             for registro in resultado.records:
                 linha = f"- **{registro.title}**"
                 if registro.date:

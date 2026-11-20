@@ -460,7 +460,7 @@ def test_executar_tudo_usa_os_valores_resolvidos_em_todas_as_etapas(cliente, tmp
         monkeypatch.setitem(background_runs._STEP_FUNCTIONS, etapa, espiao(etapa))
     task_manager._tasks.clear()
 
-    task_manager.start_all(projeto_id, str(saida), config_antiga)  # recebe a configuração velha
+    task_manager.start_all(projeto_id, str(saida))
     limite = time.monotonic() + 60
     while projeto_id in task_manager._chains and time.monotonic() < limite:
         threading.Event().wait(0.05)

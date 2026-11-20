@@ -56,7 +56,7 @@ from ..artifacts import (
     pending_items,
     stale_artifacts,
 )
-from ..catalog import CatalogEntry, find_project, list_projects, register_project
+from ..catalog import CatalogEntry, catalog_folder, find_project, list_projects, register_project
 from ..config import ProjectConfig, ConfigError, load_config
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
@@ -234,8 +234,6 @@ def _side_bar_projects() -> list[dict]:
     if cached is not None and now - cached[0] < SIDE_BAR_SECONDS:
         return cached[1]
     try:
-        from ..catalog import catalog_folder
-
         folder = catalog_folder()
         items = [
             {
@@ -363,7 +361,7 @@ async def _only_own_pages(request: Request, call_next):
     return response
 
 
-class LockBlockedError(Exception):
+class _ProjectCheckError(Exception):
     # Carries the translation key and its parameters, not rendered text: the
     # check runs before the request's language is known, and the screen is
     # what renders it (user requirement 3).
@@ -373,24 +371,16 @@ class LockBlockedError(Exception):
         self.message_params = message_params
 
 
-class LockAbandonedError(Exception):
-    # Carries the translation key and its parameters, not rendered text: the
-    # check runs before the request's language is known, and the screen is
-    # what renders it (user requirement 3).
-    def __init__(self, entry: CatalogEntry, message_key: str, message_params: dict[str, object]):
-        self.entry = entry
-        self.message_key = message_key
-        self.message_params = message_params
+class LockBlockedError(_ProjectCheckError):
+    pass
 
 
-class IncompleteSyncError(Exception):
-    # Carries the translation key and its parameters, not rendered text: the
-    # check runs before the request's language is known, and the screen is
-    # what renders it (user requirement 3).
-    def __init__(self, entry: CatalogEntry, message_key: str, message_params: dict[str, object]):
-        self.entry = entry
-        self.message_key = message_key
-        self.message_params = message_params
+class LockAbandonedError(_ProjectCheckError):
+    pass
+
+
+class IncompleteSyncError(_ProjectCheckError):
+    pass
 
 
 class RelocationNeededError(Exception):
@@ -614,7 +604,6 @@ def root():
 
 @app.get("/projects", response_class=HTMLResponse)
 def projects_screen(request: Request):
-    from ..catalog import catalog_folder
     from ..settings import configured_shared_catalog_folder
 
     folder = catalog_folder()
@@ -769,8 +758,6 @@ def _create_new_project_body(request: Request, form):
     # and replace the saved settings with this form's, silently, keeping
     # the processed data so that nothing looked wrong (see `load_project`).
     # So the form stops and offers the thing that was actually meant.
-    from ..project import describe_project
-
     existing = describe_project(config.output_folder)
     if existing is not None:
         return render(
@@ -842,8 +829,6 @@ def open_project_screen(request: Request, folder: str = ""):
     after finding a project already in the chosen output folder: the user
     has picked that folder once and should not have to pick it again.
     """
-    from ..project import describe_project
-
     summary = describe_project(folder) if folder else None
     return render(request, "open_project.html", {"value": folder, "summary": summary, "error": None})
 
@@ -862,8 +847,6 @@ def _open_project_body(request: Request, form):
     in it. Only the confirmed second pass writes, and all it writes is the
     catalog entry — the project itself is used exactly as it was found.
     """
-    from ..project import describe_project
-
     folder = str(form.get("existing_output_folder", "")).strip()
     confirmed = "confirm" in form
 
@@ -1815,7 +1798,7 @@ def run_next_step(request: Request, project_id: int):
     with _open_project(project_id) as (entry, config, conn):
         next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
         if next_step is not None:
-            task_manager.start_step(project_id, entry.output_folder, config, next_step, language=language)
+            task_manager.start_step(project_id, entry.output_folder, next_step, language=language)
         context = _steps_context(project_id, entry, config, conn, language)
 
     return render(request, "_steps.html", context)
@@ -1827,7 +1810,7 @@ def run_all(request: Request, project_id: int):
     the steps in the background, one after another."""
     language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
     with _open_project(project_id) as (entry, config, conn):
-        task_manager.start_all(project_id, entry.output_folder, config, language=language)
+        task_manager.start_all(project_id, entry.output_folder, language=language)
         context = _steps_context(project_id, entry, config, conn, language)
 
     return render(request, "_steps.html", context)
@@ -1842,9 +1825,7 @@ def resume_run(request: Request, project_id: int):
     with _open_project(project_id) as (entry, config, conn):
         next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
         if next_step is not None:
-            task_manager.start_all(
-                project_id, entry.output_folder, config, language=language, first_step=next_step
-            )
+            task_manager.start_all(project_id, entry.output_folder, language=language, first_step=next_step)
         context = _steps_context(project_id, entry, config, conn, language)
 
     return render(request, "_steps.html", context)
@@ -2047,7 +2028,7 @@ _OPERATIONS_IN_PROGRESS: dict[int, tuple[str, float]] = {}
 
 
 @contextmanager
-def _generation_slot(project_id: int, operation_key: str = "run.import_and_generate"):
+def _generation_slot(project_id: int, operation_key: str):
     """One report generation per project at a time. Yields `False` when
     another one is under way — the caller sends the user to the result
     instead of starting a duplicate: two generations writing and deleting
@@ -2620,8 +2601,6 @@ def _set_or_404(set_id: int) -> SetEntry:
 def _project_join_reason(e, language: str) -> str:
     """Por que um projeto não pode entrar num conjunto agora: pasta fora do
     ar ou relatórios nunca gerados. Vazio quando pode."""
-    from ..catalog import catalog_folder
-
     folder = catalog_folder()
     resolved = e.resolved_output_folder(folder)
     if not e.is_available(folder):
@@ -2821,8 +2800,6 @@ async def remove_component(request: Request):
     The name travels in the form (it has `/`, "tessdata/script/Latin"), and
     only a manifest entry is ever touched (`components.remove`). Covered by
     `_only_own_pages` like every other POST."""
-    from urllib.parse import quote
-
     from .. import components
 
     form = await request.form()
@@ -2894,12 +2871,7 @@ async def choose_theme(request: Request):
 async def choose_layout(request: Request):
     form = await request.form()
     layout = valid_layout(str(form.get("layout", DEFAULT_LAYOUT)))
-    # The screen changes the layout in place, without a reload, and
-    # only needs the cookie back.
-    if request.headers.get("x-preference-fetch") == "1":
-        response = Response(status_code=204)
-    else:
-        response = RedirectResponse(url=_back_to(request), status_code=303)
+    response = RedirectResponse(url=_back_to(request), status_code=303)
     response.set_cookie(LAYOUT_COOKIE_NAME, layout, max_age=60 * 60 * 24 * 365, samesite="lax")
     return response
 
@@ -2998,8 +2970,6 @@ def stop_outdated_server(host: str, port: int, pid: int | None, wait_seconds: fl
     version. Only a process started from this program's venv is stopped,
     with its children (OCR and conversion workers). Returns `True` when the
     port is free afterwards."""
-    import time as _time
-
     from ..sensor_service import server_listening
 
     if pid is None or pid == os.getpid():
@@ -3024,11 +2994,11 @@ def stop_outdated_server(host: str, port: int, pid: int | None, wait_seconds: fl
         psutil.wait_procs(family, timeout=5)
     except Exception:
         return False
-    deadline = _time.monotonic() + wait_seconds
-    while _time.monotonic() < deadline:
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
         if not server_listening(host, port):
             return True
-        _time.sleep(0.3)
+        time.sleep(0.3)
     return not server_listening(host, port)
 
 
@@ -3064,7 +3034,6 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     # The OCR language, in this machine's own folder when
     # Tesseract's needs administrator rights (see `ocr_languages.py`).
     from .. import ocr_languages
-    from ..config import ProjectConfig
 
     ocr_languages.ensure_in_background(
         ProjectConfig.__dataclass_fields__["ocr_language"].default, tools.find("tesseract")
@@ -3150,8 +3119,6 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     #
     # `daemon=True` para que uma resposta que nunca vem não impeça o
     # processo de encerrar.
-    import threading
-
     threading.Thread(target=_request_cpu_sensor_helper, daemon=True).start()
 
     uvicorn.run(app, host=host, port=port)

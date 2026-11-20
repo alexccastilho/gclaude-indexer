@@ -315,8 +315,6 @@ def _odf_table(table, struck_styles: set[str]) -> list[str]:
         for cell in row:
             if cell.tag == _q("table", "table-cell"):
                 cells.append("\n".join(_odf_blocks(cell, struck_styles)))
-            elif cell.tag == _q("table", "covered-table-cell"):
-                continue
         # Planilha com milhares de linhas vazias repetidas no fim.
         if any(text.strip() for text in cells):
             rows.append("\t".join(cells))
@@ -344,8 +342,6 @@ def _odf_blocks_of(element, struck_styles: set[str]) -> list[str]:
             lines.extend(_odf_paragraph(child, struck_styles))
         elif tag == _q("table", "table"):
             lines.extend(_odf_table(child, struck_styles))
-        elif tag == _q("draw", "page"):
-            lines.extend(_odf_blocks(child, struck_styles))
         else:
             lines.extend(_odf_blocks(child, struck_styles))
     return lines

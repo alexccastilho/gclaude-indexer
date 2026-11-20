@@ -40,12 +40,8 @@ _MULTI_PAGE_CATEGORIES = {"pdf", "imagens", "paginados", "legados"}
 
 @dataclass
 class FolderSurvey:
-    files: int = 0
     by_category: Counter = field(default_factory=Counter)
-    partial: bool = False
-    seconds: float = 0.0
     pdf_pages: list[int] = field(default_factory=list)  # pages of each sampled PDF
-    pdf_scanned: int = 0  # sampled PDFs that need OCR
     native_page_chars: list[int] = field(default_factory=list)
     language_counts: Counter = field(default_factory=Counter)
 
@@ -102,9 +98,7 @@ def _survey_pdfs(paths: list[Path], survey: FolderSurvey) -> list[str]:
                 lengths.append(len(text.strip()))
                 texts.append(text)
             survey.pdf_pages.append(count)
-            if statistics.mean(lengths) < MIN_AVG_CHARS_PER_PAGE:
-                survey.pdf_scanned += 1
-            else:
+            if statistics.mean(lengths) >= MIN_AVG_CHARS_PER_PAGE:
                 survey.native_page_chars.extend(n for n in lengths if n >= MIN_AVG_CHARS_PER_PAGE)
         except Exception:
             continue

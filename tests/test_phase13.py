@@ -292,7 +292,6 @@ def test_clocks_devolvem_none_em_falha(monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(OSError("sem powershell")))
     assert windows_counters.clock_cpu_mhz() is None
     assert windows_counters.memory_clock_mhz() is None
-    assert windows_counters.clock_gpu_mhz() is None
 
 
 def test_amostra_expoe_os_tres_clocks(monkeypatch):
@@ -300,7 +299,6 @@ def test_amostra_expoe_os_tres_clocks(monkeypatch):
 
     monkeypatch.setattr(resources_mod, "clock_cpu_mhz", lambda: 4400)
     monkeypatch.setattr(resources_mod, "memory_clock_mhz", lambda: 3600)
-    monkeypatch.setattr(resources_mod, "clock_gpu_mhz", lambda: None)
 
     a = resources_mod.sample_resources()
     assert a.clock_cpu_mhz == 4400
@@ -657,9 +655,9 @@ def test_modelo_para_usar_respeita_a_escolha(tmp_path):
     from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL, model_to_use
 
     base = dict(name="x", source_folder=str(tmp_path), output_folder=str(tmp_path / "s"))
-    assert model_to_use(None, ProjectConfig(**base, local_model="qwen3:8b")) == "qwen3:8b"
-    assert model_to_use(None, ProjectConfig(**base, local_model="automatic")) == DEFAULT_LOCAL_MODEL
-    assert model_to_use(None, ProjectConfig(**base, local_model="")) == DEFAULT_LOCAL_MODEL
+    assert model_to_use(ProjectConfig(**base, local_model="qwen3:8b")) == "qwen3:8b"
+    assert model_to_use(ProjectConfig(**base, local_model="automatic")) == DEFAULT_LOCAL_MODEL
+    assert model_to_use(ProjectConfig(**base, local_model="")) == DEFAULT_LOCAL_MODEL
 
 
 # --- Tarefa 10: duplicatas não travam a barra ------------------------------
@@ -1804,7 +1802,7 @@ def test_escolher_modelo_reporta_o_modelo_realmente_usado_nao_o_padrao(tmp_path,
 
 def test_resolver_motor_efetivo_repassa_o_modelo_do_config_para_escolher_modelo(tmp_path, monkeypatch):
     """Ponta a ponta: `orchestrator.resolve_effective_engine` precisa repassar
-    `model_to_use(conn, config)` — o modelo que o usuário escolheu no
+    `model_to_use(config)` — o modelo que o usuário escolheu no
     formulário — para `choose_model`, e não deixá-lo cair no padrão."""
     from gclaude_indexer import orchestrator as orchestrator_mod
     from gclaude_indexer.config import ProjectConfig

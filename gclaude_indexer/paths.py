@@ -133,7 +133,7 @@ def _same_folder(a: Path, b: Path) -> bool:
         return False
 
 
-def _is_inside(child: Path, parent: Path) -> bool:
+def is_inside_folder(child: Path, parent: Path) -> bool:
     """`child` está em `parent` (ou é ele). Compara os caminhos resolvidos e,
     para pegar junctions, links e nomes curtos 8.3, também cada ancestral
     existente de `child` com `os.path.samefile`. Unidades diferentes nunca
@@ -144,11 +144,6 @@ def _is_inside(child: Path, parent: Path) -> bool:
         if ancestor.exists() and parent.exists() and _same_folder(ancestor, parent):
             return True
     return False
-
-
-def is_inside_folder(child: Path, parent: Path) -> bool:
-    """`child` está em `parent` (ou é ele): ver `_is_inside`."""
-    return _is_inside(child, parent)
 
 
 def holds_generated_output(entry_names) -> bool:
@@ -214,9 +209,9 @@ def check_new_project_folders(source: str, output: str) -> list:
 
     if _same_folder(destination, origin):
         return [ConfigErrorMessage("config_error.output_same_as_source", {"path": str(destination)})]
-    if _is_inside(destination, origin):
+    if is_inside_folder(destination, origin):
         return [ConfigErrorMessage("config_error.output_inside_source", {"path": str(destination)})]
-    if _is_inside(origin, destination):
+    if is_inside_folder(origin, destination):
         return [ConfigErrorMessage("config_error.source_inside_output", {"path": str(destination)})]
 
     if destination.exists() and not (destination / PROJECT_DB_NAME).exists():

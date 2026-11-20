@@ -56,9 +56,12 @@ from pathlib import Path
 
 from . import paths, sync, workdir
 from .catalog import relocate_project as relocate_catalog_entry
+from .db import connect
 from .deletion import GENERATED_FILES, SHARED_FILES
+from .lock import LOCK_FILE_NAME, machine_identity, read_lock
 from .managed_block import BACKUP_SUFFIX, without_managed_block
-from .events import LOG_FILE_NAME
+from .events import LOG_FILE_NAME, record_event
+from .project import load_project
 from .windows_prep import LEGACY_WINDOW_FILE
 
 JOURNAL_FILE_NAME = "relocation.json"
@@ -904,8 +907,6 @@ def _drop_obsolete(folder: Path) -> None:
 
 
 def _remove_own_stray_lock(folder: Path) -> None:
-    from .lock import LOCK_FILE_NAME, machine_identity, read_lock
-
     if not (folder / LOCK_FILE_NAME).is_file():
         return
     lock = read_lock(folder)
@@ -921,12 +922,8 @@ def _rewrite_project_paths(new: Path) -> None:
     `load_project` já faz isso ao abrir uma pasta que não é a gravada;
     chamá-lo aqui grava agora, sem esperar a próxima abertura. Uma falha
     (banco travado) não impede o resto: a abertura seguinte regrava."""
-    from .project import load_project
-
     try:
         _config, conn = load_project(new)
-    except (sqlite3.Error, ValueError, OSError):
-        return
     except Exception:  # noqa: BLE001 - configuração inválida: a abertura mostra o erro
         return
     conn.close()
@@ -951,9 +948,6 @@ def _rename_work_folder(old: Path, new: Path) -> None:
 
 
 def _record_done(new: Path, old: Path) -> None:
-    from .db import connect
-    from .events import record_event
-
     db_path = new / paths.PROJECT_DB_NAME
     if not db_path.is_file():
         return

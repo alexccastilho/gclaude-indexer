@@ -711,12 +711,12 @@ def test_modelo_automatico_segue_a_vram(monkeypatch):
     import gclaude_indexer.ollama_models as om
 
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
-    assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "ornith-1.5:9b"
+    assert engine_local.model_to_use(ProjectConfig(name="x", source_folder=".", output_folder=".")) == "ornith-1.5:9b"
     # máquina atualizada que ainda não baixou o modelo de qualidade: fica no 4B que já tem
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: name == "qwen3.5:4b")
-    assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
+    assert engine_local.model_to_use(ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
     monkeypatch.setattr(engine_local, "gpu_vram_mb", lambda: 6144)
-    assert engine_local.model_to_use(None, ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
+    assert engine_local.model_to_use(ProjectConfig(name="x", source_folder=".", output_folder=".")) == "qwen3.5:4b"
 
 
 def test_perfis_mais_rapido_e_melhor_qualidade(monkeypatch):
@@ -727,12 +727,12 @@ def test_perfis_mais_rapido_e_melhor_qualidade(monkeypatch):
 
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: True)
     cfg = lambda modelo: ProjectConfig(name="x", source_folder=".", output_folder=".", local_model=modelo)
-    assert engine_local.model_to_use(None, cfg("fast")) == "qwen3.5:4b"
-    assert engine_local.model_to_use(None, cfg("quality")) == "ornith-1.5:9b"
-    assert engine_local.model_to_use(None, cfg("qwen3.5:9b")) == "qwen3.5:9b"
+    assert engine_local.model_to_use(cfg("fast")) == "qwen3.5:4b"
+    assert engine_local.model_to_use(cfg("quality")) == "ornith-1.5:9b"
+    assert engine_local.model_to_use(cfg("qwen3.5:9b")) == "qwen3.5:9b"
     # perfil de qualidade sem o modelo baixado: o rápido que já está aqui
     monkeypatch.setattr(om, "model_downloaded_on_disk", lambda name: name == "qwen3.5:4b")
-    assert engine_local.model_to_use(None, cfg("quality")) == "qwen3.5:4b"
+    assert engine_local.model_to_use(cfg("quality")) == "qwen3.5:4b"
 
 
 def test_pagina_binaria_antiga_vira_pagina_vazia():
