@@ -802,8 +802,8 @@ def _store_pdf_intermediate(
     Passa por um arquivo `.raw.pdf` ao lado, porque o `ocrmypdf` não lê e
     escreve o mesmo arquivo; sem OCR, o `.raw.pdf` vira o destino."""
     extension = extension.lstrip(".").lower()
-    destination = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.pdf")
-    raw = workdir.destination(output_dir, "converted", relative_path, f".{extension}.raw.pdf")
+    destination = workdir.converted_path(output_dir, relative_path, workdir.pdf_suffix(extension))
+    raw = workdir.converted_destination(output_dir, relative_path, workdir.raw_pdf_suffix(extension))
     raw.write_bytes(pdf_bytes)
     try:
         # As páginas que a passada de detecção contou são as do original, não
@@ -917,17 +917,14 @@ def _convert_signed(
             content = light_formats.convert_to_pdf_bytes(inner)
         kind = "pdf"
 
-    pdf_path = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.pdf")
-    text_path = workdir.local_path(output_dir, "converted", relative_path, f".{extension}.txt")
     if kind == "binary":
-        for stale in (pdf_path, text_path):
-            stale.unlink(missing_ok=True)
+        workdir.signed_intermediate(output_dir, relative_path, extension, None)
         return {
             "sql": skipped_sql, "params": (REASON_BINARY, row["id"]), "ocr_applied": False,
             "signatures": signatures,
         }
     if kind == "pdf":
-        text_path.unlink(missing_ok=True)
+        workdir.signed_intermediate(output_dir, relative_path, extension, PDF_CATEGORY)
         needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
             config, row["name"], content, output_dir, relative_path, extension, ocrmypdf_jobs, events, row, notes
         )
@@ -943,14 +940,12 @@ def _convert_signed(
         if kind != "xls":
             raise
         # OLE que não é planilha (um `.doc`, um `.ppt`): sem leitor aqui.
-        for stale in (pdf_path, text_path):
-            stale.unlink(missing_ok=True)
+        workdir.signed_intermediate(output_dir, relative_path, extension, None)
         return {
             "sql": skipped_sql, "params": (REASON_BINARY, row["id"]), "ocr_applied": False,
             "signatures": signatures,
         }
-    pdf_path.unlink(missing_ok=True)
-    destination = workdir.destination(output_dir, "converted", relative_path, f".{extension}.txt")
+    destination = workdir.signed_intermediate(output_dir, relative_path, extension, TEXT_CATEGORY)
     destination.write_text(text, encoding="utf-8")
     is_image = kind == "image"
     if is_image and not ocr_pending:
@@ -990,7 +985,7 @@ class _FileJob:
 
 def _convert_pdf_file(job: _FileJob) -> dict:
     row = job.row
-    destination = workdir.local_path(job.output_dir, "converted", row["relative_path"], ".pdf")
+    destination = workdir.converted_path(job.output_dir, row["relative_path"], workdir.pdf_suffix(row["extension"]))
     needs_ocr, ocr_failed, ocr_applied, page_count = _ocr_pdf_pages(
         job.config, row["name"], job.source_path, destination, job.ocrmypdf_jobs, job.events, row, job.notes
     )
@@ -1079,7 +1074,7 @@ def _convert_image_file(job: _FileJob) -> dict:
         # when the OCR language is there.
         text = ""
         ocr_failed = True
-    destination = workdir.destination(job.output_dir, "converted", row["relative_path"], text_suffix(row["extension"]))
+    destination = workdir.converted_destination(job.output_dir, row["relative_path"], text_suffix(row["extension"]))
     destination.write_text(text, encoding="utf-8")
     return {"sql": file_status.MARK_CONVERTED_IMAGE, "params": (int(ocr_failed), row["id"]), "ocr_applied": ocr_applied}
 
@@ -1089,7 +1084,7 @@ def _convert_light_file(job: _FileJob) -> dict:
     category = category_of_extension("." + row["extension"])
     extension = row["extension"].lower()
     text = _extract_light_text(category, extension, job.source_path)
-    destination = workdir.destination(job.output_dir, "converted", row["relative_path"], text_suffix(extension))
+    destination = workdir.converted_destination(job.output_dir, row["relative_path"], text_suffix(extension))
     destination.write_text(text, encoding="utf-8")
     # A caixa `.mbox` tem uma página por mensagem.
     pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == MBOX_CATEGORY else 1
@@ -1107,9 +1102,11 @@ def _convert_uncategorized_file(job: _FileJob) -> dict:
         text = ""
     else:
         text = decode_bytes(job.source_path.read_bytes())[0]
-    destination = workdir.destination(job.output_dir, "converted", job.row["relative_path"], ".txt")
+    # Sem categoria: `text_suffix` dá `.txt`.
+    row = job.row
+    destination = workdir.converted_destination(job.output_dir, row["relative_path"], text_suffix(row["extension"]))
     destination.write_text(text, encoding="utf-8")
-    return {"sql": file_status.MARK_CONVERTED_PLAIN_KEEP_OCR_FLAG, "params": (job.row["id"],), "ocr_applied": False}
+    return {"sql": file_status.MARK_CONVERTED_PLAIN_KEEP_OCR_FLAG, "params": (row["id"],), "ocr_applied": False}
 
 
 # Categoria → conversor de `_process_file`. Outlook e mídia não estão aqui:
@@ -1750,8 +1747,8 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
     extension = row["extension"].lower()
     output_dir = Path(config.output_folder)
     source_path = Path(config.source_folder) / relative_path
-    destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
-    attachments_root = workdir.work_folder(output_dir) / "converted" / relative_path / "anexos"
+    destination = workdir.converted_destination(output_dir, relative_path, text_suffix(extension))
+    attachments_root = workdir.attachments_folder(output_dir, relative_path)
     events: list[tuple[str, str, str, dict]] = []
     notes: Counter = Counter()
 
@@ -1845,8 +1842,8 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
     extension = row["extension"].lower()
     output_dir = Path(config.output_folder)
     source_path = Path(config.source_folder) / relative_path
-    destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
-    work = workdir.work_folder(output_dir) / "converted" / relative_path / "midia"
+    destination = workdir.converted_destination(output_dir, relative_path, text_suffix(extension))
+    work = workdir.media_work_folder(output_dir, relative_path)
     try:
         outcome = media.transcribe(source_path, destination, work, tools, should_stop, on_estimate)
     except resumable.Interrupted:

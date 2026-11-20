@@ -29,7 +29,7 @@ from pathlib import Path
 from . import workdir
 from .paths import resolve_within
 
-INTERMEDIATE_FOLDERS: tuple[str, ...] = ("converted", "blocks")
+INTERMEDIATE_FOLDERS: tuple[str, ...] = workdir.INTERMEDIATE_FOLDERS
 
 
 def _target_folders(output_folder: str) -> list[Path]:

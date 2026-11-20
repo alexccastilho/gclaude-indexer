@@ -37,7 +37,7 @@ import fitz  # PyMuPDF
 
 from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
-from .workdir import converted_artifact_path
+from .workdir import category_to_read, converted_artifact_path
 from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
 from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
 from .events import record_event
@@ -53,8 +53,8 @@ from .file_status import (
     in_params,
 )
 from .file_types import (
-    DOCX_CATEGORY, IMAGE_CATEGORY, MESSAGE_PAGE_CATEGORIES, OPENDOCUMENT_CATEGORY, PAGED_CATEGORIES, PDF_CATEGORY,
-    READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, TEXT_CATEGORY, XLSX_CATEGORY, category_of_extension,
+    DOCX_CATEGORY, IMAGE_CATEGORY, MESSAGE_PAGE_CATEGORIES, OPENDOCUMENT_CATEGORY, PAGED_CATEGORIES,
+    READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, XLSX_CATEGORY, category_of_extension,
 )
 from .fulltext import index_pending
 from .paths import natural_sort_key
@@ -168,9 +168,8 @@ def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, boo
     if intermediate is not None and not intermediate.exists():
         raise IntermediateMissing(relative_path)
 
-    if category == SIGNED_CATEGORY:
-        # O que veio dentro decide: PDF (páginas de verdade) ou texto.
-        category = PDF_CATEGORY if intermediate.suffix.lower() == ".pdf" else TEXT_CATEGORY
+    # Um assinado é lido como PDF ou como texto, conforme o que veio dentro.
+    category = category_to_read(category, intermediate)
     limit = chars_limit_for(category, config)
 
     if category in READ_AS_PDF_CATEGORIES:

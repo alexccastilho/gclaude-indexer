@@ -60,7 +60,7 @@ from .db import connect
 from .deletion import GENERATED_FILES, SHARED_FILES
 from .lock import LOCK_FILE_NAME, machine_identity, read_lock
 from .managed_block import BACKUP_SUFFIX, without_managed_block
-from .events import LOG_FILE_NAME, record_event
+from .events import LOG_FILE_NAME, LOG_FOLDER_NAME, record_event
 from .project import load_project
 from .windows_prep import LEGACY_WINDOW_FILE
 
@@ -76,7 +76,7 @@ JOURNAL_VERSION = 1
 # ainda em `'converted'`. Perdê-lo obrigaria a refazer OCR — ou deixaria
 # esses arquivos como falha. Fica no mesmo lugar relativo, e
 # `workdir.intermediate_path` continua a achá-lo.
-CARRIED_FOLDERS = ("converted", "logs")
+CARRIED_FOLDERS = (workdir.CONVERTED_FOLDER, LOG_FOLDER_NAME)
 CARRIED_FILES = tuple(GENERATED_FILES) + (paths.OUTPUT_MARKER_NAME,)
 # Arquivos de instruções: têm o bloco gerado e, às vezes, texto do usuário
 # (`managed_block.py`). Com a pasta toda nossa, vão junto; numa pasta com
@@ -88,7 +88,7 @@ INSTRUCTION_FILES = tuple(SHARED_FILES)
 # motor manual, removido na 2.0.0) e `blocks/` (fatias de PDFs grandes; o
 # fatiamento acabou e nada mais lê a pasta). Saem só os nomes que nós
 # gravamos; qualquer outra coisa nelas fica onde está.
-OBSOLETE_FOLDERS = ("windows", "blocks")
+OBSOLETE_FOLDERS = ("windows", workdir.BLOCKS_FOLDER)
 
 _DB_SIDECARS = ("project.db-wal", "project.db-shm", "project.db-journal")
 _COPY_CHUNK = 1024 * 1024
@@ -276,43 +276,21 @@ def _instruction_is_ours(path: Path) -> bool:
     return not without_managed_block(text).strip()
 
 
-def _source_paths(old: Path) -> tuple[set[str], set[str]]:
-    """Os caminhos relativos dos documentos do projeto (minúsculos, com
-    `/`), e os mesmos sem a extensão. Lidos só para leitura: o banco não é
-    alterado nem criado."""
+def _source_paths(old: Path) -> list[str]:
+    """Os caminhos relativos dos documentos do projeto. Lidos só para
+    leitura: o banco não é alterado nem criado."""
     db_path = old / paths.PROJECT_DB_NAME
     try:
         conn = sqlite3.connect(paths.sqlite_readonly_uri(db_path), uri=True, timeout=10)
     except sqlite3.Error:
-        return set(), set()
+        return []
     try:
         rows = conn.execute("SELECT relative_path FROM file").fetchall()
     except sqlite3.Error:
         rows = []
     finally:
         conn.close()
-    full = {str(row[0]).replace("\\", "/").lower() for row in rows}
-    stems = {Path(path).with_suffix("").as_posix() for path in full}
-    return full, stems
-
-
-def _is_intermediate(relative: str, full: set[str], stems: set[str]) -> bool:
-    """`<documento>.pdf`, `.<ext>.pdf`, `.txt`, `.<ext>.txt` ou `.raw.pdf` de
-    um documento do projeto (`workdir.legacy_path`), ou qualquer arquivo numa
-    pasta com o nome inteiro de um documento (anexos e trechos de mídia)."""
-    path = Path(relative.lower())
-    if any(parent.as_posix() in full for parent in path.parents):
-        return True
-    if path.suffix not in (".pdf", ".txt"):
-        return False
-    candidate = path
-    for _ in range(3):
-        candidate = candidate.with_suffix("")
-        if candidate.as_posix() in stems or candidate.as_posix() in full:
-            return True
-        if not candidate.suffix:
-            break
-    return False
+    return [str(row[0]) for row in rows]
 
 
 def _folder_is_ours(old: Path, folder: Path) -> bool:
@@ -323,7 +301,7 @@ def _folder_is_ours(old: Path, folder: Path) -> bool:
     if _is_link(folder):
         raise RelocationError("relocation.error.link", path=str(folder))
     name = os.path.normcase(folder.name)
-    if name == os.path.normcase("logs"):
+    if name == os.path.normcase(LOG_FOLDER_NAME):
         with os.scandir(folder) as entries:
             for entry in entries:
                 if _is_link(Path(entry.path)):
@@ -331,14 +309,17 @@ def _folder_is_ours(old: Path, folder: Path) -> bool:
                 if entry.is_dir(follow_symlinks=False) or entry.name.lower() != LOG_FILE_NAME:
                     return False
         return True
-    full, stems = _source_paths(old)
+    # Os nomes que `workdir` grava para os documentos do projeto
+    # (`<documento>.pdf`, `.<ext>.pdf`, `.raw.pdf`, `.txt`, `.<ext>.txt` e as
+    # pastas `<documento>/anexos` e `<documento>/midia`).
+    is_intermediate = workdir.converted_entry_matcher(_source_paths(old))
     for current, folders, files in os.walk(folder):
         for child in folders + files:
             if _is_link(Path(current) / child):
                 raise RelocationError("relocation.error.link", path=str(Path(current) / child))
         for file_name in files:
             relative = (Path(current) / file_name).relative_to(folder).as_posix()
-            if not _is_intermediate(relative, full, stems):
+            if not is_intermediate(relative):
                 return False
     return True
 

@@ -61,11 +61,10 @@ from .db import trigram_available
 from .events import record_event
 from .file_status import EXTRACTED
 from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, PDF_CATEGORY, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, TEXT_CATEGORY,
-    category_of_extension, is_whole_document_file,
+    MESSAGE_PAGE_CATEGORIES, READ_AS_PDF_CATEGORIES, category_of_extension, is_whole_document_file,
 )
 from .parallelism import io_workers_for
-from .workdir import converted_artifact_path
+from .workdir import category_to_read, converted_artifact_path
 
 # A passage is cut at the next heading once it holds this many characters,
 # and cut anyway at the next line once it holds the second number.
@@ -228,9 +227,8 @@ def _read_passages(config: ProjectConfig, row, references: dict[int, str]):
     intermediate = converted_artifact_path(
         config.output_folder, relative, row["extension"], bool(row["needs_ocr"])
     )
-    if category == SIGNED_CATEGORY:
-        # O que veio dentro decide: PDF (páginas de verdade) ou texto.
-        category = PDF_CATEGORY if intermediate.suffix.lower() == ".pdf" else TEXT_CATEGORY
+    # Um assinado é lido como PDF ou como texto, conforme o que veio dentro.
+    category = category_to_read(category, intermediate)
     if category in READ_AS_PDF_CATEGORIES:
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative
         with _PDF_LOCK:
