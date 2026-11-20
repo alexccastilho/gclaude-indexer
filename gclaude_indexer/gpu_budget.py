@@ -48,6 +48,7 @@ import http.client
 import json
 import urllib.error
 import urllib.request
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from . import ollama_models
@@ -480,6 +481,13 @@ def loaded_model_share(url_base: str) -> dict | None:
     return {"model": None, "size_mb": 0, "vram_mb": 0}
 
 
+_MEASURE = object()
+# The card's total already measured by `plan`, which needs it twice (the
+# free VRAM and "the weights fit the card"); each reading is a PowerShell
+# process. Unset everywhere else: `free_vram_mb` measures.
+_measured_total: ContextVar = ContextVar("measured_total", default=_MEASURE)
+
+
 def free_vram_mb(model: str | None = None, url_base: str = "") -> int | None:
     """VRAM available to this run, in MB, or `None` when unmeasurable.
 
@@ -494,7 +502,9 @@ def free_vram_mb(model: str | None = None, url_base: str = "") -> int | None:
     try:
         from .windows_counters import vram_total_mb, vram_used_mb
 
-        total = vram_total_mb()
+        total = _measured_total.get()
+        if total is _MEASURE:
+            total = vram_total_mb()
         used = vram_used_mb()
     except Exception:
         return None
@@ -522,7 +532,19 @@ def plan(model: str, url_base: str, context_tokens: int) -> tuple[int | None, di
     """
     details: dict = {"model": model, "context_tokens": context_tokens}
 
-    free_mb = free_vram_mb(model, url_base)
+    # Measured once: the free VRAM below and "the weights fit the card"
+    # further down both need the card's total.
+    try:
+        from .windows_counters import vram_total_mb
+
+        total_mb = vram_total_mb()
+    except Exception:
+        total_mb = None
+    token = _measured_total.set(total_mb)
+    try:
+        free_mb = free_vram_mb(model, url_base)
+    finally:
+        _measured_total.reset(token)
     details["free_vram_mb"] = free_mb
 
     shape = describe_model(model, url_base)
@@ -541,12 +563,6 @@ def plan(model: str, url_base: str, context_tokens: int) -> tuple[int | None, di
     # way to find that out. Measured on the case that prompted this
     # work: an 8 GB RX 5000 running a 9.1 GB model, 17% of it on the
     # card and the rest on the CPU, at roughly a minute per window.
-    try:
-        from .windows_counters import vram_total_mb
-
-        total_mb = vram_total_mb()
-    except Exception:
-        total_mb = None
     if total_mb:
         details["vram_total_mb"] = int(total_mb)
         details["model_fits_card"] = (shape.total_bytes // MB) <= (int(total_mb) - SAFETY_MARGIN_MB)
