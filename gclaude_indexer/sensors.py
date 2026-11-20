@@ -332,7 +332,7 @@ def _open_computer(Hardware, *, with_motherboard: bool):
     # Disabled on purpose: enabling memory requires the RAMSPDToolkit
     # dependency (third-party, outside what was authorized) just to read
     # module SPD — since nobody asked for it. The memory clock already
-    # comes from WMI in `windows_counters.clock_memoria_mhz()`.
+    # comes from WMI in `windows_counters.memory_clock_mhz()`.
     computer.IsMemoryEnabled = False
     computer.Open()
     return computer

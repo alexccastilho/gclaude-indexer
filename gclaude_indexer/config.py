@@ -10,7 +10,7 @@
 
 `ConfigError.errors` carries `(key, params)` pairs — translation keys plus
 their format parameters, not rendered text — resolved to screen text by
-whoever *displays* them (`web/app.py`, via `i18n.translate`), not by
+whoever *displays* them (the web screens, via `i18n.translate`), not by
 whoever *raises* them. Before this, `_validate()` built
 plain Portuguese sentences directly (`f"{field} inválido: ..."`), which
 `new_project.html` then showed verbatim under an otherwise-translated "Fix

@@ -312,7 +312,7 @@ def request_helper_now(parent_pid: int) -> str:
     paths share `_launch` so the outcome codes, the status file and the
     staging of the helper's modules are one thing, not two. The only
     caller is a route that the web layer guards with four checks (see
-    `web/app.py:request_sensor_elevation`); nothing else may call this.
+    `web/routes_run.py:request_sensor_elevation`); nothing else may call this.
     """
     return _launch(parent_pid)
 

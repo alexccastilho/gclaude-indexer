@@ -15,7 +15,7 @@ Only the interface's *default* is decided here — a user who ever picks a
 language in the selector (`web/i18n.py`) keeps that choice via the
 `language` cookie from then on; this module only answers the question for
 whoever has not chosen one yet (see `web/i18n.py::DEFAULT_LANGUAGE`,
-`web/app.py::render()`).
+`web/rendering.py::render()`).
 
 Detection must never crash the application: an unresponsive, unusual or
 non-Windows system simply falls back to `FALLBACK_LANGUAGE` — the same

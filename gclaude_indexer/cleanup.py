@@ -16,7 +16,7 @@ status `'discovered'` — once successfully converted they never go back to
 that status, so running the conversion again would not regenerate them.
 
 Never touches the database, the artifacts, `raw_items.jsonl` or `logs/`
-— and never the source folder. Unlike `exclusao.py`, which deletes the
+— and never the source folder. Unlike `deletion.py`, which deletes the
 whole project, here the work's result is preserved.
 """
 

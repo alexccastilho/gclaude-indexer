@@ -65,8 +65,12 @@ def recommended_local_model(vram_mb: int | None = None) -> str:
 def model_to_use(config: ProjectConfig) -> str:
     """Model the 'local' engine will use.
 
-    The user's choice in the form wins; `DEFAULT_LOCAL_MODEL` is just the
-    default. This function used to ignore `config.local_model` and always
+    The user's choice in the form wins: any model name runs as written; a
+    profile (`fast`/`quality`) is the model it stands for, and `automatic`
+    (or nothing) is the card's profile (`recommended_local_model`). For a
+    profile or `automatic`, `DEFAULT_LOCAL_MODEL` runs instead when the
+    larger model is not downloaded yet and the smaller one is. This
+    function used to ignore `config.local_model` and always
     return the default — the selector on the screen was decorative. It
     started to matter when the user asked to compare the quality of
     different models, which is impossible if every run uses the same one.
