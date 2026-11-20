@@ -542,7 +542,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "step.windows.title": "5. Preparação de janelas",
         "step.classification.title": "6. Classificação",
         # `import`/`diagnostics`: not pipeline steps in
-        # `step_state.STEPS` — `import` is its own action button, run
+        # `pipeline.STEP_ORDER` — `import` is its own action button, run
         # separately from "Rodar tudo"; `diagnostics` is the hardware check
         # that runs inside step 6 (see `hardware.py`'s docstring for
         # `diagnose`/`choose_model`). Both needed a `step.*.title` entry so

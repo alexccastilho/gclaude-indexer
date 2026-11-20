@@ -469,7 +469,7 @@ def _minutes(seconds: float) -> int:
 
 
 def extract_pages(
-    conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
+    conn, config: ProjectConfig, *, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> ExtractionResult:
     groups = _build_groups(conn)
     result = ExtractionResult()

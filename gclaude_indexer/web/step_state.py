@@ -50,7 +50,6 @@ from ..file_status import (
 from ..paths import PROJECT_DB_NAME
 from ..project import load_project
 
-STEPS: tuple[str, ...] = ("scan", "conversion", "extraction", "windows", "classification")
 STATUSES: tuple[str, ...] = ("not_started", "pending", "running", "done")
 
 

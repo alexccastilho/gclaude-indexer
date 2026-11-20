@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import gclaude_indexer.catalog as catalogo_mod
 import gclaude_indexer.hardware as hardware_mod
 from gclaude_indexer.file_types import is_extension_allowed
+from gclaude_indexer import pipeline
 from gclaude_indexer.web import background_runs
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
@@ -125,13 +126,13 @@ def test_segundo_clique_nao_abre_outra_varredura(cliente, tmp_path, monkeypatch)
     projeto_id, _ = _criar_projeto(cliente, tmp_path)
     liberar = _contagem_lenta(monkeypatch)
     chamadas = []
-    original = background_runs._STEP_FUNCTIONS["scan"]
+    original = pipeline.STEP_FUNCTIONS["scan"]
 
     def contar_chamadas(*args, **kwargs):
         chamadas.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setitem(background_runs._STEP_FUNCTIONS, "scan", contar_chamadas)
+    monkeypatch.setitem(pipeline.STEP_FUNCTIONS, "scan", contar_chamadas)
 
     respostas = []
     cliques = [

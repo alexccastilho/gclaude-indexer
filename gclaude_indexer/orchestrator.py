@@ -76,7 +76,7 @@ def resolve_effective_engine(
 
 
 def run_classification(
-    conn: sqlite3.Connection, config: ProjectConfig, should_stop=None, language: str | None = None,
+    conn: sqlite3.Connection, config: ProjectConfig, *, should_stop=None, language: str | None = None,
     decision: EngineDecision | None = None,
 ) -> tuple[str, object]:
     """Runs step 6 (`rules`/`local`). Returns `(motor_usado, resultado)`.

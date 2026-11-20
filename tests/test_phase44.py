@@ -25,7 +25,7 @@ from gclaude_indexer.conversion import convert
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.fulltext import search
 from gclaude_indexer.scanning import scan
-from gclaude_indexer.web.background_runs import _STEP_FUNCTIONS
+from gclaude_indexer.pipeline import STEP_FUNCTIONS
 
 
 def _projeto(tmp_path):
@@ -53,7 +53,7 @@ def _gravar(caminho, texto, deslocamento=0):
 
 
 def _etapa(nome, conn, config):
-    _STEP_FUNCTIONS[nome](conn, config, None, None)
+    STEP_FUNCTIONS[nome](conn, config, should_stop=None, language=None)
 
 
 def _executar(conn, config, ate="extraction"):

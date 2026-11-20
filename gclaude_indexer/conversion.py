@@ -2321,7 +2321,7 @@ def _prepare_ocr(conn, config: ProjectConfig, heavy, legacy, should_stop, langua
 
 
 def convert(
-    conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
+    conn, config: ProjectConfig, *, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> ConversionResult:
     # Covers the sequential path, which runs `pytesseract` (and therefore
     # `tesseract.exe`) inside this very process. The parallel path installs

@@ -675,7 +675,7 @@ also the HTTP form field names, so the two never drift apart.
 | `extra_rules` | long text, edited on the Instructions screen (not in the form since 2.0.0) | empty | **shown to the classifying model** as context; appended to the generated instructions |
 
 **Execution.** One row per step (scan, conversion, extraction, windows,
-classification — `step_state.STEPS`), with status and count. A button runs
+classification — `pipeline.STEP_ORDER`), with status and count. A button runs
 the next step, and a separate "Import and generate reports" action runs
 import + artifact generation once classification is done; both trigger a
 background task and return immediately. Below: a progress bar with
