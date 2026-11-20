@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import re
 
-from .classification import ClassifiedItem, WindowPage
+from .classification import SUMMARY_CHAR_LIMIT, ClassifiedItem, WindowPage, item_for_pages
 from .engine_names import ENGINE_STRUCTURED
 from .html_text import STRUCK_MARK
 
@@ -108,7 +108,6 @@ def _site_header(lines: list[str]) -> bool:
 
 
 _SCAN_LINES = 15
-_SUMMARY_LIMIT = 600
 
 # The place and date line of acts that are not the President's:
 # "Congresso Nacional, em 21 de junho de 2005", "Capital Federal, 8 de
@@ -262,8 +261,8 @@ def parse(text: str) -> dict | None:
             if line.lower().startswith("art") or (len(line) > 120 and start == enacting_index and "ATO" in match.group("kind").upper()):
                 ementa = line
                 break
-    if len(ementa) > _SUMMARY_LIMIT:
-        ementa = ementa[: _SUMMARY_LIMIT - 1].rstrip() + "…"
+    if len(ementa) > SUMMARY_CHAR_LIMIT:
+        ementa = ementa[: SUMMARY_CHAR_LIMIT - 1].rstrip() + "…"
 
     kind = " ".join(match.group("kind").upper().split())
     kind = kind.replace("PROVISORIA", "PROVISÓRIA")
@@ -284,6 +283,13 @@ def parse(text: str) -> dict | None:
         "revoked": revoked,
         "has_ementa": bool(ementa),
     }
+
+
+def _recorded_order(page: WindowPage) -> int:
+    """`page.order` as recorded, without `page_order`'s fall back to the
+    reference number the other engines use (only differs for a page built
+    by hand, with no order)."""
+    return page.order
 
 
 def _is_web_page(page: WindowPage) -> bool:
@@ -309,13 +315,10 @@ def split(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], list[WindowPag
         if act is None:
             rest.append(page)
             continue
-        current = ClassifiedItem(
-            start_ref=page.reference, end_ref=page.reference,
-            start_order=page.order, end_order=page.order,
-            type=act["type"], date=act["date"], author=act["author"], summary=act["summary"],
-            has_table=page.has_table, has_image=page.image_count > 0,
-            engine=ENGINE, confidence="high" if act["has_ementa"] else "medium",
-            files=[page.file_name],
+        current = item_for_pages(
+            [page], engine=ENGINE, confidence="high" if act["has_ementa"] else "medium",
+            type_=act["type"], date=act["date"], author=act["author"], summary=act["summary"],
+            order_of=_recorded_order,
         )
         current_file = page.file_name
         items.append(current)

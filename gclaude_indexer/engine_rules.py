@@ -32,7 +32,7 @@ from .classification import (
     WindowPageLoader,
     load_window_pages,
     item_to_dict,
-    page_order,
+    item_for_pages,
     starts_new_document,
     validate_item,
 )
@@ -271,22 +271,11 @@ class RulesEngine:
         else:
             confidence = "medium"
 
-        files = list(dict.fromkeys(p.file_name for p in pages))
-
-        return ClassifiedItem(
-            start_ref=pages[0].reference,
-            end_ref=pages[-1].reference,
-            start_order=page_order(pages[0]),
-            end_order=page_order(pages[-1]),
-            type=type_,
-            date=date_value,
-            author=self._find_author(pages),
-            summary=self._find_summary(pages),
-            has_table=any(p.has_table for p in pages),
-            has_image=any(p.image_count > 0 for p in pages),
-            engine=ENGINE_RULES,
-            confidence=confidence,
-            files=files,
+        # No summary cap here, unlike the local engine and the Planalto acts
+        # (`classification.SUMMARY_CHAR_LIMIT`).
+        return item_for_pages(
+            pages, engine=ENGINE_RULES, confidence=confidence, type_=type_, date=date_value,
+            author=self._find_author(pages), summary=self._find_summary(pages),
         )
 
 

@@ -23,13 +23,13 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import date
 from pathlib import Path
 
 from .classification import (
     CLASSIFICATION_BATCH_SECONDS, WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages,
     item_to_dict, validate_item,
     page_order, starts_new_document, normalize_type,
+    SUMMARY_CHAR_LIMIT, files_sorted, is_calendar_day, item_for_pages, normalize_confidence,
 )
 from .config import ProjectConfig
 from .db import BatchWriter
@@ -1091,7 +1091,6 @@ def _extract_items_json(response_text: str) -> list[dict]:
     return []
 
 
-_ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _SHEET_PREFIX_REGEX = re.compile(r"^fl\.?")
 
 # The reference at the start of what the model returned, ignoring anything
@@ -1346,6 +1345,12 @@ _SECTION_TYPE_WORDS = frozenset({
 })
 
 
+def _answer_text(row: dict, key: str) -> str | None:
+    """A field of the model's answer for one page, as stripped text, or
+    `None` when it is missing or empty."""
+    return str(row[key]).strip() if row.get(key) else None
+
+
 def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[ClassifiedItem]:
     """Junta as linhas por página em peças, agrupando páginas seguidas do
     mesmo assunto.
@@ -1369,8 +1374,7 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
     def fechar():
         if not atual:
             return
-        primeira, dados = atual[0][0], atual[0][1]
-        ultima = atual[-1][0]
+        dados = atual[0][1]
         detalhes = [str(d.get("detail") or d.get("subject") or "").strip() for _p, d in atual]
         detalhes = [d for d in detalhes if d]
         # Sem detalhe nenhum vindo do modelo, o texto da própria página
@@ -1378,11 +1382,11 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
         if not detalhes:
             bruto = " ".join(" ".join(p.text.split()) for p, _d in atual).strip()
             detalhes = [bruto[:_FALLBACK_SUMMARY_CHARS]] if bruto else []
-        resumo = " ".join(dict.fromkeys(detalhes))[:_SUMMARY_CHAR_LIMIT] or None
+        resumo = " ".join(dict.fromkeys(detalhes))[:SUMMARY_CHAR_LIMIT] or None
 
         assunto = str(dados.get("subject") or "").strip()
         if assunto and resumo and not resumo.lower().startswith(assunto.lower()[:20]):
-            resumo = f"{assunto}: {resumo}"[:_SUMMARY_CHAR_LIMIT]
+            resumo = f"{assunto}: {resumo}"[:SUMMARY_CHAR_LIMIT]
 
         # Três casos, não dois. Uma página sobre a qual o modelo não disse
         # NADA entra no índice pelo agrupamento — essa garantia é o que
@@ -1397,20 +1401,14 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
             confianca = "medium"
         else:
             confianca = "low"
-        itens.append(ClassifiedItem(
-            start_ref=primeira.reference,
-            end_ref=ultima.reference,
-            start_order=page_order(primeira),
-            end_order=page_order(ultima),
-            type=str(dados["type"]).strip() if dados.get("type") else None,
-            date=str(dados["date"]).strip() if dados.get("date") else None,
-            author=str(dados["author"]).strip() if dados.get("author") else None,
-            summary=resumo,
+        paginas = [p for p, _d in atual]
+        itens.append(item_for_pages(
+            paginas, engine=ENGINE_LOCAL, confidence=confianca,
+            type_=_answer_text(dados, "type"), date=_answer_text(dados, "date"),
+            author=_answer_text(dados, "author"), summary=resumo,
             has_table=any(bool(d.get("has_table")) or p.has_table for p, d in atual),
             has_image=any(bool(d.get("has_image")) or bool(p.image_count) for p, d in atual),
-            engine=ENGINE_LOCAL,
-            confidence=confianca,
-            files=sorted({p.file_name for p, _d in atual}),
+            files=files_sorted,
         ))
         atual.clear()
 
@@ -1537,42 +1535,28 @@ def _dict_to_item(
         return None
 
     item_pages = [p for p in pages if start_order <= page_order(p) <= end_order]
-    files = list(dict.fromkeys(p.file_name for p in item_pages))
 
     type_ = raw.get("type")
     if not isinstance(type_, str):
         type_ = None
 
-    date_value = raw.get("date")
-    if not (isinstance(date_value, str) and _ISO_DATE_REGEX.match(date_value)):
-        date_value = None
-    else:
-        try:
-            date.fromisoformat(date_value)
-        except ValueError:
-            date_value = None
+    # Only a full calendar day: unlike `classification.normalize_date`,
+    # which keeps `AAAA` and `AAAA-MM`, this mode drops a partial date.
+    date_value = raw.get("date") if is_calendar_day(raw.get("date")) else None
 
     author = raw.get("author") if isinstance(raw.get("author"), str) else None
     summary = raw.get("summary") if isinstance(raw.get("summary"), str) else None
 
-    confidence = raw.get("confidence")
-    if confidence not in ("high", "medium", "low"):
-        confidence = "low"  # engine did not report it properly -> treat with suspicion
-
-    return ClassifiedItem(
-        start_ref=start_ref,
-        end_ref=end_ref,
-        start_order=start_order,
-        end_order=end_order,
-        type=type_,
-        date=date_value,
-        author=author,
-        summary=summary,
-        has_table=bool(raw.get("has_table")) or any(p.has_table for p in item_pages),
-        has_image=bool(raw.get("has_image")) or any(p.image_count > 0 for p in item_pages),
-        engine=ENGINE_LOCAL,
-        confidence=confidence,
-        files=files,
+    # The references the model named, which `item_pages` may not start and
+    # end with when two references collide after normalization.
+    return replace(
+        item_for_pages(
+            item_pages, engine=ENGINE_LOCAL, confidence=normalize_confidence(raw.get("confidence")),
+            type_=type_, date=date_value, author=author, summary=summary,
+            has_table=bool(raw.get("has_table")) or any(p.has_table for p in item_pages),
+            has_image=bool(raw.get("has_image")) or any(p.image_count > 0 for p in item_pages),
+        ),
+        start_ref=start_ref, end_ref=end_ref, start_order=start_order, end_order=end_order,
     )
 
 
@@ -1672,13 +1656,6 @@ def _log_rejection_warnings(
 # índice, e não uma cópia do acervo.
 _FALLBACK_SUMMARY_CHARS = 300
 
-# Teto do resumo de uma peça. O índice inteiro precisa caber no contexto de
-# um projeto do Claude, e é a soma destes resumos que o ocupa — um resumo
-# sem limite transformaria o índice numa segunda cópia do acervo, que é
-# exatamente o que ele existe para evitar.
-_SUMMARY_CHAR_LIMIT = 600
-
-
 # Resumo da peça de uma página sem texto e sem imagem (tipo
 # `item_normalize.BLANK_PAGE_TYPE`). É o que o acervo traz de
 # verdade (a folha em branco de um volume encadernado): conhecida pelo código,
@@ -1711,12 +1688,9 @@ def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], li
         else:
             blocks.append([page])
     for block in blocks:
-        items.append(ClassifiedItem(
-            start_ref=block[0].reference, end_ref=block[-1].reference,
-            start_order=page_order(block[0]), end_order=page_order(block[-1]),
-            type=BLANK_PAGE_TYPE, date=None, author=None, summary=BLANK_PAGE_SUMMARY,
-            has_table=False, has_image=False, engine=ENGINE_LOCAL, confidence="high",
-            files=sorted({p.file_name for p in block}),
+        items.append(item_for_pages(
+            block, engine=ENGINE_LOCAL, confidence="high", type_=BLANK_PAGE_TYPE, summary=BLANK_PAGE_SUMMARY,
+            has_table=False, has_image=False, files=files_sorted,
         ))
     return items, [page for page in pages if not is_blank_page(page)]
 
@@ -1774,20 +1748,8 @@ def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
         resumo = texto[:_FALLBACK_SUMMARY_CHARS].rstrip()
         if len(texto) > _FALLBACK_SUMMARY_CHARS:
             resumo += "…"
-        itens.append(ClassifiedItem(
-            start_ref=bloco[0].reference,
-            end_ref=bloco[-1].reference,
-            start_order=page_order(bloco[0]),
-            end_order=page_order(bloco[-1]),
-            type=None,
-            date=None,
-            author=None,
-            summary=resumo or None,
-            has_table=any(p.has_table for p in bloco),
-            has_image=any(p.image_count for p in bloco),
-            engine=ENGINE_LOCAL,
-            confidence="low",
-            files=sorted({p.file_name for p in bloco}),
+        itens.append(item_for_pages(
+            bloco, engine=ENGINE_LOCAL, confidence="low", summary=resumo or None, files=files_sorted,
         ))
     return itens
 
