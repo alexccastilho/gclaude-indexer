@@ -43,7 +43,7 @@ from .artifacts import (
     rule_section,
     subject_or_placeholder,
 )
-from .catalog import CatalogEntry, find_project
+from .catalog import CatalogEntry, find_member
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig, default_value
 from .i18n import DEFAULT_LANGUAGE, translate
@@ -157,7 +157,7 @@ def load_members(entry: SetEntry, language: str = DEFAULT_LANGUAGE) -> list[Memb
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     members: list[Member] = []
     for member in entry.members:
-        catalog = find_project(member.project_id)
+        catalog = find_member(member.project_id, member.project_created_at)
         if catalog is None:
             members.append(Member(member, None, None, False, t("combined.reason_removed")))
             continue

@@ -42,6 +42,12 @@ DEFAULT_ALIAS = "acervo"
 class SetMember:
     project_id: int
     alias: str
+    # O carimbo `created_at` da entrada do catálogo quando o projeto entrou
+    # no conjunto. O id não é identidade: o catálogo dá ao projeto novo o id
+    # de um excluído e renumera ids que colidem. A mudança de pasta e a
+    # renumeração não tocam no carimbo (`catalog.find_member`). Vazio num
+    # conjunto gravado antes dele: vale o id, como antes.
+    project_created_at: str = ""
 
 
 @dataclass
@@ -86,7 +92,9 @@ def unique_aliases(members: list[SetMember]) -> list[SetMember]:
     for member in members:
         alias = propose_alias(member.alias, usados)
         usados.add(alias)
-        resultado.append(SetMember(project_id=int(member.project_id), alias=alias))
+        resultado.append(SetMember(
+            project_id=int(member.project_id), alias=alias, project_created_at=member.project_created_at,
+        ))
     return resultado
 
 
@@ -105,7 +113,10 @@ def _read() -> list[SetEntry]:
         raw_members = item.get("members") or []
         try:
             members = [
-                SetMember(project_id=int(m["project_id"]), alias=str(m.get("alias", "")))
+                SetMember(
+                    project_id=int(m["project_id"]), alias=str(m.get("alias", "")),
+                    project_created_at=str(m.get("project_created_at") or ""),
+                )
                 for m in raw_members if isinstance(m, dict) and "project_id" in m
             ]
             entry = SetEntry(**{k: v for k, v in item.items() if k in known}, members=unique_aliases(members))

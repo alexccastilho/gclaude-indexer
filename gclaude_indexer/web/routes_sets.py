@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..catalog import catalog_folder, list_projects
+from ..catalog import catalog_folder, find_member, list_projects
 from .. import claude_package, combined_package
 from ..output_names import INDEX_FILENAME
 from ..sets import SetEntry, SetMember, find_set, list_sets, propose_alias, remove_set, save_set
@@ -50,12 +50,24 @@ def _project_join_reason(e, language: str) -> str:
     return ""
 
 
+def _members_by_current_id(entry: SetEntry) -> dict[int, SetMember]:
+    """Each member under the id its project has in the catalog now
+    (`find_member`): the recorded id may belong to another project by now.
+    A member whose project is gone is left out."""
+    current = {}
+    for member in entry.members:
+        project = find_member(member.project_id, member.project_created_at)
+        if project is not None:
+            current[project.id] = member
+    return current
+
+
 def _project_choices(language: str, entry: SetEntry) -> list[dict]:
     """Every catalog project, with whether it can join a set and why not.
     Shown disabled rather than hidden: the person sees the project is
     known and learns what to do (generate its reports, or open it on the
     computer that has it)."""
-    aliases = {m.project_id: m.alias for m in entry.members}
+    aliases = {project_id: m.alias for project_id, m in _members_by_current_id(entry).items()}
     choices = []
     for e in list_projects():
         reason = _project_join_reason(e, language)
@@ -92,13 +104,14 @@ def _set_from_form(form, entry: SetEntry, language: str) -> list[str]:
         selectable.add(e.id)
         if str(form.get(f"project_{e.id}", "")) == "1":
             alias = str(form.get(f"alias_{e.id}", "")).strip() or e.name
-            members.append(SetMember(project_id=e.id, alias=alias))
+            members.append(SetMember(project_id=e.id, alias=alias, project_created_at=e.created_at))
     # Um membro fora do ar (Drive de outro computador, pasta renomeada) vem
     # desabilitado na tela e o navegador não o envia. Ele continua no
     # conjunto: a revisão da fase 38 viu o conjunto perder o
     # membro só porque a pessoa corrigiu o texto pessoal. Para tirá-lo, a
     # pasta precisa estar acessível (ou apaga-se o conjunto).
-    members += [m for m in entry.members if m.project_id not in selectable]
+    current = {id(m): project_id for project_id, m in _members_by_current_id(entry).items()}
+    members += [m for m in entry.members if current.get(id(m)) not in selectable]
     entry.members = members
     errors = []
     if not entry.name:
@@ -119,12 +132,12 @@ def _save_set_body(request: Request, form, entry: SetEntry):
 
 @router.get("/sets", response_class=HTMLResponse)
 def sets_screen(request: Request):
-    names = {e.id: e.name for e in list_projects()}
+    def name(member: SetMember) -> str:
+        project = find_member(member.project_id, member.project_created_at)
+        return project.name if project is not None else f"#{member.project_id}"
+
     rows = [
-        {
-            "entry": entry,
-            "members": ", ".join(f"{m.alias} ({names.get(m.project_id, '#' + str(m.project_id))})" for m in entry.members),
-        }
+        {"entry": entry, "members": ", ".join(f"{m.alias} ({name(m)})" for m in entry.members)}
         for entry in list_sets()
     ]
     return render(request, "sets.html", {"sets": rows})
