@@ -427,7 +427,6 @@ def test_queda_no_meio_dos_renames_e_retomada(local, tmp_path, monkeypatch, usua
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(local))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(local / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
-    monkeypatch.setattr(relocation, "_journal_path", lambda: tmp_path / "_relocation_local" / relocation.JOURNAL_FILE_NAME)
 
     assert relocation.pending_for(saida) is not None
     assert relocation.recover(saida)
@@ -462,7 +461,6 @@ def test_queda_depois_da_confirmacao_conclui_na_abertura(local, tmp_path, monkey
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(local))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(local / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
-    monkeypatch.setattr(relocation, "_journal_path", lambda: tmp_path / "_relocation_local" / relocation.JOURNAL_FILE_NAME)
 
     assert relocation.pending_for(saida)["phase"] == "committed"
     assert relocation.recover(saida)
@@ -746,9 +744,6 @@ def _religar(monkeypatch, local, tmp_path):
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(local))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(local / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
-    pasta = tmp_path / "_relocation_local"
-    monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
-    monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
     monkeypatch.setattr(project_access, "_relocation_due", lambda config: False)
 
 
