@@ -31,7 +31,7 @@ from gclaude_indexer.config import load_config
 from gclaude_indexer.conversion import convert, ocr_retry_count
 from gclaude_indexer.db import connect, init_schema
 from gclaude_indexer.events import list_events
-from gclaude_indexer.file_types import is_waiting_component
+from gclaude_indexer.file_status import is_waiting_component
 from gclaude_indexer.extraction import extract_pages
 from gclaude_indexer.invalidation import apply_pending_changes
 from gclaude_indexer.scanning import scan

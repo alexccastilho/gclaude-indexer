@@ -39,6 +39,7 @@ from .classification import (
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
+from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .html_text import without_struck_text
 from .paths import RAW_ITEMS_FILE_NAME, app_root
 
@@ -315,7 +316,7 @@ def classify_pending(
     result = RulesClassificationResult()
 
     pending_windows = conn.execute(
-        "SELECT * FROM window WHERE status = 'pending' ORDER BY id"
+        "SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)
     ).fetchall()
 
     loader = WindowPageLoader(conn)  # One read of each group's order
@@ -358,9 +359,7 @@ def classify_pending(
                         result.low_confidence += 1
 
                 jsonl_file.flush()
-                writer.add(lambda c, window_id=window["id"]: c.execute(
-                    "UPDATE window SET status = 'done' WHERE id = ?", (window_id,)
-                ))
+                writer.add(lambda c, window_id=window["id"]: c.execute(MARK_WINDOW_DONE, (window_id,)))
                 result.windows_processed += 1
             writer.flush()
         except BaseException:

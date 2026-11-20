@@ -44,6 +44,9 @@ import threading
 from typing import Callable
 
 from ..conversion import ocr_retry_count
+from ..file_status import (
+    CONVERSION_SUCCEEDED, DISCOVERED, EXTRACTED, FAILED, SKIPPED, WINDOW_DONE, WINDOW_PENDING,
+)
 from ..paths import PROJECT_DB_NAME
 from ..project import load_project
 
@@ -74,10 +77,11 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     total_files = sum(by_status.values())
     # Plus the files whose OCR failed: the next conversion sends
     # them back to the queue, so the step is not done while they wait.
-    discovered = by_status.get("discovered", 0) + ocr_retry_count(conn)
-    converted = by_status.get("converted", 0) + by_status.get("extracted", 0)
-    failed = by_status.get("failed", 0)
-    extracted = by_status.get("extracted", 0)
+    # The progress bar (`background_runs`) counts `discovered` only and `failed` as done: differs; see decisoes.md B.
+    discovered = by_status.get(DISCOVERED, 0) + ocr_retry_count(conn)
+    converted = sum(by_status.get(status, 0) for status in CONVERSION_SUCCEEDED)
+    failed = by_status.get(FAILED, 0)
+    extracted = by_status.get(EXTRACTED, 0)
     total_pages = conn.execute("SELECT COUNT(*) FROM page").fetchone()[0]
     # The full-text search is indexed at the end of the extraction
     # step; the step is not done while files wait for it. Before, a pause
@@ -85,10 +89,11 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     # on, with the search never finished.
     fulltext_pending = max(0, extracted - conn.execute(
         "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id"
-        " WHERE file.status = 'extracted'"
+        " WHERE file.status = ?", (EXTRACTED,),
     ).fetchone()[0])
     total_windows = conn.execute("SELECT COUNT(*) FROM window").fetchone()[0]
-    windows_done = conn.execute("SELECT COUNT(*) FROM window WHERE status = 'done'").fetchone()[0]
+    windows_done = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
+    # Total minus done, where the progress bar counts `pending` rows: differs; see decisoes.md B.
     windows_pending = total_windows - windows_done
 
     def done_or(ready: bool, started: bool) -> str:
@@ -100,7 +105,7 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
         # `ignored` (files left out for being unindexable) only appears when
         # there are any, and picks the card's other text.
         ("scan", done_or(total_files > 0, total_files > 0),
-         {"total": total_files, **({"ignored": by_status["skipped"]} if by_status.get("skipped") else {})}),
+         {"total": total_files, **({"ignored": by_status[SKIPPED]} if by_status.get(SKIPPED) else {})}),
         ("conversion", done_or(total_files > 0 and discovered == 0, total_files > 0),
          {"converted": converted, "failed": failed, "pending": discovered}),
         ("extraction",
@@ -183,7 +188,7 @@ def _project_status(output_folder: str) -> tuple[str, dict[str, int]]:
     try:
         total_items = conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]
         windows_pending = conn.execute(
-            "SELECT COUNT(*) FROM window WHERE status = 'pending'"
+            "SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)
         ).fetchone()[0]
         total_files = conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
     finally:

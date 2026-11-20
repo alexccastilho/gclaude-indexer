@@ -51,10 +51,8 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed,
-    is_waiting_component, name_decision,
-)
+from .file_status import DUPLICATE, OUT_OF_INDEX, STALE_PAGES_EXEMPT, in_params, is_waiting_component
+from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_extension_allowed, name_decision
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .source_folder import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
@@ -117,12 +115,14 @@ def stale_page_paths(conn: sqlite3.Connection) -> set[str]:
     Cheap on a large project: only the few files not yet extracted are
     looked at, each by the `(file_id, number)` index.
     """
+    marks, exempt = in_params(STALE_PAGES_EXEMPT)
     return {
         row[0]
         for row in conn.execute(
             "SELECT file.relative_path FROM file"
-            " WHERE file.status NOT IN ('extracted', 'duplicate')"
-            " AND EXISTS (SELECT 1 FROM page WHERE page.file_id = file.id)"
+            f" WHERE file.status NOT IN ({marks})"
+            " AND EXISTS (SELECT 1 FROM page WHERE page.file_id = file.id)",
+            exempt,
         )
     }
 
@@ -361,7 +361,7 @@ def detect_changes(
         # `midia`, segredo, atalho do Google…) mas já está no índice de uma
         # versão anterior sai como removido, com a confirmação de sempre; a
         # varredura volta a listá-lo como ignorado. Só pelo nome: nada é lido.
-        if row["status"] not in ("skipped", "duplicate") and name_decision(
+        if row["status"] not in OUT_OF_INDEX and name_decision(
             path.name, config.extensions
         ) is not None:
             if include_removed:
@@ -780,9 +780,10 @@ def _stored_geometry(
                COUNT(page.id)     AS page_rows
         FROM file
         LEFT JOIN page ON page.file_id = file.id
-        WHERE file.group_key IS NOT NULL AND file.status != 'duplicate'
+        WHERE file.group_key IS NOT NULL AND file.status != ?
         GROUP BY file.id
-        """
+        """,
+        (DUPLICATE,),
     ).fetchall()
 
     stored_by_group: dict[str, list[tuple[str, int]]] = {}
@@ -855,7 +856,7 @@ def _intended_membership(
     ):
         if row["relative_path"] in removed_paths:
             continue
-        if row["group_key"] is not None and row["status"] != "duplicate":
+        if row["group_key"] is not None and row["status"] != DUPLICATE:
             members.append((row["relative_path"], row["group_key"]))
         if row["sha256"]:
             hashes_by_size.setdefault(row["size"], set()).add(row["sha256"])

@@ -48,9 +48,10 @@ from .fulltext import remove_file as remove_from_search
 from .file_types import (
     ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
     REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
-    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, is_waiting_component,
-    looks_binary,
+    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, looks_binary,
 )
+from . import file_status
+from .file_status import is_waiting_component
 from .html_text import STRUCK_MARK, html_to_text, looks_like_html, mark_struck
 from .text_decoding import decode_bytes, decode_markup
 
@@ -890,10 +891,7 @@ def _convert_signed(
             for item in signed.signatures
         ]
 
-    skipped_sql = (
-        "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0, ocr_failed = 0"
-        " WHERE id = ?"
-    )
+    skipped_sql = file_status.MARK_SKIPPED
     if signed.content is None:
         sibling = _detached_sibling(source_path, relative_path)
         return {
@@ -927,10 +925,7 @@ def _convert_signed(
         needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
             config, row["name"], content, output_dir, relative_path, extension, ocrmypdf_jobs, events, row, notes
         )
-        sql = (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
-            " ocr_failed = ? WHERE id = ?"
-        )
+        sql = file_status.MARK_CONVERTED
         return {
             "sql": sql, "params": (page_count, int(needs_ocr), int(ocr_failed), row["id"]),
             "ocr_applied": ocr_applied, "signatures": signatures,
@@ -957,10 +952,7 @@ def _convert_signed(
             "conversion", "info", "log.conversion.ocr_applied",
             {"name": row["name"], "ocr_language": config.ocr_language},
         ))
-    sql = (
-        "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = ?,"
-        " ocr_failed = ? WHERE id = ?"
-    )
+    sql = file_status.MARK_CONVERTED_ONE_PAGE
     return {
         "sql": sql, "params": (int(is_image), int(ocr_pending), row["id"]),
         "ocr_applied": is_image and not ocr_pending, "signatures": signatures,
@@ -1000,10 +992,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         needs_ocr, ocr_failed, ocr_applied, page_count = _ocr_pdf_pages(
             config, name, source_path, destination, ocrmypdf_jobs, events, row, notes
         )
-        sql = (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
-            " ocr_failed = ? WHERE id = ?"
-        )
+        sql = file_status.MARK_CONVERTED
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
     elif category == "paginados":
@@ -1013,10 +1002,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             config, name, light_formats.convert_to_pdf_bytes(source_path), output_dir, relative_path,
             row["extension"], ocrmypdf_jobs, events, row, notes,
         )
-        sql = (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
-            " ocr_failed = ? WHERE id = ?"
-        )
+        sql = file_status.MARK_CONVERTED
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
     elif category == LEGACY_CATEGORY:
@@ -1027,20 +1013,14 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             # aviso (uma vez só) sai em `convert`.
             return {
                 "id": row["id"], "name": name, "events": [], "ocr_applied": False,
-                "sql": (
-                    "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
-                    " ocr_failed = 1 WHERE id = ?"
-                ),
+                "sql": file_status.MARK_SKIPPED_FOR_RETRY,
                 "params": (REASON_COMPONENT_UNAVAILABLE, row["id"]),
             }
         needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
             config, name, legacy_office.convert_to_pdf_bytes(source_path, soffice), output_dir,
             relative_path, row["extension"], ocrmypdf_jobs, events, row, notes,
         )
-        sql = (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = ?,"
-            " ocr_failed = ? WHERE id = ?"
-        )
+        sql = file_status.MARK_CONVERTED
         params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
 
     elif category == "assinados":
@@ -1078,10 +1058,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             ocr_failed = True
         destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(row["extension"]))
         destination.write_text(text, encoding="utf-8")
-        sql = (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 1,"
-            " ocr_failed = ? WHERE id = ?"
-        )
+        sql = file_status.MARK_CONVERTED_IMAGE
         params = (int(ocr_failed), row["id"])
 
     elif category in _TEXT_CATEGORIES:
@@ -1091,7 +1068,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
         destination.write_text(text, encoding="utf-8")
         # A caixa `.mbox` tem uma página por mensagem.
         pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == "mbox" else 1
-        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0 WHERE id = ?"
+        sql = file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG
         params = (pages, row["id"])
 
     else:
@@ -1109,7 +1086,7 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
             text = decode_bytes(source_path.read_bytes())[0]
         destination = workdir.destination(output_dir, "converted", relative_path, ".txt")
         destination.write_text(text, encoding="utf-8")
-        sql = "UPDATE file SET status = 'converted', error = NULL, page_count = 1, needs_ocr = 0 WHERE id = ?"
+        sql = file_status.MARK_CONVERTED_PLAIN_KEEP_OCR_FLAG
         params = (row["id"],)
 
     return {
@@ -1228,7 +1205,7 @@ def _record_failure(
 
     def op(conn) -> None:
         conn.execute(
-            "UPDATE file SET status = 'failed', error = ?, ocr_failed = ? WHERE id = ?",
+            file_status.MARK_CONVERSION_FAILED,
             (error_message, int(ocr_failed), row["id"]),
         )
         record_event(
@@ -1407,17 +1384,19 @@ def _ocr_retry_candidates(conn) -> tuple[list, list[str]]:
     list (`components_held_back`)."""
     has_windows = conn.execute("SELECT 1 FROM window LIMIT 1").fetchone() is not None
     windowed = _groups_with_windows(conn) if has_windows else set()
+    marks, finished = file_status.in_params(file_status.CONVERSION_FINISHED)
     rows = conn.execute(
         "SELECT id, name, status, error, group_key, extension FROM file WHERE ocr_failed = 1"
-        " AND (status IN ('converted', 'extracted', 'failed')"
+        f" AND (status IN ({marks})"
         # Um `skipped` só volta à fila se foi a falta do componente que o
         # deixou assim; o que a varredura recusou (segredo, binário,
         # compactado…) nunca é reaberto por aqui.
-        f" OR (status = 'skipped' AND error = '{REASON_COMPONENT_UNAVAILABLE}')) ORDER BY relative_path"
+        f" OR {file_status.WAITING_COMPONENT_SQL}) ORDER BY relative_path",
+        (*finished, *file_status.WAITING_COMPONENT_PARAMS),
     ).fetchall()
     rows = [row for row in rows if not _waiting_component(row, windowed)]
-    requeue = [row for row in rows if not (row["status"] == "extracted" and has_windows)]
-    held_back = [row["name"] for row in rows if row["status"] == "extracted" and has_windows]
+    requeue = [row for row in rows if not (row["status"] == file_status.EXTRACTED and has_windows)]
+    held_back = [row["name"] for row in rows if row["status"] == file_status.EXTRACTED and has_windows]
     return requeue, held_back
 
 
@@ -1429,7 +1408,8 @@ def components_held_back(conn) -> list:
         return []
     rows = conn.execute(
         "SELECT id, name, status, error, group_key, extension FROM file"
-        f" WHERE status = 'skipped' AND error = '{REASON_COMPONENT_UNAVAILABLE}' ORDER BY relative_path"
+        f" WHERE {file_status.WAITING_COMPONENT_SQL} ORDER BY relative_path",
+        file_status.WAITING_COMPONENT_PARAMS,
     ).fetchall()
     return [row for row in rows if _waiting_component(row, windowed)]
 
@@ -1461,11 +1441,8 @@ def requeue_ocr_failures(conn, language: str | None = None) -> int:
         for row in rows:
             remove_from_search(conn, row["id"])
             conn.execute("DELETE FROM page WHERE file_id = ?", (row["id"],))
-            # Same reset as a changed file in `invalidation.apply_update`.
-            conn.execute(
-                "UPDATE file SET status = 'discovered', page_count = NULL, error = NULL WHERE id = ?",
-                (row["id"],),
-            )
+            # Unlike a changed file (`invalidation._apply`), keeps `ocr_lang`/`language`: the bytes are the same.
+            conn.execute(file_status.RESET_TO_DISCOVERED_KEEP_LANGUAGE, (row["id"],))
             requeued += 1
         if requeued:
             record_event(
@@ -1709,10 +1686,7 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
     except outlook.ReaderUnavailable:
         return {
             "id": row["id"], "name": name, "events": [], "ocr_applied": False, "unavailable": True,
-            "sql": (
-                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
-                " ocr_failed = 0 WHERE id = ?"
-            ),
+            "sql": file_status.MARK_SKIPPED,
             "params": (REASON_UNSUPPORTED, row["id"]),
         }
     if result.truncated == "messages":
@@ -1742,7 +1716,7 @@ def _process_outlook(config: ProjectConfig, row: dict, should_stop) -> dict | No
         ))
     return {
         "id": row["id"], "name": name, "events": events, "ocr_applied": False,
-        "sql": "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0 WHERE id = ?",
+        "sql": file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG,
         "params": (result.pages, row["id"]),
     }
 
@@ -1803,10 +1777,7 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
         # Lista de reprodução ou roteiro disfarçado de mídia: não é lido.
         return {
             "id": row["id"], "name": name, "events": [], "ocr_applied": False,
-            "sql": (
-                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0,"
-                " ocr_failed = 0 WHERE id = ?"
-            ),
+            "sql": file_status.MARK_SKIPPED,
             "params": (REASON_UNSUPPORTED, row["id"]),
         }
     events: list[tuple[str, str, str, dict]] = []
@@ -1824,10 +1795,7 @@ def _process_media(config: ProjectConfig, row: dict, tools: media.Toolset, shoul
         ))
     return {
         "id": row["id"], "name": name, "events": events, "ocr_applied": False,
-        "sql": (
-            "UPDATE file SET status = 'converted', error = NULL, page_count = ?, needs_ocr = 0,"
-            " ocr_failed = 0 WHERE id = ?"
-        ),
+        "sql": file_status.MARK_CONVERTED_TEXT_CLEAR_OCR_FLAG,
         "params": (outcome.pages, row["id"]),
         # O idioma da fala (whisper) vai para `file.language`, como o de
         # qualquer documento; até a Tarefa 12 ia para um `.idioma` ao lado.
@@ -1854,9 +1822,7 @@ def _convert_media(conn, config: ProjectConfig, rows, should_stop, result, langu
     if found is None:
         def mark(row):
             return lambda c: c.execute(
-                "UPDATE file SET status = 'skipped', error = ?, page_count = NULL, needs_ocr = 0, ocr_failed = 1"
-                " WHERE id = ?",
-                (REASON_COMPONENT_UNAVAILABLE, row["id"]),
+                file_status.MARK_SKIPPED_FOR_RETRY, (REASON_COMPONENT_UNAVAILABLE, row["id"]),
             )
 
         try:
@@ -2015,11 +1981,12 @@ def _group_language(conn, config: ProjectConfig, group_key: str) -> str | None:
     )
     if known:
         return known
+    marks, with_intermediate = file_status.in_params(file_status.HAS_INTERMEDIATE)
     rows = conn.execute(
         "SELECT id, relative_path, extension, needs_ocr FROM file WHERE group_key = ?"
-        " AND status IN ('converted', 'extracted') AND (language IS NULL OR language = '')"
+        f" AND status IN ({marks}) AND (language IS NULL OR language = '')"
         " ORDER BY relative_path",
-        (group_key,),
+        (group_key, *with_intermediate),
     ).fetchall()
     found = []
     for row in rows:
@@ -2296,7 +2263,7 @@ def convert(
     _obtain_held_components(conn, should_stop, language)
 
     rows = conn.execute(
-        "SELECT * FROM file WHERE status = 'discovered' ORDER BY relative_path"
+        "SELECT * FROM file WHERE status = ? ORDER BY relative_path", (file_status.DISCOVERED,)
     ).fetchall()
 
     # Two queues. OCR (PDFs, images) is CPU-bound and keeps the

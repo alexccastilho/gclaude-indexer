@@ -29,6 +29,10 @@ from pathlib import Path
 
 from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
+from ..file_status import (
+    CONVERSION_FINISHED, CONVERTED, DISCOVERED, EXTRACTED, EXTRACTION_FINISHED, SKIPPED, WINDOW_DONE,
+    WINDOW_PENDING, in_params,
+)
 from ..i18n import DEFAULT_LANGUAGE, translate
 from ..run_control import OperationCancelled, StopSignal
 from ..invalidation import apply_pending_changes
@@ -189,36 +193,43 @@ def _ignored_count(output_folder) -> int:
     except Exception:
         return 0
     try:
-        return conn.execute("SELECT COUNT(*) FROM file WHERE status = 'skipped'").fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM file WHERE status = ?", (SKIPPED,)).fetchone()[0]
     except Exception:
         return 0
     finally:
         conn.close()
 
 
+# Which `file.status` values mean "this step is done with this file", per
+# step. Shared by the count, the total and the weight queries so they can
+# never disagree about what counts as finished.
+_DONE_STATUSES = {
+    "conversion": CONVERSION_FINISHED,
+    "extraction": EXTRACTION_FINISHED,
+}
+# The `file.status` a file waits in for each step, beside its inverse above.
+# The Execution cards (`step_state.step_status`) count pending differently; see decisoes.md B.
+_PENDING_STATUS = {
+    "conversion": DISCOVERED,
+    "extraction": CONVERTED,
+}
+
+
+def _count_files_in(conn, statuses: tuple[str, ...]) -> int:
+    marks, values = in_params(statuses)
+    return conn.execute(f"SELECT COUNT(*) FROM file WHERE status IN ({marks})", values).fetchone()[0]
+
+
 def _current_count(conn, step: str) -> int:
     if step == "scan":
         return conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
-    if step == "conversion":
-        return conn.execute(
-            "SELECT COUNT(*) FROM file WHERE status IN ('converted','extracted','failed')"
-        ).fetchone()[0]
-    if step == "extraction":
-        return conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
+    if step in _DONE_STATUSES:
+        return _count_files_in(conn, _DONE_STATUSES[step])
     if step == "windows":
         return conn.execute("SELECT COUNT(DISTINCT group_key) FROM window").fetchone()[0]
     if step == "classification":
-        return conn.execute("SELECT COUNT(*) FROM window WHERE status = 'done'").fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
     return 0
-
-
-# Which `file.status` values mean "this step is done with this file", per
-# step. Shared by the count and the weight queries so the two can never
-# disagree about what counts as finished.
-_DONE_STATUSES = {
-    "conversion": ("converted", "extracted", "failed"),
-    "extraction": ("extracted",),
-}
 
 
 def _weight_done(conn, step: str) -> float | None:
@@ -245,7 +256,7 @@ def _weight_done(conn, step: str) -> float | None:
 
 def _weight_pending(conn, step: str) -> float | None:
     """Bytes still waiting for `step`, or `None` when not measured in bytes."""
-    pending_status = {"conversion": "discovered", "extraction": "converted"}.get(step)
+    pending_status = _PENDING_STATUS.get(step)
     if pending_status is None:
         return None
     try:
@@ -273,25 +284,19 @@ def _weight_total_and_baseline(conn, step: str) -> tuple[float, float]:
 
 
 def _total_and_baseline(conn, step: str) -> tuple[int, int]:
-    if step == "conversion":
-        baseline = conn.execute(
-            "SELECT COUNT(*) FROM file WHERE status IN ('converted','extracted','failed')"
-        ).fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'discovered'").fetchone()[0]
-        return pending, baseline
-    if step == "extraction":
-        baseline = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'converted'").fetchone()[0]
+    if step in _DONE_STATUSES:
+        baseline = _count_files_in(conn, _DONE_STATUSES[step])
+        pending = _count_files_in(conn, (_PENDING_STATUS[step],))
         return pending, baseline
     if step == "windows":
         baseline = conn.execute("SELECT COUNT(DISTINCT group_key) FROM window").fetchone()[0]
         pending = conn.execute(
-            "SELECT COUNT(DISTINCT group_key) FROM file WHERE group_key IS NOT NULL AND status = 'extracted'"
+            "SELECT COUNT(DISTINCT group_key) FROM file WHERE group_key IS NOT NULL AND status = ?", (EXTRACTED,)
         ).fetchone()[0]
         return pending, baseline
     if step == "classification":
-        baseline = conn.execute("SELECT COUNT(*) FROM window WHERE status = 'done'").fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM window WHERE status = 'pending'").fetchone()[0]
+        baseline = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
+        pending = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)).fetchone()[0]
         return pending, baseline
     return 0, 0
 

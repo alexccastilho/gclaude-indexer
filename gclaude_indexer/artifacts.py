@@ -36,6 +36,9 @@ from pathlib import Path
 from . import lexml, planalto
 from .config import ProjectConfig
 from .events import record_event
+from .file_status import (
+    ALL_FILE_STATUSES, CONVERSION_SUCCEEDED, FAILED, SKIPPED, WINDOW_DONE, WINDOW_PENDING, in_params,
+)
 from .html_text import STRUCK_MARK
 from .i18n import _REFERENCE_LANGUAGE, translate
 from .instructions_dedup import detect, is_only_generated
@@ -949,7 +952,7 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     ).fetchone()[0]
 
     failures = conn.execute(
-        "SELECT name, relative_path, error FROM file WHERE status = 'failed' ORDER BY relative_path"
+        "SELECT name, relative_path, error FROM file WHERE status = ? ORDER BY relative_path", (FAILED,)
     ).fetchall()
 
     removals = conn.execute(
@@ -972,13 +975,13 @@ def generate_review_md(conn, config: ProjectConfig, language: str) -> Path:
     # `duplicate` was missing from this list until phase 18, so a file that
     # entered as a copy of one already indexed left no trace in the report:
     # the coverage counts simply did not add up to the collection, and
-    # nothing said why. `scanning.py` writes exactly these six values.
-    for status in ("discovered", "converted", "extracted", "failed", "duplicate", "skipped"):
+    # nothing said why. The list is `file_status.ALL_FILE_STATUSES`, every value the pipeline writes.
+    for status in ALL_FILE_STATUSES:
         lines.append(f"- {status}: {file_counts.get(status, 0)}")
 
     lines += ["", f"## {t('artifact.review.windows_section')}"]
-    lines.append(f"- {t('artifact.review.windows_pending')}: {window_counts.get('pending', 0)}")
-    lines.append(f"- {t('artifact.review.windows_done')}: {window_counts.get('done', 0)}")
+    lines.append(f"- {t('artifact.review.windows_pending')}: {window_counts.get(WINDOW_PENDING, 0)}")
+    lines.append(f"- {t('artifact.review.windows_done')}: {window_counts.get(WINDOW_DONE, 0)}")
 
     lines += ["", f"## {t('artifact.review.items_section')}"]
     lines.append(f"- {t('artifact.review.items_total')}: {total_items}")
@@ -1031,7 +1034,7 @@ def _ignored_files_lines(conn, t) -> list[str]:
     the `skipped` rows) and extension, with the first names. Only names and
     counts — nothing of the content, least of all of a key or a password."""
     rows = conn.execute(
-        "SELECT name, extension, error FROM file WHERE status = 'skipped' ORDER BY relative_path"
+        "SELECT name, extension, error FROM file WHERE status = ? ORDER BY relative_path", (SKIPPED,)
     ).fetchall()
     if not rows:
         return [t("artifact.review.ignored_none")]
@@ -1089,9 +1092,8 @@ def project_instructions_sections(
     """
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     total_items = conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]
-    total_files = conn.execute(
-        "SELECT COUNT(*) FROM file WHERE status IN ('converted', 'extracted')"
-    ).fetchone()[0]
+    marks, succeeded = in_params(CONVERSION_SUCCEEDED)
+    total_files = conn.execute(f"SELECT COUNT(*) FROM file WHERE status IN ({marks})", succeeded).fetchone()[0]
 
     role = config.role_instructions.strip()
     extra_rules = config.extra_rules.strip()
@@ -1275,9 +1277,9 @@ def generate_project_instructions_md(conn, config: ProjectConfig, language: str)
 def pending_items(conn) -> dict:
     """Summary of what is still missing, for the Result screen (spec section 6)."""
     failures = conn.execute(
-        "SELECT name, relative_path, error FROM file WHERE status = 'failed' ORDER BY relative_path"
+        "SELECT name, relative_path, error FROM file WHERE status = ? ORDER BY relative_path", (FAILED,)
     ).fetchall()
-    windows_pending = conn.execute("SELECT COUNT(*) FROM window WHERE status = 'pending'").fetchone()[0]
+    windows_pending = conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)).fetchone()[0]
     return {
         "gaps": _gaps_by_group(conn),
         "failures": [dict(failure) for failure in failures],
@@ -1311,7 +1313,7 @@ def current_artifact_state(conn: sqlite3.Connection) -> ArtifactState:
     return ArtifactState(
         files=conn.execute("SELECT COUNT(*) FROM file").fetchone()[0],
         windows_done=conn.execute(
-            "SELECT COUNT(*) FROM window WHERE status = 'done'"
+            "SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)
         ).fetchone()[0],
         items=conn.execute("SELECT COUNT(*) FROM item").fetchone()[0],
     )
