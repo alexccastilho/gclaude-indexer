@@ -142,16 +142,13 @@ def _leitores_fechados_ao_fim_do_teste():
 
 
 @pytest.fixture(autouse=True)
-def _mudanca_de_pasta_isolada(tmp_path, monkeypatch):
+def _mudanca_de_pasta_isolada(monkeypatch):
     """2.0.0 (Tarefa 13): a tela que oferece mover a saída para fora da
     origem fica desligada por padrão — muitos testes antigos criam a saída
     dentro da pasta temporária que serve de origem. O diário e o adiamento
-    vão para a pasta temporária do teste, nunca para a pasta local real.
-    Quem testa a mudança liga a detecção de novo (`test_mudanca_de_pasta.py`)."""
-    from gclaude_indexer import relocation
+    ficam na pasta local da máquina, que cada teste já tem só sua
+    (`_machine_local_folder`, no conftest da raiz). Quem testa a mudança
+    liga a detecção de novo (`test_mudanca_de_pasta.py`)."""
     from gclaude_indexer.web import project_access
 
-    pasta = tmp_path / "_relocation_local"
-    monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
-    monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
     monkeypatch.setattr(project_access, "_relocation_due", lambda config: False)
