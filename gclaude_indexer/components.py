@@ -478,14 +478,20 @@ def _install(component: Component, should_stop=None) -> None:
         partial.unlink(missing_ok=True)
 
 
+# Modules that cache what is installed register here to forget it: this
+# layer does not import the modules that use it.
+_change_listeners: list = []
+
+
+def on_change(callback) -> None:
+    """Calls `callback()` each time a component is installed or removed."""
+    _change_listeners.append(callback)
+
+
 def _changed() -> None:
     """What other modules cached about what is installed is stale now."""
-    try:
-        from .settings_proposal import installed_ocr_languages
-
-        installed_ocr_languages.cache_clear()
-    except Exception:
-        pass
+    for callback in _change_listeners:
+        callback()
 
 
 def ensure(names, download: bool = True, should_stop=None, on_download=None) -> dict[str, str]:

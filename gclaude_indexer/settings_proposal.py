@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from . import components
 from .file_types import (
     HTML_EXTENSIONS, IMAGE_CATEGORY, PAGED_CATEGORIES, PDF_CATEGORY, TEXT_CATEGORY, WEB_DATA_CATEGORY,
 )
@@ -164,6 +165,10 @@ def installed_ocr_languages() -> frozenset[str] | None:
     lines = stdout.splitlines()
     languages = {line.strip() for line in lines[1:] if line.strip()}
     return frozenset(languages) or None
+
+
+# A language pack downloaded or removed changes the answer above.
+components.on_change(installed_ocr_languages.cache_clear)
 
 
 # --- decisions ---------------------------------------------------------------
