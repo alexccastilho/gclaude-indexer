@@ -135,7 +135,7 @@ def test_o_ocr_roda_pelo_runner_que_esconde_as_janelas(tmp_path, monkeypatch):
         capturado["kwargs"] = kwargs
         return _Resultado()
 
-    monkeypatch.setattr(conversion.subprocess, "run", _falso_run)
+    monkeypatch.setattr(subprocess, "run", _falso_run)
     conversion._run_ocrmypdf(tmp_path / "a.pdf", tmp_path / "b.pdf", "por", jobs=2)
 
     comando = capturado["comando"]

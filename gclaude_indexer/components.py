@@ -52,7 +52,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import threading
 import urllib.error
 import urllib.request
@@ -63,6 +62,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 from .paths import machine_local_folder, resolve_within
+from .subprocess_utils import kill_tree, popen_hidden
 
 MANIFEST_FOLDER = Path(__file__).resolve().parent / "manifests"
 MANIFEST_FORMAT = 1
@@ -411,21 +411,14 @@ def _run_msiexec(command_line: str, timeout: float) -> int:
     command line is one string, quoted by hand: `TARGETDIR="C: b"` is
     what msiexec understands, and the private folder sits under a user
     name that may have spaces. No shell: `CreateProcess` gets it directly."""
-    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    process = subprocess.Popen(command_line, shell=False, **kwargs)
+    process = popen_hidden(
+        command_line, new_session=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
     try:
         return process.wait(timeout=timeout)
     except BaseException:
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                shell=False, capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        except (OSError, subprocess.SubprocessError):
-            pass
-        process.kill()
+        kill_tree(process)
         raise
 
 

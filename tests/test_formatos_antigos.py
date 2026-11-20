@@ -582,6 +582,26 @@ def test_msi_com_problema_fica_indisponivel_sem_sobras(tmp_path, monkeypatch, ce
     assert not list(teste.glob("*.msi")) and not list(teste.glob("*.part"))
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="msiexec só existe no Windows")
+def test_msiexec_no_tempo_limite_morre_com_os_filhos(tmp_path, monkeypatch):
+    """O `msiexec` falso (um Python que abre um neto e trava) passa do tempo:
+    pai e neto morrem, nenhum fica órfão segurando a pasta de extração."""
+    pids = tmp_path / "pids.txt"
+    monkeypatch.setenv("SIMULADOR_PIDS", str(pids))
+    script = tmp_path / "msiexec_travado.py"
+    script.write_text(_TRAVADO, encoding="utf-8")
+    linha = f'"{sys.executable}" "{script}"'
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        components._run_msiexec(linha, timeout=3)
+
+    pai, neto = (int(valor) for valor in pids.read_text().split())
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and (psutil.pid_exists(pai) or psutil.pid_exists(neto)):
+        time.sleep(0.1)
+    assert not psutil.pid_exists(pai) and not psutil.pid_exists(neto)
+
+
 def test_junction_ou_link_no_extraido_e_recusado(tmp_path, monkeypatch):
     import re
 

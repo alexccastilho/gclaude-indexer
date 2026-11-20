@@ -41,13 +41,12 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 from pathlib import Path
 
 from . import components
-from .subprocess_utils import kill_tree
+from .subprocess_utils import kill_tree, popen_hidden
 
 COMPONENT_NAME = "libreoffice"
 # Onde o executável fica dentro do componente extraído.
@@ -164,16 +163,10 @@ def ensure_available(should_stop=None, on_download=None) -> Path | None:
 
 def _popen(command: list[str], env: dict) -> subprocess.Popen:
     """O único ponto que cria o processo (a suíte o troca por um simulador)."""
-    kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    else:
-        kwargs["start_new_session"] = True
-    return subprocess.Popen(command, shell=False, env=env, **kwargs)
+    return popen_hidden(
+        command, new_session=True, env=env,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
 
 def _command(soffice: Path, profile: Path, outdir: Path, source: Path) -> list[str]:
