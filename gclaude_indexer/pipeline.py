@@ -53,12 +53,19 @@ LOG_STEPS: frozenset[str] = frozenset(STEP_ORDER) | {"import", "diagnostics", "u
 
 class SourceFolderMissing(Exception):
     """The project opens with its source folder offline (pen drive, network,
-    another machine's Drive); the steps do not: they read the originals, and
-    a missing folder would look like an empty collection."""
+    another machine's Drive); the steps that read the originals
+    (`STEPS_READING_SOURCE`) do not: a missing folder would look like an
+    empty collection."""
 
     def __init__(self, path: str):
         super().__init__(path)
         self.path = path
+
+
+# The steps that read the original files. Windows and classification read
+# only the database (and the output folder), so they run with the source
+# folder offline.
+STEPS_READING_SOURCE: frozenset[str] = frozenset({"scan", "conversion", "extraction"})
 
 
 def _apply_pending_changes(
@@ -199,9 +206,9 @@ def begin_step(
     conn, config: ProjectConfig, step: str, *, language: str | None = None,
     decision: EngineDecision | None = None,
 ) -> StepRun:
-    """Checks the source folder, decides the engine and opens the step's
-    `run` row. A missing folder raises `SourceFolderMissing` before
-    anything is recorded.
+    """Checks the source folder (only for `STEPS_READING_SOURCE`), decides
+    the engine and opens the step's `run` row. A missing folder raises
+    `SourceFolderMissing` before anything is recorded.
 
     Task 15: `run.engine` is the *effective* engine (`decide_engine`
     resolves the "automatic" sentinel to the engine that will run), not the
@@ -211,7 +218,7 @@ def begin_step(
     classification step receives this same decision instead of deciding
     again. `decision` passed in: the caller already decided for the whole
     execution."""
-    if not Path(config.source_folder).is_dir():
+    if step in STEPS_READING_SOURCE and not Path(config.source_folder).is_dir():
         raise SourceFolderMissing(config.source_folder)
     if decision is None:
         decision = decide_engine(conn, config, language=language)
