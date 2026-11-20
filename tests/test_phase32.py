@@ -163,7 +163,7 @@ def _guardas():
     return {
         "X-GClaude-Sensor-Token": modulo_app.SENSOR_REQUEST_TOKEN,
         "Sec-Fetch-Site": "same-origin",
-        "Host": f"127.0.0.1:{modulo_app.SERVER_PORT}",
+        "Host": f"127.0.0.1:{state.SERVER_PORT}",
     }
 
 
@@ -228,7 +228,7 @@ def test_so_com_as_quatro_guardas_o_helper_dispara(tmp_path, monkeypatch, host):
 
     resposta = cliente.post(
         "/sensors/request-elevation",
-        headers={**_guardas(), "Host": host.format(porta=modulo_app.SERVER_PORT)},
+        headers={**_guardas(), "Host": host.format(porta=state.SERVER_PORT)},
     )
 
     assert resposta.status_code == 202
@@ -367,6 +367,7 @@ def test_clear_launch_status_nunca_levanta(monkeypatch, tmp_path):
 # --- Task 5: a barra de atividade diz o que roda e há quanto tempo -------------
 
 from pathlib import Path as _Path
+from gclaude_indexer.web import state
 
 _TEMPLATES = _Path(__file__).resolve().parent.parent / "gclaude_indexer" / "web" / "templates"
 
@@ -433,14 +434,14 @@ def test_barra_de_atividade_esta_na_base(tmp_path, monkeypatch):
 
 def test_slot_registra_a_operacao_e_limpa_ao_sair():
     pid = 987_001
-    with modulo_app._generation_slot(pid, "run.import_and_generate") as claimed:
+    with state._generation_slot(pid, "run.import_and_generate") as claimed:
         assert claimed
-        chave, inicio = modulo_app._OPERATIONS_IN_PROGRESS[pid]
+        chave, inicio = state._OPERATIONS_IN_PROGRESS[pid]
         assert chave == "run.import_and_generate" and time.monotonic() - inicio < 5
-        with modulo_app._generation_slot(pid, "run.import_and_generate") as segundo:
+        with state._generation_slot(pid, "run.import_and_generate") as segundo:
             assert segundo is False
-            assert modulo_app._OPERATIONS_IN_PROGRESS[pid][0] == "run.import_and_generate", "o primeiro continua dono"
-    assert pid not in modulo_app._OPERATIONS_IN_PROGRESS
+            assert state._OPERATIONS_IN_PROGRESS[pid][0] == "run.import_and_generate", "o primeiro continua dono"
+    assert pid not in state._OPERATIONS_IN_PROGRESS
 
 
 def test_atividade_em_andamento_e_informada_com_o_tempo_real(tmp_path, monkeypatch):
@@ -449,7 +450,7 @@ def test_atividade_em_andamento_e_informada_com_o_tempo_real(tmp_path, monkeypat
     cliente, pid, _conn, _config = _app_com_projeto(tmp_path, monkeypatch)
     assert cliente.get(f"/projects/{pid}/activity").json() == {"operation": None, "operation_key": None, "elapsed_s": 0}
 
-    monkeypatch.setitem(modulo_app._OPERATIONS_IN_PROGRESS, pid, ("run.import_and_generate", time.monotonic() - 42))
+    monkeypatch.setitem(state._OPERATIONS_IN_PROGRESS, pid, ("run.import_and_generate", time.monotonic() - 42))
     resposta = cliente.get(f"/projects/{pid}/activity", cookies={"language": "en"}).json()
     assert resposta["operation_key"] == "run.import_and_generate"
     assert resposta["operation"] == translate("en", "run.import_and_generate")

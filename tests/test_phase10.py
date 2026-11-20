@@ -275,7 +275,8 @@ def cliente(tmp_path, monkeypatch):
     monkeypatch.setattr(hardware_mod, "machine_local_folder", lambda: pasta_local)
     monkeypatch.setattr("gclaude_indexer.sync.machine_local_folder", lambda: pasta_local)
 
-    from gclaude_indexer.web.app import app, lock_manager
+    from gclaude_indexer.web.app import app
+    from gclaude_indexer.web.state import lock_manager
 
     lock_manager.close_all()  # começa cada teste sem travas residuais
     yield TestClient(app)

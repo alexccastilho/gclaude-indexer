@@ -98,7 +98,7 @@ from ..fulltext import (
 from ..staleness import record_loaded_source
 from ..sync import check_sync, mark_synced
 from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, MEDIA_CATEGORY, categories_by_family, normalize_categories
-from ..lock import LockManager, check_lock, create_lock
+from ..lock import check_lock, create_lock
 from . import step_state
 from ..pipeline import LOG_STEPS
 from .step_state import next_pending_step, project_status, step_status
@@ -113,8 +113,14 @@ from ..ollama_models import list_installed_models
 from ..file_status import AWAITING_PROCESSING, FAILED, WINDOW_DONE, WINDOW_PENDING, in_params
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, valid_theme
+from . import state
 from .formatting import _format_time
 from .rendering import WEB_ROOT, _request_language, _side_bar_cache, _zip_response, render, templates
+from .state import (
+    _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _claim_slot_locked, _generation_slot, _operation_holding,
+    _operation_in_progress, _release_all_projects, _release_project, _release_slot, _step_in_progress,
+    lock_manager,
+)
 
 
 SYSTEM_VERSION = "2.1.0"
@@ -130,11 +136,6 @@ SENSOR_REQUEST_TOKEN = secrets.token_urlsafe(32)
 # until the user answers the UAC prompt, and a second click (or a second
 # tab) meanwhile must not open a second prompt behind the first.
 _SENSOR_REQUEST_IN_FLIGHT = threading.Lock()
-
-# The port this server was started on; `start_server()` records it. The
-# `Host` guard below compares against it, so a server started on another
-# port is still only reachable by its own pages.
-SERVER_PORT = 8000
 SYSTEM_AUTHOR = "Alex Camacho Castilho"
 
 # 50 lines covered less than a minute of scanning on a large collection — the
@@ -158,106 +159,6 @@ def _project_or_404(project_id: int) -> CatalogEntry:
     if entry is None:
         raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
     return entry
-
-# Cross-machine database lock (section 11.3): one per project opened in this
-# server session, with its own heartbeat. All removed on shutdown.
-lock_manager = LockManager()
-
-
-# --- what keeps a project busy, and letting go of it ---------------------------
-#
-# Two kinds of work hold a project, and this is the one place that knows
-# both: a pipeline step, in `task_manager` (`background_runs.py`), and a long
-# operation (import and generate, update, delete, clearing intermediates,
-# search indexing, dedup, folder move) holding the project's slot below.
-# Each route asks the question it needs: `_step_in_progress`,
-# `_operation_in_progress`, or both, as `_project_busy` does.
-#
-# The slot: one long operation per project at a time. Seen live before it
-# existed: 4 concurrent "import and generate" runs on a 5230-item project,
-# each repeating `DELETE FROM item` plus thousands of inserts. The value says
-# *which* operation holds it and since when (fase 32), so a page loaded in
-# the middle of it (an F5, another tab) can show the activity bar with the
-# real name and the real elapsed time. The instant is `time.monotonic()`
-# (fase 33): wall-clock time can be set back by Windows or by NTP in the
-# middle of a generation, and nothing reads this value across processes.
-_OPERATIONS_IN_PROGRESS: dict[int, tuple[str, float]] = {}
-_SLOTS_LOCK = threading.Lock()
-
-
-def _step_in_progress(project_id: int) -> bool:
-    task = task_manager.latest_for_project(project_id)
-    return task is not None and task.running
-
-
-def _operation_in_progress(project_id: int) -> bool:
-    with _SLOTS_LOCK:
-        return project_id in _OPERATIONS_IN_PROGRESS
-
-
-def _operation_holding(project_id: int) -> tuple[str, float] | None:
-    """`(i18n key, monotonic start)` of the operation holding the slot."""
-    with _SLOTS_LOCK:
-        return _OPERATIONS_IN_PROGRESS.get(project_id)
-
-
-def _claim_slot_locked(project_id: int, key: str, started_at: float) -> bool:
-    """Takes the project's slot if it is free. The caller holds
-    `_SLOTS_LOCK`, so `_start_operation` registers its operation in the
-    same breath."""
-    if project_id in _OPERATIONS_IN_PROGRESS:
-        return False
-    _OPERATIONS_IN_PROGRESS[project_id] = (key, started_at)
-    return True
-
-
-def _release_slot(project_id: int) -> None:
-    with _SLOTS_LOCK:
-        _OPERATIONS_IN_PROGRESS.pop(project_id, None)
-
-
-def _release_project(output_folder, project_id: int | None = None, *, keep_lock_file: bool = False) -> None:
-    """Lets go of everything this server holds on the project folder before
-    its files are deleted, moved or taken over, in the order that matters:
-    the steps are asked to stop (when `project_id` is given), then the read
-    connections close, then the lock goes, last, because Windows will not
-    delete or rename a file that is still open.
-
-    `keep_lock_file`: stop looking after the lock without deleting
-    `project.lock` (`LockManager.forget`): a folder move carries the file
-    along, and a take-over writes a new one over it."""
-    if project_id is not None:
-        task_manager.pause(project_id)
-    reader_pool.close(output_folder)
-    if keep_lock_file:
-        lock_manager.forget(output_folder)
-    else:
-        lock_manager.close(output_folder)
-
-
-def _release_all_projects() -> None:
-    """Server shutdown: every read connection, then every lock."""
-    reader_pool.close_all()
-    lock_manager.close_all()
-
-
-def _project_busy(output_folder) -> bool:
-    """Whether a step of the project is running in the background — with
-    no screen open, it still needs the lock.
-
-    The lock was opened with the folder `find_project` resolved for this
-    machine, so each entry is resolved the same way before comparing: the
-    shared catalog keeps the absolute path of the machine that registered
-    the project, which on another drive letter never matches."""
-    key = LockManager._key(output_folder)
-    folder = catalog_folder()
-    for entry in list_projects():
-        if LockManager._key(entry.resolved_output_folder(folder)) == key:
-            return _step_in_progress(entry.id) or _operation_in_progress(entry.id)
-    return False
-
-
-lock_manager.set_keep_alive(_project_busy)
 
 
 @asynccontextmanager
@@ -1862,7 +1763,7 @@ def _sensor_request_allowed(request: Request) -> bool:
     if request.headers.get("sec-fetch-site") != "same-origin":
         return False
     host = (request.headers.get("host") or "").strip().lower()
-    return host in {f"127.0.0.1:{SERVER_PORT}", f"localhost:{SERVER_PORT}"}
+    return host in {f"127.0.0.1:{state.SERVER_PORT}", f"localhost:{state.SERVER_PORT}"}
 
 
 @app.post("/sensors/request-elevation")
@@ -1918,27 +1819,6 @@ def request_sensor_elevation(request: Request):
         _SENSOR_REQUEST_IN_FLIGHT.release()
         raise
     return Response(content='{"outcome": "requested"}', media_type="application/json", status_code=202)
-
-
-@contextmanager
-def _generation_slot(project_id: int, operation_key: str):
-    """One report generation per project at a time. Yields `False` when
-    another one is under way — the caller sends the user to the result
-    instead of starting a duplicate: two generations writing and deleting
-    the same files at once end in `PermissionError` on Windows, and a
-    regeneration during an import would read a half-imported `item` table.
-    The same slot as `_start_operation`, held for the length of the
-    request; `_project_busy` reads it for the lock keep-alive.
-
-    `operation_key` is the i18n key of the button that started it — what
-    `project_activity` reports back to the screen (fase 32)."""
-    with _SLOTS_LOCK:
-        claimed = _claim_slot_locked(project_id, operation_key, time.monotonic())
-    try:
-        yield claimed
-    finally:
-        if claimed:
-            _release_slot(project_id)
 
 
 # --- 1.9.0: long operations in the background, with Stop ---------------------
@@ -2905,8 +2785,7 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     record_loaded_source()
 
     _validate_host(host)
-    global SERVER_PORT
-    SERVER_PORT = int(port)
+    state.SERVER_PORT = int(port)
 
     # The system may already be open. That is the ordinary case for the
     # second shortcut — "GClaude Indexer (CPU sensor)" — which someone

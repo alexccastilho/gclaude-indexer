@@ -906,7 +906,8 @@ def test_gravar_numa_pasta_escreve_claude_md_combinado(tmp_path, monkeypatch):
 def _cliente_web():
     from fastapi.testclient import TestClient
 
-    from gclaude_indexer.web.app import app, lock_manager
+    from gclaude_indexer.web.app import app
+    from gclaude_indexer.web.state import lock_manager
 
     lock_manager.close_all()
     return TestClient(app)

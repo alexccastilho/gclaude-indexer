@@ -26,6 +26,7 @@ from gclaude_indexer.item_normalize import BLANK_PAGE_TYPE, normalize_types
 from gclaude_indexer.windows_prep import prepare_windows
 
 from .test_busca_texto_completo import _extrair, _projeto
+from gclaude_indexer.web import state
 
 
 def test_nome_do_presidente_tem_uma_grafia_so():
@@ -218,9 +219,9 @@ def test_etapa_rodando_segura_a_trava_com_o_catalogo_em_outra_letra(tmp_path, mo
     entrada = catalog.find_project(1)
     rodando = SimpleNamespace(running=True)
     monkeypatch.setattr(
-        aplicacao.task_manager, "latest_for_project", lambda pid: rodando if pid == entrada.id else None,
+        state.task_manager, "latest_for_project", lambda pid: rodando if pid == entrada.id else None,
     )
-    assert aplicacao._project_busy(entrada.output_folder)
+    assert state._project_busy(entrada.output_folder)
 
 
 def test_tela_avisa_que_continua_aberta(tmp_path):

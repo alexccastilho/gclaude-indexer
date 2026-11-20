@@ -138,7 +138,8 @@ def test_projeto_que_nunca_rodou_nao_avisa_que_a_pasta_mudou(tmp_path, monkeypat
 
     from gclaude_indexer.catalog import register_project
     from gclaude_indexer.project import create_project
-    from gclaude_indexer.web.app import app, lock_manager
+    from gclaude_indexer.web.app import app
+    from gclaude_indexer.web.state import lock_manager
 
     local = tmp_path / "local"
     for alvo in ("gclaude_indexer.catalog.machine_local_folder",

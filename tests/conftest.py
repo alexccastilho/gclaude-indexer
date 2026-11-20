@@ -110,11 +110,11 @@ def _operacoes_longas_terminam_dentro_do_pedido(monkeypatch):
     e o pedido espera por ela só `OPERATION_INLINE_WAIT_SECONDS`. Nos
     testes a espera é longa, para o POST voltar com o trabalho feito, como
     antes; quem testa o painel de espera e o Parar baixa o valor."""
-    from gclaude_indexer.web import app as modulo_app
+    from gclaude_indexer.web import app as modulo_app, state
 
     monkeypatch.setattr(modulo_app, "OPERATION_INLINE_WAIT_SECONDS", 120.0)
     yield
-    with modulo_app._SLOTS_LOCK:
+    with state._SLOTS_LOCK:
         modulo_app._OPERATIONS.clear()
 
 
