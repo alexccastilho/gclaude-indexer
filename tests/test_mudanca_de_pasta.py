@@ -25,7 +25,7 @@ from gclaude_indexer.lock import LockInfo, LOCK_FILE_NAME
 from gclaude_indexer.managed_block import BEGIN_MARK, END_MARK
 from gclaude_indexer.project import create_project
 from gclaude_indexer.sets import SetEntry, SetMember, find_set, save_set
-from gclaude_indexer.web import app as app_mod, rendering, routes_projects
+from gclaude_indexer.web import app as app_mod, rendering, routes_projects, routes_sets
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web import state
 from gclaude_indexer.web import readers
@@ -42,7 +42,7 @@ def local(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(pasta))
     monkeypatch.setenv(workdir.WORK_FOLDER_ENV, str(pasta / "work"))
     monkeypatch.setattr(catalogo_mod, "catalog_folder", lambda: None)
-    for modulo in (app_mod, rendering, state, routes_projects):
+    for modulo in (rendering, state, routes_projects, routes_sets):
         monkeypatch.setattr(modulo, "catalog_folder", lambda: None)
     return pasta
 
