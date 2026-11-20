@@ -300,7 +300,7 @@ def test_arquivo_nao_conferido_aparece_no_plano_e_no_log(tmp_path, monkeypatch):
     from gclaude_indexer import update_plan
     from gclaude_indexer.invalidation import apply_pending_changes, apply_update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     conn, config = _plano_com_data_mexida(tmp_path)
 
     def _sem_rede(_caminho):
@@ -337,7 +337,7 @@ def _plano_com_um_nao_conferido_e_um_alterado(tmp_path, monkeypatch):
     """`a.pdf` não pode ser lido (sem rede); `b.pdf` mudou de verdade."""
     from gclaude_indexer import update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     conn, config = _plano_com_data_mexida(tmp_path)
     (Path(config.source_folder) / "b.pdf").write_text("b novo", encoding="utf-8")
     _registrar(conn, "b.pdf", "b", 1.0)
@@ -559,13 +559,13 @@ def _plano_com_varios_mexidos(tmp_path, quantidade):
 @pytest.fixture
 def leituras(monkeypatch):
     """`update_plan.compute_hash` controlado: conta as chamadas e trava
-    até `solta`. O registro de leituras pendentes e o de resultados são do
-    processo: limpos antes e depois."""
+    até `solta`. O registro de resultados é do processo: o teste usa um
+    vazio, que o monkeypatch descarta no fim."""
     import threading
 
     from gclaude_indexer import update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     estado = {"chamadas": [], "solta": threading.Event(), "espera": None}
 
     def _hash(caminho):
@@ -582,7 +582,6 @@ def leituras(monkeypatch):
     monkeypatch.setattr(update_plan, "deadline_for_size", lambda _size: 0.2)
     yield estado
     estado["solta"].set()
-    update_plan._forget_reads()
 
 
 def test_depois_de_tres_travadas_seguidas_o_plano_nao_tenta_mais_ler(tmp_path, leituras):
@@ -721,7 +720,7 @@ def test_nao_conferido_na_tela_e_inalterado_na_hora_de_aplicar_nao_expira(tmp_pa
     from gclaude_indexer import update_plan
     from gclaude_indexer.invalidation import apply_update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     conn, config = _plano_com_data_mexida(tmp_path)  # mesmo conteúdo, data nova
     hash_real = update_plan.compute_hash
     estado = {"sem_rede": True}
@@ -737,7 +736,7 @@ def test_nao_conferido_na_tela_e_inalterado_na_hora_de_aplicar_nao_expira(tmp_pa
 
     estado["sem_rede"] = False
     apply_update_plan(conn, config, update_plan.UpdatePlan.witness(visto.fingerprint))
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
 
 
 def test_nao_conferido_na_tela_e_alterado_na_hora_de_aplicar_expira_o_plano(tmp_path, monkeypatch):
@@ -747,7 +746,7 @@ def test_nao_conferido_na_tela_e_alterado_na_hora_de_aplicar_expira_o_plano(tmp_
     from gclaude_indexer import update_plan
     from gclaude_indexer.invalidation import PlanExpired, apply_update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     conn, config = _plano_com_data_mexida(tmp_path)
     (Path(config.source_folder) / "a.pdf").write_text("conteúdo novo", encoding="utf-8")
     hash_real = update_plan.compute_hash
@@ -768,7 +767,7 @@ def test_nao_conferido_na_tela_e_alterado_na_hora_de_aplicar_expira_o_plano(tmp_
     estado["sem_rede"] = False
     with pytest.raises(PlanExpired):
         apply_update_plan(conn, config, update_plan.UpdatePlan.witness(visto.fingerprint))
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
 
 
 def test_novo_alterado_e_removido_sao_detectados(tmp_path):
@@ -991,7 +990,7 @@ def test_a_ultima_janela_sempre_entra_porque_o_total_a_limita():
     antigas = window_spans(500, 16, 2)
     novas = window_spans(510, 16, 2)
 
-    indice = first_affected_window(antigas, 500)
+    indice = first_affected_window(antigas, 500, 16)
 
     assert indice == 35
     assert len(antigas) - indice == 1   # exatamente 1 descartada
@@ -1004,20 +1003,20 @@ def test_a_ultima_janela_sempre_entra_porque_o_total_a_limita():
 def test_divergencia_no_comeco_invalida_tudo():
     antigas = window_spans(500, 16, 2)
 
-    assert first_affected_window(antigas, 0) == 0
+    assert first_affected_window(antigas, 0, 16) == 0
 
 
 def test_divergencia_no_meio_preserva_o_que_vem_antes():
     antigas = window_spans(500, 16, 2)
 
-    indice = first_affected_window(antigas, 250)
+    indice = first_affected_window(antigas, 250, 16)
 
     assert antigas[indice][1] > 250       # a janela cobre a página divergente
     assert antigas[indice - 1][1] <= 250  # a anterior não
 
 
 def test_grupo_sem_janela_nao_quebra():
-    assert first_affected_window([], 0) == 0
+    assert first_affected_window([], 0, 16) == 0
 
 
 def test_ultima_janela_truncada_e_descartada_quando_o_acervo_cresce():
@@ -1058,10 +1057,8 @@ def test_ultima_janela_cheia_sobrevive_ao_acrescimo():
 
 def test_acervo_de_uma_janela_so_e_tratado_como_truncado():
     """Um grupo menor que uma janela dá [(0, n)], e o layout sozinho não
-    diz se n é o total ou o tamanho da janela. Sem `window_size` a função
-    escolhe o lado seguro: descartar."""
-    assert first_affected_window([(0, 10)], 10) == 0        # truncada, inferida
-    assert first_affected_window([(0, 10)], 10, 16) == 0    # truncada, explícita
+    diz se n é o total ou o tamanho da janela: quem diz é `window_size`."""
+    assert first_affected_window([(0, 10)], 10, 16) == 0    # truncada
     assert first_affected_window([(0, 16)], 16, 16) == 1    # cheia: preservada
 
 
@@ -3173,7 +3170,7 @@ def test_nao_conferidos_aparecem_no_aviso_e_na_tela(tmp_path, monkeypatch):
 
     from gclaude_indexer import update_plan
 
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
     cliente, projeto_id, conn = _app_com_projeto(tmp_path, monkeypatch)
     conn.execute("UPDATE file SET status = 'extracted' WHERE relative_path = 'a.pdf'")
     conn.commit()
@@ -3192,4 +3189,4 @@ def test_nao_conferidos_aparecem_no_aviso_e_na_tela(tmp_path, monkeypatch):
     tela = cliente.get(f"/projects/{projeto_id}/update").text
     assert "a.pdf" in tela and "conferid" in tela
     assert 'name="fingerprint"' not in tela
-    update_plan._forget_reads()
+    monkeypatch.setattr(update_plan, "_READ_RESULTS", {})
