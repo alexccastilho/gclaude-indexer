@@ -19,7 +19,7 @@ import gclaude_indexer.hardware as hardware_mod
 import gclaude_indexer.paths as paths_mod
 from gclaude_indexer.config import load_config
 from gclaude_indexer.paths import (
-    OUTPUT_FOLDER_SUFFIX, check_new_project_folders, suggest_output_folder,
+    check_new_project_folders, suggest_output_folder,
 )
 from gclaude_indexer.project import create_project, load_project
 from gclaude_indexer.web.app import app
@@ -59,10 +59,6 @@ def origem(tmp_path):
 
 
 # --- regras de pasta ----------------------------------------------------------
-
-
-def test_sufixo_da_saida():
-    assert OUTPUT_FOLDER_SUFFIX == "AI"
 
 
 def test_saida_igual_a_origem(origem):
