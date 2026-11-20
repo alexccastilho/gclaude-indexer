@@ -85,8 +85,12 @@ def render(request: Request, template_name: str, context: dict | None = None, st
     full_context.setdefault("project_url", PROJECT_URL)
     # Em toda tela, e não só na de Execução: um servidor rodando código
     # antigo produz resultado errado em qualquer etapa, e o usuário precisa
-    # ver isso onde quer que esteja (ver `staleness.py`).
-    full_context.setdefault("source_is_stale", source_is_stale())
+    # ver isso onde quer que esteja (ver `staleness.py`). Só nas telas
+    # inteiras: o aviso está em `base.html`, e os fragmentos (`_*.html`, que
+    # nunca o estendem) não o mostram. Eles são os polls de 2 s da Execução,
+    # e a conferência faz um `stat` de cada `.py` do pacote.
+    if not template_name.startswith("_"):
+        full_context.setdefault("source_is_stale", source_is_stale())
     if layout == "workspace":
         full_context.setdefault("ws_projects", _side_bar_projects())
         full_context.setdefault("ws_project_id", _project_id_in_path(request.url.path))
