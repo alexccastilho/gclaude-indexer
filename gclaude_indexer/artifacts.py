@@ -60,6 +60,7 @@ from .output_names import (
     part_filename,
     prefixed_name,
 )
+from .raw_items import files_from_field
 from .run_control import OperationCancelled, checkpoint
 
 
@@ -205,7 +206,8 @@ def _signature_notes(conn, t) -> dict[str, str]:
 
 
 def _first_file(files: str | None) -> str:
-    return (files or "").split(";")[0].strip()
+    nomes = files_from_field(files or "")
+    return nomes[0] if nomes else ""
 
 
 def _legislation_map(conn) -> tuple[dict[tuple[str, str], tuple[str, str]], dict[str, str]]:
@@ -703,7 +705,7 @@ def generate_index_md(conn, config: ProjectConfig, language: str) -> list[Path]:
         """A coluna Origem, com quem assinou o arquivo (só se for assinado)."""
         arquivos = item["files"] or ""
         notas = [
-            assinaturas[nome] for nome in (parte.strip() for parte in arquivos.split(";")) if nome in assinaturas
+            assinaturas[nome] for nome in files_from_field(arquivos) if nome in assinaturas
         ]
         return f"{arquivos} — {' / '.join(notas)}" if notas else arquivos
 
