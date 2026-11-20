@@ -187,7 +187,7 @@ Abra o projeto. Alguns segundos depois que a tela Execução aparece, se algo mu
 
 **Por que não é o acervo inteiro.** Os documentos são agrupados, e as páginas de um grupo são lidas como uma sequência longa, fatiada em janelas sobrepostas; as janelas são o que o motor de classificação lê. Uma mudança invalida o grupo a partir da primeira página que se deslocou. Tudo antes disso mantém suas páginas e sua classificação. Um documento acrescentado no fim de um grupo custa quase nada; um inserido no início desloca toda página depois dele e custa mais. A tela diz em qual caso você está antes de confirmar.
 
-**Documentos removidos.** As páginas e peças saem do índice, a cópia convertida é apagada, e o nome e o momento da remoção ficam registrados no `review.md`. Se a pasta tinha uma cópia idêntica do documento removido, essa cópia passa a ser indexada no lugar dele. Se um grupo some por inteiro, o `index-<grupo>.md` dele é apagado.
+**Documentos removidos.** As páginas e peças saem do índice, a cópia convertida é apagada, e o nome e o momento da remoção ficam registrados no `review.md`. Se a pasta tinha uma cópia idêntica do documento removido, essa cópia passa a ser indexada no lugar dele. O mesmo vale para a cópia de um documento que foi editado: a cópia guarda o conteúdo antigo, então volta como documento novo na próxima atualização. Se um grupo some por inteiro, o `index-<grupo>.md` dele é apagado.
 
 **Numeração de folhas que muda.** Num acervo do tipo processo, a numeração das folhas (f. 1, f. 2...) corre contínua pelo grupo. Acrescentar ou retirar um documento no meio muda os números dos documentos seguintes. A tela de confirmação lista quais são e o log avisa: conversas antigas com o Claude que citavam essas folhas podem ficar desatualizadas.
 
@@ -195,15 +195,15 @@ Documentos que só precisam de renumeração não passam pelo OCR de novo: os ar
 
 **Se você limpou os arquivos intermediários** com Liberar espaço, os documentos que seriam relidos precisam ser convertidos de novo. A atualização trata isso corretamente; só demora mais.
 
-**Se a pasta de origem não puder ser alcançada** (o disco está desconectado, a pasta foi movida ou renomeada), nada é oferecido e nada é alterado.
+**Se a pasta de origem não puder ser alcançada** (o disco está desconectado, a pasta foi movida ou renomeada), nada é oferecido e nada é alterado. O projeto abre mesmo assim. Varredura, conversão e extração leem os arquivos originais, então param com um aviso de que a pasta não foi encontrada; janelas, classificação e **Importar e gerar relatórios** leem só o banco e a pasta de saída, e rodam sem ela.
 
 **Um computador por vez.** Enquanto um projeto está aberto, ele fica travado para aquele computador. Outro computador é avisado de quem está usando. Fechar o navegador libera a trava em cerca de cinco minutos; uma trava de uma máquina que travou expira sozinha em dez.
 
 ## Conseguindo uma boa classificação
 
-Duas coisas decidem mais sobre o resultado do que qualquer outra.
+Duas coisas decidem mais sobre o resultado do que qualquer outra: qual modelo roda e se ele cabe na sua placa de vídeo. O que você escreve sobre o acervo não é uma delas.
 
-**Preencha o Tema do acervo e o Tipo de acervo no Novo projeto.** O motor `local` mostra esses campos ao modelo, e são eles que dizem que tipo de documento ele está lendo. Um acervo descrito só com os padrões acaba classificado contra exemplos genéricos, e o modelo responde "não sei" para quase todo tipo. Uma frase sobre o acervo (o que é, de onde veio, que documentos tem) é a coisa mais eficaz que você pode fazer pelo resultado. **Papel nas instruções** (Novo projeto) e **Regras extras** (tela Instruções) também são repassados, como contexto.
+**Tema do acervo, Papel nas instruções e Regras extras vão para o Claude, não para o modelo que classifica.** Desde a 2.1.0 o motor `local` não os mostra ao modelo. Isso foi medido contra dois gabaritos: com o Tema preenchido, o modelo cortou pior os documentos (num processo real de 83 páginas, o F1 caiu de 73,7% para 50,0%, e ele achou o início de 11 dos 16 documentos em vez de 15), embora tenha acertado mais o tipo. Os três campos continuam indo para as instruções escritas para o Claude, onde dizem o que é o acervo. Escreva no Tema uma frase sobre o acervo (o que é, de onde veio, que documentos tem): ela ajuda o Claude a responder, não a classificação.
 
 **Qual modelo usar.** Medido neste projeto, sobre as mesmas janelas de um mesmo documento, com todos os modelos rodando inteiramente numa placa de 8 GB:
 
@@ -215,7 +215,7 @@ Duas coisas decidem mais sobre o resultado do que qualquer outra.
 | `qwen3:8b` | 5,4 GB | 100% | 108,8 |
 | `granite4.2:8b` | 5,7 GB | 100% | 116,9 |
 
-Nessa medição, o `qwen3.5:4b` alcançou a qualidade do melhor em um quarto do tempo e com metade da VRAM. Medido depois contra um gabarito, no acervo de demonstração (72 páginas, 41 peças), o `qwen3.5:9b` acertou mais a data (88,6%) e o autor (84,4%) e levou 4 min 12 s, contra 4 s do motor de regras; os números completos e o que eles não dizem estão em [QUALITY.pt-BR.md](QUALITY.pt-BR.md). Por isso o padrão desde a 1.5.14 é `qwen3.5:9b` numa placa de 8 GB ou mais e `qwen3.5:4b` nas menores. Descrever uma página é leitura e disciplina de formato; tamanho não compra qualidade sozinho e custa tempo.
+Nessa medição, o `qwen3.5:4b` alcançou a qualidade do melhor em um quarto do tempo e com metade da VRAM. Medido depois contra um gabarito, no acervo de demonstração (72 páginas, 41 peças), o `qwen3.5:9b` acertou mais a data (88,6%) e o autor (84,4%) e levou 4 min 12 s, contra 4 s do motor de regras; os números completos e o que eles não dizem estão em [QUALITY.pt-BR.md](QUALITY.pt-BR.md). Por isso o padrão da 1.5.14 até a 2.1.0 foi `qwen3.5:9b` numa placa de 8 GB ou mais e `qwen3.5:4b` nas menores. Desde a 2.1.0 o projeto escolhe um perfil: Melhor qualidade (`ornith-1.5:9b`, um Qwen 3.5 9B ajustado) numa placa de 8 GB ou mais, Mais rápido (`qwen3.5:4b`) nas menores. Medido contra dois gabaritos, o Melhor qualidade achou melhor os limites dos documentos (F1 de 100% no acervo de demonstração e de 73,7% num processo real de 83 páginas, contra 87,5% e 46,2% do Mais rápido) em cerca do dobro do tempo, e o `qwen3.5:9b` achou menos inícios de documento e juntou mais documentos que os dois. Descrever uma página é leitura e disciplina de formato; tamanho não compra qualidade sozinho e custa tempo.
 
 **Escolha um modelo que caiba na sua placa de vídeo.** O que não cabe na VRAM o Ollama roda na CPU, e a diferença é grande. Numa placa de 8 GB, um modelo de 9,1 GB rodou com 17% de si na GPU; um de 5 GB rodou inteiro na GPU. A tela Execução mostra a VRAM da placa, a VRAM usada e o modelo carregado; a tela Sobre lista os modelos instalados; o log avisa quando o modelo escolhido não cabe e diz qual placa e qual backend estão em uso. Um modelo que cabe e termina vale mais que um maior que passa a execução inteira transbordando.
 
@@ -227,7 +227,7 @@ Se a nota de qualidade parecer baixa, abra o log: ele informa como a GPU está s
 
 Três propriedades valem não importa quão bem o modelo faça o trabalho, porque o código as impõe.
 
-**Toda página chega ao índice.** Uma página que o modelo nunca mencionou ainda assim ganha uma entrada, com a referência dela, o arquivo e o próprio texto como resumo, porque o agrupamento percorre as páginas da janela, não a resposta do modelo. Uma peça que não passa na validação é descartada, mas as páginas dela voltam como entrada de confiança baixa, em vez de sumirem junto. Um índice que omite uma página em silêncio é pior que índice nenhum: o que falta é invisível.
+**Toda página chega ao índice**, com qualquer um dos motores. Uma página que o modelo nunca mencionou ainda assim ganha uma entrada, com a referência dela, o arquivo e o próprio texto como resumo, porque o agrupamento percorre as páginas da janela, não a resposta do modelo. Uma peça que não passa na validação é descartada, mas as páginas dela voltam como entrada de confiança baixa, em vez de sumirem junto. Um índice que omite uma página em silêncio é pior que índice nenhum: o que falta é invisível.
 
 **Um documento inteiro é sempre uma peça própria.** Um arquivo que é um documento só (HTML, Word, e-mail, planilha) começa uma peça nova, mesmo que o modelo o tenha emendado ao documento anterior. Numa página de legislação, a epígrafe ("LEI Nº 8.078, DE 11 DE SETEMBRO DE 1990") vira o tipo da peça. O autor de um ato é lido do texto completo, e cada autor e cada tipo têm uma grafia só em todo o índice.
 
@@ -275,7 +275,7 @@ Gravados na pasta de saída que você escolheu, no idioma em que a interface est
 - `project_instructions.md`: instruções para um Project do Claude, montadas com os campos que você preencheu no Novo projeto, incluindo como usar o índice, como achar uma norma no `normas-citadas.md` e a regra de sempre conferir valores no documento original.
 - `buscar.bat`: a busca por tema para o Claude Code, descrita em [Busca por tema e LexML](#busca-por-tema-e-lexml).
 - `project.db`: o banco do projeto. Guarda tudo, inclusive o texto de cada página e o índice da busca.
-- `CLAUDE.md`: só de consulta. Ensina o Claude Code a ler o índice e a usar o `buscar.bat`, e lembra que o texto dos documentos é dado, nunca instrução. Gravado junto dos relatórios e também quando você grava um conjunto numa pasta.
+- `CLAUDE.md`: só de consulta. Ensina o Claude Code a ler o índice e a usar o `buscar.bat`, lembra que o texto dos documentos é dado, nunca instrução, e termina com a mesma regra inegociável das instruções (conferir valor, data e tabela no arquivo original). Gravado junto dos relatórios e também quando você grava um conjunto numa pasta.
 
 Os arquivos intermediários (PDFs com OCR em `converted/`, fatias de texto em `blocks/`) ficam em `%LOCALAPPDATA%\GClaudeIndexer\work\<projeto>\`, fora da pasta de saída, desde a 1.5.8: uma pasta de saída no Drive não sincroniza gigabytes que só esta máquina usa. Um projeto antigo que ainda tenha essas pastas na saída continua sendo lido de lá.
 
