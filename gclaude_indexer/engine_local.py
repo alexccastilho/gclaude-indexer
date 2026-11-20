@@ -1877,6 +1877,49 @@ def _has_dedicated_gpu() -> bool:
     return gpu is not None and ("amd" in vendor or "advanced micro" in vendor) and gpu.vram_mb >= 2048
 
 
+def _fallback_only_windows(jsonl_path: Path) -> set:
+    """Keys of the windows whose every line in `raw_items.jsonl` carries
+    `"fallback": true`. One pass, holding only keys."""
+    if not jsonl_path.exists():
+        return set()
+    marked: set = set()
+    unmarked: set = set()
+    for _, text in raw_items.iter_lines(jsonl_path):
+        data = raw_items.parse(text)
+        if data is None:
+            continue
+        window_key = data.get(raw_items.WINDOW)
+        (marked if data.get(raw_items.FALLBACK) else unmarked).add(window_key)
+    return marked - unmarked
+
+
+def drop_fallback_lines_of_pending_windows(conn, jsonl_path: Path) -> int:
+    """Finishes a requeue the process did not: windows already `pending`
+    whose fallback lines are still in `raw_items.jsonl` (the crash between
+    the commit and the prune in `requeue_fallback_windows`). Their lines go;
+    the windows stay as they are. Returns how many windows.
+
+    `requeue_fallback_windows` itself only runs with the model up or a
+    graphics card; without both, the run classified those windows with the
+    Rules engine again and their lines ended up in the file twice."""
+    candidates = sorted(_fallback_only_windows(jsonl_path))
+    pending: set = set()
+    for start in range(0, len(candidates), 500):
+        chunk = candidates[start:start + 500]
+        pending.update(
+            row[0] for row in conn.execute(
+                f"SELECT key FROM window WHERE status = ? AND key IN ({','.join('?' * len(chunk))})",
+                (WINDOW_PENDING, *chunk),
+            )
+        )
+    if not pending:
+        return 0
+    raw_items.prune(
+        jsonl_path, lambda line: line.get(raw_items.WINDOW) in pending, temporary_suffix=".requeue.tmp"
+    )
+    return len(pending)
+
+
 def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
     """Windows the Rules engine classified only because the model
     was down (their lines carry `"fallback": true`) go back to 'pending',
@@ -1891,17 +1934,7 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
 
     Two passes over the file, holding only window keys: on a large
     collection it has gigabytes, and this runs at every classification."""
-    if not jsonl_path.exists():
-        return 0
-    marked: set = set()
-    unmarked: set = set()
-    for _, text in raw_items.iter_lines(jsonl_path):
-        data = raw_items.parse(text)
-        if data is None:
-            continue
-        window_key = data.get(raw_items.WINDOW)
-        (marked if data.get(raw_items.FALLBACK) else unmarked).add(window_key)
-    to_requeue = marked - unmarked
+    to_requeue = _fallback_only_windows(jsonl_path)
     if not to_requeue:
         return 0
     keys = sorted(to_requeue)
@@ -1966,6 +1999,11 @@ def classify_pending(
                 conn, "classification", "info", "log.local_engine.fallback_requeued",
                 {"windows": requeued}, language=language,
             )
+    else:
+        # The model stays down and the Rules engine will stand in again:
+        # nothing goes back to the queue, but a requeue cut short leaves
+        # pending windows whose old lines would be written a second time.
+        drop_fallback_lines_of_pending_windows(conn, jsonl_path)
     model_retry_at = 0.0 if model_required else time.monotonic() + MODEL_RETRY_SECONDS
     outages = 0
     gpu_plan_logged = False
