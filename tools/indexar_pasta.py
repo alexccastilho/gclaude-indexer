@@ -8,8 +8,9 @@
 
 """Indexa uma pasta sem a interface, do início ao fim (fase 37).
 
-As mesmas cinco etapas que a interface roda, na mesma ordem
-(`pipeline.STEP_ORDER`), depois a importação das peças e os
+As mesmas cinco etapas que a interface roda, pela mesma cadeia
+(`pipeline.run_step`, na ordem de `pipeline.STEP_ORDER`, com uma linha
+por etapa na tabela `run`), depois a importação das peças e os
 artefatos (`index.md`, um `index-<grupo>.md` por grupo). Existe para duas
 coisas que a interface não faz: rodar numa máquina sem ninguém na frente
 (o CI indexa o acervo de demonstração a cada push) e deixar ao lado do
@@ -61,15 +62,11 @@ def run(
     window: int | None = None, overlap: int | None = None,
 ) -> dict:
     from gclaude_indexer.config import config_from_input
-    from gclaude_indexer.conversion import convert
     from gclaude_indexer.db import connect, init_schema
-    from gclaude_indexer.extraction import extract_pages
     from gclaude_indexer.import_items import import_and_consolidate
     from gclaude_indexer.artifacts import generate_all_artifacts
-    from gclaude_indexer.orchestrator import run_classification
-    from gclaude_indexer.scanning import scan
-    from gclaude_indexer.pipeline import STEP_ORDER
-    from gclaude_indexer.windows_prep import prepare_windows
+    from gclaude_indexer.orchestrator import decide_engine
+    from gclaude_indexer.pipeline import STEP_ORDER, run_step
 
     source, output = Path(source).resolve(), Path(output).resolve()
     if not source.is_dir():
@@ -96,35 +93,34 @@ def run(
         "local_model": model,
     }
     # Sem estes dois, vale o padrão de `ProjectConfig` (16 páginas, sobreposição
-    # 2): este script não chama `auto_settings`, que só a interface chama. Com
-    # eles, a matriz janela × sobreposição da medição de `docs/QUALITY.md`.
+    # 2): este script não resolve `auto_settings` (`resolve_settings=False`
+    # abaixo), que só a interface resolve; a configuração daqui fica em
+    # memória, sem linha em `project`. Com eles, a matriz janela × sobreposição
+    # da medição de `docs/QUALITY.md`.
     if window is not None:
         dados["pages_per_window"] = window
     if overlap is not None:
         dados["overlap"] = overlap
     config = config_from_input(dados)
 
-    # Mesmos nomes, mesma ordem que a interface; se `STEP_ORDER` ganhar uma
-    # etapa, este dicionário deixa de cobri-lo e o erro aparece aqui.
-    etapas = {
-        "scan": scan, "conversion": convert, "extraction": extract_pages,
-        "windows": prepare_windows, "classification": run_classification,
-    }
-    faltam = set(STEP_ORDER) - set(etapas)
-    if faltam:
-        raise SystemExit(f"Etapa(s) sem correspondente neste script: {sorted(faltam)}")
-
     inicio = time.monotonic()
     iniciado_em = dt.datetime.now().isoformat(timespec="seconds")
     conn = connect(output / "project.db")
     try:
         init_schema(conn)
+        # Um motor para a execução inteira, decidido uma vez, como antes
+        # (a classificação decidia sozinha); a interface decide por etapa.
+        decisao = decide_engine(conn, config, language=language)
+        estado: dict = {}  # `run_state` das cinco etapas
         motor_usado = engine
         for nome in STEP_ORDER:
             t0 = time.monotonic()
-            resultado = etapas[nome](conn, config, should_stop=None, language=language)
+            resultado = run_step(
+                conn, config, nome, language=language, decision=decisao, run_state=estado,
+                resolve_settings=False,
+            )
             if nome == "classification":
-                motor_usado = resultado[0]
+                motor_usado = resultado.value[0]
             print(f"  {nome:<15} {time.monotonic() - t0:6.1f} s")
         t0 = time.monotonic()
         import_and_consolidate(conn, config, language=language)
