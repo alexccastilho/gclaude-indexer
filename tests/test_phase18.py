@@ -141,6 +141,30 @@ def test_os_erros_do_review_saem_no_idioma_do_relatorio(tmp_path):
     assert "(conversion) No se pudo preparar a.pdf: x." in em_es
 
 
+def test_evento_gravado_em_pt_sai_no_review_em_pt_igual_ao_gravado(tmp_path):
+    """Projeto em pt gerado em pt: a linha do review.md é o `message` que já
+    estava gravado, inclusive com parâmetro `nested`."""
+    from gclaude_indexer.artifacts import generate_review_md
+    from gclaude_indexer.events import record_event
+    from gclaude_indexer.i18n import nested
+
+    saida = tmp_path / "saida"
+    saida.mkdir()
+    conn = _conn(tmp_path)
+    record_event(
+        conn, "classification", "error", "log.local_engine.backend",
+        {"device": "GPU", "library": "Vulkan", "total": "8 GB",
+         "note": nested("log.local_engine.backend_no_note"),
+         "tuning": nested("log.local_engine.backend_tuning_default")},
+        language="pt",
+    )
+    gravado = conn.execute("SELECT message FROM event").fetchone()[0]
+
+    texto = generate_review_md(conn, _config(tmp_path, saida), "pt").read_text(encoding="utf-8")
+
+    assert f"(classification) {gravado}\n" in texto
+
+
 # --- o estado que os artefatos descrevem -----------------------------------
 
 
