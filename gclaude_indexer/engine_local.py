@@ -36,6 +36,7 @@ from .db import BatchWriter
 from .file_types import PAGED_CATEGORIES, category_of_extension
 from .events import record_event
 from .i18n import nested
+from .item_normalize import BLANK_PAGE_TYPE
 from .engine_rules import RulesEngine, load_rules
 from .gpu_budget import server_environment
 from .html_text import STRUCK_MARK
@@ -1765,7 +1766,6 @@ _SUMMARY_CHAR_LIMIT = 600
 # Tipo da peça de uma página sem texto e sem imagem. É o que o acervo traz de
 # verdade (a folha em branco de um volume encadernado): conhecida pelo código,
 # não precisa de pedido ao modelo e sai com confiança alta.
-BLANK_PAGE_TYPE = "PÁGINA EM BRANCO"
 BLANK_PAGE_SUMMARY = "Página em branco: sem texto e sem imagem."
 
 

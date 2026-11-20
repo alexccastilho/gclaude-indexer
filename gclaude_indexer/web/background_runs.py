@@ -41,6 +41,7 @@ from ..engine_local import model_to_use
 from ..orchestrator import resolve_effective_engine, run_classification
 from ..project import load_project
 from .. import source_folder
+from ..fulltext import coverage as fulltext_coverage
 from ..scanning import scan
 from .eta import ProgressEstimator
 
@@ -329,7 +330,7 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
                 weight_done = _weight_done(conn, task.step)
             fulltext = None
             if task.step == "extraction" and task.running and current - task.baseline >= task.total:
-                fulltext = _fulltext_progress(conn)
+                fulltext = fulltext_coverage(conn)
         finally:
             conn.close()
         task.last_count = current
@@ -354,16 +355,6 @@ def _stop_requested(task: StepTask) -> bool:
     loading the model can take over a minute). The screen says "stopping"
     for that interval instead of looking as if the click was lost."""
     return task.running and task.stop_signal.should_stop()
-
-
-def _fulltext_progress(conn) -> tuple[int, int]:
-    """`(indexed, extracted)` files for the full-text search."""
-    indexed = conn.execute(
-        "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id"
-        " WHERE file.status = 'extracted'"
-    ).fetchone()[0]
-    extracted = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
-    return indexed, extracted
 
 
 def _fulltext_progress_dict(task: StepTask, indexed: int, extracted: int) -> dict:

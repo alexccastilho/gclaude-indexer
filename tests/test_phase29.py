@@ -28,7 +28,7 @@ from gclaude_indexer.fulltext import coverage, index_pending, remove_file, searc
 from gclaude_indexer.i18n import translate
 from gclaude_indexer.import_items import RAW_ITEMS_FILE_NAME
 from gclaude_indexer.quality import _coverage
-from gclaude_indexer.web.background_runs import StepTask, _fulltext_progress, _fulltext_progress_dict
+from gclaude_indexer.web.background_runs import StepTask, _fulltext_progress_dict
 from gclaude_indexer.web.step_state import step_status
 from gclaude_indexer.windows_prep import group_page_counts, pages_for_group, prepare_windows
 
@@ -151,7 +151,7 @@ def test_barra_mostra_a_fase_da_busca(tmp_path):
     _, _, conn = _tres_notas(tmp_path)
     conn.execute("DELETE FROM fulltext_file WHERE rowid = (SELECT MIN(rowid) FROM fulltext_file)")
     conn.commit()
-    indexados, extraidos = _fulltext_progress(conn)
+    indexados, extraidos = coverage(conn)
     assert (indexados, extraidos) == (2, 3)
     tarefa = StepTask(step="extraction", total=0, baseline=0)
     progresso = _fulltext_progress_dict(tarefa, indexados, extraidos)

@@ -27,14 +27,14 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from .ocr_detection import MIN_AVG_CHARS_PER_PAGE
+
 
 _PDF_SAMPLE = 12
 _PDF_PAGES_SAMPLED = 6
 _TEXT_SAMPLE = 16
 _TEXT_BYTES = 64 * 1024
 
-# The rule `conversion.py` uses to decide a PDF needs OCR.
-_MIN_AVG_CHARS_PER_PAGE = 100
 
 _MULTI_PAGE_CATEGORIES = {"pdf", "imagens", "paginados", "legados"}
 
@@ -102,10 +102,10 @@ def _survey_pdfs(paths: list[Path], survey: FolderSurvey) -> list[str]:
                 lengths.append(len(text.strip()))
                 texts.append(text)
             survey.pdf_pages.append(count)
-            if statistics.mean(lengths) < _MIN_AVG_CHARS_PER_PAGE:
+            if statistics.mean(lengths) < MIN_AVG_CHARS_PER_PAGE:
                 survey.pdf_scanned += 1
             else:
-                survey.native_page_chars.extend(n for n in lengths if n >= _MIN_AVG_CHARS_PER_PAGE)
+                survey.native_page_chars.extend(n for n in lengths if n >= MIN_AVG_CHARS_PER_PAGE)
         except Exception:
             continue
         finally:

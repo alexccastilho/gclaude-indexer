@@ -41,6 +41,11 @@ from pathlib import Path
 from . import language_detect
 from .file_types import category_of_extension
 
+# Below this many characters of text a PDF page needs OCR (section 5,
+# step 2). The conversion decides with it and the settings proposal
+# predicts with it: the two must agree.
+MIN_AVG_CHARS_PER_PAGE = 100
+
 SAMPLE_PAGES = 3
 SAMPLE_DPI = 200
 # PDF com escritas diferentes nas páginas amostradas: o OSD passa por todas as

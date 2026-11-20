@@ -32,8 +32,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
 
+from . import lexml, planalto
 from .config import ProjectConfig
 from .events import record_event
 from .html_text import STRUCK_MARK
@@ -134,7 +134,6 @@ CLAUDE_MD_FILENAME = "CLAUDE.md"
 # mais para arquivo nenhum. O `legislacao-<grupo>.md` chegava a dezenas de
 # MB em duas partes e o claude.ai recusou as duas ("o conhecimento do
 # projeto excede o máximo"); um arquivo que nunca sobe só confundia.
-STRUCTURED_ENGINE = "structured"
 
 
 def _safe_group_name(group_key: str) -> str:
@@ -244,7 +243,7 @@ def _legislation_map(conn) -> tuple[dict[tuple[str, str], tuple[str, str]], dict
         for row in conn.execute("SELECT group_key, name, relative_path, extension FROM file")
     }
     pastas: dict[str, list[str]] = {}
-    for row in conn.execute("SELECT group_key, files FROM item WHERE engine = ?", (STRUCTURED_ENGINE,)):
+    for row in conn.execute("SELECT group_key, files FROM item WHERE engine = ?", (planalto.ENGINE,)):
         info = arquivos.get((row["group_key"], _first_file(row["files"])))
         if info:
             pastas.setdefault(row["group_key"], []).append(posixpath.dirname(info[0]))
@@ -274,7 +273,7 @@ def legislation_file_test(conn) -> Callable[[str | None, str], bool]:
     arquivos, raizes = _legislation_map(conn)
     reconhecidos = {
         (row["group_key"], _first_file(row["files"]))
-        for row in conn.execute("SELECT group_key, files FROM item WHERE engine = ?", (STRUCTURED_ENGINE,))
+        for row in conn.execute("SELECT group_key, files FROM item WHERE engine = ?", (planalto.ENGINE,))
     }
 
     def e_legislacao(group_key, name) -> bool:
@@ -300,7 +299,7 @@ def _legislation_test(conn) -> Callable[[sqlite3.Row], bool]:
     arquivos, raizes = _legislation_map(conn)
 
     def e_legislacao(item) -> bool:
-        if item["engine"] == STRUCTURED_ENGINE:
+        if item["engine"] == planalto.ENGINE:
             return True
         return _under_legislation_root(arquivos, raizes, item["group_key"], _first_file(item["files"]))
 
@@ -322,7 +321,6 @@ _LEXML_KINDS = {
     "EMENDA CONSTITUCIONAL": "emenda.constitucional",
 }
 _LEXML_URN = "https://www.lexml.gov.br/urn/urn:lex:br:federal:{kind}:{date};{number}"
-_LEXML_SEARCH = "https://www.lexml.gov.br/busca/search?keyword={term}"
 
 
 def norm_url(kind: str, number: str | None, date: str | None) -> str:
@@ -333,7 +331,7 @@ def norm_url(kind: str, number: str | None, date: str | None) -> str:
         limpo = re.sub(r"[.\s]", "", number).lower()
         return _LEXML_URN.format(kind=tipo, date=date, number=limpo)
     titulo = f"{kind} {number}".strip() if number else (kind or "")
-    return _LEXML_SEARCH.format(term=quote(titulo))
+    return lexml.search_page_url(titulo)
 
 
 # `TIPO`, depois opcionalmente ` Nº número`, depois opcionalmente `: ementa`;
@@ -362,7 +360,7 @@ def norm_links_by_file(conn) -> dict[tuple[str | None, str], str]:
     busca por tema imprime ao lado de um trecho de legislação."""
     links: dict[tuple[str | None, str], str] = {}
     for ato in conn.execute(
-        "SELECT group_key, files, type, date, summary FROM item WHERE engine = ?", (STRUCTURED_ENGINE,)
+        "SELECT group_key, files, type, date, summary FROM item WHERE engine = ?", (planalto.ENGINE,)
     ):
         chave = (ato["group_key"], _first_file(ato["files"]))
         if chave in links:
@@ -557,7 +555,7 @@ def generate_cited_norms_md(conn, config: ProjectConfig, language: str) -> Path 
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     caminho = Path(config.output_folder) / NORMS_FILENAME
     atos = conn.execute(
-        "SELECT * FROM item WHERE engine = ? ORDER BY group_key, start_order", (STRUCTURED_ENGINE,)
+        "SELECT * FROM item WHERE engine = ? ORDER BY group_key, start_order", (planalto.ENGINE,)
     ).fetchall()
     if not atos:
         try:

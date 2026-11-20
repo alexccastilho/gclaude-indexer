@@ -20,10 +20,9 @@ from pathlib import Path
 from .config import ProjectConfig, load_config, config_to_json
 from .db import WRITER_TIMEOUT_SECONDS, connect, init_schema
 from .events import record_event
-from .paths import sqlite_readonly_uri
+from .paths import PROJECT_DB_NAME, sqlite_readonly_uri
 from .windows_prep import mark_answered_windows
 
-DB_NAME = "project.db"
 
 
 @dataclass
@@ -62,7 +61,7 @@ def describe_project(output_folder: str | Path) -> ProjectSummary | None:
     database, a database from a future version — all of them are "no
     project here", which is exactly what the caller needs to know.
     """
-    path = Path(output_folder) / DB_NAME
+    path = Path(output_folder) / PROJECT_DB_NAME
     try:
         if not path.is_file():
             return None
@@ -144,7 +143,7 @@ def create_project(config: ProjectConfig) -> tuple[sqlite3.Connection, int]:
     output_folder = Path(config.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    conn = connect(output_folder / DB_NAME)
+    conn = connect(output_folder / PROJECT_DB_NAME)
     init_schema(conn)
 
     created_at = datetime.now().isoformat(timespec="seconds")
@@ -176,7 +175,7 @@ def load_project(
 
     `timeout`: how long to wait for a locked database. The screens' polls pass
     `READER_TIMEOUT_SECONDS`; see `db.py`."""
-    db_path = Path(output_folder) / DB_NAME
+    db_path = Path(output_folder) / PROJECT_DB_NAME
     # Sem banco, sem projeto: `connect` criaria um `project.db` vazio na
     # pasta pedida. Com a mudança de pasta (2.0.0), o caminho do catálogo
     # pode estar, por um instante ou depois de uma queda, sem o banco — e um

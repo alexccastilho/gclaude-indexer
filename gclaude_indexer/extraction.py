@@ -39,7 +39,7 @@ from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
 from .workdir import converted_artifact_path
 from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
-from .db import BatchWriter
+from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
@@ -52,7 +52,6 @@ from .file_types import MESSAGE_PAGE_CATEGORIES, PAGED_CATEGORIES, category_of_e
 from .fulltext import index_pending
 from .paths import natural_sort_key
 
-ERROR_MESSAGE_CHAR_LIMIT = 500
 
 # Documento inteiro (DOCX, PPTX, XLSX, HTML, TXT, e-mail...) vira uma página
 # só, com o texto todo do arquivo. O limite por página do projeto
