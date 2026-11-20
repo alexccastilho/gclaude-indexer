@@ -235,18 +235,12 @@ def load_project(
     # become inaccessible because of a cleanup on our end. The conversion is
     # silent (equivalent to the old behavior, which already fell back to
     # `rules`), but is recorded as a warning event so it doesn't disappear
-    # without a trace.
-    if data.get("classification_engine") == "openrouter":
+    # without a trace. Like the Claude Code conversion below, the warning
+    # goes out once and the configuration is saved converted; otherwise the
+    # warning would repeat on every request.
+    openrouter_converted = data.get("classification_engine") == "openrouter"
+    if openrouter_converted:
         data["classification_engine"] = ENGINE_RULES
-        # `load_project` has no request-scoped language to thread through
-        # here — it is called from everywhere, on every
-        # request, well before any endpoint reads the `language` cookie; a
-        # rare legacy-conversion warning does not justify rewiring every
-        # call site. `record_event` falls back to `DEFAULT_LANGUAGE`.
-        record_event(
-            conn, "diagnostics", "warning", "log.project.classification_engine_converted",
-            {"engine": "openrouter", "replacement": ENGINE_RULES},
-        )
 
     # 2.0.0: o motor "Claude Code (manual)" foi removido. Um projeto salvo
     # com ele abre e passa a `automatic`. Antes, as janelas que o Claude Code
@@ -259,6 +253,20 @@ def load_project(
         data["classification_engine"] = ENGINE_AUTOMATIC
 
     config = load_config(data)
+
+    if openrouter_converted:
+        try:
+            # `load_project` has no request-scoped language to thread
+            # through here; `record_event` falls back to `DEFAULT_LANGUAGE`.
+            _record_once(
+                conn, "log.project.classification_engine_converted",
+                {"engine": "openrouter", "replacement": ENGINE_RULES},
+            )
+            save_project_config(conn, config)
+        except sqlite3.Error:
+            # Banco travado por outro processo: vale só nesta abertura, e a
+            # próxima tenta de novo.
+            pass
 
     if claude_code_converted:
         try:
