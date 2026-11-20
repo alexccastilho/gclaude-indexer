@@ -41,8 +41,8 @@ from .caches import _cached_quality_summary, _idle_fragment
 from .formatting import _format_time
 from .notices import _dedup_notice, _reports_to_regenerate, _stale_context
 from .operations import (
-    OPERATION_FINISHED_TTL_SECONDS, _OPERATIONS, _back_to_project, _operation_response, _operation_view,
-    _slot_view, _start_operation,
+    OPERATION_FINISHED_TTL_SECONDS, _OPERATIONS, _back_to_project, _operation_busy_response, _operation_response,
+    _operation_view, _slot_view, _start_operation,
 )
 from .project_access import _open_project, _project_or_404, _read_project
 from .rendering import _request_language, render
@@ -172,26 +172,41 @@ def _step_running(project_id: int, key: str) -> bool:
     return task is not None and task.running
 
 
+def _start_from_next_step(request: Request, project_id: int, *, chain: bool):
+    """Starts the first pending step (only it, or the chain from it) and
+    answers with the steps table. With a long operation holding the
+    project's slot (import, update, clearing, deletion...), nothing starts:
+    the busy answer, the same check the other routes make."""
+    if state._operation_in_progress(project_id):
+        return _operation_busy_response(request, project_id)
+    language = _request_language(request)
+    with _open_project(project_id) as (entry, config, conn):
+        next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
+        if next_step is not None:
+            if chain:
+                task_manager.start_all(project_id, entry.output_folder, language=language, first_step=next_step)
+            else:
+                task_manager.start_step(project_id, entry.output_folder, next_step, language=language)
+        context = _steps_context(project_id, entry, config, conn, language)
+
+    return render(request, "_steps.html", context)
+
+
 @router.post("/projects/{project_id}/run-next", response_class=HTMLResponse)
 def run_next_step(request: Request, project_id: int):
     """"Run next step" button (section 6): figures out on its own, from the
     database state, which is the next incomplete step, and starts it in the
     background (the response does not wait for it to finish — the progress
     bar follows along via `run/progress`)."""
-    language = _request_language(request)
-    with _open_project(project_id) as (entry, config, conn):
-        next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
-        if next_step is not None:
-            task_manager.start_step(project_id, entry.output_folder, next_step, language=language)
-        context = _steps_context(project_id, entry, config, conn, language)
-
-    return render(request, "_steps.html", context)
+    return _start_from_next_step(request, project_id, chain=False)
 
 
 @router.post("/projects/{project_id}/run-all", response_class=HTMLResponse)
 def run_all(request: Request, project_id: int):
     """"Run everything up to classification" button (section 6) — chains
     the steps in the background, one after another."""
+    if state._operation_in_progress(project_id):
+        return _operation_busy_response(request, project_id)
     language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         task_manager.start_all(project_id, entry.output_folder, language=language)
@@ -205,14 +220,7 @@ def resume_run(request: Request, project_id: int):
     """"Continue" in the progress box (fase 34): the same chain as "run
     everything", started at the first pending step — the paused one, which
     is resumable — instead of at the scan."""
-    language = _request_language(request)
-    with _open_project(project_id) as (entry, config, conn):
-        next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
-        if next_step is not None:
-            task_manager.start_all(project_id, entry.output_folder, language=language, first_step=next_step)
-        context = _steps_context(project_id, entry, config, conn, language)
-
-    return render(request, "_steps.html", context)
+    return _start_from_next_step(request, project_id, chain=True)
 
 
 @router.post("/projects/{project_id}/pause", response_class=HTMLResponse)
