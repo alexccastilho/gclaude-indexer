@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from gclaude_indexer.web import state
+from gclaude_indexer.web import routes_run
 
 RAIZ = Path(__file__).resolve().parent.parent
 CAMINHO_INSTALAR_PS1 = RAIZ / "install.ps1"
@@ -451,7 +452,7 @@ def test_nenhuma_rota_http_pode_disparar_uac(monkeypatch):
     monkeypatch.setattr(sensors, "read_snapshot", lambda: None)
     cliente = TestClient(modulo_app.app)
     guardas = {
-        "X-GClaude-Sensor-Token": modulo_app.SENSOR_REQUEST_TOKEN,
+        "X-GClaude-Sensor-Token": routes_run.SENSOR_REQUEST_TOKEN,
         "Sec-Fetch-Site": "same-origin",
         "Host": f"127.0.0.1:{state.SERVER_PORT}",
     }
