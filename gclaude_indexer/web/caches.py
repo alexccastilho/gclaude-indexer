@@ -77,13 +77,19 @@ _quality_cache_lock = threading.Lock()
 
 
 def _quality_signature(conn, config: ProjectConfig) -> tuple:
+    """Cites every table the cached summaries read: `quality_summary` and
+    `pending_items` (item, window, page, file) and `compare_runs` (run). A
+    step closes its `run` row after its last window commit, so the run's
+    own count of finished rows has to be here too."""
     row = conn.execute(
         """
         SELECT (SELECT MAX(id) FROM item), (SELECT COUNT(*) FROM item),
                (SELECT COUNT(*) FROM window WHERE status = ?),
                (SELECT COUNT(*) FROM window WHERE status = ?),
                (SELECT MAX(id) FROM page),
-               (SELECT COUNT(*) FROM file WHERE status = ?)
+               (SELECT COUNT(*) FROM file WHERE status = ?),
+               (SELECT MAX(id) FROM run),
+               (SELECT COUNT(*) FROM run WHERE finished_at IS NOT NULL)
         """,
         (WINDOW_DONE, WINDOW_PENDING, FAILED),
     ).fetchone()
