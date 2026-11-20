@@ -28,6 +28,7 @@ from gclaude_indexer.fulltext import (
 )
 from gclaude_indexer.scanning import scan
 from gclaude_indexer.web.app import app
+from gclaude_indexer.web import routes_result
 
 ARTIGOS_LONGOS = "\n".join(
     f"Art. {n}º " + f"Disposição número {n} sobre a matéria regulada. " * 20 for n in range(1, 6)
@@ -258,8 +259,8 @@ def test_abrir_arquivo_usa_o_caminho_do_banco(cliente, tmp_path, monkeypatch):
     import gclaude_indexer.web.app as app_mod
 
     abertos = []
-    monkeypatch.setattr(app_mod.os, "startfile", lambda caminho: abertos.append(caminho), raising=False)
-    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(routes_result.os, "startfile", lambda caminho: abertos.append(caminho), raising=False)
+    monkeypatch.setattr(routes_result.sys, "platform", "win32")
     projeto_id = _projeto_web(cliente, tmp_path)
 
     resposta = cliente.post(

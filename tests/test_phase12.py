@@ -15,6 +15,7 @@ from gclaude_indexer.web.app import app
 from gclaude_indexer.web.formatting import _format_time
 from gclaude_indexer.web.background_runs import task_manager
 from gclaude_indexer.web import routes_projects
+from gclaude_indexer.web import routes_result
 
 
 @pytest.fixture
@@ -729,13 +730,13 @@ def test_limpeza_pausa_etapas_em_andamento_antes_de_apagar(cliente, tmp_path, mo
     projeto_id = _criar_projeto(cliente, tmp_path)
     ordem = []
     original_pausar = task_manager.pause
-    original_limpar = app_mod.clear_intermediates
+    original_limpar = routes_result.clear_intermediates
     monkeypatch.setattr(
         task_manager, "pause",
         lambda pid: (ordem.append("pausar"), original_pausar(pid))[1],
     )
     monkeypatch.setattr(
-        app_mod, "clear_intermediates",
+        routes_result, "clear_intermediates",
         lambda pasta: (ordem.append("limpar"), original_limpar(pasta))[1],
     )
 

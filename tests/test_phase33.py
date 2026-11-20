@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from gclaude_indexer.web import app as modulo_app, routes_projects, routes_update
+from gclaude_indexer.web import app as modulo_app, routes_projects, routes_result, routes_update
 from tests.test_phase31 import _app_com_projeto
 from tests.test_phase32 import _arranque_isolado
 
@@ -86,8 +86,8 @@ _ROTAS = [
 _DONO = {
     "apply_update_plan": routes_update,
     "delete_project": routes_projects,
-    "index_fulltext": modulo_app,
-    "clear_intermediates": modulo_app,
+    "index_fulltext": routes_result,
+    "clear_intermediates": routes_result,
 }
 
 
