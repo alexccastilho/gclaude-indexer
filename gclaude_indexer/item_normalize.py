@@ -137,6 +137,8 @@ _PLACEHOLDERS = {
     "unknown", "não informado", "nao informado", "no informado", "not informed",
     "sem autor", "sin autor", "no author",
 }
+# Compared without the dots at the ends, like the value ("n.a." and "n.a").
+_PLACEHOLDERS_UNDOTTED = frozenset(placeholder.strip(".") for placeholder in _PLACEHOLDERS)
 _TEXT_FIELDS = ("type", "date", "author", "summary")
 
 # An "author" that is the citation of a norm ("Lei nº 9.394/1996",
@@ -159,9 +161,7 @@ def clean_placeholders(items: list[dict]) -> int:
     for item in items:
         for field_name in _TEXT_FIELDS:
             value = item.get(field_name)
-            if isinstance(value, str) and value.strip().lower().strip(".") in {
-                placeholder.strip(".") for placeholder in _PLACEHOLDERS
-            }:
+            if isinstance(value, str) and value.strip().lower().strip(".") in _PLACEHOLDERS_UNDOTTED:
                 item[field_name] = None
                 cleaned += 1
             elif isinstance(value, str) and not value.strip():
