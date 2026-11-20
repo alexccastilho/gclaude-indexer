@@ -26,13 +26,11 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .classification import (
-    CLASSIFICATION_BATCH_SECONDS, WindowPage, WindowPageLoader, ClassifiedItem, load_window_pages,
-    item_to_dict, validate_item,
+    STOP_CLASSIFYING, WindowItems, WindowPage, WindowRunCounts, ClassifiedItem, classify_windows,
     page_order, starts_new_document, normalize_type,
     SUMMARY_CHAR_LIMIT, files_sorted, is_calendar_day, item_for_pages, normalize_confidence,
 )
 from .config import ProjectConfig
-from .db import BatchWriter
 from .engine_names import ENGINE_LOCAL
 from .file_types import PAGED_CATEGORIES, category_of_extension
 from .events import record_event
@@ -45,7 +43,7 @@ from . import fulltext, hardware, local_models, ollama_backend, ollama_models
 from .ollama_backend import OLLAMA_SERVE_LOG_NAME
 from .subprocess_utils import start_in_background
 from . import language_detect, planalto
-from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
+from .file_status import WINDOW_PENDING
 from .paths import RAW_ITEMS_FILE_NAME, machine_local_folder
 from .tools import find as find_tool
 
@@ -1561,16 +1559,10 @@ def _dict_to_item(
 
 
 @dataclass
-class LocalClassificationResult:
-    windows_processed: int = 0
+class LocalClassificationResult(WindowRunCounts):
     windows_via_rules_fallback: int = 0
     windows_skipped: int = 0
     windows_structured: int = 0
-    items_generated: int = 0
-    invalid_items: int = 0
-    high_confidence: int = 0
-    medium_confidence: int = 0
-    low_confidence: int = 0
     # Fase 36: windows whose context had to grow past the run's initial
     # value, and windows split in two because they did not fit the ceiling.
     windows_context_raised: int = 0
@@ -1693,20 +1685,6 @@ def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], li
             has_table=False, has_image=False, files=files_sorted,
         ))
     return items, [page for page in pages if not is_blank_page(page)]
-
-
-def _uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> list[WindowPage]:
-    """Páginas da janela que nenhuma peça cobre, na ordem em que aparecem."""
-    coberto: set[int] = set()
-    for item in items:
-        for numero in range(item.start_order, item.end_order + 1):
-            coberto.add(numero)
-    faltando = []
-    for page in pages:
-        numero = page_order(page)
-        if numero not in coberto:
-            faltando.append(page)
-    return faltando
 
 
 def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
@@ -1988,8 +1966,6 @@ def classify_pending(
             )
     model_retry_at = 0.0 if model_required else time.monotonic() + MODEL_RETRY_SECONDS
     outages = 0
-    stopped = False
-    pending_windows = conn.execute("SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)).fetchall()
     gpu_plan_logged = False
     backend_logged = False
 
@@ -2001,203 +1977,152 @@ def classify_pending(
             time.sleep(min(1.0, max(0.0, moment - time.monotonic())))
         return True
 
-    loader = WindowPageLoader(conn)  # One read of each group's order
-    # The window's events and its "done" go in one batch
-    # (`BatchWriter`) instead of 2–4 commits per window, each costing
-    # seconds on a Drive-synced database and locking the screens out. The
-    # items are flushed to `raw_items.jsonl` before the window is queued.
-    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
-    with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
-        try:
-            for window in pending_windows:
-                if stopped or (should_stop is not None and should_stop()):
-                    break
+    def classify_window(window, pages, writer):
+        """The window's items, or `None` (skipped: stays pending), or
+        `STOP_CLASSIFYING` (asked to stop while waiting for the model)."""
+        nonlocal ollama_available, model_retry_at, outages, gpu_plan_logged, backend_logged
+        # Planalto acts are read from their own structure
+        # (`planalto.py`); only the other pages go to the model. A
+        # window made only of acts never waits for the model.
+        # A página em branco (sem texto e sem imagem) não vai ao modelo:
+        # vira "PÁGINA EM BRANCO" com confiança alta.
+        blank_items, pages_to_read = split_blank_pages(pages)
+        result.blank_pages += sum(item.end_order - item.start_order + 1 for item in blank_items)
+        structured_items, model_pages = planalto.split(pages_to_read)
+        result.windows_structured += 1 if structured_items else 0
 
-                pages = load_window_pages(conn, window, loader)
-                # Planalto acts are read from their own structure
-                # (`planalto.py`); only the other pages go to the model. A
-                # window made only of acts never waits for the model.
-                # A página em branco (sem texto e sem imagem) não vai ao modelo:
-                # vira "PÁGINA EM BRANCO" com confiança alta.
-                blank_items, pages_to_read = split_blank_pages(pages)
-                result.blank_pages += sum(item.end_order - item.start_order + 1 for item in blank_items)
-                structured_items, model_pages = planalto.split(pages_to_read)
-                result.windows_structured += 1 if structured_items else 0
-
-                items = None if model_pages else []
-                via_fallback = False
-                failures_here = 0
-                while items is None:
-                    if not ollama_available and (
-                        model_required or (outages < MODEL_MAX_OUTAGES and time.monotonic() >= model_retry_at)
-                    ):
-                        if not wait_until(model_retry_at):
-                            stopped = True
-                            break
-                        writer.flush()  # the events below commit on their own
-                        ollama_available = local_engine.is_available() or _try_restart_ollama(
-                            conn, local_engine, language=language
+        items = None if model_pages else []
+        via_fallback = False
+        failures_here = 0
+        while items is None:
+            if not ollama_available and (
+                model_required or (outages < MODEL_MAX_OUTAGES and time.monotonic() >= model_retry_at)
+            ):
+                if not wait_until(model_retry_at):
+                    return STOP_CLASSIFYING
+                writer.flush()  # the events below commit on their own
+                ollama_available = local_engine.is_available() or _try_restart_ollama(
+                    conn, local_engine, language=language
+                )
+                if ollama_available:
+                    if outages:
+                        record_event(conn, "classification", "info",
+                                     "log.local_engine.model_resumed", language=language)
+                else:
+                    outages += 1
+                    model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
+                    if model_required:
+                        if outages == 1 or outages % 10 == 0:
+                            record_event(
+                                conn, "classification", "warning", "log.local_engine.model_waiting",
+                                {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages},
+                                language=language,
+                            )
+                        continue
+                    if outages >= MODEL_MAX_OUTAGES:
+                        record_event(
+                            conn, "classification", "warning", "log.local_engine.model_given_up",
+                            {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
+                             "max": MODEL_MAX_OUTAGES},
+                            language=language,
                         )
-                        if ollama_available:
-                            if outages:
-                                record_event(conn, "classification", "info",
-                                             "log.local_engine.model_resumed", language=language)
-                        else:
-                            outages += 1
-                            model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
-                            if model_required:
-                                if outages == 1 or outages % 10 == 0:
-                                    record_event(
-                                        conn, "classification", "warning", "log.local_engine.model_waiting",
-                                        {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages},
-                                        language=language,
-                                    )
-                                continue
-                            if outages >= MODEL_MAX_OUTAGES:
-                                record_event(
-                                    conn, "classification", "warning", "log.local_engine.model_given_up",
-                                    {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
-                                     "max": MODEL_MAX_OUTAGES},
-                                    language=language,
-                                )
 
-                    if ollama_available:
-                        try:
-                            items = local_engine.classify(model_pages)
-                            outages = 0
-                            if not gpu_plan_logged:
-                                # Commits on its own: the batch goes first, so a
-                                # later replay never writes these ops twice.
-                                writer.flush()
-                                gpu_plan_logged = _log_gpu_plan(conn, local_engine, language=language)
-                            if not backend_logged:
-                                writer.flush()
-                                _log_backend(conn, language=language)
-                                backend_logged = True
-                            _log_rejection_warnings(
-                                conn, local_engine, window["key"], language=language, writer=writer
-                            )
-                            raised, split = _log_window_notes(
-                                conn, local_engine, window["key"], language=language, writer=writer
-                            )
-                            result.windows_context_raised += raised
-                            result.windows_split_for_size += split
-                            break
-                        except ModelAnswerError as exc:
-                            writer.flush()  # these events commit on their own
-                            record_event(
-                                conn, "classification", "warning", "log.local_engine.window_split",
-                                {"window": window["key"], "error": str(exc)}, language=language,
-                            )
-                            items = _classify_in_parts(local_engine, model_pages)
-                            break
-                        except OllamaConnectionError as exc:
-                            writer.flush()  # these events commit on their own
-                            failures_here += 1
-                            record_event(
-                                conn, "classification", "warning", "log.local_engine.connection_lost",
-                                {"error": str(exc)}, language=language,
-                            )
-                            if failures_here >= WINDOW_MAX_ATTEMPTS:
-                                # The model answers other windows but not this
-                                # one: it stays pending for the next run instead
-                                # of holding up the rest.
-                                record_event(
-                                    conn, "classification", "error", "log.local_engine.window_skipped",
-                                    {"window": window["key"], "attempts": failures_here},
-                                    language=language,
-                                )
-                                result.windows_skipped += 1
-                                break
-                            # A server that still answers is busy, not dead:
-                            # the same window is sent again with no restart.
-                            if local_engine.is_available():
-                                continue
-                            ollama_available = False
-                            model_retry_at = 0.0 if model_required else time.monotonic()
-                            if not model_required:
-                                ollama_available = _try_restart_ollama(conn, local_engine, language=language)
-                                if ollama_available:
-                                    continue
-                                outages += 1
-                                model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
-                                record_event(
-                                    conn, "classification", "warning",
-                                    "log.local_engine.model_paused" if outages < MODEL_MAX_OUTAGES
-                                    else "log.local_engine.model_given_up",
-                                    {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
-                                     "max": MODEL_MAX_OUTAGES},
-                                    language=language,
-                                )
-                            continue
-
+            if ollama_available:
+                try:
+                    items = local_engine.classify(model_pages)
+                    outages = 0
+                    if not gpu_plan_logged:
+                        # Commits on its own: the batch goes first, so a
+                        # later replay never writes these ops twice.
+                        writer.flush()
+                        gpu_plan_logged = _log_gpu_plan(conn, local_engine, language=language)
+                    if not backend_logged:
+                        writer.flush()
+                        _log_backend(conn, language=language)
+                        backend_logged = True
+                    _log_rejection_warnings(
+                        conn, local_engine, window["key"], language=language, writer=writer
+                    )
+                    raised, split = _log_window_notes(
+                        conn, local_engine, window["key"], language=language, writer=writer
+                    )
+                    result.windows_context_raised += raised
+                    result.windows_split_for_size += split
+                    break
+                except ModelAnswerError as exc:
+                    writer.flush()  # these events commit on their own
+                    record_event(
+                        conn, "classification", "warning", "log.local_engine.window_split",
+                        {"window": window["key"], "error": str(exc)}, language=language,
+                    )
+                    items = _classify_in_parts(local_engine, model_pages)
+                    break
+                except OllamaConnectionError as exc:
+                    writer.flush()  # these events commit on their own
+                    failures_here += 1
+                    record_event(
+                        conn, "classification", "warning", "log.local_engine.connection_lost",
+                        {"error": str(exc)}, language=language,
+                    )
+                    if failures_here >= WINDOW_MAX_ATTEMPTS:
+                        # The model answers other windows but not this
+                        # one: it stays pending for the next run instead
+                        # of holding up the rest.
+                        record_event(
+                            conn, "classification", "error", "log.local_engine.window_skipped",
+                            {"window": window["key"], "attempts": failures_here},
+                            language=language,
+                        )
+                        result.windows_skipped += 1
+                        break
+                    # A server that still answers is busy, not dead:
+                    # the same window is sent again with no restart.
+                    if local_engine.is_available():
+                        continue
+                    ollama_available = False
+                    model_retry_at = 0.0 if model_required else time.monotonic()
                     if not model_required:
-                        items = rules_fallback_engine.classify(model_pages)
-                        result.windows_via_rules_fallback += 1
-                        via_fallback = True
+                        ollama_available = _try_restart_ollama(conn, local_engine, language=language)
+                        if ollama_available:
+                            continue
+                        outages += 1
+                        model_retry_at = time.monotonic() + MODEL_RETRY_SECONDS
+                        record_event(
+                            conn, "classification", "warning",
+                            "log.local_engine.model_paused" if outages < MODEL_MAX_OUTAGES
+                            else "log.local_engine.model_given_up",
+                            {"seconds": int(MODEL_RETRY_SECONDS), "outages": outages,
+                             "max": MODEL_MAX_OUTAGES},
+                            language=language,
+                        )
+                    continue
 
-                if items is None:
-                    continue  # stopped, or skipped: the window stays pending
-                items = blank_items + structured_items + items
+            if not model_required:
+                items = rules_fallback_engine.classify(model_pages)
+                result.windows_via_rules_fallback += 1
+                via_fallback = True
 
-                def escrever(item: ClassifiedItem) -> bool:
-                    """Valida e grava a peça. `False` quando ela foi recusada."""
-                    item_dict = item_to_dict(item, window["key"], window["group_key"])
-                    if via_fallback:
-                        # So the next run gives it back to the model.
-                        item_dict[FALLBACK_FIELD] = True
-                    errors = validate_item(item_dict)
-                    if errors:
-                        result.invalid_items += 1
-                        params = {"engine": item.engine, "window": window["key"], "errors": "; ".join(errors)}
-                        writer.add(lambda c, params=params: record_event(
-                            c, "classification", "error", "log.local_engine.invalid_item",
-                            params, language=language, commit=False,
-                        ))
-                        return False
+        if items is None:
+            return None  # skipped: the window stays pending
+        return WindowItems(
+            blank_items + structured_items + items,
+            # So the next run gives it back to the model.
+            {FALLBACK_FIELD: True} if via_fallback else {},
+        )
 
-                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
-                    result.items_generated += 1
-                    if item.confidence == "high":
-                        result.high_confidence += 1
-                    elif item.confidence == "medium":
-                        result.medium_confidence += 1
-                    else:
-                        result.low_confidence += 1
-                    return True
-
-                gravadas = [item for item in items if escrever(item)]
-
-                # Garantia de cobertura (requisito central: nada pode faltar do
-                # índice). Feita aqui, e não dentro de `classify`, para valer
-                # também quando a janela falhou e caiu no motor de regras.
-                #
-                # Depois da validação, e não antes: uma peça recusada não pode
-                # levar as páginas dela junto. Cada peça recusada por causa
-                # da data era uma faixa de páginas
-                # que sumiam do índice sem deixar rastro, porque a cobertura
-                # já tinha sido calculada contando com elas.
-                faltando = _uncovered_pages(pages, gravadas)
-                if faltando:
-                    params = {"window": window["key"], "pages": len(faltando)}
-                    writer.add(lambda c, params=params: record_event(
-                        c, "classification", "warning", "log.local_engine.coverage_filled",
-                        params, language=language, commit=False,
-                    ))
-                    for item in _coverage_items(faltando):
-                        escrever(item)
-
-                jsonl_file.flush()
-                writer.add(lambda c, window_id=window["id"]: c.execute(MARK_WINDOW_DONE, (window_id,)))
-                result.windows_processed += 1
-            writer.flush()
-        except BaseException:
-            jsonl_file.flush()
-            try:
-                writer.flush()
-            except Exception:
-                writer.discard()
-            raise
+    # The window's events and its "done" go in one batch (`BatchWriter`)
+    # instead of 2–4 commits per window. The coverage fill is done by the
+    # loop, and not inside `classify`, so it also holds when the window
+    # failed and fell back to the rules engine.
+    classify_windows(
+        conn, config, classify_window, result,
+        invalid_item_event=lambda item, window_key, errors: (
+            "log.local_engine.invalid_item",
+            {"engine": item.engine, "window": window_key, "errors": "; ".join(errors)},
+        ),
+        coverage=("log.local_engine.coverage_filled", _coverage_items),
+        should_stop=should_stop, language=language,
+    )
 
     if result.windows_context_raised or result.windows_split_for_size:
         # Fase 36: the context story of the step, once — the per-window
