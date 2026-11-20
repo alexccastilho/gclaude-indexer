@@ -1763,7 +1763,8 @@ _FALLBACK_SUMMARY_CHARS = 300
 _SUMMARY_CHAR_LIMIT = 600
 
 
-# Tipo da peça de uma página sem texto e sem imagem. É o que o acervo traz de
+# Resumo da peça de uma página sem texto e sem imagem (tipo
+# `item_normalize.BLANK_PAGE_TYPE`). É o que o acervo traz de
 # verdade (a folha em branco de um volume encadernado): conhecida pelo código,
 # não precisa de pedido ao modelo e sai com confiança alta.
 BLANK_PAGE_SUMMARY = "Página em branco: sem texto e sem imagem."
