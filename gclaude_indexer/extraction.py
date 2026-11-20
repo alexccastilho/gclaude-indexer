@@ -52,7 +52,10 @@ from .file_status import (
     EXTRACTED, HAS_INTERMEDIATE, MARK_EXTRACTED, MARK_EXTRACTION_FAILED, RESET_TO_DISCOVERED_KEEP_LANGUAGE,
     in_params,
 )
-from .file_types import MESSAGE_PAGE_CATEGORIES, PAGED_CATEGORIES, category_of_extension
+from .file_types import (
+    DOCX_CATEGORY, IMAGE_CATEGORY, MESSAGE_PAGE_CATEGORIES, OPENDOCUMENT_CATEGORY, PAGED_CATEGORIES, PDF_CATEGORY,
+    READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, TEXT_CATEGORY, XLSX_CATEGORY, category_of_extension,
+)
 from .fulltext import index_pending
 from .paths import natural_sort_key
 
@@ -72,7 +75,7 @@ def chars_limit_for(category: str | None, config: ProjectConfig) -> int:
     `WHOLE_DOCUMENT_CHARS` para o resto. Um `.p7m` pode ser uma coisa ou a
     outra (depende do que está dentro): `_extract_file_pages` aplica o limite
     exato; aqui, onde só se sabe a extensão, vale o maior."""
-    if category == "assinados":
+    if category == SIGNED_CATEGORY:
         return max(config.chars_per_page, WHOLE_DOCUMENT_CHARS)
     return config.chars_per_page if category in PAGED_CATEGORIES else WHOLE_DOCUMENT_CHARS
 
@@ -165,12 +168,12 @@ def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, boo
     if intermediate is not None and not intermediate.exists():
         raise IntermediateMissing(relative_path)
 
-    if category == "assinados":
+    if category == SIGNED_CATEGORY:
         # O que veio dentro decide: PDF (páginas de verdade) ou texto.
-        category = "pdf" if intermediate.suffix.lower() == ".pdf" else "text"
+        category = PDF_CATEGORY if intermediate.suffix.lower() == ".pdf" else TEXT_CATEGORY
     limit = chars_limit_for(category, config)
 
-    if category in ("pdf", "paginados", "legados"):
+    if category in READ_AS_PDF_CATEGORIES:
         pdf_path = intermediate if intermediate is not None else Path(config.source_folder) / relative_path
         return _read_pdf_pages(pdf_path, limit)
 
@@ -182,13 +185,13 @@ def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, boo
 
     text = capped_text(intermediate.read_text(encoding="utf-8"), limit)
 
-    if category == "imagens":
+    if category == IMAGE_CATEGORY:
         return [(text, 1, False)]
-    if category == "xlsx" or (
-        category == "opendocument" and light_formats.odf_has_table(Path(row["relative_path"]))
+    if category == XLSX_CATEGORY or (
+        category == OPENDOCUMENT_CATEGORY and light_formats.odf_has_table(Path(row["relative_path"]))
     ):
         return [(text, 0, True)]
-    if category == "docx":
+    if category == DOCX_CATEGORY:
         has_table = _docx_has_table(Path(config.source_folder) / relative_path)
         return [(text, 0, has_table)]
     return [(text, 0, False)]  # pptx, texto, email

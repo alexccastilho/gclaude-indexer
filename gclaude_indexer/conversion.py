@@ -46,9 +46,14 @@ from .worker_pool import (
 from .parallelism import _physical_cores, io_workers_for, workers_for
 from .fulltext import remove_file as remove_from_search
 from .file_types import (
-    ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, EXTENSION_CATEGORIES, GOOGLE_DOC_EXTENSIONS, REASON_BINARY,
-    REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED, SECRET_EXTENSIONS,
-    HEAD_BYTES, category_of_extension, file_extension, has_private_key_marker, index_decision, looks_binary,
+    ALWAYS_BLOCKED_EXTENSIONS, ARCHIVE_EXTENSIONS, CAD_CATEGORY, DOCX_CATEGORY, EMAIL_CATEGORY, EXTENSION_CATEGORIES,
+    GOOGLE_DOC_EXTENSIONS, HEAD_BYTES, HTML_EXTENSIONS, IMAGE_CATEGORY, LEGACY_CATEGORY, LIGHT_TEXT_CATEGORIES,
+    MBOX_CATEGORY, MEDIA_CATEGORY, MHTML_EXTENSIONS, OPENDOCUMENT_CATEGORY, OUTLOOK_CATEGORY,
+    PAGED_FORMAT_CATEGORY, PDF_CATEGORY, PPTX_CATEGORY, QUEUE_HEAVY, QUEUE_LEGACY, QUEUE_LIGHT, QUEUE_MEDIA,
+    QUEUE_OUTLOOK, REASON_BINARY, REASON_COMPONENT_UNAVAILABLE, REASON_SIGNATURE_DETACHED, REASON_UNSUPPORTED,
+    RTF_CATEGORY, SECRET_EXTENSIONS, SIGNED_CATEGORY, SUBTITLE_CATEGORY, TEXT_CATEGORY, WEB_DATA_CATEGORY,
+    XLSX_CATEGORY, category_of_extension, conversion_queue, file_extension, has_private_key_marker,
+    index_decision, looks_binary,
 )
 from . import file_status
 from .file_status import is_waiting_component
@@ -57,15 +62,12 @@ from .text_decoding import decode_bytes, decode_markup
 
 # How much of an unknown-extension file is checked for a NUL byte.
 _BINARY_SNIFF_BYTES = 8192
-# Categories whose conversion may run OCR — the CPU-bound queue.
-# Os paginados e os assinados (`.p7m` com PDF dentro) passam pelo mesmo OCR
-# do PDF; os formatos antigos (LibreOffice) também, depois de virarem PDF.
-OCR_CATEGORIES = frozenset({"pdf", "imagens", "paginados", "assinados", "legados"})
-LEGACY_CATEGORY = "legados"
-# Arquivos do Outlook: fila própria, lida em fluxo neste processo (`_convert_outlook`).
-OUTLOOK_CATEGORY = "outlook"
-# Áudio e vídeo (`midia`): fila própria, transcrita em fluxo neste processo (`_convert_media`).
-MEDIA_CATEGORY = "midia"
+# Qual categoria vai para qual fila está em `file_types.CATEGORY_TRAITS`
+# (`conversion_queue`). Os paginados e os assinados (`.p7m` com PDF dentro)
+# passam pelo mesmo OCR do PDF, na fila pesada; os formatos antigos
+# (LibreOffice) também, depois de virarem PDF, numa fila própria. Outlook
+# (`_convert_outlook`) e mídia (`_convert_media`) são lidos em fluxo neste
+# processo, cada um na sua fila.
 
 
 @dataclass
@@ -317,8 +319,9 @@ def _extract_text_msg(path: Path) -> str:
         message.close()
 
 
-_HTML_EXTENSIONS = {"html", "htm", "xhtml", "xht", "shtml"}
-_MHTML_EXTENSIONS = {"mht", "mhtml"}
+# Sem o ponto: `_extract_text_web` recebe a extensão como a linha de `file`.
+_HTML_EXTENSIONS = {extension.lstrip(".") for extension in HTML_EXTENSIONS}
+_MHTML_EXTENSIONS = {extension.lstrip(".") for extension in MHTML_EXTENSIONS}
 
 
 def _extract_text_mhtml(data: bytes) -> str:
@@ -385,39 +388,37 @@ def _extract_text_image(path: Path, ocr_language: str, rotate: int = 0) -> str:
         return pytesseract.image_to_string(image, lang=ocr_language, timeout=IMAGE_OCR_TIMEOUT_S)
 
 
-_TEXT_CATEGORIES = frozenset({
-    "docx", "xlsx", "pptx", "text", "web_dados", "email", "opendocument", "rtf", "mbox", "cad", "legendas",
-})
+# Também diz quais textos convertidos servem de amostra de idioma do grupo
+# (`_group_language`).
+_TEXT_CATEGORIES = LIGHT_TEXT_CATEGORIES
+
+# Categoria → extrator leve, `(caminho, extensão sem ponto) -> texto`. Cada
+# extrator é resolvido pelo nome na hora da chamada (os testes trocam alguns).
+_LIGHT_TEXT_EXTRACTORS: dict[str, Callable[[Path, str], str]] = {
+    DOCX_CATEGORY: lambda path, _extension: _extract_text_docx(path),
+    XLSX_CATEGORY: lambda path, extension: (
+        light_formats.extract_text_xls(path) if extension == "xls" else _extract_text_xlsx(path)
+    ),
+    PPTX_CATEGORY: lambda path, _extension: _extract_text_pptx(path),
+    WEB_DATA_CATEGORY: lambda path, extension: _extract_text_web(path, extension),
+    TEXT_CATEGORY: lambda path, _extension: decode_bytes(path.read_bytes())[0],
+    OPENDOCUMENT_CATEGORY: lambda path, _extension: light_formats.extract_text_opendocument(path),
+    RTF_CATEGORY: lambda path, _extension: light_formats.extract_text_rtf(path),
+    MBOX_CATEGORY: lambda path, _extension: light_formats.extract_text_mbox(path),
+    CAD_CATEGORY: lambda path, _extension: light_formats.extract_text_dxf(path),
+    SUBTITLE_CATEGORY: lambda path, _extension: light_formats.extract_text_subtitles(path),
+    EMAIL_CATEGORY: lambda path, extension: (
+        _extract_text_msg(path) if extension == "msg" else _extract_text_eml(path)
+    ),
+}
+if set(_LIGHT_TEXT_EXTRACTORS) != _TEXT_CATEGORIES:
+    raise RuntimeError("conversion: _LIGHT_TEXT_EXTRACTORS não cobre exatamente LIGHT_TEXT_CATEGORIES")
 
 
 def _extract_light_text(category: str, extension: str, source_path: Path) -> str:
     """O texto de um arquivo que vira uma página (ou, na caixa `.mbox`, uma
     página por mensagem, separadas por `MBOX_PAGE_SEPARATOR`)."""
-    if category == "docx":
-        return _extract_text_docx(source_path)
-    if category == "xlsx":
-        if extension == "xls":
-            return light_formats.extract_text_xls(source_path)
-        return _extract_text_xlsx(source_path)
-    if category == "pptx":
-        return _extract_text_pptx(source_path)
-    if category == "web_dados":
-        return _extract_text_web(source_path, extension)
-    if category == "text":
-        return decode_bytes(source_path.read_bytes())[0]
-    if category == "opendocument":
-        return light_formats.extract_text_opendocument(source_path)
-    if category == "rtf":
-        return light_formats.extract_text_rtf(source_path)
-    if category == "mbox":
-        return light_formats.extract_text_mbox(source_path)
-    if category == "cad":
-        return light_formats.extract_text_dxf(source_path)
-    if category == "legendas":
-        return light_formats.extract_text_subtitles(source_path)
-    if extension == "msg":
-        return _extract_text_msg(source_path)
-    return _extract_text_eml(source_path)
+    return _LIGHT_TEXT_EXTRACTORS[category](source_path, extension)
 
 
 # 2.0.0: página com imagem cujo OCR devolveu menos que isto é lida mais uma
@@ -829,13 +830,26 @@ def _detached_sibling(source_path: Path, relative_path: str) -> str | None:
     if not chosen:
         chosen = [
             entry for entry in entries
-            if entry != source_path and entry.suffix.lower() not in (".p7s", ".p7m")
+            if entry != source_path and entry.suffix.lower() not in EXTENSION_CATEGORIES[SIGNED_CATEGORY]
             and entry.stem.lower() == stem
         ]
         if len(chosen) != 1:
             return None
     folder = relative_path.rpartition("/")[0]
     return f"{folder}/{chosen[0].name}" if folder else chosen[0].name
+
+
+# Tipo farejado (`light_formats.sniff_content_type`) → `(extrator, sufixo que
+# ele espera)`: a parte em que o conteúdo de um `.p7m` e o anexo de uma
+# mensagem são lidos do mesmo jeito. O resto de cada despacho difere (texto,
+# imagem, OLE, EPUB) e fica em cada um.
+_SNIFFED_DOCUMENT_READERS: dict[str, tuple[Callable[[Path], str], str]] = {
+    "docx": (lambda path: _extract_text_docx(path), ".docx"),
+    "xlsx": (lambda path: _extract_text_xlsx(path), ".xlsx"),
+    "pptx": (lambda path: _extract_text_pptx(path), ".pptx"),
+    "odf": (lambda path: light_formats.extract_text_opendocument(path), ".odt"),
+    "rtf": (lambda path: light_formats.extract_text_rtf(path), ".rtf"),
+}
 
 
 def _signed_content_text(kind: str, content: bytes, config: ProjectConfig) -> tuple[str, bool]:
@@ -847,24 +861,16 @@ def _signed_content_text(kind: str, content: bytes, config: ProjectConfig) -> tu
         text, _ = decode_markup(content)
         return (html_to_text(text) if looks_like_html(text) else decode_bytes(content)[0]), False
     suffixes = {
-        "docx": ".docx", "xlsx": ".xlsx", "pptx": ".pptx", "odf": ".odt", "rtf": ".rtf", "xls": ".xls",
-        "image": ".img",
+        **{sniffed: suffix for sniffed, (_reader, suffix) in _SNIFFED_DOCUMENT_READERS.items()},
+        "xls": ".xls", "image": ".img",
     }
     # Pasta temporária do sistema: o conteúdo é de terceiros e nunca fica no
     # projeto (que o Google Drive sincroniza).
     with tempfile.TemporaryDirectory(prefix="gclaude-p7m-") as folder:
         inner = Path(folder) / ("conteudo" + suffixes[kind])
         inner.write_bytes(content)
-        if kind == "docx":
-            return _extract_text_docx(inner), False
-        if kind == "xlsx":
-            return _extract_text_xlsx(inner), False
-        if kind == "pptx":
-            return _extract_text_pptx(inner), False
-        if kind == "odf":
-            return light_formats.extract_text_opendocument(inner), False
-        if kind == "rtf":
-            return light_formats.extract_text_rtf(inner), False
+        if kind in _SNIFFED_DOCUMENT_READERS:
+            return _SNIFFED_DOCUMENT_READERS[kind][0](inner), False
         if kind == "xls":
             return light_formats.extract_text_xls(inner), False
         if config.ocr_language:
@@ -959,6 +965,176 @@ def _convert_signed(
     }
 
 
+@dataclass
+class _FileJob:
+    """One file on its way through `_process_file`: what every converter
+    reads, plus the events and the detected language it fills in."""
+
+    config: ProjectConfig
+    row: dict
+    ocrmypdf_jobs: int
+    source_path: Path
+    output_dir: Path
+    # (step, level, i18n key, params) — rendered by `_apply_result`, which
+    # runs in the main process and has `conn`/`language`; a converter may
+    # run in a worker process and never does.
+    events: list
+    # Idioma detectado aqui (`file.ocr_lang`, `file.language`): gravado por
+    # `_apply_result`, no processo principal.
+    notes: dict
+
+
+# Each converter returns `sql`, `params` and `ocr_applied` (and, for a
+# signed file, `signatures`); `_process_file` adds the rest.
+
+
+def _convert_pdf_file(job: _FileJob) -> dict:
+    row = job.row
+    destination = workdir.local_path(job.output_dir, "converted", row["relative_path"], ".pdf")
+    needs_ocr, ocr_failed, ocr_applied, page_count = _ocr_pdf_pages(
+        job.config, row["name"], job.source_path, destination, job.ocrmypdf_jobs, job.events, row, job.notes
+    )
+    return {
+        "sql": file_status.MARK_CONVERTED,
+        "params": (page_count, int(needs_ocr), int(ocr_failed), row["id"]),
+        "ocr_applied": ocr_applied,
+    }
+
+
+def _convert_paged_file(job: _FileJob) -> dict:
+    # O PyMuPDF faz o PDF; dali em diante é o caminho do PDF (texto
+    # nativo, OCR das páginas sem texto).
+    row = job.row
+    needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
+        job.config, row["name"], light_formats.convert_to_pdf_bytes(job.source_path), job.output_dir,
+        row["relative_path"], row["extension"], job.ocrmypdf_jobs, job.events, row, job.notes,
+    )
+    return {
+        "sql": file_status.MARK_CONVERTED,
+        "params": (page_count, int(needs_ocr), int(ocr_failed), row["id"]),
+        "ocr_applied": ocr_applied,
+    }
+
+
+def _convert_legacy_file(job: _FileJob) -> dict:
+    row = job.row
+    soffice = legacy_office.soffice_path()
+    if soffice is None:
+        # O LibreOffice não pôde ser obtido (sem rede): o arquivo não
+        # falha. Fica pendente e volta à fila na próxima conversão; o
+        # aviso (uma vez só) sai em `convert`.
+        return {
+            "sql": file_status.MARK_SKIPPED_FOR_RETRY,
+            "params": (REASON_COMPONENT_UNAVAILABLE, row["id"]),
+            "ocr_applied": False,
+        }
+    needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
+        job.config, row["name"], legacy_office.convert_to_pdf_bytes(job.source_path, soffice), job.output_dir,
+        row["relative_path"], row["extension"], job.ocrmypdf_jobs, job.events, row, job.notes,
+    )
+    return {
+        "sql": file_status.MARK_CONVERTED,
+        "params": (page_count, int(needs_ocr), int(ocr_failed), row["id"]),
+        "ocr_applied": ocr_applied,
+    }
+
+
+def _convert_signed_file(job: _FileJob) -> dict:
+    signed = _convert_signed(
+        job.config, job.row, job.source_path, job.output_dir, job.ocrmypdf_jobs, job.events, job.notes
+    )
+    return {
+        "sql": signed["sql"], "params": signed["params"], "ocr_applied": signed["ocr_applied"],
+        "signatures": signed["signatures"],
+    }
+
+
+def _convert_image_file(job: _FileJob) -> dict:
+    config, row, name = job.config, job.row, job.row["name"]
+    ocr_applied = False
+    ocr_failed = False
+    plan, short = _row_plan(config, row)
+    # A imagem tem um grupo só; um plano com grupos (não acontece) vale
+    # pelos idiomas de todos.
+    languages = "+".join(ocr_detection.plan_models(plan))
+    rotate = int(row.get("image_rotate") or 0)
+    if languages:
+        text = _extract_text_image(job.source_path, languages, rotate=rotate)
+        ocr_applied = True
+        ocr_failed = short
+        if not short and len(text.strip()) < REREAD_MIN_CHARS:
+            text, absent = _reread_image(
+                job.source_path, text, languages, rotate, row.get("ocr_usable"), job.events, name
+            )
+            wanted_plan = _plan_with_models(plan, absent) if absent else None
+            if wanted_plan:
+                job.notes["ocr_lang"] = wanted_plan
+                ocr_failed = True
+        job.events.append((
+            "conversion", "info", "log.conversion.ocr_applied",
+            {"name": name, "ocr_language": languages},
+        ))
+    else:
+        # Task 7: same as the scanned PDF — no text for now, done again
+        # when the OCR language is there.
+        text = ""
+        ocr_failed = True
+    destination = workdir.destination(job.output_dir, "converted", row["relative_path"], text_suffix(row["extension"]))
+    destination.write_text(text, encoding="utf-8")
+    return {"sql": file_status.MARK_CONVERTED_IMAGE, "params": (int(ocr_failed), row["id"]), "ocr_applied": ocr_applied}
+
+
+def _convert_light_file(job: _FileJob) -> dict:
+    row = job.row
+    category = category_of_extension("." + row["extension"])
+    extension = row["extension"].lower()
+    text = _extract_light_text(category, extension, job.source_path)
+    destination = workdir.destination(job.output_dir, "converted", row["relative_path"], text_suffix(extension))
+    destination.write_text(text, encoding="utf-8")
+    # A caixa `.mbox` tem uma página por mensagem.
+    pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == MBOX_CATEGORY else 1
+    return {"sql": file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG, "params": (pages, row["id"]), "ocr_applied": False}
+
+
+def _convert_uncategorized_file(job: _FileJob) -> dict:
+    # Extension with no category ("all" rule). The scan already refused
+    # binary content by the first bytes; the check stays here for rows an
+    # older version left as `discovered`, but only the start is read to
+    # decide — the whole file is read only once it is known to be text.
+    with open(job.source_path, "rb") as source_file:
+        head = source_file.read(_BINARY_SNIFF_BYTES)
+    if looks_binary(head):
+        text = ""
+    else:
+        text = decode_bytes(job.source_path.read_bytes())[0]
+    destination = workdir.destination(job.output_dir, "converted", job.row["relative_path"], ".txt")
+    destination.write_text(text, encoding="utf-8")
+    return {"sql": file_status.MARK_CONVERTED_PLAIN_KEEP_OCR_FLAG, "params": (job.row["id"],), "ocr_applied": False}
+
+
+# Categoria → conversor de `_process_file`. Outlook e mídia não estão aqui:
+# têm fila própria (`_convert_outlook`, `_convert_media`).
+_CONVERTERS: dict[str, Callable[[_FileJob], dict]] = {
+    PDF_CATEGORY: _convert_pdf_file,
+    PAGED_FORMAT_CATEGORY: _convert_paged_file,
+    LEGACY_CATEGORY: _convert_legacy_file,
+    SIGNED_CATEGORY: _convert_signed_file,
+    IMAGE_CATEGORY: _convert_image_file,
+    **{category: _convert_light_file for category in _TEXT_CATEGORIES},
+}
+_OWN_QUEUE_CATEGORIES = {
+    category for category in EXTENSION_CATEGORIES
+    if conversion_queue(category) in (QUEUE_OUTLOOK, QUEUE_MEDIA)
+}
+# Toda categoria tem conversor ou fila própria: uma categoria nova sem
+# nenhum dos dois para aqui, na carga, em vez de ser lida como texto cru.
+_MISROUTED = (set(EXTENSION_CATEGORIES) - set(_CONVERTERS) - _OWN_QUEUE_CATEGORIES) | (
+    set(_CONVERTERS) & _OWN_QUEUE_CATEGORIES
+)
+if _MISROUTED:
+    raise RuntimeError(f"conversion: categorias sem rota de conversão (ou com duas): {sorted(_MISROUTED)}")
+
+
 def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     """Converts one file and returns what the main process needs to write to
     the database — never touches `conn`.
@@ -970,133 +1146,30 @@ def _process_file(config: ProjectConfig, row: dict, ocrmypdf_jobs: int) -> dict:
     `dict`, not a `sqlite3.Row`/`sqlite3.Connection`), and never receives
     `conn`.
     """
-    relative_path = row["relative_path"]
-    name = row["name"]
-    extension_with_dot = "." + row["extension"]
-    category = category_of_extension(extension_with_dot)
-    source_path = Path(config.source_folder) / relative_path
-    output_dir = Path(config.output_folder)
-
-    # (step, level, i18n key, params) — rendered by `_apply_result`, which
-    # runs in the main process and has `conn`/`language`; this function may
-    # run in a worker process (see the docstring above) and never does.
-    events: list[tuple[str, str, str, dict]] = []
-    # Idioma detectado aqui (`file.ocr_lang`, `file.language`): gravado por
-    # `_apply_result`, no processo principal.
-    notes: dict = {}
-    ocr_applied = False
-    ocr_failed = False
-
-    if category == "pdf":
-        destination = workdir.local_path(output_dir, "converted", relative_path, ".pdf")
-        needs_ocr, ocr_failed, ocr_applied, page_count = _ocr_pdf_pages(
-            config, name, source_path, destination, ocrmypdf_jobs, events, row, notes
-        )
-        sql = file_status.MARK_CONVERTED
-        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
-
-    elif category == "paginados":
-        # O PyMuPDF faz o PDF; dali em diante é o caminho do PDF (texto
-        # nativo, OCR das páginas sem texto).
-        needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
-            config, name, light_formats.convert_to_pdf_bytes(source_path), output_dir, relative_path,
-            row["extension"], ocrmypdf_jobs, events, row, notes,
-        )
-        sql = file_status.MARK_CONVERTED
-        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
-
-    elif category == LEGACY_CATEGORY:
-        soffice = legacy_office.soffice_path()
-        if soffice is None:
-            # O LibreOffice não pôde ser obtido (sem rede): o arquivo não
-            # falha. Fica pendente e volta à fila na próxima conversão; o
-            # aviso (uma vez só) sai em `convert`.
-            return {
-                "id": row["id"], "name": name, "events": [], "ocr_applied": False,
-                "sql": file_status.MARK_SKIPPED_FOR_RETRY,
-                "params": (REASON_COMPONENT_UNAVAILABLE, row["id"]),
-            }
-        needs_ocr, ocr_failed, ocr_applied, page_count = _store_pdf_intermediate(
-            config, name, legacy_office.convert_to_pdf_bytes(source_path, soffice), output_dir,
-            relative_path, row["extension"], ocrmypdf_jobs, events, row, notes,
-        )
-        sql = file_status.MARK_CONVERTED
-        params = (page_count, int(needs_ocr), int(ocr_failed), row["id"])
-
-    elif category == "assinados":
-        signed = _convert_signed(config, row, source_path, output_dir, ocrmypdf_jobs, events, notes)
-        return {
-            "id": row["id"], "name": name, "sql": signed["sql"], "params": signed["params"],
-            "events": events, "ocr_applied": signed["ocr_applied"], "signatures": signed["signatures"],
-            **_language_update(notes),
-        }
-
-    elif category == "imagens":
-        plan, short = _row_plan(config, row)
-        # A imagem tem um grupo só; um plano com grupos (não acontece) vale
-        # pelos idiomas de todos.
-        languages = "+".join(ocr_detection.plan_models(plan))
-        rotate = int(row.get("image_rotate") or 0)
-        if languages:
-            text = _extract_text_image(source_path, languages, rotate=rotate)
-            ocr_applied = True
-            ocr_failed = short
-            if not short and len(text.strip()) < REREAD_MIN_CHARS:
-                text, absent = _reread_image(source_path, text, languages, rotate, row.get("ocr_usable"), events, name)
-                wanted_plan = _plan_with_models(plan, absent) if absent else None
-                if wanted_plan:
-                    notes["ocr_lang"] = wanted_plan
-                    ocr_failed = True
-            events.append((
-                "conversion", "info", "log.conversion.ocr_applied",
-                {"name": name, "ocr_language": languages},
-            ))
-        else:
-            # Task 7: same as the scanned PDF above — no text for now,
-            # done again when the OCR language is there.
-            text = ""
-            ocr_failed = True
-        destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(row["extension"]))
-        destination.write_text(text, encoding="utf-8")
-        sql = file_status.MARK_CONVERTED_IMAGE
-        params = (int(ocr_failed), row["id"])
-
-    elif category in _TEXT_CATEGORIES:
-        extension = row["extension"].lower()
-        text = _extract_light_text(category, extension, source_path)
-        destination = workdir.destination(output_dir, "converted", relative_path, text_suffix(extension))
-        destination.write_text(text, encoding="utf-8")
-        # A caixa `.mbox` tem uma página por mensagem.
-        pages = text.count(light_formats.MBOX_PAGE_SEPARATOR) + 1 if category == "mbox" else 1
-        sql = file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG
-        params = (pages, row["id"])
-
+    category = category_of_extension("." + row["extension"])
+    if category is None:
+        converter = _convert_uncategorized_file
+    elif category in _OWN_QUEUE_CATEGORIES:
+        # Outlook e mídia nunca chegam aqui (`convert` os manda para a fila
+        # deles); se chegassem, ler como texto cru seria lixo indexado.
+        raise ConversionError(f"{category}: categoria de fila própria fora da fila")
     else:
-        # Extension with no category ("all" rule). Audio and video (`midia`)
-        # never get here: they have their own queue (`_convert_media`).
-        # The scan already refused binary content by the first
-        # bytes; the check stays here for rows an older version left as
-        # `discovered`, but only the start is read to decide — the whole
-        # file is read only once it is known to be text.
-        with open(source_path, "rb") as source_file:
-            head = source_file.read(_BINARY_SNIFF_BYTES)
-        if looks_binary(head):
-            text = ""
-        else:
-            text = decode_bytes(source_path.read_bytes())[0]
-        destination = workdir.destination(output_dir, "converted", relative_path, ".txt")
-        destination.write_text(text, encoding="utf-8")
-        sql = file_status.MARK_CONVERTED_PLAIN_KEEP_OCR_FLAG
-        params = (row["id"],)
-
+        converter = _CONVERTERS[category]
+    job = _FileJob(
+        config=config, row=row, ocrmypdf_jobs=ocrmypdf_jobs,
+        source_path=Path(config.source_folder) / row["relative_path"], output_dir=Path(config.output_folder),
+        events=[], notes={},
+    )
+    outcome = converter(job)
     return {
         "id": row["id"],
-        "name": name,
-        "sql": sql,
-        "params": params,
-        "events": events,
-        "ocr_applied": ocr_applied,
-        **_language_update(notes),
+        "name": row["name"],
+        "sql": outcome["sql"],
+        "params": outcome["params"],
+        "events": job.events,
+        "ocr_applied": outcome["ocr_applied"],
+        **({"signatures": outcome["signatures"]} if "signatures" in outcome else {}),
+        **_language_update(job.notes),
     }
 
 
@@ -1603,32 +1676,41 @@ def _attachment_text(path: Path, config: ProjectConfig, original_name: str | Non
     return text
 
 
+# Extensões com que o extrator de cada tipo farejado lê o anexo sem renomeá-lo
+# (`_renamed_for`); o RTF é lido com o nome que tiver. O `.xls` com bytes de
+# ZIP é renomeado para `.xlsx`. O ODF só tem os formatos em ZIP: os `.fod*`
+# da categoria são XML e nunca são farejados como `odf`.
+_ATTACHMENT_ACCEPTED_EXTENSIONS: dict[str, set[str]] = {
+    "docx": EXTENSION_CATEGORIES[DOCX_CATEGORY],
+    "xlsx": EXTENSION_CATEGORIES[XLSX_CATEGORY] - {".xls"},
+    "pptx": EXTENSION_CATEGORIES[PPTX_CATEGORY],
+    "odf": {".odt", ".ods", ".odp", ".odg"},
+}
+# O contêiner OLE2 lido como planilha. `.xlt` (modelo antigo do Excel) não
+# está em nenhuma categoria, mas pode chegar como anexo.
+_XLS_ATTACHMENT_EXTENSIONS = (".xls", ".xlt")
+
+
 def _extract_attachment_text(path: Path, config: ProjectConfig) -> str | None:
     # `file_extension` (e não `Path.suffix`): `.env` é extensão, não nome.
     extension = file_extension(path.name)
     if (
         extension in ARCHIVE_EXTENSIONS or extension in ALWAYS_BLOCKED_EXTENSIONS
         or extension in SECRET_EXTENSIONS or extension in GOOGLE_DOC_EXTENSIONS
-        or extension in EXTENSION_CATEGORIES["outlook"] or extension in EXTENSION_CATEGORIES["mbox"]
-        or extension in EXTENSION_CATEGORIES["midia"]
+        or extension in EXTENSION_CATEGORIES[OUTLOOK_CATEGORY] or extension in EXTENSION_CATEGORIES[MBOX_CATEGORY]
+        or extension in EXTENSION_CATEGORIES[MEDIA_CATEGORY]
     ):
         return None
     data = path.read_bytes()
     kind = light_formats.sniff_content_type(data)
     if kind == "pdf":
         return _pdf_native_text(data)
-    if kind == "docx":
-        return _extract_text_docx(_renamed_for(path, EXTENSION_CATEGORIES["docx"], ".docx"))
-    if kind == "xlsx":
-        return _extract_text_xlsx(_renamed_for(path, EXTENSION_CATEGORIES["xlsx"] - {".xls"}, ".xlsx"))
-    if kind == "pptx":
-        return _extract_text_pptx(_renamed_for(path, EXTENSION_CATEGORIES["pptx"], ".pptx"))
-    if kind == "odf":
-        return light_formats.extract_text_opendocument(_renamed_for(path, {".odt", ".ods", ".odp", ".odg"}, ".odt"))
+    if kind in _SNIFFED_DOCUMENT_READERS:
+        reader, suffix = _SNIFFED_DOCUMENT_READERS[kind]
+        accepted = _ATTACHMENT_ACCEPTED_EXTENSIONS.get(kind)
+        return reader(path if accepted is None else _renamed_for(path, accepted, suffix))
     if kind == "epub":
         return _pdf_native_text(light_formats.convert_to_pdf_bytes(_renamed_for(path, {".epub"}, ".epub")))
-    if kind == "rtf":
-        return light_formats.extract_text_rtf(path)
     if kind == "image":
         if not config.ocr_language:
             return None
@@ -1636,7 +1718,7 @@ def _extract_attachment_text(path: Path, config: ProjectConfig) -> str | None:
     if kind == "xls":
         # O contêiner OLE2 antigo: o nome diz se é planilha, mensagem ou
         # documento do Office antigo (este só se o LibreOffice já está aí).
-        if extension in (".xls", ".xlt"):
+        if extension in _XLS_ATTACHMENT_EXTENSIONS:
             return light_formats.extract_text_xls(path, data)
         if extension == ".msg":
             return _extract_text_msg(path)
@@ -1648,11 +1730,11 @@ def _extract_attachment_text(path: Path, config: ProjectConfig) -> str | None:
     if kind == "text":
         if extension == ".eml":
             return _extract_text_eml(path)
-        if extension in (".srt", ".vtt"):
+        if extension in EXTENSION_CATEGORIES[SUBTITLE_CATEGORY]:
             return light_formats.extract_text_subtitles(path)
-        if extension == ".dxf":
+        if extension in EXTENSION_CATEGORIES[CAD_CATEGORY]:
             return light_formats.extract_text_dxf(path)
-        if extension.lstrip(".") in _HTML_EXTENSIONS | _MHTML_EXTENSIONS | {"xml", "json"}:
+        if extension in EXTENSION_CATEGORIES[WEB_DATA_CATEGORY]:
             return _extract_text_web(path, extension.lstrip("."))
         return decode_bytes(data)[0]
     return None
@@ -1902,8 +1984,8 @@ def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, lang
 
 # Categorias que a passada de detecção abre antes do OCR. As demais da fila
 # pesada só viram PDF na conversão e detectam lá (`_detect_in_worker`).
-_DETECTABLE_CATEGORIES = frozenset({"pdf", "imagens"})
-_DETECT_IN_WORKER_CATEGORIES = frozenset({"paginados", "assinados", LEGACY_CATEGORY})
+_DETECTABLE_CATEGORIES = frozenset({PDF_CATEGORY, IMAGE_CATEGORY})
+_DETECT_IN_WORKER_CATEGORIES = frozenset({PAGED_FORMAT_CATEGORY, SIGNED_CATEGORY, LEGACY_CATEGORY})
 # Quantos textos de um grupo são lidos para dar o idioma do grupo a um
 # escaneado de pouco texto, e quanto de cada um.
 _GROUP_SAMPLE_FILES = 5
@@ -2117,7 +2199,7 @@ def _plan_languages(conn, config: ProjectConfig, rows, tesseract: str | None, sh
         if result is None:
             continue
         info: dict = {}
-        if result.get("category") == "imagens":
+        if result.get("category") == IMAGE_CATEGORY:
             info["rotate"] = int((result.get("rotate") or {}).get(1, 0))
         if result.get("ocr_pages") is not None:
             info["ocr_pages"] = result["ocr_pages"]
@@ -2270,23 +2352,20 @@ def convert(
     # per-core pool below; everything else waits on the disk and gets a far
     # larger pool (`parallelism.io_workers_for`). Light files first: they
     # are the bulk of a large collection and show progress at once.
-    ocr_rows = [row for row in rows if category_of_extension("." + row["extension"]) in OCR_CATEGORIES]
     # Os formatos antigos formam uma fila própria: o LibreOffice roda um por
     # vez (cada `soffice` ocupa centenas de megabytes), fora do conjunto de
-    # processos do OCR.
-    legacy = [row for row in ocr_rows if category_of_extension("." + row["extension"]) == LEGACY_CATEGORY]
-    legacy_ids = {row["id"] for row in legacy}
-    heavy = [row for row in ocr_rows if row["id"] not in legacy_ids]
+    # processos do OCR. Cada fila guarda a ordem dos caminhos.
+    queues: dict[str, list] = {
+        queue: [] for queue in (QUEUE_LIGHT, QUEUE_HEAVY, QUEUE_LEGACY, QUEUE_OUTLOOK, QUEUE_MEDIA)
+    }
+    for row in rows:
+        queues[conversion_queue(category_of_extension("." + row["extension"]))].append(row)
+    light, heavy, legacy = queues[QUEUE_LIGHT], queues[QUEUE_HEAVY], queues[QUEUE_LEGACY]
+    outlook_rows, media_rows = queues[QUEUE_OUTLOOK], queues[QUEUE_MEDIA]
     # Largest first. In path order a PDF of hundreds of pages could start
     # last and run alone for minutes after every other file was done;
     # started first, it runs alongside the rest.
     heavy.sort(key=lambda row: row["size"] or 0, reverse=True)
-    outlook_rows = [row for row in rows if category_of_extension("." + row["extension"]) == OUTLOOK_CATEGORY]
-    media_rows = [row for row in rows if category_of_extension("." + row["extension"]) == MEDIA_CATEGORY]
-    light = [
-        row for row in rows
-        if category_of_extension("." + row["extension"]) not in OCR_CATEGORIES | {OUTLOOK_CATEGORY, MEDIA_CATEGORY}
-    ]
 
     if light:
         light_workers = io_workers_for(config.parallelism)

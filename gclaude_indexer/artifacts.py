@@ -1131,11 +1131,12 @@ def project_instructions_sections(
     # collection of PDFs keeps the instructions it always had.
     # Only the pages of files that can carry the mark. In a PDF
     # collection the old query read the text of every page to find none.
-    from .file_types import EXTENSION_CATEGORIES
+    from .file_types import EXTENSION_CATEGORIES, PAGED_CATEGORIES
 
     no_struck = sorted(
         ext.lstrip(".")
-        for ext in EXTENSION_CATEGORIES["pdf"] | EXTENSION_CATEGORIES["imagens"] | EXTENSION_CATEGORIES["paginados"] | EXTENSION_CATEGORIES["legados"]
+        for category in PAGED_CATEGORIES
+        for ext in EXTENSION_CATEGORIES[category]
     )
     placeholders = ", ".join("?" for _ in no_struck)
     has_struck_text = conn.execute(

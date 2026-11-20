@@ -94,7 +94,7 @@ from ..fulltext import (
 )
 from ..staleness import is_stale as source_is_stale, record_loaded_source
 from ..sync import check_sync, mark_synced
-from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, categories_by_family, normalize_categories
+from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, MEDIA_CATEGORY, categories_by_family, normalize_categories
 from ..lock import LockManager, check_lock, create_lock
 from . import step_state
 from .step_state import STEPS, last_known_status, next_pending_step, project_status, step_status
@@ -682,7 +682,7 @@ def new_project_screen(request: Request):
             "values": _config_to_form(),
             "familias": categories_by_family(),
             "category_all": CATEGORY_ALL,
-            "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
+            "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
             "engines": CLASSIFICATION_ENGINES_ORDER,
             "local_models": list_installed_models(),
             "default_local_model": default_local_profile(),
@@ -729,7 +729,7 @@ def _create_new_project_body(request: Request, form):
                 "values": values,
                 "familias": categories_by_family(),
                 "category_all": CATEGORY_ALL,
-                "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
+                "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
                 "default_local_model": default_local_profile(),
@@ -767,7 +767,7 @@ def _create_new_project_body(request: Request, form):
                 "values": values,
                 "familias": categories_by_family(),
                 "category_all": CATEGORY_ALL,
-                "media_extensions": sorted(EXTENSION_CATEGORIES["midia"]),
+                "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
                 "engines": CLASSIFICATION_ENGINES_ORDER,
                 "local_models": list_installed_models(),
                 "default_local_model": default_local_profile(),

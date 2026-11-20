@@ -14,31 +14,59 @@ the scan (section 5, step 1) to decide what enters the inventory.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from .text_decoding import _BOMS
 
+# Category names. The strings are data shared with the i18n keys
+# (`new_project.category.<name>`), the form markup and saved configurations
+# (`config_json`), so they never change; code refers to them by these names.
+PDF_CATEGORY = "pdf"
+DOCX_CATEGORY = "docx"
+XLSX_CATEGORY = "xlsx"
+PPTX_CATEGORY = "pptx"
+OPENDOCUMENT_CATEGORY = "opendocument"
+RTF_CATEGORY = "rtf"
+PAGED_FORMAT_CATEGORY = "paginados"
+LEGACY_CATEGORY = "legados"
+IMAGE_CATEGORY = "imagens"
+TEXT_CATEGORY = "text"
+SUBTITLE_CATEGORY = "legendas"
+WEB_DATA_CATEGORY = "web_dados"
+EMAIL_CATEGORY = "email"
+MBOX_CATEGORY = "mbox"
+OUTLOOK_CATEGORY = "outlook"
+CAD_CATEGORY = "cad"
+SIGNED_CATEGORY = "assinados"
+MEDIA_CATEGORY = "midia"
+
+# The part of `web_dados` read as HTML and the part read as a saved web page
+# (MIME, like an e-mail); `.xml` and `.json` complete the category.
+HTML_EXTENSIONS: frozenset[str] = frozenset({".html", ".htm", ".xhtml", ".xht", ".shtml"})
+MHTML_EXTENSIONS: frozenset[str] = frozenset({".mht", ".mhtml"})
+
 EXTENSION_CATEGORIES: dict[str, set[str]] = {
-    "pdf": {".pdf"},
+    PDF_CATEGORY: {".pdf"},
     # 2.0.0: as variantes com macro e modelo abrem pelas mesmas bibliotecas;
     # a macro nunca é executada (só o texto é lido). `.xls` é o formato
     # binário antigo do Excel, lido por `xlrd`.
-    "docx": {".docx", ".docm", ".dotx", ".dotm"},
-    "xlsx": {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"},
-    "pptx": {".pptx", ".pptm", ".ppsx", ".potx", ".potm"},
-    "opendocument": {".odt", ".ods", ".odp", ".odg", ".fodt", ".fods", ".fodp"},
-    "rtf": {".rtf"},
+    DOCX_CATEGORY: {".docx", ".docm", ".dotx", ".dotm"},
+    XLSX_CATEGORY: {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"},
+    PPTX_CATEGORY: {".pptx", ".pptm", ".ppsx", ".potx", ".potm"},
+    OPENDOCUMENT_CATEGORY: {".odt", ".ods", ".odp", ".odg", ".fodt", ".fods", ".fodp"},
+    RTF_CATEGORY: {".rtf"},
     # Têm páginas de verdade: o PyMuPDF os converte para um PDF intermediário
     # e o resto do caminho (texto nativo, OCR de página sem texto) é o do PDF.
-    "paginados": {".xps", ".oxps", ".epub", ".mobi", ".fb2", ".svg", ".cbz"},
+    PAGED_FORMAT_CATEGORY: {".xps", ".oxps", ".epub", ".mobi", ".fb2", ".svg", ".cbz"},
     # Formatos antigos que só o LibreOffice lê: ele os converte para um PDF
     # intermediário e o resto do caminho é o do PDF. `.pages` fica de fora
     # de propósito (ver `REASON_UNSUPPORTED`).
-    "legados": {
+    LEGACY_CATEGORY: {
         ".doc", ".dot", ".ppt", ".pps", ".pot", ".wpd", ".wps", ".pub", ".vsd", ".vsdx",
         ".sxw", ".sxc", ".sxi", ".sdw", ".123", ".wk1", ".wb2",
     },
-    "imagens": {
+    IMAGE_CATEGORY: {
         ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp",
         ".jp2", ".j2k", ".jpx", ".jfif", ".jpe", ".heic", ".heif",
     },
@@ -48,22 +76,22 @@ EXTENSION_CATEGORIES: dict[str, set[str]] = {
     # `.xml` whose root is `<html>`) become readable text with strikethrough
     # kept as `~~`; other XML and JSON stay literal — their tags are field
     # names that carry meaning.
-    "text": {".txt", ".md", ".log", ".csv"},
-    "legendas": {".srt", ".vtt"},
-    "web_dados": {".html", ".htm", ".xhtml", ".xht", ".shtml", ".mht", ".mhtml", ".xml", ".json"},
-    "email": {".eml", ".msg"},
+    TEXT_CATEGORY: {".txt", ".md", ".log", ".csv"},
+    SUBTITLE_CATEGORY: {".srt", ".vtt"},
+    WEB_DATA_CATEGORY: set(HTML_EXTENSIONS | MHTML_EXTENSIONS | {".xml", ".json"}),
+    EMAIL_CATEGORY: {".eml", ".msg"},
     # Cada mensagem da caixa é uma página, como o `.eml` é um documento.
-    "mbox": {".mbox"},
+    MBOX_CATEGORY: {".mbox"},
     # Arquivos do Outlook: cada mensagem é uma página (e cada anexo com texto
     # também). Lidos em fluxo, por uma fila própria da conversão.
-    "outlook": {".pst", ".ost"},
-    "cad": {".dxf"},
+    OUTLOOK_CATEGORY: {".pst", ".ost"},
+    CAD_CATEGORY: {".dxf"},
     # ICP-Brasil: o conteúdo envelopado é indexado pelo tipo real e o
     # signatário vai para `file_signature`.
-    "assinados": {".p7s", ".p7m"},
+    SIGNED_CATEGORY: {".p7s", ".p7m"},
     # Opt-in: "all" não inclui. A chave é dado (como "imagens"), o rótulo é
     # traduzido no formulário. Transcrito localmente (`media.py`).
-    "midia": {
+    MEDIA_CATEGORY: {
         ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma",
         ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".3gp",
     },
@@ -151,14 +179,100 @@ REASON_UNSUPPORTED = "unsupported"
 REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
 
 
+# Filas da conversão (`conversion.convert`). `heavy`: o conjunto de processos
+# do OCR, por núcleo. `legacy`: o LibreOffice, um arquivo por vez. `outlook` e
+# `media`: lidos em fluxo neste processo, cada um com a sua fila. `light`: a
+# fila de E/S, com muito mais trabalhadores (também a da extensão sem
+# categoria, a regra "all").
+QUEUE_HEAVY = "heavy"
+QUEUE_LEGACY = "legacy"
+QUEUE_OUTLOOK = "outlook"
+QUEUE_MEDIA = "media"
+QUEUE_LIGHT = "light"
+
+
+@dataclass(frozen=True)
+class CategoryTraits:
+    """O que cada categoria é, para quem decide por categoria.
+
+    `family`: grupo do formulário (seção 6); `None` = mostrada à parte.
+    `queue`: fila da conversão.
+    `paged`: páginas reais — o limite de caracteres por página do projeto
+    vale para ela, e o documento pode continuar no arquivo seguinte.
+    `page_per_message`: uma página por mensagem (separadas por
+    `light_formats.MBOX_PAGE_SEPARATOR` no texto intermediário).
+    `read_as_pdf`: extração e busca leem um PDF (o original ou o
+    intermediário `<nome>.<ext>.pdf`).
+    `light_text`: um extrator leve tira o texto (`conversion._extract_light_text`).
+    `reads_head`: os primeiros bytes são lidos atrás de chave privada
+    (`needs_head`), como os de uma extensão sem categoria.
+    """
+
+    family: str | None
+    queue: str
+    paged: bool = False
+    page_per_message: bool = False
+    read_as_pdf: bool = False
+    light_text: bool = False
+    reads_head: bool = False
+
+
+CATEGORY_TRAITS: dict[str, CategoryTraits] = {
+    PDF_CATEGORY: CategoryTraits("documentos", QUEUE_HEAVY, paged=True, read_as_pdf=True),
+    DOCX_CATEGORY: CategoryTraits("documentos", QUEUE_LIGHT, light_text=True),
+    XLSX_CATEGORY: CategoryTraits("documentos", QUEUE_LIGHT, light_text=True),
+    PPTX_CATEGORY: CategoryTraits("documentos", QUEUE_LIGHT, light_text=True),
+    OPENDOCUMENT_CATEGORY: CategoryTraits("documentos", QUEUE_LIGHT, light_text=True),
+    RTF_CATEGORY: CategoryTraits("documentos", QUEUE_LIGHT, light_text=True),
+    PAGED_FORMAT_CATEGORY: CategoryTraits("documentos", QUEUE_HEAVY, paged=True, read_as_pdf=True),
+    LEGACY_CATEGORY: CategoryTraits("documentos", QUEUE_LEGACY, paged=True, read_as_pdf=True),
+    # Páginas reais, mas o intermediário é o texto do OCR.
+    IMAGE_CATEGORY: CategoryTraits("imagens", QUEUE_HEAVY, paged=True),
+    TEXT_CATEGORY: CategoryTraits("text_data", QUEUE_LIGHT, light_text=True, reads_head=True),
+    SUBTITLE_CATEGORY: CategoryTraits("text_data", QUEUE_LIGHT, light_text=True),
+    WEB_DATA_CATEGORY: CategoryTraits("text_data", QUEUE_LIGHT, light_text=True, reads_head=True),
+    EMAIL_CATEGORY: CategoryTraits("mensagens", QUEUE_LIGHT, light_text=True),
+    MBOX_CATEGORY: CategoryTraits("mensagens", QUEUE_LIGHT, page_per_message=True, light_text=True),
+    OUTLOOK_CATEGORY: CategoryTraits("mensagens", QUEUE_OUTLOOK, page_per_message=True),
+    CAD_CATEGORY: CategoryTraits("tecnicos", QUEUE_LIGHT, light_text=True),
+    # PDF ou texto conforme o conteúdo envelopado: nenhuma das duas listas
+    # de leitura o inclui, quem lê decide pelo intermediário.
+    SIGNED_CATEGORY: CategoryTraits("tecnicos", QUEUE_HEAVY),
+    # Opt-in, com caixa própria no formulário. Um trecho de cerca de 5 minutos
+    # de transcrição por página.
+    MEDIA_CATEGORY: CategoryTraits(None, QUEUE_MEDIA, page_per_message=True),
+}
+
+if set(CATEGORY_TRAITS) != set(EXTENSION_CATEGORIES):
+    raise RuntimeError("file_types: CATEGORY_TRAITS e EXTENSION_CATEGORIES têm categorias diferentes")
+
+
+def _categories_where(trait: str) -> tuple[str, ...]:
+    return tuple(name for name, traits in CATEGORY_TRAITS.items() if getattr(traits, trait))
+
+
 # Categorias com páginas reais (o limite de caracteres por página do projeto
 # vale para elas, e o documento pode continuar no arquivo seguinte).
-PAGED_CATEGORIES: tuple[str, ...] = ("pdf", "imagens", "paginados", "legados")
+PAGED_CATEGORIES: tuple[str, ...] = _categories_where("paged")
 
-# Uma página por mensagem (separadas por `light_formats.MBOX_PAGE_SEPARATOR`
-# no texto intermediário): a caixa `.mbox`, os arquivos do Outlook e a
-# transcrição de áudio e vídeo (um trecho de cerca de 5 minutos por página).
-MESSAGE_PAGE_CATEGORIES: tuple[str, ...] = ("mbox", "outlook", "midia")
+# Uma página por mensagem: a caixa `.mbox`, os arquivos do Outlook e a
+# transcrição de áudio e vídeo.
+MESSAGE_PAGE_CATEGORIES: tuple[str, ...] = _categories_where("page_per_message")
+
+# Lidas como PDF pela extração e pela busca.
+READ_AS_PDF_CATEGORIES: tuple[str, ...] = _categories_where("read_as_pdf")
+
+# Texto tirado por um extrator leve, numa página (a `.mbox`, uma por mensagem).
+LIGHT_TEXT_CATEGORIES: frozenset[str] = frozenset(_categories_where("light_text"))
+
+# Com os primeiros bytes lidos atrás de chave privada (`needs_head`).
+HEAD_READ_CATEGORIES: frozenset[str] = frozenset(_categories_where("reads_head"))
+
+
+def conversion_queue(category: str | None) -> str:
+    """A fila da conversão de uma categoria; `None` (extensão sem categoria,
+    a regra "all") vai para a fila leve."""
+    return QUEUE_LIGHT if category is None else CATEGORY_TRAITS[category].queue
 
 
 def valid_categories() -> set[str]:
@@ -191,7 +305,7 @@ def is_extension_allowed(extension_with_dot: str, categories: list[str]) -> bool
     if CATEGORY_ALL in categories:
         return (
             extension_with_dot not in ALWAYS_BLOCKED_EXTENSIONS
-            and extension_with_dot not in EXTENSION_CATEGORIES["midia"]
+            and extension_with_dot not in EXTENSION_CATEGORIES[MEDIA_CATEGORY]
         )
     return False
 
@@ -203,8 +317,8 @@ def normalize_categories(categories: list[str]) -> list[str]:
     if CATEGORY_ALL not in categories:
         return list(categories)
     result = [CATEGORY_ALL]
-    if "midia" in categories:
-        result.append("midia")
+    if MEDIA_CATEGORY in categories:
+        result.append(MEDIA_CATEGORY)
     return result
 
 
@@ -282,7 +396,7 @@ def name_decision(name: str, categories: list[str] | None = None) -> str | None:
         return REASON_ARCHIVE
     if extension in ALWAYS_BLOCKED_EXTENSIONS:
         return REASON_BLOCKED
-    if extension in EXTENSION_CATEGORIES["midia"] and "midia" not in (categories or ()):
+    if extension in EXTENSION_CATEGORIES[MEDIA_CATEGORY] and MEDIA_CATEGORY not in (categories or ()):
         return REASON_MEDIA
     if extension in SECRET_EXTENSIONS or lower.startswith(_SECRET_NAME_PREFIXES):
         return REASON_SECRET
@@ -325,7 +439,7 @@ def needs_head(name: str, categories: list[str] | None = None) -> bool:
     if name_decision(name, categories) is not None:
         return False
     category = category_of_extension(file_extension(name))
-    return category is None or category in ("text", "web_dados")
+    return category is None or category in HEAD_READ_CATEGORIES
 
 
 def is_whole_document_file(file_name: str) -> bool:
@@ -341,24 +455,36 @@ def is_whole_document_file(file_name: str) -> bool:
 def category_of_extension(extension_with_dot: str) -> str | None:
     """Name of the category (e.g. `"imagens"`) an extension belongs to, or
     `None` if it doesn't match any known category."""
-    extension_with_dot = extension_with_dot.lower()
+    return _CATEGORY_BY_EXTENSION.get(extension_with_dot.lower())
+
+
+def _invert_extension_categories() -> dict[str, str]:
+    inverted: dict[str, str] = {}
     for category, extensions in EXTENSION_CATEGORIES.items():
-        if extension_with_dot in extensions:
-            return category
-    return None
+        for extension in extensions:
+            if extension in inverted:
+                raise RuntimeError(f"file_types: {extension} está em {inverted[extension]} e em {category}")
+            inverted[extension] = category
+    return inverted
+
+
+_CATEGORY_BY_EXTENSION: dict[str, str] = _invert_extension_categories()
 
 
 # Grouping is only for display in the form (section 6): the flat alphabetical
 # list of eight checkboxes said nothing about what each label covers or what
 # is similar to what. Does not change any scan rule — `EXTENSION_CATEGORIES`
-# remains the source of truth.
-CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = {
-    "documentos": ("pdf", "docx", "xlsx", "pptx", "opendocument", "rtf", "paginados", "legados"),
-    "imagens": ("imagens",),
-    "text_data": ("text", "legendas", "web_dados"),
-    "mensagens": ("email", "mbox", "outlook"),
-    "tecnicos": ("cad", "assinados"),
-}
+# remains the source of truth. Built from `CategoryTraits.family`, in the
+# order of `CATEGORY_TRAITS`, which is the order the form shows.
+def _families() -> dict[str, tuple[str, ...]]:
+    families: dict[str, list[str]] = {}
+    for name, traits in CATEGORY_TRAITS.items():
+        if traits.family is not None:
+            families.setdefault(traits.family, []).append(name)
+    return {family: tuple(names) for family, names in families.items()}
+
+
+CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = _families()
 
 
 def categories_by_family() -> list[tuple[str, list[dict]]]:
