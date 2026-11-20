@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gclaude_indexer.web.app as modulo_app
 import gclaude_indexer.web.rendering as rendering
 from tests.test_phase9 import cliente  # noqa: F401
 from gclaude_indexer.web import routes_projects

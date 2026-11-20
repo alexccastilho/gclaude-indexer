@@ -256,8 +256,6 @@ def test_resultado_ruim_escapado_e_links_de_navegacao(cliente, tmp_path):
 
 
 def test_abrir_arquivo_usa_o_caminho_do_banco(cliente, tmp_path, monkeypatch):
-    import gclaude_indexer.web.app as app_mod
-
     abertos = []
     monkeypatch.setattr(routes_result.os, "startfile", lambda caminho: abertos.append(caminho), raising=False)
     monkeypatch.setattr(routes_result.sys, "platform", "win32")
