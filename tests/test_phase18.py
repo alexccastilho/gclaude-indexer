@@ -133,12 +133,12 @@ def test_os_erros_do_review_saem_no_idioma_do_relatorio(tmp_path):
     record_event(conn, "conversion", "error", "texto solto sem chave", language="en")
 
     em_pt = generate_review_md(conn, _config(tmp_path, saida), "pt").read_text(encoding="utf-8")
-    assert "(conversion) Não foi possível preparar a.pdf: x." in em_pt
+    assert "(2–3. Conversão e OCR) Não foi possível preparar a.pdf: x." in em_pt
     assert "Could not prepare" not in em_pt
-    assert "(conversion) texto solto sem chave" in em_pt
+    assert "(2–3. Conversão e OCR) texto solto sem chave" in em_pt
 
     em_es = generate_review_md(conn, _config(tmp_path, saida), "es").read_text(encoding="utf-8")
-    assert "(conversion) No se pudo preparar a.pdf: x." in em_es
+    assert "(2–3. Conversión y OCR) No se pudo preparar a.pdf: x." in em_es
 
 
 def test_evento_gravado_em_pt_sai_no_review_em_pt_igual_ao_gravado(tmp_path):
@@ -162,7 +162,7 @@ def test_evento_gravado_em_pt_sai_no_review_em_pt_igual_ao_gravado(tmp_path):
 
     texto = generate_review_md(conn, _config(tmp_path, saida), "pt").read_text(encoding="utf-8")
 
-    assert f"(classification) {gravado}\n" in texto
+    assert f"(6. Classificação) {gravado}\n" in texto
 
 
 # --- o estado que os artefatos descrevem -----------------------------------
