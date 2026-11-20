@@ -367,6 +367,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_file_signature_table(conn)
     _ensure_file_language_columns(conn)
     _ensure_fulltext_trigram_table(conn)
+    _ensure_trigram_filter_revision(conn)
     conn.commit()
 
 
@@ -577,3 +578,37 @@ def _ensure_fulltext_trigram_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO fulltext_trigram_state (id, backfilled) VALUES (1, ?)", (0 if has_passages else 1,)
     )
+
+
+# Sobe quando muda o que vai para a `fulltext_trigram` (o filtro do
+# `fulltext.backfill_trigram` e as faixas das escritas sem espaço de
+# `language_detect`). 1: o `GLOB` que tinha divergido da indexação (8072f88)
+# e o hangul de meia largura como escrita sem espaço.
+TRIGRAM_FILTER_REVISION = 1
+
+
+def _ensure_trigram_filter_revision(conn: sqlite3.Connection) -> None:
+    """Reconstrói a `fulltext_trigram` uma vez quando o filtro mudou.
+
+    Um projeto que passou pelo `backfill_trigram` com o filtro antigo ficou
+    com a tabela incompleta (trechos de tibetano, hangul jamo, katakana de
+    meia largura e outros de fora), e o marcador `backfilled = 1` impede que
+    o backfill rode de novo. A coluna `filter_revision` guarda com que
+    filtro a tabela foi feita; abaixo da revisão atual, o marcador volta a 0
+    e a etapa de extração (ou a tela de busca) refaz a tabela uma vez
+    (`fulltext.backfill_trigram`, que apaga e regrava). A abertura só muda o
+    marcador, nunca lê os trechos. Sem trecho indexado não há o que refazer."""
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(fulltext_trigram_state)").fetchall()}
+    except sqlite3.Error:
+        return
+    if not columns:  # sem trigram neste SQLite
+        return
+    if "filter_revision" not in columns:
+        conn.execute("ALTER TABLE fulltext_trigram_state ADD COLUMN filter_revision INTEGER NOT NULL DEFAULT 0")
+    row = conn.execute("SELECT filter_revision FROM fulltext_trigram_state WHERE id = 1").fetchone()
+    if row is None or row[0] >= TRIGRAM_FILTER_REVISION:
+        return
+    if conn.execute("SELECT 1 FROM fulltext LIMIT 1").fetchone() is not None:
+        conn.execute("UPDATE fulltext_trigram_state SET backfilled = 0 WHERE id = 1")
+    conn.execute("UPDATE fulltext_trigram_state SET filter_revision = ? WHERE id = 1", (TRIGRAM_FILTER_REVISION,))
