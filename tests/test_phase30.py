@@ -192,6 +192,37 @@ def test_etapa_rodando_sem_tela_aberta_segura_a_trava(tmp_path):
     assert not arquivo.exists()
 
 
+def test_etapa_rodando_segura_a_trava_com_o_catalogo_em_outra_letra(tmp_path, monkeypatch):
+    """A trava foi aberta com o caminho que `find_project` resolveu nesta
+    máquina; o catálogo compartilhado guarda o caminho absoluto da máquina
+    que registrou o projeto. Comparar com esse caminho cru fazia o
+    keep-alive dizer "livre" com uma etapa rodando, e a trava caía."""
+    import shutil
+    from types import SimpleNamespace
+
+    from gclaude_indexer import catalog, paths, settings
+    from gclaude_indexer.web import app as aplicacao
+
+    (tmp_path / "local").mkdir()
+    monkeypatch.setenv(paths.LOCAL_FOLDER_ENV, str(tmp_path / "local"))
+    primeiro = tmp_path / "H"
+    (primeiro / "GClaude" / "catalogo").mkdir(parents=True)
+    (primeiro / "Saidas" / "Processo X").mkdir(parents=True)
+    settings.set_shared_catalog_folder(str(primeiro / "GClaude" / "catalogo"))
+    catalog.register_project("Processo X", str(primeiro / "Saidas" / "Processo X"))
+    # A mesma árvore montada em outra letra: o outro computador.
+    segundo = tmp_path / "G"
+    shutil.copytree(primeiro, segundo)
+    settings.set_shared_catalog_folder(str(segundo / "GClaude" / "catalogo"))
+
+    entrada = catalog.find_project(1)
+    rodando = SimpleNamespace(running=True)
+    monkeypatch.setattr(
+        aplicacao.task_manager, "latest_for_project", lambda pid: rodando if pid == entrada.id else None,
+    )
+    assert aplicacao._project_busy(entrada.output_folder)
+
+
 def test_tela_avisa_que_continua_aberta(tmp_path):
     from fastapi.testclient import TestClient
 
