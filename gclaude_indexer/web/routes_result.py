@@ -103,7 +103,7 @@ def result_screen(request: Request, project_id: int):
             project_id, "quality", conn, config, lambda: quality_summary(conn, config, pending),
         )
         comparison = [
-            dict(row) for row in _cached_by_signature(project_id, "comparison", conn, config, lambda: compare_runs(conn))
+            dict(row) for row in _cached_by_signature(project_id, "comparison", conn, config, lambda: compare_runs(conn, quality))
         ]
         for row in comparison:
             row["formatted_time"] = _format_time(row["total_seconds"])
