@@ -46,7 +46,7 @@ from .artifacts import (
 from .catalog import CatalogEntry, find_member
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig, default_value
-from .i18n import DEFAULT_LANGUAGE, translate
+from .i18n import _REFERENCE_LANGUAGE, DEFAULT_LANGUAGE, translate
 from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed, write_managed
 from .output_names import (
     CLAUDE_MD_FILENAME,
@@ -290,6 +290,9 @@ def generate_instructions(
 
 
 def _guide(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
+    # Idioma desconhecido cai no de referência, como no projeto simples
+    # (`claude_package`, `artifacts.generate_claude_md`).
+    language = language if language in _GUIDE else _REFERENCE_LANGUAGE
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     collections = "\n".join(
         t("combined.guide_collection", alias=m.alias, name=m.name) for m in combined.included_members
@@ -300,7 +303,6 @@ def _guide(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
         )
     else:
         left_out = t("combined.guide_all_present")
-    language = language if language in _GUIDE else DEFAULT_LANGUAGE
     words = _PROSE_WORDS[language]
     return _GUIDE[language].format(
         name=entry.name, collections=collections, left_out=left_out,
@@ -326,17 +328,18 @@ def generate_zip(entry: SetEntry, language: str = DEFAULT_LANGUAGE) -> bytes:
 
 
 def _claude_md(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
+    # Idioma desconhecido cai no de referência, como no projeto simples.
+    language = language if language in _CLAUDE_MD else _REFERENCE_LANGUAGE
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     collections = []
     for m in combined.included_members:
         assert m.config is not None
         subject = subject_or_placeholder(m.config, language)
-        collections.append(_CLAUDE_MD_COLLECTION.get(language, _CLAUDE_MD_COLLECTION[DEFAULT_LANGUAGE]).format(
+        collections.append(_CLAUDE_MD_COLLECTION[language].format(
             alias=m.alias, name=m.name, subject=subject, output_folder=m.config.output_folder,
             index=prefixed_name(m.alias, INDEX_FILENAME), timeline=prefixed_name(m.alias, TIMELINE_FILENAME),
             review=prefixed_name(m.alias, REVIEW_FILENAME), launcher=SEARCH_LAUNCHER_FILENAME,
         ))
-    language = language if language in _CLAUDE_MD else DEFAULT_LANGUAGE
     words = _PROSE_WORDS[language]
     return _CLAUDE_MD[language].format(
         name=entry.name, collections="\n".join(collections), where=t("combined.where_text"), rule=SOURCE_OF_TRUTH_RULE,
