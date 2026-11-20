@@ -27,7 +27,7 @@ from datetime import datetime
 
 from .config import ProjectConfig
 from .file_status import FAILED, WINDOW_PENDING
-from .local_models import LOCAL_MODEL_PROFILES
+from .local_models import model_to_use
 
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 
@@ -248,8 +248,10 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
         pending = pending_items(conn)
     return {
         "engine": config.classification_engine,
-        # 2.1.0: a profile ("fast"/"quality") is shown as the model it stands for.
-        "model": LOCAL_MODEL_PROFILES.get(config.local_model, config.local_model),
+        # The model that really runs (`model_to_use`): a profile or
+        # `automatic` as the model it resolves to on this machine, the 4B one
+        # when the profile's model is not downloaded. Reads the disk only.
+        "model": model_to_use(config),
         **_measure(conn),
         "gaps": len(pending.get("gaps", {}) or {}),
     }
