@@ -51,15 +51,18 @@ class _ProjectCheckError(Exception):
 
 
 class LockBlockedError(_ProjectCheckError):
-    pass
+    """Another machine holds the project's lock and refreshed it recently
+    (`lock_blocked.html`, 423)."""
 
 
 class LockAbandonedError(_ProjectCheckError):
-    pass
+    """Another machine's lock, not refreshed for
+    `lock.MINUTES_UNTIL_ABANDONED` minutes (`lock_abandoned.html`, 409)."""
 
 
 class IncompleteSyncError(_ProjectCheckError):
-    pass
+    """`project.db` looks older than this machine last saw it: the sync
+    has not finished downloading it (`incomplete_sync.html`, 409)."""
 
 
 class RelocationNeededError(Exception):

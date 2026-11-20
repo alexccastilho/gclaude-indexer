@@ -198,6 +198,8 @@ class StepRun:
 
 @dataclass(frozen=True)
 class StepResult:
+    """A finished step: its `run` row and what the step returned."""
+
     run: StepRun
     value: object  # what the step function returned
 
