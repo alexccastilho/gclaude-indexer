@@ -26,7 +26,7 @@ from gclaude_indexer.artifacts import _gaps_by_group
 from gclaude_indexer.engine_rules import classify_pending as classify_rules
 from gclaude_indexer.fulltext import coverage, index_pending, remove_file, search
 from gclaude_indexer.i18n import translate
-from gclaude_indexer.import_items import RAW_ITEMS_FILE_NAME
+from gclaude_indexer.raw_items import FILE_NAME as RAW_ITEMS_FILE_NAME
 from gclaude_indexer.quality import _coverage
 from gclaude_indexer.web.background_runs import StepTask, _fulltext_progress_dict
 from gclaude_indexer.web.step_state import step_status

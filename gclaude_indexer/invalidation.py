@@ -33,7 +33,6 @@ stale lines too. See `_prune_raw_items`.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,7 +45,8 @@ from .events import record_event
 from .file_status import (
     CONVERTED, DISCOVERED, DUPLICATE, RESET_FOR_RENUMBER, RESET_TO_DISCOVERED_CLEAR_LANGUAGE,
 )
-from .paths import RAW_ITEMS_FILE_NAME, resolve_within
+from . import raw_items
+from .paths import resolve_within
 from .run_control import checkpoint
 from .update_plan import FileChange, UpdatePlan, build_update_plan, detect_changes, plan_from_changes
 from .windows_prep import sanitize_group_name, window_key, window_spans
@@ -243,57 +243,21 @@ def _prune_raw_items(
     function could plausibly raise `MemoryError`, and it runs after the
     commit, where raising at all is the thing to avoid.
     """
-    path = output_dir / RAW_ITEMS_FILE_NAME
-    if not (discarded_keys or discarded_groups) or not path.exists():
-        # A project that has never been classified has no file here. That
-        # is the normal state before the first run, not an error.
+    if not (discarded_keys or discarded_groups):
         return 0
 
-    def _is_stale(line: str) -> bool:
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError:
-            return False
-        if not isinstance(item, dict):
-            return False
+    def _is_stale(item: dict) -> bool:
         return (
-            item.get("window") in discarded_keys
-            or item.get("group") in discarded_groups
+            item.get(raw_items.WINDOW) in discarded_keys
+            or item.get(raw_items.GROUP) in discarded_groups
         )
 
-    # Written beside the real file and renamed over it only once it is
-    # complete: a half-written `raw_items.jsonl` would lose the items of
-    # windows that are still valid, and those exist nowhere else.
-    temporary = path.with_name(path.name + ".tmp")
-    dropped = 0
-    try:
-        # `newline=""` on both sides: the kept lines are copied through
-        # byte for byte, instead of having their line endings rewritten
-        # by the platform translation on the way in and out.
-        with open(path, "r", encoding="utf-8", newline="") as source, open(
-            temporary, "w", encoding="utf-8", newline=""
-        ) as target:
-            for line in source:
-                if _is_stale(line):
-                    dropped += 1
-                else:
-                    target.write(line)
-
-        if dropped:
-            temporary.replace(path)
-        else:
-            temporary.unlink(missing_ok=True)
-    except (OSError, ValueError):
-        # `ValueError` covers `UnicodeDecodeError` from a corrupted file:
-        # the read is as much a failure path as the write, and both have
-        # to reach the caller's counted-and-warned channel rather than
-        # escape past a commit that already succeeded.
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-    return dropped
+    # A project that has never been classified has no file here. That is
+    # the normal state before the first run, not an error: `prune` returns
+    # 0. A failure (`OSError`, or `ValueError` from a corrupted file)
+    # reaches the caller's counted-and-warned channel rather than escape
+    # past a commit that already succeeded.
+    return raw_items.prune(raw_items.path_in(output_dir), _is_stale)
 
 
 def _record_removals(conn: sqlite3.Connection, plan: UpdatePlan) -> int:
