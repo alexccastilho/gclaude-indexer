@@ -20,7 +20,7 @@ from ..quality import quality_summary
 from .background_runs import task_manager
 from ..file_status import FAILED, WINDOW_DONE, WINDOW_PENDING
 from .operations import _OPERATIONS
-from .state import _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK
+from .state import _OPERATIONS_IN_PROGRESS, _SLOT_CHANGES, _SLOTS_LOCK
 
 
 # The Execution screen asks for the steps table and the progress box
@@ -44,9 +44,11 @@ def _activity_key(project_id: int) -> tuple | None:
         if project_id in _OPERATIONS_IN_PROGRESS:
             return None
         operation = _OPERATIONS.get(project_id)
+        slot_changes = _SLOT_CHANGES.get(project_id, 0)
     return (
         id(task), getattr(task, "error", None),
         (operation.id, operation.status) if operation is not None else None,
+        slot_changes,
     )
 
 

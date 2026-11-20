@@ -54,6 +54,12 @@ lock_manager = LockManager()
 # middle of a generation, and nothing reads this value across processes.
 _OPERATIONS_IN_PROGRESS: dict[int, tuple[str, float]] = {}
 _SLOTS_LOCK = threading.Lock()
+# How many times each project's slot was taken or let go, under `_SLOTS_LOCK`.
+# The idle fragments' cache key (`caches._activity_key`) reads it: an
+# operation of `_generation_slot` leaves no entry in `_OPERATIONS`, so without
+# this the key after it was the key before it, and the screen kept the
+# fragment from before the operation.
+_SLOT_CHANGES: dict[int, int] = {}
 
 
 def _step_in_progress(project_id: int) -> bool:
@@ -79,12 +85,14 @@ def _claim_slot_locked(project_id: int, key: str, started_at: float) -> bool:
     if project_id in _OPERATIONS_IN_PROGRESS:
         return False
     _OPERATIONS_IN_PROGRESS[project_id] = (key, started_at)
+    _SLOT_CHANGES[project_id] = _SLOT_CHANGES.get(project_id, 0) + 1
     return True
 
 
 def _release_slot(project_id: int) -> None:
     with _SLOTS_LOCK:
-        _OPERATIONS_IN_PROGRESS.pop(project_id, None)
+        if _OPERATIONS_IN_PROGRESS.pop(project_id, None) is not None:
+            _SLOT_CHANGES[project_id] = _SLOT_CHANGES.get(project_id, 0) + 1
 
 
 def _release_project(output_folder, project_id: int | None = None, *, keep_lock_file: bool = False) -> None:
