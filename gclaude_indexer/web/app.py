@@ -257,10 +257,16 @@ lock_manager = LockManager()
 
 def _project_busy(output_folder) -> bool:
     """Whether a step of the project is running in the background — with
-    no screen open, it still needs the lock."""
+    no screen open, it still needs the lock.
+
+    The lock was opened with the folder `find_project` resolved for this
+    machine, so each entry is resolved the same way before comparing: the
+    shared catalog keeps the absolute path of the machine that registered
+    the project, which on another drive letter never matches."""
     key = LockManager._key(output_folder)
+    folder = catalog_folder()
     for entry in list_projects():
-        if LockManager._key(entry.output_folder) == key:
+        if LockManager._key(entry.resolved_output_folder(folder)) == key:
             task = task_manager.latest_for_project(entry.id)
             if task is not None and task.running:
                 return True
