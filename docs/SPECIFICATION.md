@@ -1150,8 +1150,8 @@ still true as of phase 17:
 
 - **Local model choice.** Section 10.2's original VRAM-tiered `qwen2.5`
   table was replaced by a single fixed default (`qwen3.5:4b`) with an
-  optional user override that takes effect — see section 10.2 for the
-  current rule.
+  optional user override that takes effect, and in 2.1.0 by two profiles
+  chosen by the card's VRAM — see section 10.2 for the current rule.
 - **Execution logs sync with the rest of the output folder**
   (`<output_folder>/logs/execution.log`), which section 11.1's original
   draft listed as machine-local; the table in this document already
