@@ -23,13 +23,14 @@ from pathlib import Path
 
 from . import workdir
 from .catalog import CatalogEntry, remove_project
+from .events import LOG_FOLDER_NAME
 from .managed_block import BACKUP_SUFFIX, without_managed_block
 from .paths import PROJECT_DB_NAME, RAW_ITEMS_FILE_NAME
 
 
 # Everything the system writes into an output folder — and only that. The
 # folder itself can be one the user picked with their own files in it.
-GENERATED_FOLDERS = ("converted", "blocks", "windows", "logs")
+GENERATED_FOLDERS = (workdir.CONVERTED_FOLDER, workdir.BLOCKS_FOLDER, "windows", LOG_FOLDER_NAME)
 GENERATED_FILES = (
     PROJECT_DB_NAME, f"{PROJECT_DB_NAME}-journal", f"{PROJECT_DB_NAME}-wal", f"{PROJECT_DB_NAME}-shm",
     "project.lock", RAW_ITEMS_FILE_NAME,
