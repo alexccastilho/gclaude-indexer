@@ -114,7 +114,7 @@ def _operacoes_longas_terminam_dentro_do_pedido(monkeypatch):
 
     monkeypatch.setattr(modulo_app, "OPERATION_INLINE_WAIT_SECONDS", 120.0)
     yield
-    with modulo_app._IMPORTS_IN_PROGRESS_LOCK:
+    with modulo_app._SLOTS_LOCK:
         modulo_app._OPERATIONS.clear()
 
 

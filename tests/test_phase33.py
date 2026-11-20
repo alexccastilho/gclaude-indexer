@@ -27,7 +27,7 @@ from tests.test_phase32 import _arranque_isolado
 
 
 def _slot_livre(pid):
-    return pid not in modulo_app._IMPORTS_IN_PROGRESS and pid not in modulo_app._OPERATIONS_IN_PROGRESS
+    return pid not in modulo_app._OPERATIONS_IN_PROGRESS
 
 
 @pytest.mark.parametrize("saida", [RuntimeError("falhou no meio"), GeneratorExit(), KeyboardInterrupt()])
@@ -47,13 +47,11 @@ def test_slot_e_liberado_no_retorno_normal():
 
 def test_arranque_descarta_residuo_do_slot(monkeypatch, tmp_path):
     _arranque_isolado(monkeypatch, tmp_path, ja_aberto=False)
-    modulo_app._IMPORTS_IN_PROGRESS.add(7)
     modulo_app._OPERATIONS_IN_PROGRESS[7] = ("update.confirm", 0.0)
     try:
         modulo_app.start_server(port=8123)
         assert _slot_livre(7)
     finally:
-        modulo_app._IMPORTS_IN_PROGRESS.discard(7)
         modulo_app._OPERATIONS_IN_PROGRESS.pop(7, None)
 
 

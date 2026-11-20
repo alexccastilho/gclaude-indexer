@@ -175,13 +175,28 @@ LOG_LINES = 200
 CLASSIFICATION_ENGINES_ORDER: tuple[str, ...] = (ENGINE_AUTOMATIC, ENGINE_RULES, ENGINE_LOCAL)
 
 
+def _request_language(request: Request) -> str:
+    """The interface language of this request: the cookie set by the
+    header's selector, or the default."""
+    return valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+
+
+def _project_or_404(project_id: int) -> CatalogEntry:
+    """The catalog entry (`find_project`, resolved for this machine), or
+    the 404 every project route answers when it is not there."""
+    entry = find_project(project_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    return entry
+
+
 def render(request: Request, template_name: str, context: dict | None = None, status_code: int = 200) -> HTMLResponse:
     """Replaces `templates.TemplateResponse` in every route: injects `t()`
     (translation — user request: Portuguese, English and Spanish,
     selectable when accessing) and the current theme (light/dark) into
     every context, read from cookies, with no session and no dependency on
     JavaScript on the first page load."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     theme = valid_theme(request.cookies.get(THEME_COOKIE_NAME))
     layout = valid_layout(request.cookies.get(LAYOUT_COOKIE_NAME))
     full_context = dict(context or {})
@@ -255,6 +270,83 @@ def _project_id_in_path(path: str) -> int | None:
 lock_manager = LockManager()
 
 
+# --- what keeps a project busy, and letting go of it ---------------------------
+#
+# Two kinds of work hold a project, and this is the one place that knows
+# both: a pipeline step, in `task_manager` (`background_runs.py`), and a long
+# operation (import and generate, update, delete, clearing intermediates,
+# search indexing, dedup, folder move) holding the project's slot below.
+# Each route asks the question it needs: `_step_in_progress`,
+# `_operation_in_progress`, or both, as `_project_busy` does.
+#
+# The slot: one long operation per project at a time. Seen live before it
+# existed: 4 concurrent "import and generate" runs on a 5230-item project,
+# each repeating `DELETE FROM item` plus thousands of inserts. The value says
+# *which* operation holds it and since when (fase 32), so a page loaded in
+# the middle of it (an F5, another tab) can show the activity bar with the
+# real name and the real elapsed time. The instant is `time.monotonic()`
+# (fase 33): wall-clock time can be set back by Windows or by NTP in the
+# middle of a generation, and nothing reads this value across processes.
+_OPERATIONS_IN_PROGRESS: dict[int, tuple[str, float]] = {}
+_SLOTS_LOCK = threading.Lock()
+
+
+def _step_in_progress(project_id: int) -> bool:
+    task = task_manager.latest_for_project(project_id)
+    return task is not None and task.running
+
+
+def _operation_in_progress(project_id: int) -> bool:
+    with _SLOTS_LOCK:
+        return project_id in _OPERATIONS_IN_PROGRESS
+
+
+def _operation_holding(project_id: int) -> tuple[str, float] | None:
+    """`(i18n key, monotonic start)` of the operation holding the slot."""
+    with _SLOTS_LOCK:
+        return _OPERATIONS_IN_PROGRESS.get(project_id)
+
+
+def _claim_slot_locked(project_id: int, key: str, started_at: float) -> bool:
+    """Takes the project's slot if it is free. The caller holds
+    `_SLOTS_LOCK`, so `_start_operation` registers its operation in the
+    same breath."""
+    if project_id in _OPERATIONS_IN_PROGRESS:
+        return False
+    _OPERATIONS_IN_PROGRESS[project_id] = (key, started_at)
+    return True
+
+
+def _release_slot(project_id: int) -> None:
+    with _SLOTS_LOCK:
+        _OPERATIONS_IN_PROGRESS.pop(project_id, None)
+
+
+def _release_project(output_folder, project_id: int | None = None, *, keep_lock_file: bool = False) -> None:
+    """Lets go of everything this server holds on the project folder before
+    its files are deleted, moved or taken over, in the order that matters:
+    the steps are asked to stop (when `project_id` is given), then the read
+    connections close, then the lock goes, last, because Windows will not
+    delete or rename a file that is still open.
+
+    `keep_lock_file`: stop looking after the lock without deleting
+    `project.lock` (`LockManager.forget`): a folder move carries the file
+    along, and a take-over writes a new one over it."""
+    if project_id is not None:
+        task_manager.pause(project_id)
+    reader_pool.close(output_folder)
+    if keep_lock_file:
+        lock_manager.forget(output_folder)
+    else:
+        lock_manager.close(output_folder)
+
+
+def _release_all_projects() -> None:
+    """Server shutdown: every read connection, then every lock."""
+    reader_pool.close_all()
+    lock_manager.close_all()
+
+
 def _project_busy(output_folder) -> bool:
     """Whether a step of the project is running in the background — with
     no screen open, it still needs the lock.
@@ -267,11 +359,7 @@ def _project_busy(output_folder) -> bool:
     folder = catalog_folder()
     for entry in list_projects():
         if LockManager._key(entry.resolved_output_folder(folder)) == key:
-            task = task_manager.latest_for_project(entry.id)
-            if task is not None and task.running:
-                return True
-            with _IMPORTS_IN_PROGRESS_LOCK:
-                return entry.id in _IMPORTS_IN_PROGRESS
+            return _step_in_progress(entry.id) or _operation_in_progress(entry.id)
     return False
 
 
@@ -281,8 +369,7 @@ lock_manager.set_keep_alive(_project_busy)
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     yield
-    reader_pool.close_all()
-    lock_manager.close_all()
+    _release_all_projects()
 
 
 app = FastAPI(title="GClaude Indexer", lifespan=_lifespan)
@@ -467,9 +554,7 @@ def _open_project(project_id: int, timeout: float = WRITER_TIMEOUT_SECONDS):
 
     `timeout`: the Execution screen's polls pass `READER_TIMEOUT_SECONDS`, so
     a busy database costs them a few seconds, not thirty."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     # Antes de abrir o banco: depois de uma queda no meio da mudança de
     # pasta, o `project.db` pode estar do outro lado, e abrir o caminho do
     # catálogo criaria um banco vazio no lugar.
@@ -523,9 +608,7 @@ def _read_project(project_id: int, timeout: float = READER_TIMEOUT_SECONDS):
     that stays open between requests (see `readers.py`). The first visit of
     the session still goes through `_open_project`, which runs the sync and
     lock checks; anything that cannot use the reader falls back to it."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     reader = reader_pool.acquire(entry.output_folder) if lock_manager.is_open(entry.output_folder) else None
     if reader is None:
         with _open_project(project_id, timeout=timeout) as opened:
@@ -663,20 +746,24 @@ def _set_shared_catalog_body(request: Request, form):
 
 @app.get("/projects/new", response_class=HTMLResponse)
 def new_project_screen(request: Request):
-    return render(
-        request, "new_project.html",
-        {
-            "values": _config_to_form(),
-            "familias": categories_by_family(),
-            "category_all": CATEGORY_ALL,
-            "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
-            "engines": CLASSIFICATION_ENGINES_ORDER,
-            "local_models": list_installed_models(),
-            "default_local_model": default_local_profile(),
-            "local_model_profiles": LOCAL_MODEL_PROFILES,
-            "errors": [],
-        },
-    )
+    return render(request, "new_project.html", _new_project_context(_config_to_form()))
+
+
+def _new_project_context(values: dict, errors: list | None = None, **extra) -> dict:
+    """What `new_project.html` needs, the same on the first visit and on
+    every answer that shows the form again."""
+    return {
+        "values": values,
+        "familias": categories_by_family(),
+        "category_all": CATEGORY_ALL,
+        "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
+        "engines": CLASSIFICATION_ENGINES_ORDER,
+        "local_models": list_installed_models(),
+        "default_local_model": default_local_profile(),
+        "local_model_profiles": LOCAL_MODEL_PROFILES,
+        "errors": errors if errors is not None else [],
+        **extra,
+    }
 
 
 @app.post("/projects/new", response_class=HTMLResponse)
@@ -715,21 +802,7 @@ def _create_new_project_body(request: Request, form):
     values["output_touched"] = str(form.get("output_touched", ""))
 
     def _refuse(errors: list) -> HTMLResponse:
-        return render(
-            request, "new_project.html",
-            {
-                "values": values,
-                "familias": categories_by_family(),
-                "category_all": CATEGORY_ALL,
-                "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
-                "engines": CLASSIFICATION_ENGINES_ORDER,
-                "local_models": list_installed_models(),
-                "default_local_model": default_local_profile(),
-                "local_model_profiles": LOCAL_MODEL_PROFILES,
-                "errors": errors,
-            },
-            status_code=400,
-        )
+        return render(request, "new_project.html", _new_project_context(values, errors), status_code=400)
 
     try:
         config = config_from_input(data)
@@ -754,19 +827,7 @@ def _create_new_project_body(request: Request, form):
     existing = describe_project(config.output_folder)
     if existing is not None:
         return render(
-            request, "new_project.html",
-            {
-                "values": values,
-                "familias": categories_by_family(),
-                "category_all": CATEGORY_ALL,
-                "media_extensions": sorted(EXTENSION_CATEGORIES[MEDIA_CATEGORY]),
-                "engines": CLASSIFICATION_ENGINES_ORDER,
-                "local_models": list_installed_models(),
-                "default_local_model": default_local_profile(),
-                "local_model_profiles": LOCAL_MODEL_PROFILES,
-                "errors": [],
-                "existing_project": existing,
-            },
+            request, "new_project.html", _new_project_context(values, existing_project=existing),
             status_code=409,
         )
 
@@ -887,7 +948,7 @@ def _select_folder_body(request: Request, form):
     # always open with a fixed Portuguese title bar, regardless of the
     # interface's language — this dialog is not a Jinja template, so it was
     # missed by every prior i18n pass.
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     folder = choose_folder(title=translate(language, "new_project.folder_picker_title"), initial=current_value)
     value = folder or current_value
 
@@ -936,10 +997,8 @@ def _suggest_output_body(request: Request, form):
 def take_over_lock_route(project_id: int):
     """Explicit user confirmation to take over an abandoned lock (section
     11.3 — a lock from another machine, unused for more than 10 minutes)."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
-    reader_pool.close(entry.output_folder)
+    entry = _project_or_404(project_id)
+    _release_project(entry.output_folder, keep_lock_file=True)
     lock_manager.take_over(entry.output_folder)
     mark_synced(entry.output_folder)
     return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
@@ -949,9 +1008,7 @@ def take_over_lock_route(project_id: int):
 def continue_anyway_route(project_id: int):
     """Explicit user confirmation to continue despite the incomplete sync
     warning (section 11.4)."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     mark_synced(entry.output_folder)
     return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
 
@@ -968,8 +1025,7 @@ def _relocation_due(config: ProjectConfig) -> bool:
 
 def _after_relocation(old: str, new: str) -> None:
     """O que a interface guarda pela pasta antiga e precisa esquecer."""
-    reader_pool.close(old)
-    lock_manager.forget(old)
+    _release_project(old, keep_lock_file=True)
     _side_bar_cache.clear()
     with step_state._status_cache_lock:
         step_state._status_cache.clear()
@@ -996,10 +1052,7 @@ def _settle_relocation(project_id: int, entry: CatalogEntry) -> CatalogEntry:
                 "desfeita agora (uma das pastas está inacessível). Conecte a unidade e abra de novo."
             ),
         )
-    refreshed = find_project(project_id)
-    if refreshed is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
-    return refreshed
+    return _project_or_404(project_id)
 
 
 def _render_relocation(
@@ -1044,9 +1097,7 @@ def _relocation_source(entry: CatalogEntry) -> str | None:
 
 @app.get("/projects/{project_id}/relocate", response_class=HTMLResponse)
 def relocation_screen(request: Request, project_id: int):
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     entry = _settle_relocation(project_id, entry)
     source = _relocation_source(entry)
     if source is None or not relocation.output_inside_source(source, entry.output_folder):
@@ -1058,9 +1109,7 @@ def relocation_screen(request: Request, project_id: int):
 def postpone_relocation_route(project_id: int):
     """"Adiar", sem prazo: guardado nesta máquina. A tela de interrupção não
     volta; a Execução mostra o aviso a cada abertura até a mudança."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     relocation.postpone(entry.output_folder)
     return RedirectResponse(url=f"/projects/{project_id}/run", status_code=303)
 
@@ -1071,9 +1120,7 @@ def relocate_route(request: Request, project_id: int):
     destino é calculado aqui (`paths.suggest_output_folder`), nunca do
     formulário. A proteção contra outro site é a mesma das outras rotas
     que mudam algo (`_only_own_pages`)."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     entry = _settle_relocation(project_id, entry)
     source = _relocation_source(entry)
     if source is None or not relocation.output_inside_source(source, entry.output_folder):
@@ -1082,12 +1129,10 @@ def relocate_route(request: Request, project_id: int):
     def refuse(key: str, **params) -> HTMLResponse:
         return _render_relocation(request, entry, source, error_key=key, error_params=params, status_code=409)
 
-    task = task_manager.latest_for_project(project_id)
-    if task is not None and task.running:
+    if _step_in_progress(project_id):
         return refuse("relocation.error.step_running")
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        if project_id in _IMPORTS_IN_PROGRESS:
-            return _operation_busy_response(request, project_id)
+    if _operation_in_progress(project_id):
+        return _operation_busy_response(request, project_id)
     if not check_sync(entry.output_folder).ok:
         return refuse("relocation.error.sync")
     lock_result = check_lock(entry.output_folder)
@@ -1109,8 +1154,7 @@ def relocate_route(request: Request, project_id: int):
                 # Nenhuma conexão nossa pode ficar aberta: o Windows não
                 # deixa mudar de nome um arquivo aberto. A trava continua
                 # no arquivo (desta máquina) e vai junto com a pasta.
-                reader_pool.close(old)
-                lock_manager.forget(old)
+                _release_project(old, keep_lock_file=True)
                 create_lock(old)
                 relocation.execute(plan, should_stop=should_stop, on_finalize=_after_relocation)
         except relocation.RelocationCancelled:
@@ -1128,7 +1172,7 @@ def relocate_route(request: Request, project_id: int):
 
 @app.get("/projects/{project_id}/run", response_class=HTMLResponse)
 def run_screen(request: Request, project_id: int):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _read_project(project_id, timeout=WRITER_TIMEOUT_SECONDS) as (entry, config, conn):
         steps_context = _steps_context(project_id, entry, config, conn, language)
         # Oldest first, newest at the bottom — the order every console and
@@ -1247,9 +1291,8 @@ def update_banner(request: Request, project_id: int):
     """
     # While an update or a generation runs, the folder is walked by
     # it already; a second walk here would only slow both down.
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        if project_id in _IMPORTS_IN_PROGRESS:
-            return HTMLResponse("")
+    if _operation_in_progress(project_id):
+        return HTMLResponse("")
     with _open_project(project_id) as (entry, config, conn):
         if _pipeline_has_pending_work(conn):
             return HTMLResponse("")
@@ -1359,7 +1402,7 @@ def instructions_screen(request: Request, project_id: int):
     the Claude Project was the update screen; an update confirmed without
     them left no other way. Only the person's part is editable here; the
     section the program generates is shown read-only below it."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         return render(request, "instructions.html", _instructions_context(entry, config, language, conn=conn))
 
@@ -1375,7 +1418,7 @@ def _instructions_dedup_body(request: Request, project_id: int, form):
     `remove` takes the copies out of their part, points the references to
     them at the block and moves the rules they ticked into the project's
     extra rules; `keep` only records the choice. Either way it is logged."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     action = str(form.get("action", ""))
     fingerprint = str(form.get("fingerprint", ""))
     move = {int(value) for value in form.getlist("move") if str(value).isdigit()}
@@ -1447,7 +1490,7 @@ async def instructions_save(request: Request, project_id: int):
 
 
 def _instructions_save_body(request: Request, project_id: int, form):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     pasted = str(form.get("user_instructions", ""))
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     with _open_project(project_id) as (entry, config, conn):
@@ -1477,7 +1520,7 @@ async def instructions_extra_rules_save(request: Request, project_id: int):
 
 
 def _instructions_extra_rules_body(request: Request, project_id: int, form):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     text = str(form.get("extra_rules", "")).replace("\r\n", "\n").strip()
     with _open_project(project_id) as (entry, config, conn):
         if extra_rules_errors(text):
@@ -1542,11 +1585,8 @@ def _update_apply_body(request: Request, project_id: int, form):
     request; the walk of the folder and the invalidation run in the
     background, with Stop. The slot is claimed by `_start_operation`
     before anything is opened or written (fase 33, decision 3)."""
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
-    current_task = task_manager.latest_for_project(project_id)
-    if current_task is not None and current_task.running:
+    entry = _project_or_404(project_id)
+    if _step_in_progress(project_id):
         with _open_project(project_id) as (entry, config, _conn):
             return render(
                 request, "update_project.html",
@@ -1578,7 +1618,7 @@ def _update_apply_unlocked(request: Request, project_id: int, form, should_stop=
     mismatch twice for one action — and once on a refusal that applied
     nothing at all.
     """
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
 
     with _open_project(project_id) as (entry, config, conn):
         # `_open_project`'s lock is the cross-machine one and the running
@@ -1589,8 +1629,7 @@ def _update_apply_unlocked(request: Request, project_id: int, form, should_stop=
         # be appending, so classifications written during the copy are
         # lost, or a stale line survives and is imported against pages
         # that have since moved.
-        current_task = task_manager.latest_for_project(project_id)
-        if current_task is not None and current_task.running:
+        if _step_in_progress(project_id):
             raise _OperationMessage("update.run_in_progress")
 
         # What the user actually saw. `apply_update_plan` walks the folder
@@ -1642,7 +1681,7 @@ def log_fragment(request: Request, project_id: int, since: int | None = None):
     `language`: without it, the log always showed
     events in `DEFAULT_LANGUAGE`, ignoring the interface's actual language.
     """
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     # Capped either way: a screen left open while a very long step ran must
     # not receive thousands of lines in one response.
     with _open_project(project_id, timeout=READER_TIMEOUT_SECONDS) as (_entry, _config, conn):
@@ -1660,7 +1699,7 @@ def steps_fragment(request: Request, project_id: int):
     """User request: the steps table also refreshes itself during the run
     (before it only changed when a button was clicked), so progress can be
     followed without clicking anything."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
 
     def build() -> str:
         with _read_project(project_id) as (entry, config, conn):
@@ -1687,8 +1726,8 @@ def _activity_key(project_id: int) -> tuple | None:
     task = task_manager.latest_for_project(project_id)
     if task is not None and task.running:
         return None
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        if project_id in _IMPORTS_IN_PROGRESS:
+    with _SLOTS_LOCK:
+        if project_id in _OPERATIONS_IN_PROGRESS:
             return None
         operation = _OPERATIONS.get(project_id)
     return (
@@ -1786,7 +1825,7 @@ def run_next_step(request: Request, project_id: int):
     database state, which is the next incomplete step, and starts it in the
     background (the response does not wait for it to finish — the progress
     bar follows along via `run/progress`)."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
         if next_step is not None:
@@ -1800,7 +1839,7 @@ def run_next_step(request: Request, project_id: int):
 def run_all(request: Request, project_id: int):
     """"Run everything up to classification" button (section 6) — chains
     the steps in the background, one after another."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         task_manager.start_all(project_id, entry.output_folder, language=language)
         context = _steps_context(project_id, entry, config, conn, language)
@@ -1813,7 +1852,7 @@ def resume_run(request: Request, project_id: int):
     """"Continue" in the progress box (fase 34): the same chain as "run
     everything", started at the first pending step — the paused one, which
     is resumable — instead of at the scan."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
         if next_step is not None:
@@ -1862,7 +1901,7 @@ def _progress_context(project_id: int) -> dict:
 
 @app.get("/projects/{project_id}/run/progress", response_class=HTMLResponse)
 def progress_fragment(request: Request, project_id: int):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     return HTMLResponse(_idle_fragment(
         project_id, "progress", language,
         lambda: render(request, "_progress.html", _progress_context(project_id)).body.decode("utf-8"),
@@ -2000,25 +2039,6 @@ def request_sensor_elevation(request: Request):
     return Response(content='{"outcome": "requested"}', media_type="application/json", status_code=202)
 
 
-# Guards "import and generate" against a second click while the first one is
-# still running. Unlike the pipeline steps, this route does its work inside
-# the HTTP handler, so it has no `task_manager` entry to check — and each
-# extra run would repeat `DELETE FROM item` plus thousands of inserts on the
-# same database. Seen live: 4 concurrent runs on a 5230-item project.
-_IMPORTS_IN_PROGRESS: set[int] = set()
-_IMPORTS_IN_PROGRESS_LOCK = threading.Lock()
-
-# Fase 32: *which* operation holds the slot and since when, so a page loaded
-# in the middle of it — an F5, another tab — can show the activity bar with
-# the real name and the real elapsed time instead of looking frozen. Guarded
-# by the same lock as the set above. The instant is `time.monotonic()`
-# (fase 33): wall-clock time can be set back by Windows or by NTP in the
-# middle of a generation, and the elapsed time would then go negative or
-# jump — nothing reads this value across processes, so the monotonic clock
-# is the right one.
-_OPERATIONS_IN_PROGRESS: dict[int, tuple[str, float]] = {}
-
-
 @contextmanager
 def _generation_slot(project_id: int, operation_key: str):
     """One report generation per project at a time. Yields `False` when
@@ -2026,23 +2046,18 @@ def _generation_slot(project_id: int, operation_key: str):
     instead of starting a duplicate: two generations writing and deleting
     the same files at once end in `PermissionError` on Windows, and a
     regeneration during an import would read a half-imported `item` table.
-    Shared by "Import and generate reports" and the package option (phase
-    31); `_project_busy` reads the same set for the lock keep-alive.
+    The same slot as `_start_operation`, held for the length of the
+    request; `_project_busy` reads it for the lock keep-alive.
 
     `operation_key` is the i18n key of the button that started it — what
     `project_activity` reports back to the screen (fase 32)."""
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        claimed = project_id not in _IMPORTS_IN_PROGRESS
-        if claimed:
-            _IMPORTS_IN_PROGRESS.add(project_id)
-            _OPERATIONS_IN_PROGRESS[project_id] = (operation_key, time.monotonic())
+    with _SLOTS_LOCK:
+        claimed = _claim_slot_locked(project_id, operation_key, time.monotonic())
     try:
         yield claimed
     finally:
         if claimed:
-            with _IMPORTS_IN_PROGRESS_LOCK:
-                _IMPORTS_IN_PROGRESS.discard(project_id)
-                _OPERATIONS_IN_PROGRESS.pop(project_id, None)
+            _release_slot(project_id)
 
 
 # --- 1.9.0: long operations in the background, with Stop ---------------------
@@ -2103,15 +2118,14 @@ def _start_operation(project_id: int, key: str, work, next_url: str) -> _Operati
     `work` may return a URL, which replaces `next_url` (where the screen
     goes when the operation ends well).
     """
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        if project_id in _IMPORTS_IN_PROGRESS:
+    with _SLOTS_LOCK:
+        started_at = time.monotonic()
+        if not _claim_slot_locked(project_id, key, started_at):
             return None
-        _IMPORTS_IN_PROGRESS.add(project_id)
         operation = _Operation(
             id=next(_OPERATION_IDS), project_id=project_id, key=key,
-            started_at=time.monotonic(), next_url=next_url,
+            started_at=started_at, next_url=next_url,
         )
-        _OPERATIONS_IN_PROGRESS[project_id] = (key, operation.started_at)
         _OPERATIONS[project_id] = operation
 
     def run() -> None:
@@ -2136,9 +2150,7 @@ def _start_operation(project_id: int, key: str, work, next_url: str) -> _Operati
             print(f"[operation {key}] {type(exc).__name__}: {exc}", file=sys.stderr)
         finally:
             operation.finished_at = time.monotonic()
-            with _IMPORTS_IN_PROGRESS_LOCK:
-                _IMPORTS_IN_PROGRESS.discard(project_id)
-                _OPERATIONS_IN_PROGRESS.pop(project_id, None)
+            _release_slot(project_id)
 
     thread = threading.Thread(target=run, name=f"operation-{key}-{project_id}", daemon=True)
     thread.start()
@@ -2186,9 +2198,9 @@ def global_activity(request: Request) -> dict:
     few minutes, for the waiting panel of any screen. Reads memory
     only: it is asked every couple of seconds while the operation it
     describes holds the database."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     now = time.monotonic()
-    with _IMPORTS_IN_PROGRESS_LOCK:
+    with _SLOTS_LOCK:
         for project_id, operation in list(_OPERATIONS.items()):
             if (operation.finished_at is not None
                     and now - operation.finished_at > OPERATION_FINISHED_TTL_SECONDS):
@@ -2203,7 +2215,7 @@ def stop_operation(request: Request, project_id: int) -> dict:
     running operation to stop at its next checkpoint; nothing is committed
     after that, so the project stays as it was before the click (or, in a
     report generation, with each file either old or new)."""
-    with _IMPORTS_IN_PROGRESS_LOCK:
+    with _SLOTS_LOCK:
         operation = _OPERATIONS.get(project_id)
     if operation is None or operation.status != "running":
         return {"stopping": False}
@@ -2221,9 +2233,8 @@ def project_activity(request: Request, project_id: int) -> dict:
 
     `elapsed_s` is measured from the server's own start time: the page
     that asks may have been opened long after the click."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        running = _OPERATIONS_IN_PROGRESS.get(project_id)
+    language = _request_language(request)
+    running = _operation_holding(project_id)
     if running is None:
         return {"operation": None, "operation_key": None, "elapsed_s": 0}
     key, started_at = running
@@ -2243,9 +2254,8 @@ def _operation_busy_response(request: Request, project_id: int) -> HTMLResponse:
     page is the safety net for the day someone does, because "delete
     project" during a generation would remove files being written.
     """
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        running = _OPERATIONS_IN_PROGRESS.get(project_id)
+    language = _request_language(request)
+    running = _operation_holding(project_id)
     if running is None:
         # The holder let go between our refusal and this read (a window of
         # microseconds): nothing to name, so the normal path — the result
@@ -2266,9 +2276,8 @@ def import_and_generate(request: Request, project_id: int):
     """Starts the import and the generation in the background and
     answers at once; the waiting panel follows it and has the Stop button.
     A second click while one is running gets the busy page, as before."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
-    if find_project(project_id) is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    language = _request_language(request)
+    _project_or_404(project_id)
 
     def work(should_stop):
         with _open_project(project_id) as (_entry, config, conn):
@@ -2328,7 +2337,7 @@ def _preview(path: Path) -> tuple[str | None, bool]:
 
 @app.get("/projects/{project_id}/result", response_class=HTMLResponse)
 def result_screen(request: Request, project_id: int):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _read_project(project_id) as (entry, config, conn):
         output_folder = Path(config.output_folder)
         artifacts = []
@@ -2359,8 +2368,7 @@ def result_screen(request: Request, project_id: int):
         budget = claude_package.budget(config)
         instructions_dedup = _dedup_notice(conn, config)
 
-    current_task = task_manager.latest_for_project(project_id)
-    step_in_progress = current_task is not None and current_task.running
+    step_in_progress = _step_in_progress(project_id)
 
     return render(
         request, "result.html",
@@ -2401,9 +2409,7 @@ def _clear_intermediates_unlocked(project_id: int):
     with _open_project(project_id) as (entry, _config, _conn):
         output_folder = entry.output_folder
 
-    task_manager.pause(project_id)
-    reader_pool.close(output_folder)
-    lock_manager.close(output_folder)
+    _release_project(output_folder, project_id)
     clear_intermediates(output_folder)
 
     return RedirectResponse(f"/projects/{project_id}/result", status_code=303)
@@ -2464,7 +2470,7 @@ def _search_index_body(request: Request, project_id: int, form):
 def _search_index_unlocked(request: Request, project_id: int, form):
     """Adds files extracted before the search existed (or left out by an
     interrupted run), a time-boxed batch per click."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (_entry, config, conn):
         index_fulltext(conn, config, language=language, time_budget=SEARCH_INDEX_SECONDS)
     query = str(form.get("q", ""))
@@ -2517,7 +2523,7 @@ def download_claude_package(request: Request, project_id: int):
     """Zip with the four artifacts + an installation guide for a new Claude
     Project (explicit user request) — in the interface's language at the
     moment of the download."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     with _open_project(project_id) as (_entry, config, _conn):
         content = generate_claude_project_package(config, language)
     return _zip_response(content, f"claude_project_{config.name}.zip")
@@ -2543,9 +2549,7 @@ def _zip_response(content: bytes, file_name: str) -> Response:
 
 @app.get("/projects/{project_id}/delete", response_class=HTMLResponse)
 def confirm_deletion(request: Request, project_id: int):
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
     return render(request, "delete_project.html", {"project": entry})
 
 
@@ -2563,17 +2567,13 @@ def _delete_project_route_body(request: Request, project_id: int, form):
 
 
 def _delete_project_unlocked(request: Request, project_id: int, form):
-    entry = find_project(project_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Projeto não encontrado no catálogo local.")
+    entry = _project_or_404(project_id)
 
     delete_files = str(form.get("delete_files", "")) == "all"
 
     # Releases the lock and closes this session's connection before touching
     # the folder — Windows won't let you delete a file that's open.
-    reader_pool.close(entry.output_folder)
-    lock_manager.close(entry.output_folder)
-    task_manager.pause(project_id)
+    _release_project(entry.output_folder, project_id)
     delete_project(entry, delete_files)
     _side_bar_cache.clear()  # The side bar shows it at once
 
@@ -2620,7 +2620,7 @@ def _project_choices(language: str, entry: SetEntry) -> list[dict]:
 
 def _render_set(request: Request, entry: SetEntry, errors: list[str] | None = None,
                 status_code: int = 200, notice: str = "", target_folder: str = "") -> HTMLResponse:
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     context = {
         "entry": entry, "choices": _project_choices(language, entry), "errors": errors or [],
         "notice": notice, "target_folder": target_folder, "rag_threshold": claude_package.RAG_THRESHOLD_TOKENS,
@@ -2661,7 +2661,7 @@ def _set_from_form(form, entry: SetEntry, language: str) -> list[str]:
 
 
 def _save_set_body(request: Request, form, entry: SetEntry):
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     errors = _set_from_form(form, entry, language)
     if errors:
         return _render_set(request, entry, errors, status_code=400)
@@ -2696,7 +2696,7 @@ async def create_set(request: Request):
 @app.get("/sets/{set_id}", response_class=HTMLResponse)
 def set_screen(request: Request, set_id: int, written: int = 0, folder: str = ""):
     entry = _set_or_404(set_id)
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     notice = translate(language, "sets.written", count=written, folder=folder) if written and folder else ""
     return _render_set(request, entry, notice=notice, target_folder=folder)
 
@@ -2719,7 +2719,7 @@ def delete_set(set_id: int):
 @app.get("/sets/{set_id}/package")
 def download_set_package(request: Request, set_id: int):
     entry = _set_or_404(set_id)
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     return _zip_response(combined_package.generate_zip(entry, language), f"claude_project_{entry.name}.zip")
 
 
@@ -2731,7 +2731,7 @@ async def write_set_folder(request: Request, set_id: int):
 
 def _write_set_folder_body(request: Request, set_id: int, form):
     entry = _set_or_404(set_id)
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     folder = str(form.get("target_folder", "")).strip()
     if not folder:
         return _render_set(request, entry, [translate(language, "sets.write_folder_missing")], status_code=400)
@@ -2755,7 +2755,7 @@ def manual_screen(request: Request):
     the Claude package guide): flowing text with tables and examples, which
     itemized i18n keys would chop into fragments. Each screen's help modal
     links to its own section here."""
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     return render(request, "help.html", {"manual_template": f"manual/{language}.html"})
 
 
@@ -2765,7 +2765,7 @@ def about_screen(request: Request):
     # text (GPU runtime, hardware-sensor availability) used to be hardcoded
     # Portuguese, shown as-is regardless of the interface's language — see
     # `install_diagnostics.py`'s module docstring.
-    language = valid_language(request.cookies.get(LANGUAGE_COOKIE_NAME))
+    language = _request_language(request)
     from .. import components
 
     # Task 7: the downloaded components, read fresh on every visit (outside
@@ -2822,6 +2822,19 @@ def _installation_report(language: str):
 # --- preferences: language and theme (user request, selectors in the header) -
 
 
+def _save_preference(request: Request, cookie_name: str, value: str, *, fetch_answer: bool = False) -> Response:
+    """Stores a header preference in its cookie and sends the person back
+    to the screen they were on. `fetch_answer`: the screen may change the
+    preference in place (`X-Preference-Fetch: 1`) and then only needs the
+    cookie, with 204."""
+    if fetch_answer and request.headers.get("x-preference-fetch") == "1":
+        response = Response(status_code=204)
+    else:
+        response = RedirectResponse(url=_back_to(request), status_code=303)
+    response.set_cookie(cookie_name, value, max_age=60 * 60 * 24 * 365, samesite="lax")
+    return response
+
+
 def _back_to(request: Request) -> str:
     referer = request.headers.get("referer")
     if not referer:
@@ -2840,32 +2853,22 @@ def _back_to(request: Request) -> str:
 async def choose_language(request: Request):
     form = await request.form()
     language = valid_language(str(form.get("language", DEFAULT_LANGUAGE)))
-    response = RedirectResponse(url=_back_to(request), status_code=303)
-    response.set_cookie(LANGUAGE_COOKIE_NAME, language, max_age=60 * 60 * 24 * 365, samesite="lax")
-    return response
+    return _save_preference(request, LANGUAGE_COOKIE_NAME, language)
 
 
 @app.post("/preferences/theme")
 async def choose_theme(request: Request):
     form = await request.form()
     theme = valid_theme(str(form.get("theme", DEFAULT_THEME)))
-    # The screen changes the theme in place, without a reload, and
-    # only needs the cookie back.
-    if request.headers.get("x-preference-fetch") == "1":
-        response = Response(status_code=204)
-    else:
-        response = RedirectResponse(url=_back_to(request), status_code=303)
-    response.set_cookie(THEME_COOKIE_NAME, theme, max_age=60 * 60 * 24 * 365, samesite="lax")
-    return response
+    # The screen changes the theme in place, without a reload.
+    return _save_preference(request, THEME_COOKIE_NAME, theme, fetch_answer=True)
 
 
 @app.post("/preferences/layout")
 async def choose_layout(request: Request):
     form = await request.form()
     layout = valid_layout(str(form.get("layout", DEFAULT_LAYOUT)))
-    response = RedirectResponse(url=_back_to(request), status_code=303)
-    response.set_cookie(LAYOUT_COOKIE_NAME, layout, max_age=60 * 60 * 24 * 365, samesite="lax")
-    return response
+    return _save_preference(request, LAYOUT_COOKIE_NAME, layout)
 
 
 def _validate_host(host: str) -> None:
@@ -3007,14 +3010,13 @@ def start_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     # window over the user's desktop (see `no_window.py`).
     no_window.install()
 
-    # The operation slot starts empty (fase 33). Both structures live in
-    # memory, so a fresh process already has them empty — but the server
+    # The operation slot starts empty (fase 33). It lives in memory, so a
+    # fresh process already has it empty — but the server
     # that is starting is the owner of the slot and must not inherit
     # anything from a reloaded module, a test, or a future on-disk record:
     # a stale entry would refuse every long operation of that project
     # with "another operation is in progress" until the next restart.
-    with _IMPORTS_IN_PROGRESS_LOCK:
-        _IMPORTS_IN_PROGRESS.clear()
+    with _SLOTS_LOCK:
         _OPERATIONS_IN_PROGRESS.clear()
 
     # Also before anything runs: a fresh install's `PATH` change often has

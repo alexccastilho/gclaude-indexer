@@ -146,7 +146,7 @@ def test_operacao_em_segundo_plano_aparece_e_para_pelo_botao(tmp_path, monkeypat
             break
         time.sleep(0.01)
     assert operacao.status == "stopped"
-    assert pid not in modulo_app._IMPORTS_IN_PROGRESS, "o projeto fica livre de novo"
+    assert pid not in modulo_app._OPERATIONS_IN_PROGRESS, "o projeto fica livre de novo"
     vista = [v for v in cliente.get("/activity").json()["operations"] if v["project_id"] == pid][0]
     assert vista["message"] == translate("pt", "activity.stopped")
 
