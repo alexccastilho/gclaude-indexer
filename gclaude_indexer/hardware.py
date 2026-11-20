@@ -109,8 +109,8 @@ def _recorded_recently(conn, message_key: str) -> bool:
 # Hardware facts that do not change while the program runs (the card, its
 # memory, the processor's name) are measured once per process, through
 # `measured_once`; every other reading here is taken on each call, on
-# purpose (the diagnosis and the GPU budget follow a card swap). One way to
-# keep them and one way to drop them: `forget_measurements()`.
+# purpose (the diagnosis and the GPU budget follow a card swap). `_measured`
+# lists every cached fact (each one has `cache_clear()`).
 _measured: list = []
 
 
@@ -120,12 +120,6 @@ def measured_once(function):
     cached = functools.lru_cache(maxsize=1)(function)
     _measured.append(cached)
     return cached
-
-
-def forget_measurements() -> None:
-    """Drops every cached hardware fact, so the next call measures again."""
-    for cached in _measured:
-        cached.cache_clear()
 
 
 # One execution of the steps ("Run everything", or a single step) reads the
@@ -163,7 +157,7 @@ def _read_once_per_execution(name: str, read):
 
 
 # `windows_counters` sits below this module and cannot import it; its one
-# fact measured once is kept the same way and dropped with the others.
+# fact measured once is kept the same way and listed with the others.
 _measured.append(windows_counters.memory_clock_mhz)
 
 

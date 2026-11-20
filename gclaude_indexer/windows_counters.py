@@ -107,7 +107,7 @@ _TIMEOUT_S = 6
 # pattern as `sensors.py` (`_last_reading` + timestamp): each value fetched
 # via PowerShell is reused for `_CACHE_TTL_S`. `memory_clock_mhz`, below,
 # does not change while running and is kept for the whole process
-# (`hardware.forget_measurements` drops it); `vram_total_mb` is measured
+# (`memory_clock_mhz.cache_clear()` drops it); `vram_total_mb` is measured
 # on every call (see `present_adapters`).
 _CACHE_TTL_S = 1.0
 
