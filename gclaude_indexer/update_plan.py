@@ -158,12 +158,6 @@ _READ_RESULTS: dict[tuple[str, int, float], str] = {}
 _MAX_READ_RESULTS = 4096
 
 
-def _forget_reads() -> None:
-    """Esquece os resultados guardados (os testes começam do zero)."""
-    with _READS_LOCK:
-        _READ_RESULTS.clear()
-
-
 class _PlanReader:
     """As leituras de um plano: o prazo de cada uma (o da varredura, ou o
     teto das telas), o corte por travamentos seguidos e Parar entre
@@ -499,30 +493,10 @@ class UpdatePlan:
         return sum(group.windows_discarded for group in self.groups)
 
 
-def _infer_window_size(old_spans: list[tuple[int, int]]) -> int:
-    """Window size implied by a layout, when the caller did not say.
-
-    Exact whenever the group has two or more windows: a second window
-    exists only if the first one did not already reach the end, so
-    `spans[0]` is necessarily full-size and its width *is* the window
-    size. With a single window the layout is `(0, page_count)` and the
-    two cases are indistinguishable — a group shorter than one window and
-    a group exactly one window long look identical. There we return a
-    size one larger, which reads as "truncated" and discards that single
-    window: the conservative answer, and the right one except in the
-    knife-edge case where the collection happens to be exactly one window
-    long.
-    """
-    if len(old_spans) == 1:
-        start, end = old_spans[0]
-        return end - start + 1
-    return max(end - start for start, end in old_spans)
-
-
 def first_affected_window(
     old_spans: list[tuple[int, int]],
     first_divergent_page: int,
-    window_size: int | None = None,
+    window_size: int,
 ) -> int:
     """Index of the first window that must be discarded.
 
@@ -565,10 +539,9 @@ def first_affected_window(
     at the same settings gives `[(0, 16), (14, 30)]`, whose last is
     full-size; appending there discards nothing.
 
-    `window_size` is optional only so the pure function stays callable
-    from a test with a layout and nothing else; pass it whenever the
-    configuration is at hand, because a one-window group cannot be read
-    back from its layout (see `_infer_window_size`).
+    `window_size` comes from the configuration: a one-window group cannot
+    be read back from its layout (`(0, page_count)` looks the same whether
+    the group is shorter than a window or exactly one window long).
     """
     if not old_spans:
         return 0
@@ -576,9 +549,6 @@ def first_affected_window(
     for index, (_start, end) in enumerate(old_spans):
         if end > first_divergent_page:
             return index
-
-    if window_size is None:
-        window_size = _infer_window_size(old_spans)
 
     last_start, last_end = old_spans[-1]
     if last_end - last_start < window_size:
