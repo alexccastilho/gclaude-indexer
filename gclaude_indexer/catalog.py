@@ -43,7 +43,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import json_store, settings
-from .paths import machine_local_folder
+from .paths import folder_key, machine_local_folder
 
 CATALOG_FILE_NAME = "projects.json"
 
@@ -170,24 +170,11 @@ def list_projects() -> list[CatalogEntry]:
         return _read(_local_catalog_path())
 
     entries = _read(shared_folder / CATALOG_FILE_NAME)
-    known_folders = {_folder_key(entry.output_folder) for entry in entries}
+    known_folders = {folder_key(entry.output_folder) for entry in entries}
     for entry in _read(_local_catalog_path()):
-        if _folder_key(entry.output_folder) not in known_folders:
+        if folder_key(entry.output_folder) not in known_folders:
             entries.append(entry)
     return _with_unique_ids(entries)
-
-
-def _folder_key(folder: str) -> str:
-    """Comparable form of a path, for "is this the same project".
-
-    Case-folded because Windows paths are case-insensitive, and two entries
-    differing only in case are the same folder — which is how a project
-    could be registered twice.
-    """
-    try:
-        return str(Path(folder).resolve()).casefold()
-    except OSError:
-        return str(folder).casefold()
 
 
 def _relative_to_catalog(output_folder: str, folder: Path | None) -> str:
@@ -218,10 +205,10 @@ def register_project(name: str, output_folder: str) -> CatalogEntry:
     exists for the same output folder (avoids duplicating on recreate/reopen)."""
     entries = list_projects()
     folder = catalog_folder()
-    key = _folder_key(output_folder)
+    key = folder_key(output_folder)
 
     for entry in entries:
-        if _folder_key(entry.resolved_output_folder(folder)) == key or _folder_key(entry.output_folder) == key:
+        if folder_key(entry.resolved_output_folder(folder)) == key or folder_key(entry.output_folder) == key:
             # An entry registered before a shared folder was configured has
             # no relative path yet. Filling it in here is what makes an
             # existing project become visible on the other machine, without
@@ -277,13 +264,13 @@ def remove_project(project_id: int) -> None:
         return
     local = _read(_local_catalog_path())
     removed_folders = {
-        _folder_key(entry.output_folder)
+        folder_key(entry.output_folder)
         for entry in _read(shared_folder / CATALOG_FILE_NAME) + local
         if entry.id == project_id
     }
     if not removed_folders:
         return
-    kept_local = [entry for entry in local if _folder_key(entry.output_folder) not in removed_folders]
+    kept_local = [entry for entry in local if folder_key(entry.output_folder) not in removed_folders]
     if len(kept_local) != len(local):
         _write_atomic(_local_catalog_path(), kept_local)
 
@@ -300,10 +287,10 @@ def adopt_local_projects() -> int:
         return 0
 
     shared = _read(folder / CATALOG_FILE_NAME)
-    known = {_folder_key(entry.output_folder) for entry in shared}
+    known = {folder_key(entry.output_folder) for entry in shared}
     added = 0
     for entry in _read(_local_catalog_path()):
-        if _folder_key(entry.output_folder) in known:
+        if folder_key(entry.output_folder) in known:
             continue
         entry.relative_output_folder = _relative_to_catalog(entry.output_folder, folder)
         shared.append(entry)
@@ -326,7 +313,7 @@ def relocate_project(old_folder: str, new_folder: str) -> int:
     Remover e registrar de novo daria outro id e quebraria o Conjunto.
     Idempotente: sem entrada da pasta antiga, nada muda. Devolve quantas
     entradas foram atualizadas."""
-    old_key = _folder_key(old_folder)
+    old_key = folder_key(old_folder)
     shared_folder = catalog_folder()
     files: list[tuple[Path, Path | None]] = [(_local_catalog_path(), None)]
     if shared_folder is not None:
@@ -339,7 +326,7 @@ def relocate_project(old_folder: str, new_folder: str) -> int:
         entries = _read(path)
         changed = False
         for entry in entries:
-            keys = {_folder_key(entry.output_folder), _folder_key(entry.resolved_output_folder(folder))}
+            keys = {folder_key(entry.output_folder), folder_key(entry.resolved_output_folder(folder))}
             if old_key not in keys:
                 continue
             entry.output_folder = str(new_folder)

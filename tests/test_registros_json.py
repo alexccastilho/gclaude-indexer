@@ -234,3 +234,23 @@ def test_juncao_e_a_mesma_pasta_so_para_folder_key(tmp_path):
     # A grafia não segue o link: é o que nomeia a pasta de trabalho e o que
     # a mudança de pasta usa para recusar mover uma junção.
     assert paths.folder_spelling_key(juncao) != paths.folder_spelling_key(real)
+
+
+def test_catalogo_nao_junta_pastas_que_o_windows_distingue(tmp_path, pasta_local, monkeypatch):
+    """`casefold` dizia que `Straße` e `STRASSE` são a mesma pasta, e o
+    segundo projeto recebia a entrada do primeiro. No NTFS e no Drive são
+    pastas diferentes; a mudança de pasta (`folder_key`) já as separava."""
+    from gclaude_indexer import catalog
+
+    monkeypatch.setattr(catalog, "machine_local_folder", lambda: pasta_local)
+    monkeypatch.setattr("gclaude_indexer.settings.machine_local_folder", lambda: pasta_local)
+    (tmp_path / "Straße").mkdir()
+    (tmp_path / "STRASSE").mkdir()
+
+    primeiro = catalog.register_project("Rua", str(tmp_path / "Straße"))
+    segundo = catalog.register_project("RUA", str(tmp_path / "STRASSE"))
+
+    assert primeiro.id != segundo.id
+    assert len(catalog.list_projects()) == 2
+    # Só a caixa diferente continua sendo o mesmo projeto.
+    assert catalog.register_project("Rua", str(tmp_path / "straße")).id == primeiro.id
