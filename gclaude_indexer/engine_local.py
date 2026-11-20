@@ -1881,8 +1881,12 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
     and their lines leave `raw_items.jsonl`. Returns how many.
 
     The file is rewritten under a temporary name and swapped in, so a crash
-    leaves the old file or the new one, never half of each. A window with
-    any line not marked is left alone."""
+    leaves the old file or the new one, never half of each. The database
+    is committed before the swap: a crash between the two leaves the
+    windows pending with their old lines still in the file, which the next
+    call removes. The other way round left them done with no lines, and
+    nothing would ever classify them again. A window with any line not
+    marked is left alone."""
     if not jsonl_path.exists():
         return 0
     lines = [line for line in jsonl_path.read_text(encoding="utf-8").split("\n") if line.strip()]
@@ -1910,8 +1914,8 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
         conn.execute(
             f"UPDATE window SET status = ? WHERE key IN ({','.join('?' * len(chunk))})", (WINDOW_PENDING, *chunk)
         )
-    temporary.replace(jsonl_path)
     conn.commit()
+    temporary.replace(jsonl_path)
     return len(to_requeue)
 
 
