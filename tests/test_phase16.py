@@ -1498,7 +1498,8 @@ def test_uma_pagina_que_o_modelo_ignorou_ainda_entra_no_indice():
 
 def test_o_resumo_de_cada_peca_tem_teto():
     """O índice inteiro precisa caber no contexto de um projeto do Claude."""
-    from gclaude_indexer.engine_local import _SUMMARY_CHAR_LIMIT, _group_pages_into_items
+    from gclaude_indexer.classification import SUMMARY_CHAR_LIMIT as _SUMMARY_CHAR_LIMIT
+    from gclaude_indexer.engine_local import _group_pages_into_items
 
     linhas = [{"n": 1, "subject": "Seção", "type": "SEÇÃO",
                "detail": "palavra " * 2000, "continues": False}]

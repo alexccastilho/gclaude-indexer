@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
@@ -85,6 +86,59 @@ class ClassifiedItem:
     engine: str
     confidence: str
     files: list[str] = field(default_factory=list)
+
+
+def files_in_page_order(pages: Sequence[WindowPage]) -> list[str]:
+    """The item's files in the order their pages appear (rules engine, the
+    local engine's range mode, Planalto acts)."""
+    return list(dict.fromkeys(page.file_name for page in pages))
+
+
+def files_sorted(pages: Sequence[WindowPage]) -> list[str]:
+    """The item's files in alphabetical order (the local engine's per-page
+    mode, blank pages and coverage items). Differs from
+    `files_in_page_order` only for an item over several files; which order
+    is right is still open."""
+    return sorted({page.file_name for page in pages})
+
+
+def item_for_pages(
+    pages: Sequence[WindowPage],
+    *,
+    engine: str,
+    confidence: str,
+    type_: str | None = None,
+    date: str | None = None,
+    author: str | None = None,
+    summary: str | None = None,
+    has_table: bool | None = None,
+    has_image: bool | None = None,
+    files: Callable[[Sequence[WindowPage]], list[str]] = files_in_page_order,
+    order_of: Callable[[WindowPage], int] = page_order,
+) -> ClassifiedItem:
+    """The item spanning `pages` (in window order): references and orders
+    from the first and last page, files by `files`. `has_table`/`has_image`
+    left as `None` come from the pages themselves; an engine that saw more
+    (or knows better) passes its own value.
+
+    The fields the model or the rules fill in (`type_`, `date`...) go in as
+    the engine made them: `item_to_dict` normalizes them on the way to
+    `raw_items.jsonl`."""
+    return ClassifiedItem(
+        start_ref=pages[0].reference,
+        end_ref=pages[-1].reference,
+        start_order=order_of(pages[0]),
+        end_order=order_of(pages[-1]),
+        type=type_,
+        date=date,
+        author=author,
+        summary=summary,
+        has_table=any(page.has_table for page in pages) if has_table is None else has_table,
+        has_image=any(page.image_count > 0 for page in pages) if has_image is None else has_image,
+        engine=engine,
+        confidence=confidence,
+        files=files(pages),
+    )
 
 
 class ClassificationEngine(Protocol):
@@ -216,6 +270,35 @@ def _key_positions(key: str) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
+# Teto do resumo de uma peça. O índice inteiro precisa caber no contexto de
+# um projeto do Claude, e é a soma destes resumos que o ocupa — um resumo
+# sem limite transformaria o índice numa segunda cópia do acervo, que é
+# exatamente o que ele existe para evitar. Cada motor aplica do seu jeito:
+# o local corta o resumo inteiro, o Planalto corta só a ementa (com "…"), o
+# de regras não corta.
+SUMMARY_CHAR_LIMIT = 600
+
+
+def normalize_confidence(value: object, fallback: str = "low") -> str:
+    """`value` when it is a valid confidence level, else `fallback`: an
+    engine that did not report it properly is treated with suspicion."""
+    return value if isinstance(value, str) and value in VALID_CONFIDENCES else fallback
+
+
+# The `files` field of a `raw_items.jsonl` line: the item's file names
+# joined by `", "`. A name with a comma in it reads back as two names.
+_FILES_SEPARATOR = ", "
+
+
+def files_field(files: Iterable[str]) -> str:
+    return _FILES_SEPARATOR.join(files)
+
+
+def files_from_field(value: object) -> list[str]:
+    """The file names of a `files` field, stripped, empty ones dropped."""
+    return [name.strip() for name in str(value).split(_FILES_SEPARATOR.strip()) if name.strip()]
+
+
 # Words a model sometimes returns instead of leaving `type` empty. Stored
 # as-is they become their own document type in the index, sitting next to
 # the real ones and inflating the "types found" count with nothing.
@@ -256,13 +339,24 @@ def item_to_dict(item: ClassifiedItem, window_key: str, group: str) -> dict:
         "has_image": bool(item.has_image),
         "engine": item.engine,
         "confidence": item.confidence,
-        "files": ", ".join(item.files),
+        "files": files_field(item.files),
     }
 
 
 _ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ISO_MONTH_REGEX = re.compile(r"^\d{4}-\d{2}$")
 _ISO_YEAR_REGEX = re.compile(r"^\d{4}$")
+
+
+def is_calendar_day(value: object) -> bool:
+    """Whether `value` is an `AAAA-MM-DD` date that exists in the calendar."""
+    if not (isinstance(value, str) and _ISO_DATE_REGEX.match(value)):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def normalize_date(value: object) -> str | None:
@@ -291,11 +385,9 @@ def normalize_date(value: object) -> str | None:
     text = value.strip()
 
     if _ISO_DATE_REGEX.match(text):
-        try:
-            date.fromisoformat(text)
+        if is_calendar_day(text):
             return text
-        except ValueError:
-            text = text[:7]  # o dia não existe; o mês ainda pode valer
+        text = text[:7]  # o dia não existe; o mês ainda pode valer
 
     if _ISO_MONTH_REGEX.match(text):
         if 1 <= int(text[5:7]) <= 12:

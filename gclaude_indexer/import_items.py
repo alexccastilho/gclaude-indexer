@@ -44,7 +44,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from .classification import validate_item
+from .classification import files_field, files_from_field, validate_item
 from .config import ProjectConfig
 from .events import record_event
 from .item_normalize import clean_authors, clean_placeholders, fill_structured_authors, normalize_types
@@ -190,9 +190,9 @@ def _merge(a: dict, b: dict) -> dict:
     else:
         merged["order_end"], merged["ref_end"] = b["order_end"], b["ref_end"]
 
-    files_a = [name.strip() for name in str(a.get("files", "")).split(",") if name.strip()]
-    files_b = [name.strip() for name in str(b.get("files", "")).split(",") if name.strip()]
-    merged["files"] = ", ".join(dict.fromkeys(files_a + files_b))
+    files_a = files_from_field(a.get("files", ""))
+    files_b = files_from_field(b.get("files", ""))
+    merged["files"] = files_field(dict.fromkeys(files_a + files_b))
 
     return merged
 
