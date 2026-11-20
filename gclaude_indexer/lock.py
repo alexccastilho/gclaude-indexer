@@ -51,7 +51,8 @@ class LockInfo:
 @dataclass
 class LockCheckResult:
     # "bloqueada"/"abandonada" were translated to "blocked"/"abandoned" in
-    # Task 9c: they are compared by equality in `app.py` to decide which
+    # Task 9c: they are compared by equality in `web/project_access.py`
+    # and `web/routes_relocation.py` to decide which
     # HTTP error to raise, same hazard as the step-status chain in
     # `step_state.py`. "livre"/"propria_maquina" were left as-is back then —
     # never compared, only shown in `message` or asserted directly in tests —

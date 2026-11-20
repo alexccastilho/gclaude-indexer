@@ -39,9 +39,9 @@ from .engine_rules import classify_pending as classify_pending_rules
 @dataclass(frozen=True)
 class EngineDecision:
     """The engine a classification step runs, and the model when it is the
-    local one. Decided once per step run (`decide_engine`): the interface
-    records it in `run.engine`/`run.model` and hands the same decision to
-    `run_classification`, so the row can no longer name an engine or a model
+    local one. Decided once per step run (`decide_engine`, called by
+    `pipeline.begin_step`), which records it in `run.engine`/`run.model`
+    and hands the same decision to `run_classification`, so the row can no longer name an engine or a model
     other than the one that ran (Ollama could come up or go down between two
     separate resolutions)."""
 
@@ -79,11 +79,11 @@ def run_classification(
     conn: sqlite3.Connection, config: ProjectConfig, *, should_stop=None, language: str | None = None,
     decision: EngineDecision | None = None,
 ) -> tuple[str, object]:
-    """Runs step 6 (`rules`/`local`). Returns `(motor_usado, resultado)`.
+    """Runs step 6 (`rules`/`local`). Returns `(engine_used, result)`.
 
-    `decision`: the engine already decided for this run (the interface
-    decides it before the step, to record it); without one it is decided
-    here."""
+    `decision`: the engine already decided for this run
+    (`pipeline.begin_step` decides it before the step, to record it);
+    without one it is decided here."""
     if decision is None:
         decision = decide_engine(conn, config, language=language)
 

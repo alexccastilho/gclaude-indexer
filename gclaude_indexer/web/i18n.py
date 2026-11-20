@@ -15,7 +15,7 @@ The table itself (`_TRANSLATIONS`, `DEFAULT_LANGUAGE`, `AVAILABLE_LANGUAGES`,
 artifacts and `CLAUDE.md` into the interface's language too, and core code
 must never import from `web/`. This module re-exports what it used to
 define, so every existing `from .i18n import ...` in the web layer
-(`web/app.py` and others) keeps working unchanged.
+(`rendering.py`, `routes_settings.py` and others) keeps working unchanged.
 
 `LANGUAGE_COOKIE_NAME` stays here, not in core: it is an HTTP concept (the
 cookie the web layer persists the user's choice in), not a translation

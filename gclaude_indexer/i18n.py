@@ -14,7 +14,7 @@ interface's language too, and core must never import
 from `web/`. `web/i18n.py` re-exports what the web layer needs
 (`LANGUAGE_COOKIE_NAME` stays there — it is an HTTP concept, not a
 translation concept) so existing imports (`from .i18n import ...` in
-`web/app.py`) keep working unchanged.
+`web/rendering.py` and the routes) keep working unchanged.
 
 Covers the interface's fixed text (titles, labels, buttons, help), the
 fixed prose of the generated artifacts, and — since Task 12 —
@@ -62,7 +62,7 @@ from __future__ import annotations
 from .system_locale import detect_ui_language
 
 # The interface's default before the user ever picks one in the selector —
-# the `language` cookie wins from then on (`web/app.py::render()`,
+# the `language` cookie wins from then on (`web/rendering.py::render()`,
 # `valid_language()` below). User requirement 5: detect the Windows UI
 # language and use it as this default; falls back to English
 # (`system_locale.FALLBACK_LANGUAGE`) when detection fails or the system's

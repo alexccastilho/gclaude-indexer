@@ -10,8 +10,8 @@
 
 Requirement from section 10: "the installer handles everything and reports
 progress in the UI, never in a console window." Used by `hardware.py` and
-`installer.py` for `nvidia-smi`, PowerShell/WMI, `winget`, silent installers
-and the `--version` checks, and — through `popen_hidden` — by every process
+`install_diagnostics.py` for `nvidia-smi`, PowerShell/WMI and the
+`--version` checks, and — through `popen_hidden` — by every process
 this code starts itself: LibreOffice, ffmpeg/whisper.cpp, `msiexec`, the
 OCR runner (Tesseract, Ghostscript) and `ollama serve`.
 """

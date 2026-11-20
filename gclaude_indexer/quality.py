@@ -32,7 +32,7 @@ from .local_models import model_to_use
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
 
 # Column name cannot be a `?` SQL parameter, so `_count_nulls` (used by
-# `quality_summary` and `_engine_quality`) builds the query with string
+# `_measure`) builds the query with string
 # interpolation. Today it is only ever called with literals
 # from this file, so there is no injection — but "column name" is exactly
 # the kind of thing that stops being a literal the day someone wires a
@@ -261,23 +261,23 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
 #
 # `quality_summary` above answers "how good" for the *current* run. What was
 # missing for the user's original request — "I want to compare different
-# models, both in time and in quality" — was time. The `execucao` table
+# models, both in time and in quality" — was time. The `run` table
 # (Task 15, `db.py`) records the start/end of each step; the two functions
 # below read that table.
 #
 # Important limitation, and why we're careful with `None` instead of making
-# up a zero: `peca` is always recalculated from scratch on every
+# up a zero: `item` is always recalculated from scratch on every
 # import (`import_items.py: _write_items` does `DELETE FROM item` before
 # rewriting) — it only reflects the last imported classification, and
-# `peca.motor` only stores "rules"/"local"/"claude_code" (never the model
-# name, see `classification.py: VALID_ENGINES`). That's why filtering by
-# `motor` alone is not enough: two different (engine, model) groups can
-# share the same `motor` (e.g. "local" with different models), and
-# filtering by `motor` alone would attribute one's score to the other. The
+# `item.engine` only stores the engine (never the model name, see
+# `classification.py: VALID_ENGINES`). That's why filtering by
+# `engine` alone is not enough: two different (engine, model) groups can
+# share the same `engine` (e.g. "local" with different models), and
+# filtering by `engine` alone would attribute one's score to the other. The
 # score and confidence distribution below only exist for the (engine,
-# model) group of the last successful 'classification' run (`execucao.ok =
-# 1`, largest `terminado_em`) — it is the only one that can match what is
-# currently in `peca`; for every other group the score comes back `None`,
+# model) group of the last successful 'classification' run (`run.ok =
+# 1`, largest `finished_at`) — it is the only one that can match what is
+# currently in `item`; for every other group the score comes back `None`,
 # never a number computed over data that no longer belongs to that
 # engine/model.
 
@@ -285,7 +285,7 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
 def _last_classification_run(conn) -> tuple[str | None, str | None] | None:
     """`(engine, model)` of the last successful 'classification' run, or
     `None` if there is none. It is the only (engine, model) that can match
-    the current content of `peca` — see the note above `compare_runs`."""
+    the current content of `item` — see the note above `compare_runs`."""
     row = conn.execute(
         """
         SELECT engine, model
@@ -373,8 +373,8 @@ def compare_runs(conn, summary: dict | None = None) -> list[dict]:
 
         # Only the (engine, model) group of the last successful
         # classification run can match what is currently recorded in
-        # `peca` — `peca.motor` never stores the model name, so filtering
-        # by `motor` alone would attribute one model's score to another
+        # `item` — `item.engine` never stores the model name, so filtering
+        # by `engine` alone would attribute one model's score to another
         # (C2, final Phase 13 review).
         if last_run is not None and (group["engine"], group["model"]) == last_run:
             score, confidence = _engine_quality(conn, group["engine"], summary)

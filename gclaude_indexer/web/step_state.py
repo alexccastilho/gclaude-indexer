@@ -29,7 +29,7 @@ revisited that: the status is not an isolated token, it is one link in a
 chain built by string concatenation (`t('status.' + etapa.status)` in
 `_steps.html`, `t('project.status.' + p.status_key)` in `projects.html`,
 `.status-{{ etapa.status }}` for the CSS class) and compared by equality in
-`_progress.html` and `app.py`. Translating only the i18n *keys* while
+`_progress.html` and in `next_pending_step`. Translating only the i18n *keys* while
 leaving these *values* in Portuguese silently breaks every `{% elif %}`
 that compares against them — no error, just a badge or bar that never
 matches. So the status codes were translated to English along with the
@@ -147,7 +147,7 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
     ]
 
     # `chave`/`status`/`vars` are the wire-format dict keys read directly by
-    # `_steps.html`/`_progress.html`/`app.py` (`etapa.chave`, `etapa.status`).
+    # `_steps.html`/`_progress.html`/`next_pending_step` (`etapa.chave`, `etapa.status`).
     # `chave` stays in Portuguese (out of this task's scope, see the module
     # docstring); `status` was translated together with its values in Task 9c.
     return [
