@@ -258,8 +258,6 @@ def test_pausa_entre_etapas_impede_a_proxima_de_comecar(tmp_path, monkeypatch):
         return _tarefa(step=step, running=False, finished_ok=True, stop_signal=stop_signal or StopSignal())
 
     monkeypatch.setattr(task_manager, "start_step", start_step_falso)
-    original = background_runs.STEP_ORDER
-    monkeypatch.setattr(background_runs, "STEP_ORDER", original)
     sinal = task_manager.start_all(9034, str(tmp_path))
     for _ in range(100):
         if 9034 not in task_manager._chains:
@@ -268,7 +266,7 @@ def test_pausa_entre_etapas_impede_a_proxima_de_comecar(tmp_path, monkeypatch):
         threading.Event().wait(0.02)
 
     assert terminou.is_set(), "a cadeia se desregistra ao terminar"
-    assert iniciadas == [original[0]], "só a primeira etapa começou"
+    assert iniciadas == [background_runs.STEP_ORDER[0]], "só a primeira etapa começou"
     assert resultado_da_pausa == [True] and sinal.should_stop()
 
 

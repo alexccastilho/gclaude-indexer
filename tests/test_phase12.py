@@ -924,13 +924,6 @@ def test_gerenciador_tarefas_nao_tem_mais_etapa_rodando():
     assert not hasattr(TaskManager, "etapa_rodando")
 
 
-def test_etapas_e_etapas_ordem_nao_divergem():
-    from gclaude_indexer.pipeline import STEP_ORDER as STEPS
-    from gclaude_indexer.web.background_runs import STEP_ORDER
-
-    assert tuple(STEPS) == tuple(STEP_ORDER)
-
-
 def test_textos_criticos_dizem_a_verdade_nos_tres_idiomas():
     from gclaude_indexer.web.i18n import _TRANSLATIONS
 

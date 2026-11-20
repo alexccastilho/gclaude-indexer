@@ -112,7 +112,6 @@ def test_a_suite_nao_para_o_ollama_da_maquina(tmp_path):
     19) chamava a `Stop-OllamaProcesses` real do desinstalador, que para todo
     processo chamado `ollama` da máquina. Um sósia (cmd.exe renomeado) tem de
     sobreviver àquele teste."""
-    import importlib.util
     import os
     import shutil
     import subprocess
@@ -123,10 +122,18 @@ def test_a_suite_nao_para_o_ollama_da_maquina(tmp_path):
     processo = subprocess.Popen([str(sosia), "/c", "ping -n 30 127.0.0.1 >nul"],
                                 creationflags=subprocess.CREATE_NO_WINDOW)
     try:
-        spec = importlib.util.spec_from_file_location("test_phase19", _RAIZ / "tests" / "test_phase19.py")
-        fase19 = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(fase19)
-        fase19.test_fechar_o_ollama_funciona_com_ele_ausente()
+        # A chamada de `test_fechar_o_ollama_funciona_com_ele_ausente`: a
+        # função real do desinstalador, com `Get-Process` trocado por um vazio.
+        script = (
+            f". '{_RAIZ / 'uninstall.ps1'}' -DryRunContract; "
+            "function Get-Process { @() }; "
+            "Stop-OllamaProcesses; 'SOBREVIVEU'"
+        )
+        resultado = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True, text=True, timeout=180,
+        )
+        assert resultado.stdout.strip().splitlines()[-1].strip() == "SOBREVIVEU", resultado.stderr
         time.sleep(0.5)
         assert processo.poll() is None, "a suíte parou um processo chamado ollama.exe que não é dela"
     finally:
