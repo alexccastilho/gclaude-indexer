@@ -401,6 +401,7 @@ def _warn_unverified(conn: sqlite3.Connection, plan: UpdatePlan, language: str |
 def apply_pending_changes(
     conn: sqlite3.Connection,
     config: ProjectConfig,
+    *,
     language: str | None = None,
     should_stop=None,
     listed=None,

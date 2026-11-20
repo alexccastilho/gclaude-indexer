@@ -161,7 +161,7 @@ def group_page_positions(conn, with_text: bool = True) -> dict[str, list]:
 
 
 def prepare_windows(
-    conn, config: ProjectConfig, should_stop: Callable[[], bool] | None = None, language: str | None = None
+    conn, config: ProjectConfig, *, should_stop: Callable[[], bool] | None = None, language: str | None = None
 ) -> WindowsResult:
     group_keys = [
         row["group_key"]

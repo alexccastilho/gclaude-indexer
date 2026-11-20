@@ -77,7 +77,8 @@ def _esperar_etapa_terminar(projeto_id: int, etapa: str, timeout: float = 30):
 
 def test_status_etapas_devolve_chaves_ascii_e_nao_texto_de_tela(cliente, tmp_path):
     from gclaude_indexer.project import load_project
-    from gclaude_indexer.web.step_state import STEPS, STATUSES, step_status
+    from gclaude_indexer.pipeline import STEP_ORDER
+    from gclaude_indexer.web.step_state import STATUSES, step_status
 
     projeto_id = _criar_projeto(cliente, tmp_path)
     cliente.post(f"/projects/{projeto_id}/run-next")
@@ -90,7 +91,7 @@ def test_status_etapas_devolve_chaves_ascii_e_nao_texto_de_tela(cliente, tmp_pat
     finally:
         conn.close()
 
-    assert [e["chave"] for e in etapas] == list(STEPS)
+    assert [e["chave"] for e in etapas] == list(STEP_ORDER)
     for item in etapas:
         assert item["status"] in STATUSES, item
         assert item["status"].isascii(), "a situação vira classe CSS: precisa ser ASCII"
@@ -902,7 +903,7 @@ def test_gerenciador_tarefas_nao_tem_mais_etapa_rodando():
 
 
 def test_etapas_e_etapas_ordem_nao_divergem():
-    from gclaude_indexer.web.step_state import STEPS
+    from gclaude_indexer.pipeline import STEP_ORDER as STEPS
     from gclaude_indexer.web.background_runs import STEP_ORDER
 
     assert tuple(STEPS) == tuple(STEP_ORDER)

@@ -24,92 +24,21 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 from ..config import ProjectConfig
 from ..db import READER_TIMEOUT_SECONDS
-from ..file_status import (
-    CONVERSION_FINISHED, CONVERTED, DISCOVERED, EXTRACTED, EXTRACTION_FINISHED, SKIPPED, WINDOW_DONE,
-    WINDOW_PENDING, in_params,
-)
+from ..file_status import CONVERTED, DISCOVERED, EXTRACTED, SKIPPED, WINDOW_DONE, WINDOW_PENDING
 from ..i18n import DEFAULT_LANGUAGE, translate
-from ..run_control import OperationCancelled, StopSignal
-from ..invalidation import apply_pending_changes
-from ..update_plan import SourceFolderUnavailable, stale_page_paths
-from ..conversion import convert, requeue_ocr_failures
-from ..extraction import extract_pages
-from ..windows_prep import prepare_windows
-from ..auto_settings import resolve_auto_settings
-from ..orchestrator import decide_engine, run_classification
+from ..run_control import StopSignal
+from ..conversion import requeue_ocr_failures
+from ..pipeline import (
+    DONE_STATUSES, STEP_ORDER, SourceFolderMissing, begin_step, call_step, count_files_in, done_count, finish_step,
+)
 from ..project import load_project
 from .. import source_folder
 from ..fulltext import coverage as fulltext_coverage
-from ..scanning import scan
 from .eta import ProgressEstimator
-
-STEP_ORDER = ("scan", "conversion", "extraction", "windows", "classification")
-
-
-def _apply_pending_changes(conn, config, should_stop, language, listed=None, warn_unverified=True) -> bool:
-    """1.10.3: what changed in the folder is invalidated before the scan
-    records it (see `invalidation.apply_pending_changes`). An unreachable
-    folder or a pause leaves the index as it was: the scan right after
-    finds the same folder, or stops at once. `False` nesse caso: o aviso dos
-    não conferidos pode não ter saído."""
-    try:
-        apply_pending_changes(
-            conn, config, language=language, should_stop=should_stop, listed=listed,
-            warn_unverified=warn_unverified,
-        )
-    except (SourceFolderUnavailable, OperationCancelled):
-        return False
-    return True
-
-
-def _scan_step(conn, config, should_stop, language, files=None, on_progress=None, run_state=None):
-    applied = _apply_pending_changes(conn, config, should_stop, language, listed=files)
-    if applied and run_state is not None:
-        # O aviso dos não conferidos desta execução já saiu (ou não havia).
-        run_state["unverified_warned"] = True
-    result = scan(conn, config, should_stop=should_stop, language=language, files=files, on_progress=on_progress)
-    if should_stop is None or not should_stop():
-        # 2.0.0: janela, sobreposição, caracteres por página e idioma do OCR
-        # saem do que a varredura achou (`auto_settings.py`). Uma varredura
-        # pausada não resolve: o inventário está pela metade, e a próxima,
-        # que o completa, é quem decide.
-        resolve_auto_settings(conn, config, language=language)
-    return result
-
-
-def _extraction_step(conn, config, should_stop, language, run_state=None):
-    # "Continue" starts the chain here, past the scan: a database 1.10.2
-    # left with stale pages would stop on them again. Repaired files go
-    # back to 'discovered' and are read again by the next run.
-    if stale_page_paths(conn):
-        # O aviso dos não conferidos só sai aqui quando a execução começou
-        # pela extração; a varredura da mesma cadeia já o deu.
-        warned = bool(run_state and run_state.get("unverified_warned"))
-        _apply_pending_changes(conn, config, should_stop, language, warn_unverified=not warned)
-    return extract_pages(conn, config, should_stop=should_stop, language=language)
-
-
-# `files`: only the scan takes it — the walk the task already made while
-# counting (see `TaskManager.start_step`).
-_STEP_FUNCTIONS = {
-    "scan": _scan_step,
-    "conversion": lambda conn, config, should_stop, language: convert(
-        conn, config, should_stop=should_stop, language=language
-    ),
-    "extraction": _extraction_step,
-    "windows": lambda conn, config, should_stop, language: prepare_windows(
-        conn, config, should_stop=should_stop, language=language
-    ),
-    "classification": lambda conn, config, should_stop, language, decision=None: run_classification(
-        conn, config, should_stop=should_stop, language=language, decision=decision
-    ),
-}
-
 
 @dataclass
 class StepTask:
@@ -199,36 +128,12 @@ def _ignored_count(output_folder) -> int:
         conn.close()
 
 
-# Which `file.status` values mean "this step is done with this file", per
-# step. Shared by the count, the total and the weight queries so they can
-# never disagree about what counts as finished.
-_DONE_STATUSES = {
-    "conversion": CONVERSION_FINISHED,
-    "extraction": EXTRACTION_FINISHED,
-}
 # The `file.status` a file waits in for each step, beside its inverse above.
 # The Execution cards (`step_state.step_status`) count pending differently; see decisoes.md B.
 _PENDING_STATUS = {
     "conversion": DISCOVERED,
     "extraction": CONVERTED,
 }
-
-
-def _count_files_in(conn, statuses: tuple[str, ...]) -> int:
-    marks, values = in_params(statuses)
-    return conn.execute(f"SELECT COUNT(*) FROM file WHERE status IN ({marks})", values).fetchone()[0]
-
-
-def _current_count(conn, step: str) -> int:
-    if step == "scan":
-        return conn.execute("SELECT COUNT(*) FROM file").fetchone()[0]
-    if step in _DONE_STATUSES:
-        return _count_files_in(conn, _DONE_STATUSES[step])
-    if step == "windows":
-        return conn.execute("SELECT COUNT(DISTINCT group_key) FROM window").fetchone()[0]
-    if step == "classification":
-        return conn.execute("SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_DONE,)).fetchone()[0]
-    return 0
 
 
 def _weight_done(conn, step: str) -> float | None:
@@ -240,7 +145,7 @@ def _weight_done(conn, step: str) -> float | None:
     counting them is the right unit there, and `None` tells the caller to
     fall back to it.
     """
-    statuses = _DONE_STATUSES.get(step)
+    statuses = DONE_STATUSES.get(step)
     if statuses is None:
         return None
     try:
@@ -283,9 +188,9 @@ def _weight_total_and_baseline(conn, step: str) -> tuple[float, float]:
 
 
 def _total_and_baseline(conn, step: str) -> tuple[int, int]:
-    if step in _DONE_STATUSES:
-        baseline = _count_files_in(conn, _DONE_STATUSES[step])
-        pending = _count_files_in(conn, (_PENDING_STATUS[step],))
+    if step in DONE_STATUSES:
+        baseline = count_files_in(conn, DONE_STATUSES[step])
+        pending = count_files_in(conn, (_PENDING_STATUS[step],))
         return pending, baseline
     if step == "windows":
         baseline = conn.execute("SELECT COUNT(DISTINCT group_key) FROM window").fetchone()[0]
@@ -325,7 +230,7 @@ def compute_progress(output_folder: str, task: StepTask | None) -> dict:
     try:
         config, conn = load_project(output_folder, timeout=READER_TIMEOUT_SECONDS)
         try:
-            current = _current_count(conn, task.step)
+            current = done_count(conn, task.step)
             if task.weight_total > 0:
                 weight_done = _weight_done(conn, task.step)
             fulltext = None
@@ -473,7 +378,7 @@ class TaskManager:
             self._tasks[(project_id, step)] = task
 
         def body():
-            run_id: int | None = None
+            run = None
             try:
                 files = self._measure(task, entry_output_folder, step, language)
                 if task.stop_signal.should_stop():
@@ -484,55 +389,25 @@ class TaskManager:
                 # etapas seguintes da cadeia têm de usar esses valores.
                 current_config, work_conn = load_project(entry_output_folder)
                 try:
-                    # O projeto abre com a origem fora do ar (pendrive, rede,
-                    # Drive de outra máquina); as etapas, não: leem os
-                    # originais, e uma origem ausente pareceria um acervo vazio.
-                    if not Path(current_config.source_folder).is_dir():
-                        task.error = translate(
-                            language or DEFAULT_LANGUAGE, "config_error.source_folder_not_found",
-                            path=current_config.source_folder,
-                        )
-                        return
-                    # Task 15: time per step, for the engine/model
-                    # benchmark (`quality.compare_runs`). Records the
-                    # *effective* engine (via `decide_engine`, which
-                    # resolves the "automatic" sentinel to the engine that
-                    # will actually run) — not the configured one. The
-                    # classification step receives this same decision
-                    # instead of deciding again.
-                    # Recording the configured one left `run.engine` as
-                    # "automatic" (the default) while `item.engine` received
-                    # the engine actually used (`rules` or `local`), and the
-                    # benchmark — which groups by one and queries the other —
-                    # never matched them up. Uses `work_conn` (opened on this
-                    # same thread) instead of opening another connection:
-                    # sqlite3 does not allow sharing a connection between
-                    # threads.
-                    decision = decide_engine(work_conn, current_config, language=language)
-                    cursor = work_conn.execute(
-                        """
-                        INSERT INTO run (step, engine, model, parallelism, started_at, items, ok)
-                        VALUES (?, ?, ?, ?, ?, 0, 0)
-                        """,
-                        (step, decision.engine, decision.model, current_config.parallelism, datetime.now().isoformat(timespec="microseconds")),
+                    # Source folder check, effective engine (decided once per
+                    # step) and the opening of the `run` row: `pipeline`.
+                    run = begin_step(work_conn, current_config, step, language=language)
+
+                    def scanned(files_done: int, bytes_done: int) -> None:
+                        task.scanned, task.scanned_bytes = files_done, bytes_done
+
+                    call_step(
+                        work_conn, current_config, run,
+                        should_stop=task.stop_signal.should_stop, language=language,
+                        files=files, on_progress=scanned, run_state=task.stop_signal.run_state,
                     )
-                    work_conn.commit()
-                    run_id = cursor.lastrowid
-
-                    extra = {}
-                    if step == "scan":
-                        def scanned(files_done: int, bytes_done: int) -> None:
-                            task.scanned, task.scanned_bytes = files_done, bytes_done
-
-                        extra = {"files": files, "on_progress": scanned}
-                    if step in ("scan", "extraction"):
-                        extra["run_state"] = task.stop_signal.run_state
-                    if step == "classification":
-                        extra["decision"] = decision
-                    _STEP_FUNCTIONS[step](work_conn, current_config, task.stop_signal.should_stop, language, **extra)
                     task.finished_ok = True
                 finally:
                     work_conn.close()
+            except SourceFolderMissing as exc:
+                task.error = translate(
+                    language or DEFAULT_LANGUAGE, "config_error.source_folder_not_found", path=exc.path,
+                )
             except source_folder.SourceFolderStalled as exc:
                 task.error = translate(language or DEFAULT_LANGUAGE, "error.folder_stalled", folder=str(exc.folder))
             except Exception as exc:  # never brings down the server
@@ -552,21 +427,11 @@ class TaskManager:
                 # 1 failure in 1204 on the GitHub runner with the suite at
                 # 9 min, and once locally under load.
                 try:
-                    if run_id is not None:
+                    if run is not None:
                         try:
                             _, end_conn = load_project(entry_output_folder)
                             try:
-                                items = max(0, _current_count(end_conn, step) - task.baseline)
-                                end_conn.execute(
-                                    "UPDATE run SET finished_at = ?, items = ?, ok = ? WHERE id = ?",
-                                    (
-                                        datetime.now().isoformat(timespec="microseconds"),
-                                        items,
-                                        int(task.finished_ok),
-                                        run_id,
-                                    ),
-                                )
-                                end_conn.commit()
+                                finish_step(end_conn, run, ok=task.finished_ok)
                             finally:
                                 end_conn.close()
                         except Exception:

@@ -247,12 +247,12 @@ def decide(
 
 
 def resolve_auto_settings(
-    conn: sqlite3.Connection, config: ProjectConfig, language: str | None = None, engine: str | None = None
+    conn: sqlite3.Connection, config: ProjectConfig, *, language: str | None = None, engine: str | None = None
 ) -> AutoSettings | None:
     """Resolve e grava o que o estado do banco permite. Devolve a decisão
     (para os testes e para quem queira mostrá-la) ou `None` quando nada foi
     mudado. Só o banco muda: a `config` recebida fica como está, e a etapa
-    seguinte recarrega a configuração dele (`TaskManager.start_step`)."""
+    seguinte recarrega a configuração dele (`web.background_runs.TaskManager.start_step`)."""
     scope = resolution_scope(conn)
     if scope is None:
         return None

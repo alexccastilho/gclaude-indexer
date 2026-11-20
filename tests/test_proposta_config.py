@@ -18,7 +18,7 @@ from gclaude_indexer.events import list_events
 from gclaude_indexer.extraction import WHOLE_DOCUMENT_CHARS, chars_limit_for, extract_pages
 from gclaude_indexer.project import create_project, load_project
 from gclaude_indexer.scanning import scan
-from gclaude_indexer.web.background_runs import _scan_step
+from gclaude_indexer.pipeline import _scan_step
 from gclaude_indexer.windows_prep import prepare_windows
 
 PT = (
@@ -301,7 +301,7 @@ def test_projeto_com_janelas_nunca_muda_e_nao_derruba_grupos(tmp_path):
     assert janelas > 0
 
     assert auto_settings.resolve_auto_settings(conn, config) is None
-    _scan_step(conn, config, lambda: False, "pt")  # nova varredura, como "Executar tudo"
+    _scan_step(conn, config, should_stop=lambda: False, language="pt")  # nova varredura, como "Executar tudo"
 
     gravado = _do_banco(conn)
     assert (gravado.pages_per_window, gravado.overlap) == (5, 1)
@@ -315,7 +315,7 @@ def test_a_varredura_pausada_nao_resolve(tmp_path):
     origem, abrir = _projeto(tmp_path)
     _html(origem / "lei.htm")
     config, conn = abrir()
-    _scan_step(conn, config, lambda: True, "pt")
+    _scan_step(conn, config, should_stop=lambda: True, language="pt")
     assert conn.execute(
         "SELECT COUNT(*) FROM event WHERE message_key = 'log.settings.window'"
     ).fetchone()[0] == 0
@@ -442,7 +442,7 @@ def test_campos_forjados_sao_ignorados(cliente, tmp_path):
 
 
 def test_executar_tudo_usa_os_valores_resolvidos_em_todas_as_etapas(cliente, tmp_path, monkeypatch):
-    from gclaude_indexer.web import background_runs
+    from gclaude_indexer import pipeline
     from gclaude_indexer.web.background_runs import task_manager
 
     projeto_id, saida = _novo_projeto(cliente, tmp_path)
@@ -453,12 +453,12 @@ def test_executar_tudo_usa_os_valores_resolvidos_em_todas_as_etapas(cliente, tmp
     vistos: dict[str, tuple] = {}
 
     def espiao(etapa):
-        def passo(_conn, config, _parar, _idioma, **_extra):
+        def passo(_conn, config, **_extra):
             vistos[etapa] = (config.pages_per_window, config.overlap)
         return passo
 
     for etapa in ("conversion", "extraction", "windows", "classification"):
-        monkeypatch.setitem(background_runs._STEP_FUNCTIONS, etapa, espiao(etapa))
+        monkeypatch.setitem(pipeline.STEP_FUNCTIONS, etapa, espiao(etapa))
     task_manager._tasks.clear()
 
     task_manager.start_all(projeto_id, str(saida))

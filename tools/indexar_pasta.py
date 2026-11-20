@@ -9,7 +9,7 @@
 """Indexa uma pasta sem a interface, do início ao fim (fase 37).
 
 As mesmas cinco etapas que a interface roda, na mesma ordem
-(`background_runs.STEP_ORDER`), depois a importação das peças e os
+(`pipeline.STEP_ORDER`), depois a importação das peças e os
 artefatos (`index.md`, um `index-<grupo>.md` por grupo). Existe para duas
 coisas que a interface não faz: rodar numa máquina sem ninguém na frente
 (o CI indexa o acervo de demonstração a cada push) e deixar ao lado do
@@ -68,7 +68,7 @@ def run(
     from gclaude_indexer.artifacts import generate_all_artifacts
     from gclaude_indexer.orchestrator import run_classification
     from gclaude_indexer.scanning import scan
-    from gclaude_indexer.web.background_runs import STEP_ORDER
+    from gclaude_indexer.pipeline import STEP_ORDER
     from gclaude_indexer.windows_prep import prepare_windows
 
     source, output = Path(source).resolve(), Path(output).resolve()

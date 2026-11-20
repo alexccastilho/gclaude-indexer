@@ -134,6 +134,7 @@ def _update_file(
 def scan(
     conn: sqlite3.Connection,
     config: ProjectConfig,
+    *,
     should_stop: Callable[[], bool] | None = None,
     language: str | None = None,
     files: list[Path] | list[SourceFile] | None = None,

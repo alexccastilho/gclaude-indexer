@@ -44,7 +44,7 @@ Duas recusas deliberadas, cobertas por `tests/test_tools_reprocessamento.py`:
 ## `indexar_pasta.py`
 
 Indexa uma pasta do início ao fim sem a interface: as cinco etapas na
-ordem de `background_runs.STEP_ORDER`, a importação das peças e os
+ordem de `pipeline.STEP_ORDER`, a importação das peças e os
 artefatos (`index.md` e um `index-<grupo>.md` por grupo). Grava ao lado do
 `project.db` um `run_info.json` com motor, modelo, versão, máquina, início,
 duração, número de trechos e de peças.

@@ -23,13 +23,13 @@ simpler and more correct than attempting an incremental import.
 Every event recorded here uses the step key `"import"` (Task 18, Phase 14 —
 before this fix it was `"importacao"`, which had no `step.*.title` i18n
 entry and leaked raw into the live log, in any language). `"import"` is
-deliberately **not** added to `step_state.STEPS`: that tuple drives
+deliberately **not** added to `pipeline.STEP_ORDER`: that tuple drives
 `next_pending_step`/`step_status` for the "Run next step"/"Run all steps"
 buttons, which only ever chain the five pipeline steps (scan through
 classification) — the interface's own help text documents "5 etapas"
 (`help.run.p1` in `i18n.py`) and import is started by its own separate
 button (`run.import_and_generate`), never by "run all". Folding "import"
-into `STEPS` would make it a candidate for `next_pending_step` and the
+into `STEP_ORDER` would make it a candidate for `next_pending_step` and the
 step-progress table, silently changing that behavior. Instead it gets its
 own `step.import.title` i18n key and is added to the *display* whitelist
 only (`web/app.py`'s `known_steps` passed to `_log.html`), so the log shows

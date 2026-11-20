@@ -431,25 +431,25 @@ def test_a_extracao_so_avisa_se_a_varredura_nao_avisou_na_mesma_execucao(monkeyp
     """Achado 4: a execução que começa na extração avisa; a que passou pela
     varredura (mesma cadeia, mesmo `StopSignal.run_state`) não repete."""
     from gclaude_indexer.run_control import StopSignal
-    from gclaude_indexer.web import background_runs
+    from gclaude_indexer import pipeline
 
     chamadas = []
-    monkeypatch.setattr(background_runs, "stale_page_paths", lambda _conn: {"x"})
+    monkeypatch.setattr(pipeline, "stale_page_paths", lambda _conn: {"x"})
     monkeypatch.setattr(
-        background_runs, "apply_pending_changes", lambda *a, **k: chamadas.append(k),
+        pipeline, "apply_pending_changes", lambda *a, **k: chamadas.append(k),
     )
-    monkeypatch.setattr(background_runs, "extract_pages", lambda *a, **k: None)
-    monkeypatch.setattr(background_runs, "scan", lambda *a, **k: None)
-    monkeypatch.setattr(background_runs, "resolve_auto_settings", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "extract_pages", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "scan", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "resolve_auto_settings", lambda *a, **k: None)
 
     so_extracao = StopSignal()
-    background_runs._extraction_step(None, None, None, "pt-BR", run_state=so_extracao.run_state)
+    pipeline._extraction_step(None, None, should_stop=None, language="pt-BR", run_state=so_extracao.run_state)
     assert chamadas[-1].get("warn_unverified") is True
 
     cadeia = StopSignal()
-    background_runs._scan_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    pipeline._scan_step(None, None, should_stop=None, language="pt-BR", run_state=cadeia.run_state)
     assert chamadas[-1].get("warn_unverified") is True
-    background_runs._extraction_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    pipeline._extraction_step(None, None, should_stop=None, language="pt-BR", run_state=cadeia.run_state)
     assert chamadas[-1].get("warn_unverified") is False
 
 
@@ -460,7 +460,7 @@ def test_varredura_que_nao_chegou_a_avisar_nao_cala_a_extracao(monkeypatch, erro
     extração da mesma cadeia ainda avisa."""
     from gclaude_indexer.run_control import OperationCancelled, StopSignal
     from gclaude_indexer.update_plan import SourceFolderUnavailable
-    from gclaude_indexer.web import background_runs
+    from gclaude_indexer import pipeline
 
     chamadas = []
 
@@ -469,15 +469,15 @@ def test_varredura_que_nao_chegou_a_avisar_nao_cala_a_extracao(monkeypatch, erro
         if len(chamadas) == 1:
             raise SourceFolderUnavailable("x") if erro == "pasta" else OperationCancelled()
 
-    monkeypatch.setattr(background_runs, "stale_page_paths", lambda _conn: {"x"})
-    monkeypatch.setattr(background_runs, "apply_pending_changes", _aplicar)
-    monkeypatch.setattr(background_runs, "extract_pages", lambda *a, **k: None)
-    monkeypatch.setattr(background_runs, "scan", lambda *a, **k: None)
-    monkeypatch.setattr(background_runs, "resolve_auto_settings", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "stale_page_paths", lambda _conn: {"x"})
+    monkeypatch.setattr(pipeline, "apply_pending_changes", _aplicar)
+    monkeypatch.setattr(pipeline, "extract_pages", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "scan", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "resolve_auto_settings", lambda *a, **k: None)
 
     cadeia = StopSignal()
-    background_runs._scan_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
-    background_runs._extraction_step(None, None, None, "pt-BR", run_state=cadeia.run_state)
+    pipeline._scan_step(None, None, should_stop=None, language="pt-BR", run_state=cadeia.run_state)
+    pipeline._extraction_step(None, None, should_stop=None, language="pt-BR", run_state=cadeia.run_state)
     assert chamadas[-1].get("warn_unverified") is True
 
 
