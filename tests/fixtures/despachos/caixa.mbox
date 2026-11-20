@@ -1,0 +1,15 @@
+From a@x.br Mon Jan  1 00:00:00 2024
+From: a@x.br
+To: b@x.br
+Subject: Primeira mensagem
+Date: Mon, 1 Jan 2024 10:00:00 -0300
+
+Texto da primeira mensagem.
+
+From b@x.br Tue Jan  2 00:00:00 2024
+From: b@x.br
+To: a@x.br
+Subject: Resposta
+Date: Tue, 2 Jan 2024 11:00:00 -0300
+
+Texto da resposta.
