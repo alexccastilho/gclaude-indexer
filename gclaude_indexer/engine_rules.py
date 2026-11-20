@@ -26,23 +26,19 @@ from pathlib import Path
 
 from . import planalto
 from .classification import (
-    CLASSIFICATION_BATCH_SECONDS,
     ClassifiedItem,
+    WindowItems,
     WindowPage,
-    WindowPageLoader,
-    load_window_pages,
-    item_to_dict,
+    WindowRunCounts,
+    classify_windows,
     item_for_pages,
     starts_new_document,
-    validate_item,
 )
 from .config import ProjectConfig
-from .db import BatchWriter
 from .engine_names import ENGINE_RULES
 from .events import record_event
-from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .html_text import without_struck_text
-from .paths import RAW_ITEMS_FILE_NAME, app_root
+from .paths import app_root
 
 # Medido em `demo/acervo` (docs/QUALITY.md) e NÃO adotado: a base era pequena
 # demais (2 peças `medium` contra 17 `low`) para dizer que `medium` acerta mais
@@ -280,13 +276,8 @@ class RulesEngine:
 
 
 @dataclass
-class RulesClassificationResult:
-    windows_processed: int = 0
-    items_generated: int = 0
-    invalid_items: int = 0
-    high_confidence: int = 0
-    medium_confidence: int = 0
-    low_confidence: int = 0
+class RulesClassificationResult(WindowRunCounts):
+    pass
 
 
 def classify_pending(
@@ -298,67 +289,25 @@ def classify_pending(
 ) -> RulesClassificationResult:
     """Classifies every `pending` window with the `rules` engine, writes the
     items to `raw_items.jsonl` (same format as the `local` engine) and
-    marks the window as `done`."""
+    marks the window as `done` (`classification.classify_windows`)."""
     rules = rules or load_rules()
     engine = RulesEngine(rules)
-
-    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
     result = RulesClassificationResult()
 
-    pending_windows = conn.execute(
-        "SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)
-    ).fetchall()
+    def classify_window(window, pages, writer) -> WindowItems:
+        # Planalto acts read from their own structure.
+        structured_items, rest = planalto.split(pages)
+        return WindowItems(structured_items + (engine.classify(rest) if rest else []))
 
-    loader = WindowPageLoader(conn)  # One read of each group's order
-    # One commit every couple of seconds instead of one per window
-    # plus one per event. Each commit on a Drive-synced database costs
-    # seconds and locks the screens out; the rules engine itself takes
-    # milliseconds per window. Each window's items reach `raw_items.jsonl`
-    # (flushed) before the window is queued as done, so a commit never
-    # marks done a window whose items could still be lost.
-    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
-    with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
-        try:
-            for window in pending_windows:
-                if should_stop is not None and should_stop():
-                    break
-
-                pages = load_window_pages(conn, window, loader)
-                # Planalto acts read from their own structure.
-                structured_items, rest = planalto.split(pages)
-                items = structured_items + (engine.classify(rest) if rest else [])
-
-                for item in items:
-                    item_dict = item_to_dict(item, window["key"], window["group_key"])
-                    errors = validate_item(item_dict)
-                    if errors:
-                        result.invalid_items += 1
-                        writer.add(lambda c, key=window["key"], errors=errors: record_event(
-                            c, "classification", "error", "log.rules.invalid_item",
-                            {"window": key, "errors": "; ".join(errors)}, language=language, commit=False,
-                        ))
-                        continue
-
-                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
-                    result.items_generated += 1
-                    if item.confidence == "high":
-                        result.high_confidence += 1
-                    elif item.confidence == "medium":
-                        result.medium_confidence += 1
-                    else:
-                        result.low_confidence += 1
-
-                jsonl_file.flush()
-                writer.add(lambda c, window_id=window["id"]: c.execute(MARK_WINDOW_DONE, (window_id,)))
-                result.windows_processed += 1
-            writer.flush()
-        except BaseException:
-            jsonl_file.flush()
-            try:
-                writer.flush()
-            except Exception:
-                writer.discard()
-            raise
+    # No coverage fill here, unlike the local engine: a refused item's pages
+    # leave the index (rare: this engine's dates are always valid).
+    classify_windows(
+        conn, config, classify_window, result,
+        invalid_item_event=lambda _item, window_key, errors: (
+            "log.rules.invalid_item", {"window": window_key, "errors": "; ".join(errors)}
+        ),
+        should_stop=should_stop, language=language,
+    )
 
     record_event(
         conn,

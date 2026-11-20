@@ -17,15 +17,22 @@ item is written.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Protocol
 
+from .config import ProjectConfig
+from .db import BatchWriter
 from .engine_names import ENGINE_CLAUDE_CODE, ENGINE_LOCAL, ENGINE_RULES, ENGINE_STRUCTURED
+from .events import record_event
+from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .file_types import is_whole_document_file
+from .paths import RAW_ITEMS_FILE_NAME
 from .windows_prep import pages_for_group
 
 VALID_ENGINES = {ENGINE_RULES, ENGINE_LOCAL, ENGINE_CLAUDE_CODE, ENGINE_STRUCTURED}
@@ -445,3 +452,158 @@ def validate_item(item: dict) -> list[str]:
         errors.append(f"confianca inválida: {item.get('confidence')!r}")
 
     return errors
+
+
+# --- the window loop both engines share --------------------------------------
+
+
+@dataclass
+class WindowRunCounts:
+    """What every engine counts over a classification step."""
+
+    windows_processed: int = 0
+    items_generated: int = 0
+    invalid_items: int = 0
+    high_confidence: int = 0
+    medium_confidence: int = 0
+    low_confidence: int = 0
+
+    def count_written(self, confidence: str) -> None:
+        self.items_generated += 1
+        if confidence == "high":
+            self.high_confidence += 1
+        elif confidence == "medium":
+            self.medium_confidence += 1
+        else:
+            self.low_confidence += 1
+
+
+@dataclass
+class WindowItems:
+    """What an engine made of one window: its items, in order, and fields
+    added to each of their lines in `raw_items.jsonl`."""
+
+    items: list[ClassifiedItem]
+    extra_fields: dict = field(default_factory=dict)
+
+
+# Returned by a window callback to end the step there (asked to stop while
+# waiting): that window and the ones after it stay pending.
+STOP_CLASSIFYING = object()
+
+
+def uncovered_pages(pages: list[WindowPage], items: list[ClassifiedItem]) -> list[WindowPage]:
+    """Páginas da janela que nenhuma peça cobre, na ordem em que aparecem."""
+    coberto: set[int] = set()
+    for item in items:
+        for numero in range(item.start_order, item.end_order + 1):
+            coberto.add(numero)
+    faltando = []
+    for page in pages:
+        numero = page_order(page)
+        if numero not in coberto:
+            faltando.append(page)
+    return faltando
+
+
+def classify_windows(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    classify_window: Callable,
+    result: WindowRunCounts,
+    *,
+    invalid_item_event: Callable[[ClassifiedItem, str, list[str]], tuple[str, dict]],
+    coverage: tuple[str, Callable[[list[WindowPage]], list[ClassifiedItem]]] | None = None,
+    should_stop=None,
+    language: str | None = None,
+) -> None:
+    """Classifies every `pending` window: the protocol both engines follow.
+
+    Each window ends `done`, with every item that passed `validate_item` in
+    `raw_items.jsonl` and an `error` event for each one refused, or stays
+    `pending` when `classify_window` gives up on it (returns `None`) or
+    stops the step (returns `STOP_CLASSIFYING`). The items are flushed to
+    the file before the window is queued as done, so a commit never marks
+    done a window whose items could still be lost.
+
+    `classify_window(window, pages, writer)` returns a `WindowItems`. The
+    `writer` is the step's `BatchWriter`: an event the engine records itself
+    either joins the batch or follows a `writer.flush()`.
+
+    `invalid_item_event(item, window_key, errors)` gives the event key and
+    params of a refused item (each engine has its own).
+
+    `coverage` (event key, items builder): pages no written item covers get
+    items of their own, after validation, so a refused item never takes its
+    pages out of the index. Only the local engine has it today.
+
+    One commit every couple of seconds (`BatchWriter`) instead of one per
+    window plus one per event: each commit on a Drive-synced database costs
+    seconds and locks the screens out."""
+    jsonl_path = Path(config.output_folder) / RAW_ITEMS_FILE_NAME
+    pending_windows = conn.execute(
+        "SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)
+    ).fetchall()
+
+    loader = WindowPageLoader(conn)  # One read of each group's order
+    writer = BatchWriter(conn, max_seconds=CLASSIFICATION_BATCH_SECONDS)
+    with open(jsonl_path, "a", encoding="utf-8") as jsonl_file:
+        try:
+            for window in pending_windows:
+                if should_stop is not None and should_stop():
+                    break
+
+                pages = load_window_pages(conn, window, loader)
+                outcome = classify_window(window, pages, writer)
+                if outcome is STOP_CLASSIFYING:
+                    break
+                if outcome is None:
+                    continue
+
+                def write(item: ClassifiedItem, window=window, outcome=outcome) -> bool:
+                    """Validates and writes the item. `False` when it was refused."""
+                    item_dict = item_to_dict(item, window["key"], window["group_key"])
+                    item_dict.update(outcome.extra_fields)
+                    errors = validate_item(item_dict)
+                    if errors:
+                        result.invalid_items += 1
+                        key, params = invalid_item_event(item, window["key"], errors)
+                        writer.add(lambda c, key=key, params=params: record_event(
+                            c, "classification", "error", key, params, language=language, commit=False,
+                        ))
+                        return False
+                    jsonl_file.write(json.dumps(item_dict, ensure_ascii=False) + "\n")
+                    result.count_written(item.confidence)
+                    return True
+
+                written = [item for item in outcome.items if write(item)]
+
+                if coverage is not None:
+                    # Garantia de cobertura (requisito central: nada pode
+                    # faltar do índice). Depois da validação, e não antes:
+                    # uma peça recusada não pode levar as páginas dela junto.
+                    # Cada peça recusada por causa da data era uma faixa de
+                    # páginas que sumiam do índice sem deixar rastro, porque
+                    # a cobertura já tinha sido calculada contando com elas.
+                    coverage_event, coverage_items = coverage
+                    missing = uncovered_pages(pages, written)
+                    if missing:
+                        params = {"window": window["key"], "pages": len(missing)}
+                        writer.add(lambda c, params=params: record_event(
+                            c, "classification", "warning", coverage_event,
+                            params, language=language, commit=False,
+                        ))
+                        for item in coverage_items(missing):
+                            write(item)
+
+                jsonl_file.flush()
+                writer.add(lambda c, window_id=window["id"]: c.execute(MARK_WINDOW_DONE, (window_id,)))
+                result.windows_processed += 1
+            writer.flush()
+        except BaseException:
+            jsonl_file.flush()
+            try:
+                writer.flush()
+            except Exception:
+                writer.discard()
+            raise

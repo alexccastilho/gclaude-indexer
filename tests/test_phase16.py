@@ -1287,7 +1287,7 @@ def _peca(inicio: int, fim: int):
 
 
 def test_as_paginas_que_o_modelo_ignorou_sao_detectadas():
-    from gclaude_indexer.engine_local import _uncovered_pages
+    from gclaude_indexer.classification import uncovered_pages as _uncovered_pages
 
     paginas = [_pagina(n) for n in range(1, 9)]
     # O modelo devolveu só as duas primeiras — o caso real medido.
