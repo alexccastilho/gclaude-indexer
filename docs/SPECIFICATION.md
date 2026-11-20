@@ -252,6 +252,14 @@ computer is meaningless on the next.
 Each step is an independent function that reads from and writes to the
 database, can be run on its own, and is safe to repeat.
 
+A project opens with its source folder offline (pen drive, network share,
+another machine's Drive). Only the steps that read the original files
+(scan, conversion and extraction, `pipeline.STEPS_READING_SOURCE`) refuse
+then, with `pipeline.SourceFolderMissing` raised before any `run` row is
+written: a missing folder would look like an empty collection. Windows,
+classification and "Import and generate reports" read only the database
+and the output folder, and run with the source offline.
+
 **0. Update (only for a collection already indexed).** Not a step of the
 pipeline and not a mode of one: an invalidation that runs *before* the
 eight steps below and returns the database to a state they already know
@@ -311,7 +319,10 @@ visible instead of silent.
 size and modification time, which is counted as unchanged without reading
 its bytes (the same rule as the update check above). A file whose hash is already recorded is skipped as a duplicate (recorded
 with `status = 'duplicate'`, not silently dropped, so scan-progress counts
-stay consistent). Derives `group_key` per the project's `group_mode`:
+stay consistent). When the scan records new content for an original and no
+indexed document keeps the old content, the copies of that content leave
+the inventory as on a removal (`log.scan.duplicate_released`), and the next
+update sees them as new documents. Derives `group_key` per the project's `group_mode`:
 subfolder name, a regular expression over the file name, or everything in
 one group.
 
@@ -481,12 +492,15 @@ The `claude_code` engine (an external Claude Code session) existed until
 
 **`local` engine.** An open model served by Ollama on
 `http://127.0.0.1:11434`. No account, no key, no external network traffic
-after the model is downloaded once. The default model is
-`qwen3.5:4b` (`engine_local.py:DEFAULT_LOCAL_MODEL`), used regardless of
-hardware unless the project's "Local model" field names a different,
-already-installed Ollama model — that field is fed by `GET /api/tags`
-against the local Ollama instance, with a free-text fallback when Ollama
-does not respond. A connection failure falls back to the `rules` engine,
+after the model is downloaded once. Since 2.1.0 the project picks a
+profile, not a model (`local_models.py`): Fastest (`qwen3.5:4b`,
+`ollama_models.DEFAULT_LOCAL_MODEL`) or Best quality (`ornith-1.5:9b`).
+`automatic`, the default, resolves to Best quality on a card with 8 GB of
+VRAM or more (counted from 7680 MB) and to Fastest on smaller cards or
+without one; while the larger model is not downloaded and the smaller one
+is, the smaller one runs. The "Local model" field can also name any other
+installed Ollama model — it is fed by `GET /api/tags` against the local
+Ollama instance, with a free-text fallback when Ollama does not respond. A connection failure falls back to the `rules` engine,
 with a warning event. Hardware too small to hold the chosen model
 (combined VRAM + RAM, with a 20% margin) is checked before running it —
 see section 10.2.
@@ -496,7 +510,9 @@ with `claude_code` opens as `automatic` with a single notice; windows already
 answered in `raw_items.jsonl` are marked done, and old items still import (the
 history label is "Claude Code (earlier versions)"). `CLAUDE.md` in the output
 folder is consultation-only: how to read the index and use `buscar.bat`, with a
-reminder that document text is data, never instructions. There is no second
+reminder that document text is data, never instructions, and the same
+non-negotiable rule as the instructions (check values, dates and tables in
+the original file), as the set's combined `CLAUDE.md` already had. There is no second
 pass over low-confidence items; low confidence is reduced during the run:
 
 - a page with no text and no image is "BLANK PAGE" (high confidence) without
@@ -561,12 +577,15 @@ user entered in the New Project form.
 > **Sets (1.8.0).** `sets.py` keeps, in the machine-local `sets.json`, named
 > sets of two or more catalog projects, each member with an alias
 > (`propose_alias`: NFKD, lowercase, `[^a-z0-9]+` → `-`, collisions `-2`,
-> `-3`). `combined_package.py` builds one package from them: every artifact
+> `-3`). Each member also records its catalog entry's `created_at`
+> (`project_created_at`), so a new project that inherits a deleted member's
+> id is never taken for it (`catalog.find_member`). `combined_package.py` builds one package from them: every artifact
 > prefixed `<alias>__`, `index.md` and `timeline.md` links rewritten token
 > by token inside backticks and in Markdown links (`rewrite_links`), one
 > `project_instructions.md` with the set's personal text on top, a "which
 > collection to search" section and one section per member
-> (`artifacts.project_instructions_sections` with `ArtifactNames`), the
+> (`artifacts.project_instructions_sections` with the member's `set_alias`,
+> names from `output_names.prefixed_name`), the
 > token budget summed and the limit the smallest `package_token_limit`
 > among the members. A member whose folder is unreachable, whose database
 > does not open or which never generated reports is reported with its
@@ -655,24 +674,30 @@ also the HTTP form field names, so the two never drift apart.
 | Field | Type | Default | What it's for |
 |---|---|---|---|
 | `name` | text | — | identifies the project in the list |
-| `subject` | long text | — | **shown to the classifying model** as context, and goes into the generated instructions |
+| `subject` | long text | — | goes into the generated instructions; not shown to the classifying model since 2.1.0 (the per-page prompt carries no project block: measured, it made the model cut documents worse) |
 | `source_folder` | folder picker | — | where the documents are |
 | `output_folder` | folder picker | `<source>-AI` (sibling; `-AI-2`, `-AI-3` when taken) | where everything is written; never the source, inside it or above it |
 | `collection_type` | choice | `processo` (case file) | `processo` numbers by sheet; `biblioteca` (library) numbers by page |
 | `group_mode` | choice | `subfolder` | subfolder, name pattern, or everything together |
 | `group_pattern` | regex | empty | used when grouping is by name pattern |
 | `extensions` | multiple, grouped by family (Documents, Images, Text and data, Messages, Technical and signatures) | `all` (the form shows every category checked, audio and video excluded; `midia` is opt-in and never part of `all`) | what enters the scan — the family grouping is presentation only, see `categories_by_family()` in `file_types.py` |
-| `pages_per_block` | — | 80 | inert since 2.0.0: nothing is sliced; the key stays so old projects still open |
+| `pages_per_block` | — | — | retired: no longer a field (`config._RETIRED_FIELDS`). Nothing is sliced since 2.0.0; the key that projects saved up to 2.1 is ignored when they open and left out on the next save |
 | `pages_per_window` | — (automatic) | 8 with the local engine, 16 with rules | not a form field since 2.0.0: resolved after the scan from the engine that will run (`auto_settings.py`); pages per request to the model — the reply carries one line per page, and a window too wide truncates it |
 | `overlap` | — (automatic) | 2 (window of 8 or more), 1 (6 or fewer), 0 when there are almost only whole documents | not a form field since 2.0.0; pages repeated between windows |
 | `chars_per_page` | — (automatic) | 2000 | not a form field since 2.0.0: 75th percentile of the text of the PDF pages sampled, rounded to 500, between 1500 and 4000; applies to PDF and image pages (`extraction.chars_limit_for`) — whole documents (DOCX, PPTX, XLSX, HTML, TXT, e-mail) are cut at 4000 |
 | `ocr_language` | — (automatic) | `por` | not a form field since 2.0.0: language detected in the sampled text; Tesseract language code |
 | `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
-| `local_model` | selector fed by `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `qwen3.5:4b`) | the choice is saved and does take effect (`engine_local.py:model_to_use`) |
+| `local_model` | selector with the two profiles (`fast`, `quality`) and the models from `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `quality`, `ornith-1.5:9b`, on a card with 8 GB of VRAM or more, otherwise `fast`, `qwen3.5:4b`) | the choice is saved and does take effect (`local_models.py:model_to_use`) |
 | `processing_mode` | choice | `automatic` | `gpu` behaves exactly like `automatic` (the screen says so): both use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
 | `parallelism` | choice | `automatic` | `economy` (1 worker), `automatic` (physical cores minus one), `maximum` (all physical cores) — see section 5.2 |
-| `role_instructions` | long text | a default template | **shown to the classifying model** as context; who Claude is, in the generated instructions |
-| `extra_rules` | long text, edited on the Instructions screen (not in the form since 2.0.0) | empty | **shown to the classifying model** as context; appended to the generated instructions |
+| `role_instructions` | long text | a default template | who Claude is, in the generated instructions; not shown to the classifying model since 2.1.0 |
+| `extra_rules` | long text, edited on the Instructions screen (not in the form since 2.0.0) | empty | appended to the generated instructions; not shown to the classifying model since 2.1.0 (the screen says so) |
+
+A key in a saved `config_json` that this version does not know (written by
+a newer one) does not stop the project from opening: it is ignored, with
+a warning in the app log (once per key), and kept as it was when this version saves the
+configuration again (`config.unknown_fields_of`). On the New project form,
+an unknown field is still refused.
 
 **Execution.** One row per step (scan, conversion, extraction, windows,
 classification — `pipeline.STEP_ORDER`), with status and count. A button runs
@@ -829,11 +854,13 @@ Before installing anything, gather and record as an event:
 
 ### 10.2 Local model choice
 
-The `local` engine's model is fixed to `qwen3.5:4b`
-(`engine_local.py:DEFAULT_LOCAL_MODEL`) by default, on any hardware, unless
-the project's "Local model" field names a different, already-installed
-model (see section 6) — in which case that model is what actually runs,
-and what the hardware check below evaluates. Ollama is always asked to use
+The `local` engine's model comes from the project's profile
+(`local_models.py:model_to_use`, see section 5): Best quality
+(`ornith-1.5:9b`) by default on a card with 8 GB of VRAM or more, Fastest
+(`qwen3.5:4b`, `ollama_models.DEFAULT_LOCAL_MODEL`) otherwise, unless the
+project's "Local model" field names a different, already-installed model
+(see section 6) — in which case that model is what actually runs, and what
+the hardware check below evaluates. Ollama is always asked to use
 `num_gpu: -1` (as much GPU as fits, the rest spilling into RAM
 automatically), regardless of which model runs.
 
@@ -842,7 +869,9 @@ that will actually be used:
 
 - The model's size comes from Ollama's own `/api/tags` when the model is
   already downloaded; otherwise the check falls back to a calibrated
-  estimate for the default model (`qwen3.5:4b`, roughly 3.0 GB).
+  estimate per model (`hardware.ESTIMATED_MODEL_SIZES_MB`: `qwen3.5:4b`
+  roughly 3.2 GB, `ornith-1.5:9b` roughly 6.3 GB; any other model uses the
+  first).
 - Required combined memory (VRAM + RAM) is the model size plus a 20%
   margin.
 - Below that, classification falls back to the `rules` engine, with the
