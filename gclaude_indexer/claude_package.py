@@ -20,14 +20,18 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .artifacts import (
+from .config import ProjectConfig
+from .output_names import (
+    GROUP_INDEX_GLOB,
+    GROUP_TIMELINE_GLOB,
     INDEX_FILENAME,
     NORMS_FILENAME,
     PROJECT_INSTRUCTIONS_FILENAME,
     REVIEW_FILENAME,
     TIMELINE_FILENAME,
+    dashed_name,
+    part_filename,
 )
-from .config import ProjectConfig
 
 # `normas-citadas.md` só existe quando o acervo tem ato reconhecido;
 # `package_files` leva o que existir.
@@ -45,7 +49,7 @@ as instruções — mais este guia.
 
 1. Em claude.ai, crie um **Project** novo (ou abra um já existente para
    este acervo).
-2. Abra `project_instructions.md` neste pacote e cole o arquivo **inteiro**
+2. Abra `{instructions}` neste pacote e cole o arquivo **inteiro**
    no campo **"Project instructions"** do Project — é o que define como o
    Claude deve se comportar neste acervo, inclusive a regra de sempre
    confirmar valores no documento original antes de citar. Se o Project já
@@ -54,10 +58,10 @@ as instruções — mais este guia.
    suas no campo e cole este arquivo **abaixo** delas, sem apagar nada. O
    trecho entre as marcas `GCLAUDE-INDEXER` é o único que o sistema refaz.
 3. Em **"Project knowledge"** (arquivos do projeto), envie todos os
-   arquivos `.md` deste pacote: `index.md` (o sumário dos grupos), os
-   `index-<grupo>.md` de cada grupo (e as partes `index-<grupo>-1.md`,
-   `-2.md`… quando houver), `timeline.md`, `review.md` e
-   `project_instructions.md` — para achar um documento, o Claude lê o
+   arquivos `.md` deste pacote: `{index}` (o sumário dos grupos), os
+   `{group_index}` de cada grupo (e as partes `{group_index_part}`,
+   `{part_suffix}`… quando houver), `{timeline}`, `{review}` e
+   `{instructions}` — para achar um documento, o Claude lê o
    sumário, escolhe o grupo e abre o índice daquele grupo, usa a
    cronologia para localizar a peça certa e a conferência para saber o
    que ainda está pendente.
@@ -70,7 +74,7 @@ as instruções — mais este guia.
 ## Cronologia de grupo grande
 
 Um grupo com mais de 2.000 peças datadas tem a sua cronologia num arquivo
-próprio, `timeline-<grupo>.md`, na pasta de saída — o `timeline.md` deste
+próprio, `{group_timeline}`, na pasta de saída — o `{timeline}` deste
 pacote aponta para ele. Esse arquivo **não vem neste pacote**: repete o
 índice do grupo reordenado por data e, num acervo grande, sozinho
 consome boa parte da capacidade do Project. Se precisar dele no Project,
@@ -81,7 +85,7 @@ envie-o à parte; a tela de resultado mostra o tamanho e os tokens.
 As leis, decretos, medidas provisórias e demais atos federais que o
 GClaude Indexer reconheceu no acervo, e as páginas `.htm` da mesma pasta
 desses atos, **não entram neste pacote**: a legislação inteira passa de
-40 MB e nenhum Project a aceita. O arquivo `normas-citadas.md` lista as
+40 MB e nenhum Project a aceita. O arquivo `{norms}` lista as
 normas reconhecidas, com o link de cada uma, e as instruções geradas já
 dizem ao Claude como usá-lo.
 
@@ -108,7 +112,7 @@ report and the instructions — plus this guide.
 
 1. In claude.ai, create a new **Project** (or open an existing one for
    this collection).
-2. Open `project_instructions.md` in this package and paste the **whole**
+2. Open `{instructions}` in this package and paste the **whole**
    file into the Project's **"Project instructions"** field. This defines
    how Claude should behave for this collection, including the rule to
    always confirm values in the original document before citing them. If
@@ -118,9 +122,9 @@ report and the instructions — plus this guide.
    paste this file **below** them, deleting nothing. The part between the
    `GCLAUDE-INDEXER` marks is the only one the system rewrites.
 3. In **"Project knowledge"**, upload every `.md` file in this package:
-   `index.md` (the summary of groups), one `index-<group>.md` per group
-   (and the parts `index-<group>-1.md`, `-2.md`… when there are any),
-   `timeline.md`, `review.md` and `project_instructions.md` — to find a
+   `{index}` (the summary of groups), one `{group_index}` per group
+   (and the parts `{group_index_part}`, `{part_suffix}`… when there are any),
+   `{timeline}`, `{review}` and `{instructions}` — to find a
    document, Claude reads the summary, picks the group and opens that
    group's index, uses the chronology to locate the right piece and the
    coverage report to know what is still pending.
@@ -133,8 +137,8 @@ report and the instructions — plus this guide.
 ## Timeline of a large group
 
 A group with more than 2,000 dated items has its timeline in its own
-file, `timeline-<group>.md`, in the output folder — this package's
-`timeline.md` points to it. That file is **not in this package**: it
+file, `{group_timeline}`, in the output folder — this package's
+`{timeline}` points to it. That file is **not in this package**: it
 repeats the group's index reordered by date and, in a large collection,
 by itself takes a good share of the Project's capacity. If you need it
 in the Project, upload it separately; the Result screen shows its size
@@ -145,7 +149,7 @@ and tokens.
 The laws, decrees, provisional measures and other federal acts that
 GClaude Indexer recognised in the collection, plus the `.htm` pages from
 the same folder as those acts, are **not in this package**: the full
-legislation exceeds 40 MB and no Project accepts it. `normas-citadas.md`
+legislation exceeds 40 MB and no Project accepts it. `{norms}`
 lists the recognised acts, each with its link, and the generated
 instructions already tell Claude how to use it.
 
@@ -172,7 +176,7 @@ informe de cobertura y las instrucciones — más esta guía.
 
 1. En claude.ai, cree un **Project** nuevo (o abra uno ya existente para
    esta colección).
-2. Abra `project_instructions.md` en este paquete y pegue el archivo
+2. Abra `{instructions}` en este paquete y pegue el archivo
    **completo** en el campo **"Project instructions"** del Project: es lo
    que define cómo debe comportarse Claude en esta colección, incluida la
    regla de confirmar siempre los valores en el documento original antes
@@ -182,9 +186,9 @@ informe de cobertura y las instrucciones — más esta guía.
    **debajo** de ellas, sin borrar nada. La parte entre las marcas
    `GCLAUDE-INDEXER` es la única que el sistema rehace.
 3. En **"Project knowledge"**, suba todos los archivos `.md` de este
-   paquete: `index.md` (el resumen de los grupos), los `index-<grupo>.md`
-   de cada grupo (y las partes `index-<grupo>-1.md`, `-2.md`… cuando las
-   haya), `timeline.md`, `review.md` y `project_instructions.md` — para
+   paquete: `{index}` (el resumen de los grupos), los `{group_index}`
+   de cada grupo (y las partes `{group_index_part}`, `{part_suffix}`… cuando las
+   haya), `{timeline}`, `{review}` y `{instructions}` — para
    encontrar un documento, Claude lee el resumen, elige el grupo y abre
    el índice de ese grupo, usa la cronología para ubicar la pieza
    correcta y el informe de cobertura para saber qué sigue pendiente.
@@ -198,8 +202,8 @@ informe de cobertura y las instrucciones — más esta guía.
 ## Cronología de un grupo grande
 
 Un grupo con más de 2.000 piezas fechadas tiene su cronología en un
-archivo propio, `timeline-<grupo>.md`, en la carpeta de salida — el
-`timeline.md` de este paquete apunta a él. Ese archivo **no viene en este
+archivo propio, `{group_timeline}`, en la carpeta de salida — el
+`{timeline}` de este paquete apunta a él. Ese archivo **no viene en este
 paquete**: repite el índice del grupo reordenado por fecha y, en una
 colección grande, consume por sí solo buena parte de la capacidad del
 Project. Si lo necesita en el Project, súbalo por separado; la pantalla de
@@ -210,7 +214,7 @@ resultado muestra su tamaño y sus tokens.
 Las leyes, decretos, medidas provisionales y demás actos federales que
 GClaude Indexer reconoció en la colección, y las páginas `.htm` de la misma
 carpeta de esos actos, **no entran en este paquete**: la legislación entera
-supera los 40 MB y ningún Project la acepta. `normas-citadas.md` lista las
+supera los 40 MB y ningún Project la acepta. `{norms}` lista las
 normas reconocidas, cada una con su enlace, y las instrucciones generadas ya
 le dicen a Claude cómo usarlo.
 
@@ -228,6 +232,20 @@ GClaude Indexer ("Importar y generar informes") y vuelva a subirlos al
 mismo Project, reemplazando los anteriores.
 """,
 }
+
+# Os padrões `index-<grupo>.md` citados no guia, com a palavra de cada idioma.
+_GROUP_WORD = {"pt": "<grupo>", "en": "<group>", "es": "<grupo>"}
+
+
+def _guide_names(language: str) -> dict[str, str]:
+    group_index = dashed_name(INDEX_FILENAME, _GROUP_WORD[language])
+    return {
+        "index": INDEX_FILENAME, "group_index": group_index, "group_index_part": part_filename(group_index, 1),
+        # Só o sufixo da parte seguinte (`-2.md`), que o guia cita depois da primeira.
+        "part_suffix": part_filename("", 2),
+        "timeline": TIMELINE_FILENAME, "group_timeline": dashed_name(TIMELINE_FILENAME, _GROUP_WORD[language]),
+        "review": REVIEW_FILENAME, "norms": NORMS_FILENAME, "instructions": PROJECT_INSTRUCTIONS_FILENAME,
+    }
 
 
 # Fixed English name, like the four artifacts: a file name that
@@ -318,7 +336,7 @@ def candidate_files(config: ProjectConfig) -> list[Path]:
     `outside_files`)."""
     output_folder = Path(config.output_folder)
     arquivos = [output_folder / nome for nome in ARTIFACT_NAMES if (output_folder / nome).exists()]
-    arquivos += sorted(output_folder.glob("index-*.md"))
+    arquivos += sorted(output_folder.glob(GROUP_INDEX_GLOB))
     return arquivos
 
 
@@ -369,13 +387,14 @@ def outside_files(config: ProjectConfig) -> list[Path]:
     repetia o índice do grupo reordenado por data, com centenas de milhares
     de tokens, e sozinho levava o pacote para além de 2 milhões de tokens."""
     output_folder = Path(config.output_folder)
-    return sorted(output_folder.glob("timeline-*.md"))
+    return sorted(output_folder.glob(GROUP_TIMELINE_GLOB))
 
 
 def generate_claude_project_package(config: ProjectConfig, language: str) -> bytes:
     """Builds the `.zip` in memory — never writes anything to disk beyond
     what is already in `output_folder`, so no cleanup is needed afterwards."""
-    guide = _GUIDE.get(language, _GUIDE["pt"]).format(name=config.name)
+    language = language if language in _GUIDE else "pt"
+    guide = _GUIDE[language].format(name=config.name, **_guide_names(language))
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:

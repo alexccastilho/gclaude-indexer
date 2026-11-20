@@ -33,21 +33,24 @@ import zipfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .artifacts import (
-    CLAUDE_MD_FILENAME,
-    INDEX_FILENAME,
-    NORMS_FILENAME,
-    PROJECT_INSTRUCTIONS_FILENAME,
-    REVIEW_FILENAME,
-    TIMELINE_FILENAME,
-    ArtifactNames,
-    project_instructions_sections,
-)
+from .artifacts import ArtifactNames, project_instructions_sections
 from .catalog import CatalogEntry, find_project
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig
 from .i18n import DEFAULT_LANGUAGE, translate
 from .managed_block import SOURCE_OF_TRUTH_RULE, merge_managed
+from .output_names import (
+    CLAUDE_MD_FILENAME,
+    COMBINED_STALE_PATTERNS,
+    INDEX_FILENAME,
+    NORMS_FILENAME,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    REVIEW_FILENAME,
+    SEARCH_LAUNCHER_FILENAME,
+    TIMELINE_FILENAME,
+    dashed_name,
+    prefixed_name,
+)
 from .paths import OUTPUT_MARKER_NAME, PROJECT_DB_NAME, is_inside_folder
 from .project import load_project
 from .sets import SetEntry, SetMember
@@ -109,10 +112,6 @@ class CombinedPlan:
     @property
     def included_members(self) -> list[Member]:
         return [m for m in self.members if m.available]
-
-
-def prefixed_name(alias: str, name: str) -> str:
-    return f"{alias}__{name}"
 
 
 def rewrite_links(text: str, names: dict[str, str]) -> str:
@@ -243,7 +242,7 @@ def _names_for(member: Member) -> ArtifactNames:
         timeline=prefixed_name(alias, TIMELINE_FILENAME),
         review=prefixed_name(alias, REVIEW_FILENAME),
         norms=prefixed_name(alias, NORMS_FILENAME),
-        prefix=f"{alias}__",
+        prefix=prefixed_name(alias, ""),
     )
 
 
@@ -304,8 +303,14 @@ def _guide(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
         )
     else:
         left_out = t("combined.guide_all_present")
-    template = _GUIDE.get(language, _GUIDE[DEFAULT_LANGUAGE])
-    return template.format(name=entry.name, collections=collections, left_out=left_out)
+    language = language if language in _GUIDE else DEFAULT_LANGUAGE
+    words = _PROSE_WORDS[language]
+    return _GUIDE[language].format(
+        name=entry.name, collections=collections, left_out=left_out,
+        example_index=prefixed_name(words["example"], INDEX_FILENAME),
+        example_group_index=prefixed_name(words["example"], dashed_name(INDEX_FILENAME, words["group"])),
+        instructions=PROJECT_INSTRUCTIONS_FILENAME,
+    )
 
 
 def generate_zip(entry: SetEntry, language: str = DEFAULT_LANGUAGE) -> bytes:
@@ -331,21 +336,23 @@ def _claude_md(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
         subject = m.config.subject.strip() or t("artifact.project_instructions.subject_missing")
         collections.append(_CLAUDE_MD_COLLECTION.get(language, _CLAUDE_MD_COLLECTION[DEFAULT_LANGUAGE]).format(
             alias=m.alias, name=m.name, subject=subject, output_folder=m.config.output_folder,
+            index=prefixed_name(m.alias, INDEX_FILENAME), timeline=prefixed_name(m.alias, TIMELINE_FILENAME),
+            review=prefixed_name(m.alias, REVIEW_FILENAME), launcher=SEARCH_LAUNCHER_FILENAME,
         ))
-    template = _CLAUDE_MD.get(language, _CLAUDE_MD[DEFAULT_LANGUAGE])
-    return template.format(
+    language = language if language in _CLAUDE_MD else DEFAULT_LANGUAGE
+    words = _PROSE_WORDS[language]
+    return _CLAUDE_MD[language].format(
         name=entry.name, collections="\n".join(collections), where=t("combined.where_text"), rule=SOURCE_OF_TRUTH_RULE,
+        alias_index=prefixed_name(words["alias"], INDEX_FILENAME),
+        alias_group_index=prefixed_name(words["alias"], dashed_name(INDEX_FILENAME, words["group"])),
+        alias_timeline=prefixed_name(words["alias"], TIMELINE_FILENAME),
+        alias_review=prefixed_name(words["alias"], REVIEW_FILENAME),
+        alias_norms=prefixed_name(words["alias"], NORMS_FILENAME),
     )
 
 
 class ProtectedFolderError(ValueError):
     """O destino é a pasta de um acervo (saída ou origem)."""
-
-
-# Só o que a gravação combinada produz leva `__` no nome; a geração simples
-# nunca usa esse separador, então apagar por estes padrões não alcança
-# arquivo de ninguém.
-_STALE_PATTERNS = ("*__index*.md", "*__timeline*.md", "*__review.md", "*__normas-citadas.md")
 
 
 def _is_protected_folder(folder: Path, members: list[Member]) -> bool:
@@ -388,8 +395,11 @@ def _is_protected_folder(folder: Path, members: list[Member]) -> bool:
 def _remove_stale(folder: Path, keep: set[str]) -> None:
     """Apelido trocado, membro retirado, grupo renomeado ou índice que
     deixou de ter partes: o nome antigo some, como a geração simples apaga
-    os `index-*.md` órfãos. Sem isso o Claude Code lia índices fantasmas."""
-    for pattern in _STALE_PATTERNS:
+    os `index-*.md` órfãos. Sem isso o Claude Code lia índices fantasmas.
+    Só o que a gravação combinada produz leva o separador no nome; a geração
+    simples nunca o usa, então apagar por estes padrões não alcança arquivo
+    de ninguém."""
+    for pattern in COMBINED_STALE_PATTERNS:
         for path in folder.glob(pattern):
             if path.name not in keep and path.is_file():
                 path.unlink()
@@ -440,8 +450,8 @@ _GUIDE: dict[str, str] = {
 
 Este pacote reúne os arquivos gerados pelo GClaude Indexer para o conjunto
 "{name}". Cada acervo entra com um apelido, e todo arquivo dele começa por
-esse apelido seguido de dois sublinhados: `atas__index.md` é o sumário do
-acervo "atas", `atas__index-<grupo>.md` o índice de um grupo dele, e assim
+esse apelido seguido de dois sublinhados: `{example_index}` é o sumário do
+acervo "atas", `{example_group_index}` o índice de um grupo dele, e assim
 por diante. Os acervos nunca se misturam, e o Claude sabe de qual veio cada
 informação.
 
@@ -457,7 +467,7 @@ informação.
 
 1. Em claude.ai, crie um Project novo (ou abra o que você já usa para esses
    acervos).
-2. Abra `project_instructions.md` deste pacote e cole o arquivo inteiro no
+2. Abra `{instructions}` deste pacote e cole o arquivo inteiro no
    campo "Project instructions". O texto que você escreveu em "Instruções
    que você já usa no Project" já está no topo; o trecho entre as marcas
    `GCLAUDE-INDEXER` é o único que o programa refaz quando você gera o
@@ -488,8 +498,8 @@ o seu texto pessoal nas instruções continua no lugar.
 This package gathers the files GClaude Indexer generated for the set
 "{name}". Each collection comes in under an alias, and every file of that
 collection starts with the alias followed by two underscores:
-`minutes__index.md` is the summary of the "minutes" collection,
-`minutes__index-<group>.md` the index of one of its groups, and so on.
+`{example_index}` is the summary of the "minutes" collection,
+`{example_group_index}` the index of one of its groups, and so on.
 Collections never mix, and Claude knows which one each piece of
 information came from.
 
@@ -505,7 +515,7 @@ information came from.
 
 1. In claude.ai, create a new Project (or open the one you already use for
    these collections).
-2. Open `project_instructions.md` in this package and paste the whole file
+2. Open `{instructions}` in this package and paste the whole file
    into the "Project instructions" field. The text you wrote under
    "Instructions you already use in the Project" is already at the top;
    the part between the `GCLAUDE-INDEXER` marks is the only one the program
@@ -534,8 +544,8 @@ change; your personal text in the instructions stays where it is.
 
 Este paquete reúne los archivos que GClaude Indexer generó para el conjunto
 "{name}". Cada colección entra con un alias, y todo archivo suyo empieza
-por ese alias seguido de dos guiones bajos: `actas__index.md` es el sumario
-de la colección "actas", `actas__index-<grupo>.md` el índice de uno de sus
+por ese alias seguido de dos guiones bajos: `{example_index}` es el sumario
+de la colección "actas", `{example_group_index}` el índice de uno de sus
 grupos, y así sucesivamente. Las colecciones nunca se mezclan, y Claude
 sabe de cuál vino cada información.
 
@@ -551,7 +561,7 @@ sabe de cuál vino cada información.
 
 1. En claude.ai, cree un Project nuevo (o abra el que ya usa para estas
    colecciones).
-2. Abra `project_instructions.md` de este paquete y pegue el archivo entero
+2. Abra `{instructions}` de este paquete y pegue el archivo entero
    en el campo "Project instructions". El texto que escribió en
    "Instrucciones que ya usa en el Project" ya está arriba; el tramo entre
    las marcas `GCLAUDE-INDEXER` es el único que el programa rehace cuando
@@ -588,9 +598,9 @@ _CLAUDE_MD: dict[str, str] = {
 # Vários acervos do GClaude Indexer: {name}
 
 Esta pasta reúne os relatórios de mais de um acervo. Os arquivos de cada
-acervo começam pelo apelido dele e dois sublinhados (`<apelido>__index.md`,
-`<apelido>__index-<grupo>.md`, `<apelido>__timeline.md`,
-`<apelido>__review.md`, `<apelido>__normas-citadas.md` quando há normas).
+acervo começam pelo apelido dele e dois sublinhados (`{alias_index}`,
+`{alias_group_index}`, `{alias_timeline}`,
+`{alias_review}`, `{alias_norms}` quando há normas).
 
 ## Em qual acervo procurar
 
@@ -606,8 +616,8 @@ acervo começam pelo apelido dele e dois sublinhados (`<apelido>__index.md`,
 
 This folder gathers the reports of more than one collection. Each
 collection's files start with its alias and two underscores
-(`<alias>__index.md`, `<alias>__index-<group>.md`, `<alias>__timeline.md`,
-`<alias>__review.md`, `<alias>__normas-citadas.md` when there are norms).
+(`{alias_index}`, `{alias_group_index}`, `{alias_timeline}`,
+`{alias_review}`, `{alias_norms}` when there are norms).
 
 ## Which collection to search
 
@@ -623,8 +633,8 @@ collection's files start with its alias and two underscores
 
 Esta carpeta reúne los informes de más de una colección. Los archivos de
 cada colección empiezan por su alias y dos guiones bajos
-(`<alias>__index.md`, `<alias>__index-<grupo>.md`, `<alias>__timeline.md`,
-`<alias>__review.md`, `<alias>__normas-citadas.md` cuando hay normas).
+(`{alias_index}`, `{alias_group_index}`, `{alias_timeline}`,
+`{alias_review}`, `{alias_norms}` cuando hay normas).
 
 ## En qué colección buscar
 
@@ -637,32 +647,40 @@ cada colección empiezan por su alias y dos guiones bajos
 """,
 }
 
+# As palavras que a prosa usa nos exemplos de nome: o apelido de exemplo do
+# guia, o marcador de apelido e o de grupo do `CLAUDE.md`.
+_PROSE_WORDS = {
+    "pt": {"example": "atas", "alias": "<apelido>", "group": "<grupo>"},
+    "en": {"example": "minutes", "alias": "<alias>", "group": "<group>"},
+    "es": {"example": "actas", "alias": "<alias>", "group": "<grupo>"},
+}
+
 _CLAUDE_MD_COLLECTION: dict[str, str] = {
     "pt": """\
 ## Acervo {alias}: {name}
 
 {subject}
 
-Sumário: `{alias}__index.md`. Cronologia: `{alias}__timeline.md`. Conferência:
-`{alias}__review.md`. Para achar onde um assunto aparece neste acervo, rode
-o `buscar.bat` da pasta de saída dele: `{output_folder}`.
+Sumário: `{index}`. Cronologia: `{timeline}`. Conferência:
+`{review}`. Para achar onde um assunto aparece neste acervo, rode
+o `{launcher}` da pasta de saída dele: `{output_folder}`.
 """,
     "en": """\
 ## Collection {alias}: {name}
 
 {subject}
 
-Summary: `{alias}__index.md`. Timeline: `{alias}__timeline.md`. Coverage:
-`{alias}__review.md`. To find where a subject appears in this collection,
-run the `buscar.bat` in its output folder: `{output_folder}`.
+Summary: `{index}`. Timeline: `{timeline}`. Coverage:
+`{review}`. To find where a subject appears in this collection,
+run the `{launcher}` in its output folder: `{output_folder}`.
 """,
     "es": """\
 ## Colección {alias}: {name}
 
 {subject}
 
-Sumario: `{alias}__index.md`. Cronología: `{alias}__timeline.md`. Revisión:
-`{alias}__review.md`. Para encontrar dónde aparece un tema en esta
-colección, ejecute el `buscar.bat` de su carpeta de salida: `{output_folder}`.
+Sumario: `{index}`. Cronología: `{timeline}`. Revisión:
+`{review}`. Para encontrar dónde aparece un tema en esta
+colección, ejecute el `{launcher}` de su carpeta de salida: `{output_folder}`.
 """,
 }

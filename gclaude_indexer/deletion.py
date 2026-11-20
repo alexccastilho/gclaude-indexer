@@ -24,7 +24,21 @@ from pathlib import Path
 from . import workdir
 from .catalog import CatalogEntry, remove_project
 from .events import LOG_FOLDER_NAME
+from .lock import LOCK_FILE_NAME
 from .managed_block import BACKUP_SUFFIX, without_managed_block
+from .output_names import (
+    CLAUDE_MD_FILENAME,
+    GROUP_INDEX_GLOB,
+    GROUP_TIMELINE_GLOB,
+    INDEX_FILENAME,
+    LEGACY_LEGISLATION_GLOB,
+    NORMS_FILENAME,
+    PROJECT_DB_SIDECARS,
+    PROJECT_INSTRUCTIONS_FILENAME,
+    REVIEW_FILENAME,
+    SEARCH_LAUNCHER_FILENAME,
+    TIMELINE_FILENAME,
+)
 from .paths import PROJECT_DB_NAME, RAW_ITEMS_FILE_NAME
 
 
@@ -32,16 +46,16 @@ from .paths import PROJECT_DB_NAME, RAW_ITEMS_FILE_NAME
 # folder itself can be one the user picked with their own files in it.
 GENERATED_FOLDERS = (workdir.CONVERTED_FOLDER, workdir.BLOCKS_FOLDER, "windows", LOG_FOLDER_NAME)
 GENERATED_FILES = (
-    PROJECT_DB_NAME, f"{PROJECT_DB_NAME}-journal", f"{PROJECT_DB_NAME}-wal", f"{PROJECT_DB_NAME}-shm",
-    "project.lock", RAW_ITEMS_FILE_NAME,
-    "index.md", "index-*.md", "timeline.md", "review.md",
+    PROJECT_DB_NAME, *PROJECT_DB_SIDECARS,
+    LOCK_FILE_NAME, RAW_ITEMS_FILE_NAME,
+    INDEX_FILENAME, GROUP_INDEX_GLOB, TIMELINE_FILENAME, REVIEW_FILENAME,
     # Fase 31: a legislação do Planalto e a cronologia por grupo. Sem
     # estes, "excluir com os arquivos" deixava a pasta de saída de pé.
     # Fase 38: `legislacao-*.md` fica só para apagar o que versões antigas
     # deixaram; `normas-citadas.md` é o que o substituiu.
-    "legislacao-*.md", "timeline-*.md", "normas-citadas.md", "buscar.bat",
+    LEGACY_LEGISLATION_GLOB, GROUP_TIMELINE_GLOB, NORMS_FILENAME, SEARCH_LAUNCHER_FILENAME,
 )
-SHARED_FILES = ("project_instructions.md", "CLAUDE.md")
+SHARED_FILES = (PROJECT_INSTRUCTIONS_FILENAME, CLAUDE_MD_FILENAME)
 
 
 @dataclass

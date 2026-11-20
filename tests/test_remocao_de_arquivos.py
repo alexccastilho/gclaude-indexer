@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import hashlib
 
-from gclaude_indexer.artifacts import generate_index_md, group_index_filename
+from gclaude_indexer.artifacts import generate_index_md
 from gclaude_indexer.events import list_events
 from gclaude_indexer.invalidation import apply_update_plan
+from gclaude_indexer.output_names import group_index_filename
 from gclaude_indexer.update_plan import build_update_plan, detect_changes
 
 from tests.test_phase17 import _config, _conn, _group_key, _registrar_com_paginas
