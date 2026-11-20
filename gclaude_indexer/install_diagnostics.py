@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 
 from .hardware import _detect_nvidia_gpu, _detect_wmi_gpu, gpu_driver
-from .engine_local import recommended_local_model
+from .local_models import recommended_local_model
 from .i18n import DEFAULT_LANGUAGE, translate
 from .sensors import DLL_NAME, dll_path, unavailable_reason
 from .tools import find as find_tool

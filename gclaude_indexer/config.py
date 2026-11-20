@@ -34,6 +34,7 @@ from functools import cache
 from pathlib import Path
 
 from .parallelism import MODES as PARALLELISM_MODES
+from .engine_names import ENGINE_AUTOMATIC, ENGINE_LOCAL, ENGINE_RULES
 from .file_types import valid_categories
 from .i18n import translate, DEFAULT_LANGUAGE
 
@@ -41,7 +42,7 @@ COLLECTION_TYPES = {"processo", "biblioteca"}
 GROUP_MODES = {"subfolder", "name_pattern", "all_together"}
 # "claude_code" (manual) saiu na 2.0.0: `project.load_project` converte um
 # projeto salvo com ele para "automatic" antes de validar.
-CLASSIFICATION_ENGINES = {"automatic", "rules", "local"}
+CLASSIFICATION_ENGINES = {ENGINE_AUTOMATIC, ENGINE_RULES, ENGINE_LOCAL}
 # Explicit user request: an option to force CPU/RAM even with a GPU
 # available, in addition to the automatic default (uses the GPU to the
 # max, overflows to RAM). Only affects the 'local' engine — see
@@ -103,7 +104,7 @@ class ProjectConfig:
     overlap: int = 2
     chars_per_page: int = 2000
     ocr_language: str = "por"
-    classification_engine: str = "automatic"
+    classification_engine: str = ENGINE_AUTOMATIC
     local_model: str = "automatic"
     processing_mode: str = "automatic"
     parallelism: str = "automatic"

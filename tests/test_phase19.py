@@ -700,7 +700,7 @@ def test_com_o_ollama_parado_o_modelo_no_disco_conta(tmp_path, monkeypatch):
     um servidor parado devolve vazio — indistinguível de uma máquina sem
     modelo nenhum, se ninguém olhar o disco."""
     from gclaude_indexer import install_diagnostics
-    from gclaude_indexer.engine_local import DEFAULT_LOCAL_MODEL
+    from gclaude_indexer.ollama_models import DEFAULT_LOCAL_MODEL
 
     nome, _, tag = DEFAULT_LOCAL_MODEL.partition(":")
     manifesto = (tmp_path / "manifests" / "registry.ollama.ai" /

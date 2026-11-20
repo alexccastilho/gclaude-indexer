@@ -110,11 +110,9 @@ from .readers import reader_pool
 from .formatting import format_date, format_datetime
 from .i18n import DEFAULT_LANGUAGE, AVAILABLE_LANGUAGES, LANGUAGE_COOKIE_NAME, valid_language, translate
 from .layout import DEFAULT_LAYOUT, AVAILABLE_LAYOUTS, LAYOUT_COOKIE_NAME, valid_layout
-from ..engine_local import (
-    _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT,
-    LOCAL_MODEL_PROFILES,
-    default_local_profile,
-)
+from ..engine_local import _CONTEXT_FIELD_LIMIT as EXTRA_RULES_PROMPT_LIMIT
+from ..local_models import LOCAL_MODEL_PROFILES, default_local_profile
+from ..engine_names import ENGINE_AUTOMATIC, ENGINE_LOCAL, ENGINE_RULES
 from ..ollama_models import list_installed_models
 from ..file_status import AWAITING_PROCESSING, FAILED, WINDOW_DONE, WINDOW_PENDING, in_params
 from .folder_picker import choose_folder
@@ -141,6 +139,7 @@ def _static_version() -> str:
 
 
 templates.env.globals["static_version"] = _static_version()
+templates.env.globals["ENGINE_LOCAL"] = ENGINE_LOCAL
 
 # Fase 32: the one thing that lets a page ask for the elevated sensor
 # helper. New on every server start, never written to disk, embedded only
@@ -183,7 +182,7 @@ LOG_KNOWN_STEPS = set(STEPS) | {"import", "diagnostics", "update", "relocation"}
 # (config.py) is a set and has no stable order — it stays the source of
 # truth for validation, never for presentation. A test guarantees the two
 # sets match.
-CLASSIFICATION_ENGINES_ORDER: tuple[str, ...] = ("automatic", "rules", "local")
+CLASSIFICATION_ENGINES_ORDER: tuple[str, ...] = (ENGINE_AUTOMATIC, ENGINE_RULES, ENGINE_LOCAL)
 
 
 def render(request: Request, template_name: str, context: dict | None = None, status_code: int = 200) -> HTMLResponse:

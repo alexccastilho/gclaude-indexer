@@ -41,7 +41,8 @@ from ..conversion import convert, requeue_ocr_failures
 from ..extraction import extract_pages
 from ..windows_prep import prepare_windows
 from ..auto_settings import resolve_auto_settings
-from ..engine_local import model_to_use
+from ..engine_names import ENGINE_LOCAL
+from ..local_models import model_to_use
 from ..orchestrator import resolve_effective_engine, run_classification
 from ..project import load_project
 from .. import source_folder
@@ -508,7 +509,7 @@ class TaskManager:
                     # sqlite3 does not allow sharing a connection between
                     # threads.
                     engine = resolve_effective_engine(work_conn, current_config, language=language)
-                    model = model_to_use(current_config) if engine == "local" else None
+                    model = model_to_use(current_config) if engine == ENGINE_LOCAL else None
                     cursor = work_conn.execute(
                         """
                         INSERT INTO run (step, engine, model, parallelism, started_at, items, ok)
