@@ -44,10 +44,11 @@ STEP_ORDER: tuple[str, ...] = ("scan", "conversion", "extraction", "windows", "c
 # `next_pending_step`/`step_status` (the progress table and the "Run next
 # step"/"Run all steps" buttons), and `import` has its own button,
 # `diagnostics` runs inside classification, `update` before the scan,
-# `relocation` when the output folder moves. The step names are stored in
-# `event.step`, so they never change. `tests/test_chaves_de_evento.py`
-# checks every recorded step is here.
-LOG_STEPS: frozenset[str] = frozenset(STEP_ORDER) | {"import", "diagnostics", "update", "relocation"}
+# `relocation` when the output folder moves, `instructions` when the user's
+# part of the project instructions repeats the automatic block. The step
+# names are stored in `event.step`, so they never change.
+# `tests/test_chaves_de_evento.py` checks every recorded step is here.
+LOG_STEPS: frozenset[str] = frozenset(STEP_ORDER) | {"import", "diagnostics", "update", "relocation", "instructions"}
 
 
 class SourceFolderMissing(Exception):

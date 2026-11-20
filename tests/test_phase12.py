@@ -286,6 +286,32 @@ def test_log_traduz_a_etapa_de_importacao_e_nao_mostra_chave_crua(cliente, tmp_p
     assert ">import<" not in corpo_es
 
 
+def test_log_traduz_a_etapa_das_instrucoes_e_nao_mostra_chave_crua(cliente, tmp_path):
+    """The three `log.instructions.*` events are recorded under the step
+    `"instructions"`, which was missing from the log's step list and had no
+    `step.instructions.title`: the log showed the raw id in every language."""
+    from gclaude_indexer.catalog import find_project
+    from gclaude_indexer.events import record_event
+    from gclaude_indexer.project import load_project
+
+    projeto_id = _criar_projeto(cliente, tmp_path)
+    _config, conn = load_project(find_project(projeto_id).output_folder)
+    try:
+        record_event(
+            conn, "instructions", "info", "log.instructions.dedup_kept", {"count": 1, "sections": "Acervo"},
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    for idioma, rotulo in (("pt", "Instruções do projeto"), ("en", "Project instructions"),
+                           ("es", "Instrucciones del proyecto")):
+        cliente.cookies.set("language", idioma)
+        corpo = cliente.get(f"/projects/{projeto_id}/run/log").text
+        assert f'<span class="log-step">{rotulo}</span>' in corpo
+        assert ">instructions<" not in corpo
+
+
 # --- Tarefa 6: extensões agrupadas por família -----------------------------
 
 
