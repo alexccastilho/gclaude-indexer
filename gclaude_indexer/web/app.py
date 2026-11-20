@@ -46,7 +46,7 @@ from .state import _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _release_all_projects
 
 
 SYSTEM_VERSION = "2.1.0"
-# Every page shows it (`base.html`, About); the build reads the line above.
+# The About page shows it (`about.html`); the build reads the line above.
 templates.env.globals["system_version"] = SYSTEM_VERSION
 
 
