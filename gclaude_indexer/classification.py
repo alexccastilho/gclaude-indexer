@@ -94,17 +94,9 @@ class ClassifiedItem:
 
 
 def files_in_page_order(pages: Sequence[WindowPage]) -> list[str]:
-    """The item's files in the order their pages appear (rules engine, the
-    local engine's range mode, Planalto acts)."""
+    """The item's files in the order their pages appear: every engine (rules,
+    local, Planalto acts, blank pages and coverage items)."""
     return list(dict.fromkeys(page.file_name for page in pages))
-
-
-def files_sorted(pages: Sequence[WindowPage]) -> list[str]:
-    """The item's files in alphabetical order (the local engine's per-page
-    mode, blank pages and coverage items). Differs from
-    `files_in_page_order` only for an item over several files; which order
-    is right is still open."""
-    return sorted({page.file_name for page in pages})
 
 
 def item_for_pages(

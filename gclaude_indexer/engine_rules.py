@@ -26,6 +26,7 @@ from pathlib import Path
 
 from . import planalto
 from .classification import (
+    SUMMARY_CHAR_LIMIT,
     ClassifiedItem,
     WindowItems,
     WindowPage,
@@ -267,11 +268,11 @@ class RulesEngine:
         else:
             confidence = "medium"
 
-        # No summary cap here, unlike the local engine and the Planalto acts
-        # (`classification.SUMMARY_CHAR_LIMIT`).
+        # The same summary cap as the local engine (`classification.SUMMARY_CHAR_LIMIT`).
+        summary = self._find_summary(pages)
         return item_for_pages(
             pages, engine=ENGINE_RULES, confidence=confidence, type_=type_, date=date_value,
-            author=self._find_author(pages), summary=self._find_summary(pages),
+            author=self._find_author(pages), summary=summary[:SUMMARY_CHAR_LIMIT] if summary else None,
         )
 
 

@@ -28,7 +28,7 @@ from pathlib import Path
 from .classification import (
     STOP_CLASSIFYING, WindowItems, WindowPage, WindowRunCounts, ClassifiedItem, classify_windows,
     page_order, starts_new_document, normalize_type,
-    SUMMARY_CHAR_LIMIT, files_sorted, item_for_pages, normalize_confidence, normalize_date,
+    SUMMARY_CHAR_LIMIT, item_for_pages, normalize_confidence, normalize_date,
 )
 from .config import ProjectConfig
 from .engine_names import ENGINE_LOCAL
@@ -1407,7 +1407,6 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
             author=_answer_text(dados, "author"), summary=resumo,
             has_table=any(bool(d.get("has_table")) or p.has_table for p, d in atual),
             has_image=any(bool(d.get("has_image")) or bool(p.image_count) for p, d in atual),
-            files=files_sorted,
         ))
         atual.clear()
 
@@ -1685,7 +1684,7 @@ def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], li
     for block in blocks:
         items.append(item_for_pages(
             block, engine=ENGINE_LOCAL, confidence="high", type_=BLANK_PAGE_TYPE, summary=BLANK_PAGE_SUMMARY,
-            has_table=False, has_image=False, files=files_sorted,
+            has_table=False, has_image=False,
         ))
     return items, [page for page in pages if not is_blank_page(page)]
 
@@ -1730,7 +1729,7 @@ def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
         if len(texto) > _FALLBACK_SUMMARY_CHARS:
             resumo += "…"
         itens.append(item_for_pages(
-            bloco, engine=ENGINE_LOCAL, confidence="low", summary=resumo or None, files=files_sorted,
+            bloco, engine=ENGINE_LOCAL, confidence="low", summary=resumo or None,
         ))
     return itens
 
