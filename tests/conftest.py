@@ -123,14 +123,10 @@ def _telas_da_execucao_sem_reaproveitar(monkeypatch):
     """1.9.0: parada, a tela de Execução reaproveita a resposta por até 30 s.
     Os testes mudam o banco por fora e esperam ver a mudança na hora; o
     reaproveitamento tem teste próprio, que liga o prazo de novo."""
-    from gclaude_indexer.web import caches, routes_settings
+    from gclaude_indexer.web import caches
 
     monkeypatch.setattr(caches, "IDLE_FRAGMENT_SECONDS", 0.0)
-    with caches._idle_fragments_lock:
-        caches._idle_fragments.clear()
-    with caches._quality_cache_lock:
-        caches._quality_cache.clear()
-    routes_settings._about_cache.clear()
+    caches.forget_screen_caches()
 
 
 @pytest.fixture(autouse=True)
@@ -140,10 +136,7 @@ def _leitores_fechados_ao_fim_do_teste():
     poder ser apagada no Windows e o teste seguinte começar do zero."""
     from gclaude_indexer.web.readers import reader_pool
 
-    from gclaude_indexer.web import step_state
-
     reader_pool.close_all()
-    step_state._status_cache.clear()
     yield
     reader_pool.close_all()
 

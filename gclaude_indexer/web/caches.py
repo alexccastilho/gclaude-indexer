@@ -7,8 +7,10 @@
 # any later version. See the LICENSE file for details.
 
 """Answers kept between requests while their inputs have not moved: the
-Execution screen's idle fragments and the per-project summaries
-(quality, pending items, run comparison)."""
+Execution screen's idle fragments, the per-project summaries (quality,
+pending items, run comparison) and the About screen's installation check.
+`forget_screen_caches()` drops them all, with the step status of
+`step_state`."""
 
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import time
 
 from ..config import ProjectConfig
 from ..quality import quality_summary
+from . import step_state
 from .background_runs import task_manager
 from ..file_status import FAILED, WINDOW_DONE, WINDOW_PENDING
 from .operations import _OPERATIONS
@@ -76,6 +79,23 @@ def _idle_fragment(project_id: int, name: str, language: str, build) -> str:
 # project and recomputed when that cheap signature moves.
 _quality_cache: dict[tuple[int, str], tuple[tuple, object]] = {}
 _quality_cache_lock = threading.Lock()
+
+# The About screen's installation check, per language (`routes_settings`
+# keeps it for `ABOUT_CACHE_SECONDS`).
+_about_cache: dict[str, tuple[float, object]] = {}
+
+
+def forget_screen_caches() -> None:
+    """Drops every answer the screens keep between requests, so the next
+    request reads the project again: after a folder move, and between
+    tests that change the database behind the server's back."""
+    with step_state._status_cache_lock:
+        step_state._status_cache.clear()
+    with _idle_fragments_lock:
+        _idle_fragments.clear()
+    with _quality_cache_lock:
+        _quality_cache.clear()
+    _about_cache.clear()
 
 
 def _quality_signature(conn, config: ProjectConfig) -> tuple:

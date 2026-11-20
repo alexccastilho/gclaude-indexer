@@ -23,10 +23,9 @@ from .. import relocation
 from ..project import load_project
 from ..sync import check_sync, mark_synced
 from ..lock import check_lock
-from . import step_state
 from .readers import reader_pool
 from .i18n import DEFAULT_LANGUAGE, translate
-from .caches import _idle_fragments, _idle_fragments_lock, _quality_cache, _quality_cache_lock
+from .caches import forget_screen_caches
 from .rendering import _side_bar_cache
 from .state import _release_project, lock_manager
 
@@ -170,12 +169,7 @@ def _after_relocation(old: str, new: str) -> None:
     """O que a interface guarda pela pasta antiga e precisa esquecer."""
     _release_project(old, keep_lock_file=True)
     _side_bar_cache.clear()
-    with step_state._status_cache_lock:
-        step_state._status_cache.clear()
-    with _idle_fragments_lock:
-        _idle_fragments.clear()
-    with _quality_cache_lock:
-        _quality_cache.clear()
+    forget_screen_caches()
 
 
 def _settle_relocation(project_id: int, entry: CatalogEntry) -> CatalogEntry:
