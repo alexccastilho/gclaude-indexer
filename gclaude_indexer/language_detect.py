@@ -87,16 +87,12 @@ UNSPACED_SCRIPTS = frozenset({"han", "kana", "hangul", "thai", "lao", "khmer", "
 # alfabética: o limite de caracteres por página é menor (`auto_settings`).
 CJK_SCRIPTS = frozenset({"han", "kana", "hangul"})
 
-# Faixa de `_RANGES` que ficou de fora da classe abaixo quando ela era uma
-# cópia escrita à mão (o hangul de meia largura).
-_OUTSIDE_UNSPACED_CLASS = frozenset({(0xFFA0, 0xFFDC)})
-
 
 def _unspaced_ranges() -> list[tuple[int, int]]:
     """As faixas de `_RANGES` das escritas sem espaço, contíguas unidas."""
     merged: list[tuple[int, int]] = []
     for start, end, script in _RANGES:
-        if script not in UNSPACED_SCRIPTS or (start, end) in _OUTSIDE_UNSPACED_CLASS:
+        if script not in UNSPACED_SCRIPTS:
             continue
         if merged and merged[-1][1] + 1 >= start:
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
