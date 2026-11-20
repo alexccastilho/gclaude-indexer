@@ -156,9 +156,9 @@ def _mudanca_de_pasta_isolada(tmp_path, monkeypatch):
     vão para a pasta temporária do teste, nunca para a pasta local real.
     Quem testa a mudança liga a detecção de novo (`test_mudanca_de_pasta.py`)."""
     from gclaude_indexer import relocation
-    from gclaude_indexer.web import app as modulo_app
+    from gclaude_indexer.web import project_access
 
     pasta = tmp_path / "_relocation_local"
     monkeypatch.setattr(relocation, "_journal_path", lambda: pasta / relocation.JOURNAL_FILE_NAME)
     monkeypatch.setattr(relocation, "_postponed_path", lambda: pasta / relocation.POSTPONED_FILE_NAME)
-    monkeypatch.setattr(modulo_app, "_relocation_due", lambda config: False)
+    monkeypatch.setattr(project_access, "_relocation_due", lambda config: False)

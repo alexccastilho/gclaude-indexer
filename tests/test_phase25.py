@@ -362,6 +362,7 @@ def cliente(tmp_path, monkeypatch):
 
 
 import gclaude_indexer.web.app as app_mod  # noqa: E402  (usado pela fixture acima)
+from gclaude_indexer.web import project_access
 
 
 def _criar_projeto(cliente, tmp_path):
@@ -388,7 +389,7 @@ def test_consulta_da_tela_com_banco_ocupado_devolve_204(cliente, tmp_path, monke
     def _ocupado(*args, **kwargs):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(app_mod, "load_project", _ocupado)
+    monkeypatch.setattr(project_access, "load_project", _ocupado)
     # 1.9.1: com o leitor persistente ligado, `load_project` nem é chamado;
     # este teste cobre o caminho normal, o leitor tem o seu em test_phase41.
     from gclaude_indexer.web.readers import reader_pool
@@ -405,7 +406,7 @@ def test_pagina_inteira_com_banco_ocupado_explica_em_vez_de_erro_500(cliente, tm
     def _ocupado(*args, **kwargs):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(app_mod, "load_project", _ocupado)
+    monkeypatch.setattr(project_access, "load_project", _ocupado)
     cliente.cookies.set("language", "pt")
     resposta = cliente.get(f"/projects/{projeto}/run/steps")
     assert resposta.status_code == 503
