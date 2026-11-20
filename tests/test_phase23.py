@@ -17,6 +17,7 @@ from gclaude_indexer import pipeline
 from gclaude_indexer.web import background_runs
 from gclaude_indexer.web.app import app
 from gclaude_indexer.web.background_runs import task_manager
+from tests._espera import esperar
 
 
 @pytest.fixture
@@ -72,15 +73,6 @@ def _contagem_lenta(monkeypatch):
     return liberar
 
 
-def _esperar(condicao, timeout=30):
-    fim = time.monotonic() + timeout
-    while time.monotonic() < fim:
-        if condicao():
-            return
-        time.sleep(0.05)
-    raise AssertionError("condição não atingida a tempo")
-
-
 def test_rodar_etapa_seguinte_responde_antes_de_contar_a_pasta(cliente, tmp_path, monkeypatch):
     projeto_id, _ = _criar_projeto(cliente, tmp_path)
     liberar = _contagem_lenta(monkeypatch)
@@ -95,7 +87,7 @@ def test_rodar_etapa_seguinte_responde_antes_de_contar_a_pasta(cliente, tmp_path
         assert tarefa is not None and tarefa.running
     finally:
         liberar.set()
-    _esperar(lambda: not task_manager.get(projeto_id, "scan").running)
+    esperar(lambda: not task_manager.get(projeto_id, "scan").running)
     assert task_manager.get(projeto_id, "scan").finished_ok
 
 
@@ -104,13 +96,13 @@ def test_rodar_tudo_mostra_a_etapa_enquanto_conta_a_pasta(cliente, tmp_path, mon
     liberar = _contagem_lenta(monkeypatch)
     try:
         cliente.post(f"/projects/{projeto_id}/run-all")
-        _esperar(lambda: task_manager.get(projeto_id, "scan") is not None, timeout=3)
+        esperar(lambda: task_manager.get(projeto_id, "scan") is not None, timeout=3)
         # A tarefa existe antes de a thread chegar ao `on_found(7)`: no runner
         # do GitHub a tela foi lida nesse
         # intervalo e mostrou "Contando os arquivos" sem o contador. Espera-se
         # o contador, que é o que a contagem lenta promete.
         progresso = lambda: cliente.get(f"/projects/{projeto_id}/run/progress").text  # noqa: E731
-        _esperar(lambda: "7 arquivo(s) encontrado(s)" in progresso(), timeout=10)
+        esperar(lambda: "7 arquivo(s) encontrado(s)" in progresso(), timeout=10)
         html = progresso()
         assert "Nenhuma etapa rodando" not in html
         # um contador que cresce: a tela mostra que o sistema não travou
@@ -119,7 +111,7 @@ def test_rodar_tudo_mostra_a_etapa_enquanto_conta_a_pasta(cliente, tmp_path, mon
     finally:
         liberar.set()
         task_manager.pause(projeto_id)
-    _esperar(lambda: not any(t.running for (pid, _), t in task_manager._tasks.items() if pid == projeto_id))
+    esperar(lambda: not any(t.running for (pid, _), t in task_manager._tasks.items() if pid == projeto_id))
 
 
 def test_segundo_clique_nao_abre_outra_varredura(cliente, tmp_path, monkeypatch):
@@ -144,7 +136,7 @@ def test_segundo_clique_nao_abre_outra_varredura(cliente, tmp_path, monkeypatch)
     for clique in cliques:
         clique.join(5)
     liberar.set()
-    _esperar(lambda: not task_manager.get(projeto_id, "scan").running)
+    esperar(lambda: not task_manager.get(projeto_id, "scan").running)
 
     assert len(respostas) == 3
     assert len(chamadas) == 1
@@ -155,7 +147,7 @@ def test_contagem_ignora_os_arquivos_de_sistema_como_a_varredura(cliente, tmp_pa
     (origem / "volume_1" / "desktop.ini").write_text("[.ShellClassInfo]", encoding="utf-8")
 
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar(lambda: task_manager.get(projeto_id, "scan") is not None
+    esperar(lambda: task_manager.get(projeto_id, "scan") is not None
              and not task_manager.get(projeto_id, "scan").running)
 
     tarefa = task_manager.get(projeto_id, "scan")
@@ -187,7 +179,7 @@ def test_a_pasta_de_origem_e_percorrida_uma_vez_so(cliente, tmp_path, monkeypatc
 
     monkeypatch.setattr(source_folder, "walk_source_stats", contar)
     cliente.post(f"/projects/{projeto_id}/run-next")
-    _esperar(lambda: task_manager.get(projeto_id, "scan") is not None
+    esperar(lambda: task_manager.get(projeto_id, "scan") is not None
              and not task_manager.get(projeto_id, "scan").running)
 
     assert task_manager.get(projeto_id, "scan").finished_ok

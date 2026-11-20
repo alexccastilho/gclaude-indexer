@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from gclaude_indexer.lock import (
     remove_lock,
     check_lock,
 )
+from tests._espera import esperar
 
 
 def _escrever_trava_manual(pasta_saida: Path, maquina: str, usuario: str, minutos_atras: float) -> None:
@@ -95,8 +95,13 @@ def test_verificar_trava_abandonada_para_maquina_diferente_antiga(tmp_path):
 
 def test_atualizar_trava_preserva_identidade_e_avanca_relogio(tmp_path):
     original = create_lock(tmp_path)
-    time.sleep(1.1)
-    atualizada = refresh_lock(tmp_path, original)
+
+    def _relogio_avancou():
+        # O horário da trava vai até o segundo: renova até o segundo virar.
+        nova = refresh_lock(tmp_path, original)
+        return nova if nova.updated_at != original.updated_at else None
+
+    atualizada = esperar(_relogio_avancou, 5)
     assert atualizada.machine == original.machine
     assert atualizada.created_at == original.created_at
     assert atualizada.updated_at != original.updated_at
@@ -124,8 +129,9 @@ def test_gerenciador_travas_abre_e_o_heartbeat_atualiza(tmp_path):
     gerenciador = LockManager(heartbeat_interval_s=0.05)
     gerenciador.open(tmp_path)
     trava_inicial = read_lock(tmp_path)
+    gravada = lock_path(tmp_path).stat().st_mtime_ns
 
-    time.sleep(0.2)
+    esperar(lambda: lock_path(tmp_path).stat().st_mtime_ns != gravada, 5, "o heartbeat não regravou a trava")
 
     trava_depois = read_lock(tmp_path)
     assert trava_depois.updated_at >= trava_inicial.updated_at
