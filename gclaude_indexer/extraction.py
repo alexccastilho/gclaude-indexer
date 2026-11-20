@@ -48,6 +48,10 @@ from .worker_pool import (
 )
 from .parallelism import workers_for
 from . import light_formats
+from .file_status import (
+    EXTRACTED, HAS_INTERMEDIATE, MARK_EXTRACTED, MARK_EXTRACTION_FAILED, RESET_TO_DISCOVERED_KEEP_LANGUAGE,
+    in_params,
+)
 from .file_types import MESSAGE_PAGE_CATEGORIES, PAGED_CATEGORIES, category_of_extension
 from .fulltext import index_pending
 from .paths import natural_sort_key
@@ -230,9 +234,8 @@ def _page_row_count(conn, file_id: int) -> int:
 
 
 def _build_groups(conn) -> dict[str, list]:
-    rows = conn.execute(
-        "SELECT * FROM file WHERE status IN ('converted', 'extracted') ORDER BY relative_path"
-    ).fetchall()
+    marks, values = in_params(HAS_INTERMEDIATE)
+    rows = conn.execute(f"SELECT * FROM file WHERE status IN ({marks}) ORDER BY relative_path", values).fetchall()
 
     groups: dict[str, list] = defaultdict(list)
     for row in rows:
@@ -261,10 +264,7 @@ def _queue_failure(writer: BatchWriter, row, error_message: str, result: Extract
     error_message = error_message[:ERROR_MESSAGE_CHAR_LIMIT]
 
     def op(conn) -> None:
-        conn.execute(
-            "UPDATE file SET status = 'failed', error = ? WHERE id = ?",
-            (error_message, row["id"]),
-        )
+        conn.execute(MARK_EXTRACTION_FAILED, (error_message, row["id"]))
         record_event(
             conn, "extraction", "error", "log.extraction.failed",
             {"name": row["name"], "error": error_message}, language=language, commit=False,
@@ -279,10 +279,8 @@ def _queue_reconversion(writer: BatchWriter, row, result: ExtractionResult, lang
     'discovered', so the next conversion makes it again."""
 
     def op(conn) -> None:
-        conn.execute(
-            "UPDATE file SET status = 'discovered', page_count = NULL, error = NULL WHERE id = ?",
-            (row["id"],),
-        )
+        # Same SQL as the OCR retry, but no page to delete: extraction never wrote any for this file.
+        conn.execute(RESET_TO_DISCOVERED_KEEP_LANGUAGE, (row["id"],))
         record_event(
             conn, "extraction", "warning", "log.extraction.intermediate_missing",
             {"name": row["name"]}, language=language, commit=False,
@@ -304,7 +302,7 @@ def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_s
 
     def op(conn) -> None:
         written[0] = _write_pages(conn, config, row, pages, start_sheet) - start_sheet
-        conn.execute("UPDATE file SET status = 'extracted' WHERE id = ?", (row["id"],))
+        conn.execute(MARK_EXTRACTED, (row["id"],))
 
     writer.add(op)
     result.files_processed += 1
@@ -359,7 +357,7 @@ def _extract_guarded(
             index = current_position[group_key]
             row = group_files[index]
 
-            if row["status"] == "extracted":
+            if row["status"] == EXTRACTED:
                 current_sheet[group_key] += _page_row_count(conn, row["id"])
                 current_position[group_key] += 1
                 continue
@@ -384,7 +382,7 @@ def _extract_guarded(
         (group_key, index, row)
         for group_key, group_files in groups.items()
         for index, row in enumerate(group_files)
-        if row["status"] != "extracted"
+        if row["status"] != EXTRACTED
     ]
 
     crash_reported = False
@@ -476,7 +474,7 @@ def extract_pages(
 
     workers = workers_for(config.parallelism)
     n_pending = sum(
-        1 for group_files in groups.values() for row in group_files if row["status"] != "extracted"
+        1 for group_files in groups.values() for row in group_files if row["status"] != EXTRACTED
     )
     # With 0 or 1 file pending there's nothing to parallelize — the
     # `ProcessPoolExecutor` startup cost (spawn, on Windows) outweighs any

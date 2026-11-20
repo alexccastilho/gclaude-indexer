@@ -59,6 +59,7 @@ from . import language_detect, light_formats
 from .config import ProjectConfig
 from .db import trigram_available
 from .events import record_event
+from .file_status import EXTRACTED
 from .file_types import MESSAGE_PAGE_CATEGORIES, category_of_extension, is_whole_document_file
 from .parallelism import io_workers_for
 from .workdir import converted_artifact_path
@@ -380,10 +381,11 @@ def pending_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT * FROM file
-        WHERE status = 'extracted'
+        WHERE status = ?
           AND id NOT IN (SELECT file_id FROM fulltext_file)
         ORDER BY relative_path
-        """
+        """,
+        (EXTRACTED,),
     ).fetchall()
 
 
@@ -686,7 +688,7 @@ def coverage(conn: sqlite3.Connection) -> tuple[int, int]:
     """`(files in the search, files extracted)`."""
     indexed = conn.execute(
         "SELECT COUNT(*) FROM fulltext_file JOIN file ON file.id = fulltext_file.file_id "
-        "WHERE file.status = 'extracted'"
+        "WHERE file.status = ?", (EXTRACTED,)
     ).fetchone()[0]
-    extracted = conn.execute("SELECT COUNT(*) FROM file WHERE status = 'extracted'").fetchone()[0]
+    extracted = conn.execute("SELECT COUNT(*) FROM file WHERE status = ?", (EXTRACTED,)).fetchone()[0]
     return indexed, extracted

@@ -45,6 +45,7 @@ from .ollama_backend import OLLAMA_SERVE_LOG_NAME
 from .ollama_models import DEFAULT_LOCAL_MODEL
 from .subprocess_utils import start_in_background
 from . import language_detect, planalto
+from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
 from .paths import RAW_ITEMS_FILE_NAME, machine_local_folder
 from .tools import find as find_tool
 
@@ -2048,7 +2049,7 @@ def requeue_fallback_windows(conn, jsonl_path: Path) -> int:
     for start in range(0, len(keys), 500):
         chunk = keys[start:start + 500]
         conn.execute(
-            f"UPDATE window SET status = 'pending' WHERE key IN ({','.join('?' * len(chunk))})", chunk
+            f"UPDATE window SET status = ? WHERE key IN ({','.join('?' * len(chunk))})", (WINDOW_PENDING, *chunk)
         )
     temporary.replace(jsonl_path)
     conn.commit()
@@ -2103,7 +2104,7 @@ def classify_pending(
     model_retry_at = 0.0 if model_required else time.monotonic() + MODEL_RETRY_SECONDS
     outages = 0
     stopped = False
-    pending_windows = conn.execute("SELECT * FROM window WHERE status = 'pending' ORDER BY id").fetchall()
+    pending_windows = conn.execute("SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)).fetchall()
     gpu_plan_logged = False
     backend_logged = False
 
@@ -2302,9 +2303,7 @@ def classify_pending(
                         escrever(item)
 
                 jsonl_file.flush()
-                writer.add(lambda c, window_id=window["id"]: c.execute(
-                    "UPDATE window SET status = 'done' WHERE id = ?", (window_id,)
-                ))
+                writer.add(lambda c, window_id=window["id"]: c.execute(MARK_WINDOW_DONE, (window_id,)))
                 result.windows_processed += 1
             writer.flush()
         except BaseException:

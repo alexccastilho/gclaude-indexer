@@ -109,6 +109,7 @@ from ..engine_local import (
     default_local_profile,
 )
 from ..ollama_models import list_installed_models
+from ..file_status import AWAITING_PROCESSING, FAILED, WINDOW_DONE, WINDOW_PENDING, in_params
 from .folder_picker import choose_folder
 from .theme import THEME_COOKIE_NAME, DEFAULT_THEME, AVAILABLE_THEMES, valid_theme
 
@@ -1182,7 +1183,7 @@ def _reports_to_regenerate(conn):
     """
     if _pipeline_has_pending_work(conn):
         return None
-    if conn.execute("SELECT 1 FROM window WHERE status = 'pending' LIMIT 1").fetchone():
+    if conn.execute("SELECT 1 FROM window WHERE status = ? LIMIT 1", (WINDOW_PENDING,)).fetchone():
         return None
     return stale_artifacts(conn)
 
@@ -1234,9 +1235,8 @@ def _pipeline_has_pending_work(conn) -> bool:
     twice is prevented by the key-based layout comparison in
     `update_plan._layout_disagrees`, not by this guard.
     """
-    return conn.execute(
-        "SELECT 1 FROM file WHERE status IN ('discovered', 'converted') LIMIT 1"
-    ).fetchone() is not None
+    marks, values = in_params(AWAITING_PROCESSING)
+    return conn.execute(f"SELECT 1 FROM file WHERE status IN ({marks}) LIMIT 1", values).fetchone() is not None
 
 
 @app.get("/projects/{project_id}/update/banner", response_class=HTMLResponse)
@@ -1753,11 +1753,12 @@ def _quality_signature(conn, config: ProjectConfig) -> tuple:
     row = conn.execute(
         """
         SELECT (SELECT MAX(id) FROM item), (SELECT COUNT(*) FROM item),
-               (SELECT COUNT(*) FROM window WHERE status = 'done'),
-               (SELECT COUNT(*) FROM window WHERE status = 'pending'),
+               (SELECT COUNT(*) FROM window WHERE status = ?),
+               (SELECT COUNT(*) FROM window WHERE status = ?),
                (SELECT MAX(id) FROM page),
-               (SELECT COUNT(*) FROM file WHERE status = 'failed')
-        """
+               (SELECT COUNT(*) FROM file WHERE status = ?)
+        """,
+        (WINDOW_DONE, WINDOW_PENDING, FAILED),
     ).fetchone()
     return (tuple(row), config.classification_engine, config.local_model)
 

@@ -38,6 +38,7 @@ from pathlib import Path
 from .config import ProjectConfig
 from .events import record_event
 from .file_types import category_of_extension
+from .file_status import SKIPPED
 from .i18n import nested
 from .ollama_models import list_installed_models
 from .settings_proposal import (
@@ -102,7 +103,7 @@ def _inventory(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     """`(caminho relativo, categoria)` dos arquivos que entram no índice.
     Extensão sem categoria (regra "todos") é lida como texto."""
     rows = conn.execute(
-        "SELECT relative_path, extension FROM file WHERE status != 'skipped'"
+        "SELECT relative_path, extension FROM file WHERE status != ?", (SKIPPED,)
     ).fetchall()
     return [
         (row["relative_path"], category_of_extension("." + (row["extension"] or "")) or "text")
@@ -181,7 +182,7 @@ def _page_share(conn: sqlite3.Connection) -> float | None:
     gravadas. `None` sem nenhuma página."""
     rows = conn.execute(
         "SELECT f.extension AS extension, COUNT(*) AS pages FROM page p JOIN file f ON f.id = p.file_id"
-        " WHERE f.status != 'skipped' GROUP BY f.extension"
+        " WHERE f.status != ? GROUP BY f.extension", (SKIPPED,)
     ).fetchall()
     total = sum(row["pages"] for row in rows)
     if not total:

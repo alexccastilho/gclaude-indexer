@@ -29,12 +29,12 @@ from pathlib import Path
 from .config import ProjectConfig
 from .db import BatchWriter
 from .events import record_event
+from .file_status import DISCOVERED, DUPLICATE, OUT_OF_INDEX, SKIPPED, is_waiting_component
 from .file_types import (
     HEAD_BYTES,
     REASON_NOT_SELECTED,
     index_decision,
     is_extension_allowed,
-    is_waiting_component,
     name_decision,
     needs_head,
 )
@@ -124,10 +124,10 @@ def _update_file(
         UPDATE file
         SET name = ?, extension = ?, size = ?, sha256 = ?, mtime = ?, group_key = ?,
             status = ?, error = ?, page_count = NULL, needs_ocr = 0, ocr_lang = NULL, language = NULL,
-            ocr_failed = CASE WHEN ? = 'skipped' THEN 0 ELSE ocr_failed END
+            ocr_failed = CASE WHEN ? = ? THEN 0 ELSE ocr_failed END
         WHERE relative_path = ?
         """,
-        (name, extension, size, file_hash, mtime, group_key, status, error, status, relative_path),
+        (name, extension, size, file_hash, mtime, group_key, status, error, status, SKIPPED, relative_path),
     )
 
 
@@ -337,13 +337,13 @@ def _is_indexed_row(row) -> bool:
     Rows the scan itself added to `known_paths` carry no status: they are
     ignored files or fresh inserts of this run."""
     try:
-        return row is not None and row["status"] not in ("skipped", "duplicate")
+        return row is not None and row["status"] not in OUT_OF_INDEX
     except (KeyError, IndexError):
         return False
 
 
 def _is_waiting_component(row) -> bool:
-    """The stored row waits for a component (`file_types.is_waiting_component`).
+    """The stored row waits for a component (`file_status.is_waiting_component`).
     Rows the scan itself added to `known_paths` may carry no status."""
     try:
         return row is not None and is_waiting_component(row["status"], row["error"])
@@ -364,9 +364,9 @@ def _holds_old_data(conn: sqlite3.Connection, relative_path: str) -> bool:
         " FROM file WHERE relative_path = ?",
         (relative_path,),
     ).fetchone()
-    if row is None or row["status"] in ("skipped", "duplicate"):
+    if row is None or row["status"] in OUT_OF_INDEX:
         return False
-    return row["status"] != "discovered" or bool(row["has_pages"])
+    return row["status"] != DISCOVERED or bool(row["has_pages"])
 
 
 def _drop_derived_data(conn: sqlite3.Connection, relative_path: str, output_folder: str | None) -> None:
@@ -416,7 +416,7 @@ def _record_ignored_file(
     extension_no_dot = extension.lstrip(".")
     if existing_row is None:
         writer.add(lambda c: _insert_file(
-            c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
+            c, relative_path, name, extension_no_dot, size, "", mtime, None, SKIPPED, reason,
         ))
     else:
         def op(c) -> None:
@@ -428,7 +428,7 @@ def _record_ignored_file(
             if _is_indexed_row(existing_row):
                 _drop_derived_data(c, relative_path, output_folder)
             _update_file(
-                c, relative_path, name, extension_no_dot, size, "", mtime, None, "skipped", reason,
+                c, relative_path, name, extension_no_dot, size, "", mtime, None, SKIPPED, reason,
             )
 
         writer.add(op)
@@ -490,7 +490,7 @@ def _record_scanned_file(
         extension_no_dot = extension.lstrip(".")
         writer.add(lambda c: _insert_file(
             c, relative_path, name, extension_no_dot, size, file_hash,
-            mtime, None, "duplicate"
+            mtime, None, DUPLICATE
         ))
         result.skipped += 1
         known_hashes.add(file_hash)
@@ -528,7 +528,7 @@ def _record_scanned_file(
         }
         return
 
-    status = "discovered"
+    status = DISCOVERED
     group_key = derive_group_key(relative_path, source_dir, config)
     extension_no_dot = extension.lstrip(".")
 

@@ -30,6 +30,7 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
+from .file_status import EXTRACTED, WINDOW_DONE, WINDOW_PENDING
 from .paths import RAW_ITEMS_FILE_NAME, natural_sort_key, resolve_within
 
 
@@ -130,15 +131,17 @@ def group_page_counts(conn, only_extracted_groups: bool = False) -> dict[str, in
         JOIN file ON file.id = page.file_id
         WHERE file.group_key IS NOT NULL
     """
+    params: tuple[str, ...] = ()
     if only_extracted_groups:
         sql += """
           AND file.group_key IN (
               SELECT DISTINCT group_key FROM file
-              WHERE group_key IS NOT NULL AND status = 'extracted'
+              WHERE group_key IS NOT NULL AND status = ?
           )
         """
+        params = (EXTRACTED,)
     sql += " GROUP BY file.group_key"
-    return {group: count for group, count in conn.execute(sql)}
+    return {group: count for group, count in conn.execute(sql, params)}
 
 
 def group_page_positions(conn, with_text: bool = True) -> dict[str, list]:
@@ -163,7 +166,7 @@ def prepare_windows(
     group_keys = [
         row["group_key"]
         for row in conn.execute(
-            "SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL AND status = 'extracted'"
+            "SELECT DISTINCT group_key FROM file WHERE group_key IS NOT NULL AND status = ?", (EXTRACTED,)
         ).fetchall()
     ]
 
@@ -205,9 +208,9 @@ def prepare_windows(
             conn.executemany(
                 """
                 INSERT INTO window (key, group_key, start_ref, end_ref, status)
-                VALUES (?, ?, ?, ?, 'pending')
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                new_rows,
+                [(*row, WINDOW_PENDING) for row in new_rows],
             )
             conn.commit()
 
@@ -298,7 +301,8 @@ def mark_answered_windows(conn, output_folder: Path | str) -> int:
         chunk = keys[start:start + 500]
         placeholders = ", ".join("?" for _ in chunk)
         cursor = conn.execute(
-            f"UPDATE window SET status = 'done' WHERE status = 'pending' AND key IN ({placeholders})", chunk
+            f"UPDATE window SET status = ? WHERE status = ? AND key IN ({placeholders})",
+            (WINDOW_DONE, WINDOW_PENDING, *chunk),
         )
         marked += cursor.rowcount
     conn.commit()

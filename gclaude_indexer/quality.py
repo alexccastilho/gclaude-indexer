@@ -26,6 +26,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .config import ProjectConfig
+from .file_status import FAILED, WINDOW_PENDING
 from .engine_local import LOCAL_MODEL_PROFILES
 
 _WEIGHTS = {"high": 1.0, "medium": 0.6, "low": 0.2}
@@ -165,10 +166,10 @@ def quality_summary(conn, config: ProjectConfig, pending: dict | None = None) ->
     missing_summary = _count_nulls(conn, "summary")
 
     failed_files = conn.execute(
-        "SELECT COUNT(*) FROM file WHERE status = 'failed'"
+        "SELECT COUNT(*) FROM file WHERE status = ?", (FAILED,)
     ).fetchone()[0]
     windows_pending = conn.execute(
-        "SELECT COUNT(*) FROM window WHERE status = 'pending'"
+        "SELECT COUNT(*) FROM window WHERE status = ?", (WINDOW_PENDING,)
     ).fetchone()[0]
 
     from .artifacts import pending_items

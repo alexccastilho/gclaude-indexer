@@ -30,6 +30,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from .file_status import CONVERSION_SUCCEEDED, FAILED, in_params
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS project (
     id            INTEGER PRIMARY KEY,
@@ -456,7 +458,7 @@ def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:
     if not {"name", "extension", "error"} <= existing_columns:
         return  # a table older than any OCR failure: nothing to recover
     conn.execute(
-        "UPDATE file SET ocr_failed = 1 WHERE status = 'failed' AND error LIKE 'ocrmypdf falhou%'"
+        "UPDATE file SET ocr_failed = 1 WHERE status = ? AND error LIKE 'ocrmypdf falhou%'", (FAILED,)
     )
     names: set[str] = set()
     for (params,) in conn.execute(
@@ -468,11 +470,12 @@ def _ensure_file_ocr_failed_column(conn: sqlite3.Connection) -> None:
             continue
         if isinstance(name, str) and name:
             names.add(name)
+    marks, succeeded = in_params(CONVERSION_SUCCEEDED)
     for name in names:
         conn.execute(
             "UPDATE file SET ocr_failed = 1 WHERE name = ? AND extension = 'pdf'"
-            " AND status IN ('converted', 'extracted')",
-            (name,),
+            f" AND status IN ({marks})",
+            (name, *succeeded),
         )
 
 

@@ -146,15 +146,9 @@ REASON_NOT_SELECTED = "extension_not_selected"
 REASON_SIGNATURE_DETACHED = "signature_detached"
 REASON_UNSUPPORTED = "unsupported"
 # Gravado pela conversão: o LibreOffice não pôde ser obtido (sem rede). O
-# arquivo fica pendente e volta à fila (`ocr_failed`), não é falha.
+# arquivo fica pendente e volta à fila (`ocr_failed`), não é falha
+# (`file_status.is_waiting_component`).
 REASON_COMPONENT_UNAVAILABLE = "component_unavailable"
-
-
-def is_waiting_component(status: str | None, error: str | None) -> bool:
-    """O arquivo espera um componente (LibreOffice, ffmpeg/whisper) que
-    faltava quando a conversão chegou a ele. Uma regra só para a varredura,
-    a conversão e o plano de atualização."""
-    return status == "skipped" and error == REASON_COMPONENT_UNAVAILABLE
 
 
 # Categorias com páginas reais (o limite de caracteres por página do projeto

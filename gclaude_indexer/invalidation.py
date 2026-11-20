@@ -43,6 +43,9 @@ from .config import ProjectConfig
 from .fulltext import remove_file as remove_from_search
 from .workdir import converted_artifact_path
 from .events import record_event
+from .file_status import (
+    CONVERTED, DISCOVERED, DUPLICATE, RESET_FOR_RENUMBER, RESET_TO_DISCOVERED_CLEAR_LANGUAGE,
+)
 from .paths import RAW_ITEMS_FILE_NAME, resolve_within
 from .run_control import checkpoint
 from .update_plan import FileChange, UpdatePlan, build_update_plan, detect_changes, plan_from_changes
@@ -160,8 +163,8 @@ def _group_page_count(conn: sqlite3.Connection, group_key: str) -> int:
     """
     return conn.execute(
         "SELECT COUNT(*) FROM page JOIN file ON file.id = page.file_id"
-        " WHERE file.group_key = ? AND file.status != 'duplicate'",
-        (group_key,),
+        " WHERE file.group_key = ? AND file.status != ?",
+        (group_key, DUPLICATE),
     ).fetchone()[0]
 
 
@@ -351,8 +354,8 @@ def _renumber_status(
         config.output_folder, relative_path, row["extension"], bool(row["needs_ocr"])
     )
     if artifact is None or artifact.exists():
-        return "converted"
-    return "discovered"
+        return CONVERTED
+    return DISCOVERED
 
 
 def apply_update_plan(
@@ -613,8 +616,8 @@ def _apply(
             # while the bytes are still in the folder.
             for copy in conn.execute(
                 "SELECT id, relative_path FROM file"
-                " WHERE status = 'duplicate' AND sha256 = ?",
-                (row["sha256"],),
+                " WHERE status = ? AND sha256 = ?",
+                (DUPLICATE, row["sha256"]),
             ).fetchall():
                 conn.execute("DELETE FROM file WHERE id = ?", (copy["id"],))
                 released_copies.append(copy["relative_path"])
@@ -635,11 +638,7 @@ def _apply(
             # the expensive half of the update, and the only half that
             # should be expensive.
             # The language is the content's, so it goes with the old bytes.
-            conn.execute(
-                "UPDATE file SET status = 'discovered', page_count = NULL,"
-                " error = NULL, ocr_lang = NULL, language = NULL WHERE id = ?",
-                (file_id,),
-            )
+            conn.execute(RESET_TO_DISCOVERED_CLEAR_LANGUAGE, (file_id,))
             result.files_reset += 1
 
         changed_paths = {change.relative_path for change in current.changed}
@@ -672,13 +671,9 @@ def _apply(
                 # rows is the very disagreement
                 # `update_plan._stored_geometry` documents at length.
                 status = _renumber_status(config, relative_path, row)
-                conn.execute(
-                    "UPDATE file SET status = ?, page_count = NULL, error = NULL"
-                    " WHERE id = ?",
-                    (status, file_id),
-                )
+                conn.execute(RESET_FOR_RENUMBER, (status, file_id))
                 renumbered.append(relative_path)
-                if status == "converted":
+                if status == CONVERTED:
                     result.files_renumbered += 1
                 else:
                     result.files_reconverted += 1
