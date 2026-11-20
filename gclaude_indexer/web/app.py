@@ -54,7 +54,7 @@ from ..artifacts import (
     stale_artifacts,
 )
 from ..catalog import CatalogEntry, catalog_folder, find_project, list_projects, register_project
-from ..config import ProjectConfig, ConfigError, load_config
+from ..config import ProjectConfig, ConfigError, config_from_input
 from ..db import READER_TIMEOUT_SECONDS, WRITER_TIMEOUT_SECONDS, is_lock_error
 from ..install_diagnostics import check_installation
 from ..events import list_events, record_event
@@ -744,7 +744,7 @@ def _create_new_project_body(request: Request, form):
         )
 
     try:
-        config = load_config(data)
+        config = config_from_input(data)
     except ConfigError as exc:
         return _refuse(exc.errors)
 

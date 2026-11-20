@@ -307,6 +307,50 @@ def test_load_project_nao_regrava_quando_igual(tmp_path, origem):
     conn.close()
 
 
+def test_projeto_salvo_abre_com_a_origem_fora_do_ar(cliente, tmp_path, origem):
+    """A origem sumiu (pendrive tirado, rede fora): a lista e a tela do
+    projeto abrem; a falta aparece só onde a origem é usada. Antes, as duas
+    davam 500 porque a carga revalidava a existência da pasta."""
+    import shutil
+
+    resposta = cliente.post("/projects/new", data=_dados(origem, ""), headers=HEADERS, follow_redirects=False)
+    assert resposta.status_code == 303
+    endereco = resposta.headers["location"]
+    saida = tmp_path / "Acervo-AI"
+    shutil.rmtree(origem)
+
+    config, conn = load_project(saida)
+    assert config.source_folder == str(origem)
+    conn.close()
+
+    assert cliente.get("/projects").status_code == 200
+    tela = cliente.get(endereco)
+    assert tela.status_code == 200
+
+
+def test_etapa_com_a_origem_fora_do_ar_avisa_sem_rodar(cliente, tmp_path, origem):
+    import shutil
+    import time
+
+    from gclaude_indexer.web.background_runs import task_manager
+
+    resposta = cliente.post("/projects/new", data=_dados(origem, ""), headers=HEADERS, follow_redirects=False)
+    projeto_id = int(resposta.headers["location"].split("/")[2])
+    shutil.rmtree(origem)
+
+    task_manager._tasks.clear()
+    task_manager.start_step(projeto_id, str(tmp_path / "Acervo-AI"), "scan", language="pt")
+    limite = time.monotonic() + 20
+    while task_manager.get(projeto_id, "scan").running and time.monotonic() < limite:
+        time.sleep(0.05)
+    tarefa = task_manager.get(projeto_id, "scan")
+    assert not tarefa.running and not tarefa.finished_ok
+    assert str(origem) in tarefa.error
+    conn = sqlite3.connect(tmp_path / "Acervo-AI" / "project.db")
+    assert conn.execute("SELECT COUNT(*) FROM run").fetchone()[0] == 0
+    conn.close()
+
+
 def test_projeto_antigo_com_saida_dentro_da_origem_continua_abrindo(tmp_path, origem):
     saida = origem / "_indexado"
     _criar_no_disco(origem, saida)

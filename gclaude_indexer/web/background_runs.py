@@ -485,6 +485,15 @@ class TaskManager:
                 # etapas seguintes da cadeia têm de usar esses valores.
                 current_config, work_conn = load_project(entry_output_folder)
                 try:
+                    # O projeto abre com a origem fora do ar (pendrive, rede,
+                    # Drive de outra máquina); as etapas, não: leem os
+                    # originais, e uma origem ausente pareceria um acervo vazio.
+                    if not Path(current_config.source_folder).is_dir():
+                        task.error = translate(
+                            language or DEFAULT_LANGUAGE, "config_error.source_folder_not_found",
+                            path=current_config.source_folder,
+                        )
+                        return
                     # Task 15: time per step, for the engine/model
                     # benchmark (`quality.compare_runs`). Records the
                     # *effective* engine (via `resolve_effective_engine`,

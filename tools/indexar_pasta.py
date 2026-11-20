@@ -60,7 +60,7 @@ def run(
     source: Path, output: Path, engine: str = "rules", model: str = "automatic", language: str = "pt",
     window: int | None = None, overlap: int | None = None,
 ) -> dict:
-    from gclaude_indexer.config import load_config
+    from gclaude_indexer.config import config_from_input
     from gclaude_indexer.conversion import convert
     from gclaude_indexer.db import connect, init_schema
     from gclaude_indexer.extraction import extract_pages
@@ -102,7 +102,7 @@ def run(
         dados["pages_per_window"] = window
     if overlap is not None:
         dados["overlap"] = overlap
-    config = load_config(dados)
+    config = config_from_input(dados)
 
     # Mesmos nomes, mesma ordem que a interface; se `STEP_ORDER` ganhar uma
     # etapa, este dicionário deixa de cobri-lo e o erro aparece aqui.
