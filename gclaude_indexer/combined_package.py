@@ -33,7 +33,9 @@ import zipfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .artifacts import ArtifactNames, project_instructions_sections
+from .artifacts import (
+    demote_headings, project_instructions_sections, role_section, rule_section, subject_or_placeholder,
+)
 from .catalog import CatalogEntry, find_project
 from .claude_package import GUIDE_FILENAME, RAG_THRESHOLD_TOKENS, BudgetEntry, budget, candidate_files, package_plan
 from .config import ConfigError, ProjectConfig
@@ -235,22 +237,12 @@ def plan(entry: SetEntry, language: str = DEFAULT_LANGUAGE) -> CombinedPlan:
     )
 
 
-def _names_for(member: Member) -> ArtifactNames:
-    alias = member.alias
-    return ArtifactNames(
-        index=prefixed_name(alias, INDEX_FILENAME),
-        timeline=prefixed_name(alias, TIMELINE_FILENAME),
-        review=prefixed_name(alias, REVIEW_FILENAME),
-        norms=prefixed_name(alias, NORMS_FILENAME),
-        prefix=prefixed_name(alias, ""),
-    )
-
-
 def _where_section(members: list[Member], language: str) -> list[str]:
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     lines = [f"## {t('combined.where_section')}", "", t("combined.where_text"), ""]
     for member in members:
-        subject = (member.config.subject.strip() if member.config else "") or t("artifact.project_instructions.subject_missing")
+        assert member.config is not None
+        subject = subject_or_placeholder(member.config, language)
         lines.append(t("combined.where_item", alias=member.alias, name=member.name, subject=subject))
     lines.append("")
     return lines
@@ -265,29 +257,20 @@ def generate_instructions(
     escreveu ali é a verdade e atravessa a regeneração."""
     t = lambda key, **kw: translate(language, key, **kw)  # noqa: E731
     available = [m for m in members if m.available and m.config is not None]
-    lines = [
-        f"# {t('combined.title', name=entry.name)}",
-        "",
-        f"## {t('artifact.project_instructions.role_section')}",
-        "",
-        t("combined.role", count=len(available)),
-        "",
-        f"## {t('artifact.project_instructions.rule_section')}",
-        "",
-        SOURCE_OF_TRUTH_RULE,
-        "",
-    ]
+    lines = [f"# {t('combined.title', name=entry.name)}", ""]
+    lines += role_section(language, t("combined.role", count=len(available)))
+    lines += rule_section(language)
     lines += _where_section(available, language)
     for member in available:
         lines += [f"## {t('combined.collection_section', alias=member.alias, name=member.name)}", ""]
         config, conn = load_project(Path(member.config.output_folder))
         try:
             config = replace(config, output_folder=member.config.output_folder)
-            sections = project_instructions_sections(conn, config, language, _names_for(member), common=False)
+            sections = project_instructions_sections(conn, config, language, set_alias=member.alias)
         finally:
             conn.close()
         # Um nível abaixo: o título do acervo é o `##`.
-        lines += [("#" + line) if line.startswith("## ") else line for line in sections]
+        lines += demote_headings(sections)
         lines.append("")
     return merge_managed(existing, "\n".join(lines), user_text=entry.personal_instructions)
 
@@ -333,7 +316,7 @@ def _claude_md(entry: SetEntry, combined: CombinedPlan, language: str) -> str:
     collections = []
     for m in combined.included_members:
         assert m.config is not None
-        subject = m.config.subject.strip() or t("artifact.project_instructions.subject_missing")
+        subject = subject_or_placeholder(m.config, language)
         collections.append(_CLAUDE_MD_COLLECTION.get(language, _CLAUDE_MD_COLLECTION[DEFAULT_LANGUAGE]).format(
             alias=m.alias, name=m.name, subject=subject, output_folder=m.config.output_folder,
             index=prefixed_name(m.alias, INDEX_FILENAME), timeline=prefixed_name(m.alias, TIMELINE_FILENAME),

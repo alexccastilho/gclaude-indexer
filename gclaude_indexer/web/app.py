@@ -47,6 +47,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import Response
 
 from ..artifacts import (
+    forget_form_instructions,
     generate_all_artifacts,
     generate_project_instructions_md,
     pending_items,
@@ -1420,10 +1421,7 @@ def _instructions_dedup_body(request: Request, project_id: int, form):
                 added = "\n".join(f"- {rule}" for rule in rules)
                 config.extra_rules = (config.extra_rules.rstrip() + "\n" + added) if config.extra_rules.strip() else added
                 changed_config = True
-            if not new_user and config.existing_instructions.strip():
-                # The form's copy of the instructions would come back as the
-                # user's part of an empty file on the next generation.
-                config.existing_instructions = ""
+            if forget_form_instructions(config, new_user):
                 changed_config = True
             if changed_config:
                 save_project_config(conn, config)
