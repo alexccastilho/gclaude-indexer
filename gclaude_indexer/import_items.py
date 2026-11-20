@@ -32,7 +32,7 @@ button (`run.import_and_generate`), never by "run all". Folding "import"
 into `STEP_ORDER` would make it a candidate for `next_pending_step` and the
 step-progress table, silently changing that behavior. Instead it gets its
 own `step.import.title` i18n key and is added to the *display* whitelist
-only (`web/app.py`'s `known_steps` passed to `_log.html`), so the log shows
+only (`pipeline.LOG_STEPS`, passed to `_log.html`), so the log shows
 a translated label without touching the pipeline's step machinery.
 """
 

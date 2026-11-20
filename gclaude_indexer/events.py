@@ -42,7 +42,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from .i18n import DEFAULT_LANGUAGE, _NESTED_KEY_MARKER, _NESTED_PARAMS_MARKER, has_key, translate
+from .i18n import DEFAULT_LANGUAGE, has_key, translate, unwrap_nested
 
 LEVELS = {"info", "warning", "error"}
 LOG_FOLDER_NAME = "logs"
@@ -56,12 +56,25 @@ def _render_params(language: str, params: dict[str, object]) -> dict[str, object
     Plain values pass through unchanged."""
     rendered: dict[str, object] = {}
     for name, value in params.items():
-        if isinstance(value, dict) and _NESTED_KEY_MARKER in value:
-            nested_params = value.get(_NESTED_PARAMS_MARKER) or {}
-            rendered[name] = translate(language, value[_NESTED_KEY_MARKER], **_render_params(language, nested_params))
-        else:
+        inner = unwrap_nested(value)
+        if inner is None:
             rendered[name] = value
+        else:
+            inner_key, inner_params = inner
+            rendered[name] = translate(language, inner_key, **_render_params(language, inner_params))
     return rendered
+
+
+def event_message(row, language: str) -> str:
+    """The text of a stored `event` row in `language`: retranslated from
+    `message_key`/`message_params` when the event has a key, the stored
+    `message` as-is when it has none (literal/legacy events). `row` is any
+    mapping with those three columns (`sqlite3.Row` or dict)."""
+    message_key = row["message_key"]
+    if not message_key:
+        return row["message"]
+    params = json.loads(row["message_params"]) if row["message_params"] else {}
+    return translate(language, message_key, **_render_params(language, params))
 
 
 def _output_folder_path(conn: sqlite3.Connection) -> Path | None:
@@ -191,8 +204,5 @@ def list_events(
         rows = [dict(row) for row in reversed(cursor.fetchall())]
     if language is not None:
         for row in rows:
-            message_key = row.get("message_key")
-            if message_key:
-                params = json.loads(row["message_params"]) if row.get("message_params") else {}
-                row["message"] = translate(language, message_key, **_render_params(language, params))
+            row["message"] = event_message(row, language)
     return rows

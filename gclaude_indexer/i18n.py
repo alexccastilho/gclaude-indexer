@@ -3940,6 +3940,35 @@ def nested(key: str, **params) -> dict:
     return {_NESTED_KEY_MARKER: key, _NESTED_PARAMS_MARKER: params}
 
 
+def unwrap_nested(value: object) -> tuple[str, dict] | None:
+    """The `(key, params)` inside a `nested(...)` marker, or `None` when
+    `value` is a plain parameter. The marker names are stored in the
+    `message_params` JSON of every event that used `nested`, so they never
+    change; this is how `events.py` reads them without knowing them."""
+    if isinstance(value, dict) and _NESTED_KEY_MARKER in value:
+        return value[_NESTED_KEY_MARKER], value.get(_NESTED_PARAMS_MARKER) or {}
+    return None
+
+
+# `log.*` keys no code records any more, kept because older `project.db`
+# files still hold them in `event.message_key`: `events.list_events`
+# retranslates from the key and ignores the stored `message`, so deleting
+# one of these (or renaming a `{param}` in it) would show the raw key, or a
+# literal `{name}`, in the log of an old project. The review mode left in
+# 9f24daf, the Claude Code engine in eb3b23c, PDF slicing in 9d5b4fa and the
+# extension filter of the scan in b2128f8.
+# `tests/test_chaves_de_evento.py` keeps this list honest both ways.
+RETIRED_EVENT_KEYS: frozenset[str] = frozenset({
+    "log.claude_code.sync_status",
+    "log.conversion.sliced",
+    "log.review.invalid_item",
+    "log.review.nothing_to_review",
+    "log.review.submitting",
+    "log.review.summary",
+    "log.scan.extension_not_allowed",
+})
+
+
 def has_key(key: str) -> bool:
     """Whether `key` is a real translation key (present in the reference
     table, `pt` — see `_REFERENCE_LANGUAGE` above).

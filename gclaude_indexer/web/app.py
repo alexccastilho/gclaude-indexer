@@ -104,7 +104,7 @@ from ..sync import check_sync, mark_synced
 from ..file_types import CATEGORY_ALL, EXTENSION_CATEGORIES, MEDIA_CATEGORY, categories_by_family, normalize_categories
 from ..lock import LockManager, check_lock, create_lock
 from . import step_state
-from ..pipeline import STEP_ORDER
+from ..pipeline import LOG_STEPS
 from .step_state import last_known_status, next_pending_step, project_status, step_status
 from .background_runs import compute_progress, task_manager
 from .readers import reader_pool
@@ -166,17 +166,6 @@ PROJECT_URL = "https://github.com/alexccastilho/gclaude-indexer"
 # memory with no pagination and covers the follow-along window the user
 # actually uses.
 LOG_LINES = 200
-
-# Step keys the live log (`_log.html`) knows how to translate — a superset
-# of `pipeline.STEP_ORDER`. `import` and `diagnostics` record real
-# events (`import_items.py`, `hardware.py`) but are deliberately not part of
-# `STEP_ORDER`: that tuple drives `next_pending_step`/`step_status`, i.e. the
-# step-progress table and the "Run next step"/"Run all steps" buttons, and
-# neither `import` (its own separate button) nor `diagnostics` (a check that
-# runs inside the classification step, not a step of its own) belongs there.
-# Without this set, `_log.html` falls back to showing the raw step key
-# instead of a translated label — see `import_items.py`'s module docstring.
-LOG_KNOWN_STEPS = set(STEP_ORDER) | {"import", "diagnostics", "update", "relocation"}
 
 # Presentation order of the engines in the form, from the simplest to use to
 # the one that demands the most from the user. `CLASSIFICATION_ENGINES`
@@ -1154,7 +1143,7 @@ def run_screen(request: Request, project_id: int):
         {
             **steps_context,
             "config": config, "eventos": events,
-            "known_steps": LOG_KNOWN_STEPS,
+            "known_steps": LOG_STEPS,
             "sensor_token": SENSOR_REQUEST_TOKEN,
             "instructions_dedup": instructions_dedup,
             "relocation_banner": relocation_banner,
@@ -1654,10 +1643,10 @@ def log_fragment(request: Request, project_id: int, since: int | None = None):
         events = list_events(conn, language=language, since=since, last=LOG_LINES)
 
     if since is None:
-        log_context = {"eventos": events, "known_steps": LOG_KNOWN_STEPS}
+        log_context = {"eventos": events, "known_steps": LOG_STEPS}
         return render(request, "_log.html", log_context)
 
-    return render(request, "_log_items.html", {"eventos": events, "known_steps": LOG_KNOWN_STEPS})
+    return render(request, "_log_items.html", {"eventos": events, "known_steps": LOG_STEPS})
 
 
 @app.get("/projects/{project_id}/run/steps", response_class=HTMLResponse)
