@@ -530,6 +530,26 @@ def test_post_ignora_destino_vindo_do_formulario(cliente, tmp_path):
     assert find_project(entrada.id).output_folder == str(tmp_path / "Acervo-AI")
 
 
+def test_mover_agora_com_operacao_rodando_responde_ocupado(cliente, tmp_path):
+    """Com a vaga tomada, a rota respondia de dentro da trava da vaga, e a
+    página de ocupado tomava a mesma trava (não reentrante): o pedido
+    travava e levava junto `/activity`, o Parar e toda operação seguinte."""
+    from gclaude_indexer.i18n import translate
+
+    origem = tmp_path / "Acervo"
+    saida = origem / "saida"
+    entrada = _criar(origem, saida)
+    with app_mod._generation_slot(entrada.id, "run.import_and_generate") as tomada:
+        assert tomada
+        resposta = cliente.post(
+            f"/projects/{entrada.id}/relocate", headers=HEADERS,
+            cookies={"language": "pt"}, follow_redirects=False,
+        )
+    assert resposta.status_code == 409
+    assert translate("pt", "run.import_and_generate") in resposta.text
+    assert (saida / "project.db").is_file()
+
+
 def test_post_de_outro_site_e_recusado(cliente, tmp_path):
     origem = tmp_path / "Acervo"
     saida = origem / "saida"
