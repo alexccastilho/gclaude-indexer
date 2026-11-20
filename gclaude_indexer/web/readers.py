@@ -75,13 +75,10 @@ class ReaderPool:
         self._lock = threading.Lock()
         self._readers: dict[str, Reader] = {}
         self._sweeper: threading.Thread | None = None
-        self.enabled = True
 
     def acquire(self, output_folder) -> Reader | None:
         """The project's reader, locked for this request; `None` when it
         cannot be had (the caller falls back to a normal connection)."""
-        if not self.enabled:
-            return None
         key = LockManager._key(output_folder)
         db_path = Path(output_folder) / PROJECT_DB_NAME
         signature = _signature(db_path)

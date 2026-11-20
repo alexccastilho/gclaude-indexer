@@ -122,7 +122,7 @@ def test_sem_banco_nao_ha_leitor(tmp_path):
 
 def test_desligado_cai_na_conexao_normal(cliente, tmp_path, monkeypatch):
     pid = _criar_projeto(cliente, tmp_path)
-    monkeypatch.setattr(reader_pool, "enabled", False)
+    monkeypatch.setattr(reader_pool, "acquire", lambda _pasta: None)
     assert cliente.get(f"/projects/{pid}/run").status_code == 200
     assert cliente.get(f"/projects/{pid}/run/steps").status_code == 200
     assert not reader_pool._readers

@@ -395,7 +395,7 @@ def test_consulta_da_tela_com_banco_ocupado_devolve_204(cliente, tmp_path, monke
     from gclaude_indexer.web.readers import reader_pool
 
     reader_pool.close_all()
-    monkeypatch.setattr(reader_pool, "enabled", False)
+    monkeypatch.setattr(reader_pool, "acquire", lambda _pasta: None)
     resposta = cliente.get(f"/projects/{projeto}/{rota}", headers={"HX-Request": "true"})
     assert resposta.status_code == 204
 
