@@ -45,3 +45,27 @@ def test_ruido_nao_entra_ao_lado_do_portugues():
 
 def test_texto_real_continua_detectado():
     assert language_detect.detect_languages(PORTUGUES) == ["pt"]
+
+
+# Formulário gerado com espaço entre cada caractere (texto nativo do PDF):
+# "d e s c r e v e r o m o t i v o". Letra solta não tem idioma; o
+# `py3langid` dava lígure com 0,52 e o arquivo era lido com `script/Latin`.
+LETRAS_ESPACADAS = (
+    # Nomes, números e código inventados; o formato é o do formulário real.
+    "M a r i a d a S i l v a P e r e i r a\nC o o r d o s t a d u\ng s t a d u a l\nd e S a u d e\n"
+    "E m : D e c r t o n º 0 0 0 0\n1 2 3 4 5 6 7 8\nD i g i t a l i z a d o c o m C a m S c a n n e r\n"
+    "Para verificar as assinaturas, acesse www.exemplo.gov.br/autenticidade e informe o código 12345678.\n"
+    "S E S A\nS E C R E T A R I A\nD A\nS A Ú D E\n"
+    "0 2\nE m :\nJ o ã o d e S o u z a L i m a\nC o o r d e n a d o r E s t a d u n l\n"
+    "d e S a u d e B u c a l\nB e c 0 0 0 0 0 0 0 0 0 0 S E S A\nD I A\n"
+    "d e s c r e v e r o m o t i v o e a s s i n a r\nM O T I V O\nA S S I N A T U R A\n"
+    "C h e f i a I m e d i a t a ( A s s i n a t u r a e C a r i m b o )\n"
+)
+
+
+def test_letras_espacadas_nao_viram_idioma():
+    assert language_detect.detect_languages(LETRAS_ESPACADAS) == []
+
+
+def test_letras_espacadas_ao_lado_do_portugues():
+    assert language_detect.detect_languages(PORTUGUES + "\n" + LETRAS_ESPACADAS) == ["pt"]

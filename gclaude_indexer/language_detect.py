@@ -259,10 +259,26 @@ def east_asian_language(text: str) -> str | None:
     return _east_asian(script_counts(text))
 
 
+# 2.1.3: trecho em que a maioria das "palavras" com letra é uma letra só.
+# Formulário gerado com espaço entre cada caractere ("d e s c r e v e r")
+# não diz idioma nenhum: o `py3langid` dava lígure com 0,50.
+_SPACED_LETTERS_SHARE = 0.6
+
+
+def _spaced_letters(chunk: str) -> bool:
+    words = [word for word in chunk.split() if any(char.isalpha() for char in word)]
+    if len(words) < 10:
+        return False
+    single = sum(1 for word in words if len(word) == 1)
+    return single / len(words) >= _SPACED_LETTERS_SHARE
+
+
 def _chunk_language(chunk: str, counts: Counter) -> str | None:
     script = counts.most_common(1)[0][0]
     if script in CJK_SCRIPTS:
         return _east_asian(counts)
+    if _spaced_letters(chunk):
+        return None
     identifier = _model()
     if identifier is None:
         return None
