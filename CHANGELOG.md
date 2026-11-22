@@ -9,6 +9,14 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.2] - 2026-11-22
+
+### Fixed
+
+- **"Browse..." opens the folder picker again** on the New project, Open
+  project and Projects screens. In 2.1.1 the picker could open hidden: the
+  click did nothing and the field stayed empty.
+
 ## [2.1.1] - 2026-11-20
 
 A clean-up release: the code was reorganised so that each rule has one

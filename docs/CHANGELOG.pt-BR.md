@@ -15,6 +15,14 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.2] - 2026-11-22
+
+### Corrigido
+
+- **"Procurar…" volta a abrir o seletor de pasta** nas telas Novo projeto,
+  Abrir projeto e Projetos. Na 2.1.1 o seletor podia abrir escondido: o
+  clique não fazia nada e o campo ficava vazio.
+
 ## [2.1.1] - 2026-11-20
 
 Uma versão de arrumação: o código foi reorganizado para que cada regra tenha

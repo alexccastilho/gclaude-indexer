@@ -15,6 +15,14 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.2] - 2026-11-22
+
+### Corregido
+
+- **"Buscar…" vuelve a abrir el selector de carpeta** en las pantallas
+  Nuevo proyecto, Abrir proyecto y Proyectos. En 2.1.1 el selector podía
+  abrirse oculto: el clic no hacía nada y el campo quedaba vacío.
+
 ## [2.1.1] - 2026-11-20
 
 Una versión de orden: el código se reorganizó para que cada regla tenga un
