@@ -68,8 +68,66 @@ def page_needs_ocr(page, stripped_text: str) -> bool:
     Página com pouco texto e nada desenhado — nem imagem, nem desenho
     vetorial (texto convertido em curvas é desenho) — não tem o que o OCR
     achar: o verso em branco, a folha de rosto "Capítulo 2" de um livro. Ela
-    não conta, ou um livro nativo inteiro passaria pelo OCR por causa dela."""
-    return len(stripped_text) < MIN_AVG_CHARS_PER_PAGE and bool(page.get_images() or page.get_drawings())
+    não conta, ou um livro nativo inteiro passaria pelo OCR por causa dela.
+
+    2.1.3: imagem desenhada em menos de `MIN_IMAGE_AREA_PT2` também não
+    conta. As páginas vazias dos processos do órgão só têm o rodapé e um ícone
+    de 11×10 pontos, e 18 mil delas iam para o OCR."""
+    if len(stripped_text) >= MIN_AVG_CHARS_PER_PAGE:
+        return False
+    return _has_page_sized_image(page) or _has_visible_drawing(page)
+
+
+def _is_white(color) -> bool:
+    return bool(color) and all(component >= 0.95 for component in color)
+
+
+def _has_visible_drawing(page) -> bool:
+    """Desenho vetorial em que o OCR pode achar texto: o texto convertido em
+    curvas, visível no papel.
+
+    2.1.3: retângulos e linhas retas não contam. Bordas de tabela, barras
+    cinza e fundos brancos não são letras, e letras sempre têm curvas. As
+    páginas de formulário vazio dos processos do órgão (só barras, linhas e o
+    rodapé) iam para o OCR aos milhares."""
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return True
+    for drawing in drawings:
+        if not any(item and item[0] == "c" for item in drawing.get("items") or ()):
+            continue
+        stroke, fill = drawing.get("color"), drawing.get("fill")
+        if (stroke is not None and not _is_white(stroke)) or (fill is not None and not _is_white(fill)):
+            return True
+    return False
+
+
+# 2.1.3: 1 polegada quadrada. Um ícone ou selo fica muito abaixo (o do órgão
+# tem 110 pt²); uma assinatura escaneada de 2 × 1 polegada fica acima.
+MIN_IMAGE_AREA_PT2 = 72.0 * 72.0
+
+
+def _has_page_sized_image(page) -> bool:
+    import fitz
+
+    if not page.get_images():
+        return False
+    try:
+        placements = page.get_image_info()
+    except Exception:
+        return True
+    if not placements:
+        # Imagem que o fitz não sabe onde está desenhada: conta, como antes.
+        return True
+    for placement in placements:
+        try:
+            box = fitz.Rect(placement["bbox"])
+        except Exception:
+            return True
+        if box.is_infinite or abs(box.width * box.height) >= MIN_IMAGE_AREA_PT2:
+            return True
+    return False
 
 
 _heif_registered = False

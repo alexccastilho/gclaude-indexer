@@ -39,6 +39,13 @@ def test_resolucao_normal_nao_muda(monkeypatch):
     assert (dpi.x, dpi.y) == (300.0, 300.0)
 
 
+def test_ocrmypdf_sem_a_funcao_nao_impede_o_ocr(monkeypatch):
+    # O limite mexe numa função interna do ocrmypdf (fixado em 16.5.0). Se
+    # outra versão não a tiver, o OCR segue sem o limite, em vez de parar.
+    monkeypatch.delattr(_pipeline, "calculate_image_dpi")
+    _ocr_runner.limit_raster_dpi()
+
+
 def _pdf_com_icone_minusculo(path):
     from PIL import Image
 
@@ -62,3 +69,17 @@ def test_ocr_de_pagina_com_icone_em_4500_dpi_nao_falha(tmp_path):
     destination = tmp_path / "saida.pdf"
     conversion._run_ocrmypdf(source, destination, "eng", pages=[1])
     assert destination.exists()
+
+
+@pytest.mark.skipif(
+    not (tools.find("tesseract") and tools.find_ghostscript()), reason="sem Tesseract ou Ghostscript"
+)
+def test_paginas_por_arquivo_de_argumentos_no_ocrmypdf_de_verdade(tmp_path, monkeypatch):
+    # O ramo `@arquivo` do `--pages` (2.1.3), passando pelo ocrmypdf real.
+    monkeypatch.setattr(conversion, "_PAGES_INLINE_MAX_CHARS", 0)
+    source = tmp_path / "orgao.pdf"
+    _pdf_com_icone_minusculo(source)
+    destination = tmp_path / "saida.pdf"
+    conversion._run_ocrmypdf(source, destination, "eng", pages=[1])
+    assert destination.exists()
+    assert not list(tmp_path.glob("*.args"))

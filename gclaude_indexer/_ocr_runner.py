@@ -48,10 +48,15 @@ def limit_raster_dpi() -> None:
     `_pipeline.calculate_image_dpi`, e as páginas rodam em threads deste
     processo (`use_threads`, o padrão), então trocar a função aqui vale para
     todas."""
-    from ocrmypdf import _pipeline
-    from ocrmypdf.helpers import Resolution
+    try:
+        from ocrmypdf import _pipeline
+        from ocrmypdf.helpers import Resolution
 
-    original = _pipeline.calculate_image_dpi
+        original = _pipeline.calculate_image_dpi
+    except (ImportError, AttributeError):
+        # Função interna do ocrmypdf 16.5.0 (o fixado). Noutra versão sem
+        # ela, o OCR segue sem o teto em vez de parar.
+        return
     if getattr(original, "_gclaude_limited", False):
         return
 
