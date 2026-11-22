@@ -30,9 +30,9 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 # para um arquivo local (fora da pasta sincronizada, como o resto do que é
 # só desta máquina) antes de importar qualquer coisa que possa imprimir.
 if sys.stdout is None or sys.stderr is None:
-    _pasta_log = os.path.join(os.environ.get("LOCALAPPDATA", "."), "GClaudeIndexer")
-    os.makedirs(_pasta_log, exist_ok=True)
-    _arquivo_log = open(os.path.join(_pasta_log, "servidor.log"), "a", encoding="utf-8", buffering=1)
+    from gclaude_indexer.server_log import open_server_log
+
+    _arquivo_log = open_server_log(os.path.join(os.environ.get("LOCALAPPDATA", "."), "GClaudeIndexer"))
     sys.stdout = _arquivo_log
     sys.stderr = _arquivo_log
 
