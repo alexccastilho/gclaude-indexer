@@ -16,8 +16,46 @@ of the Python standard library, no new dependency.
 
 from __future__ import annotations
 
+import sys
+import threading
+
+_COINIT_APARTMENTTHREADED = 0x2
+
 
 def choose_folder(title: str, initial: str = "") -> str | None:
+    """Opens the picker in a thread of its own, with COM in STA.
+
+    The caller is a server pool thread, and those are reused: one that
+    already ran .NET code through pythonnet (the LibreHardwareMonitor
+    sensors) has COM in MTA. There Tk falls back to the old Windows folder
+    dialog, which never shows up — Browse opened nothing and the request
+    hung. A fresh thread starts with no COM state, so STA is guaranteed.
+    """
+    outcome: dict = {}
+
+    def body() -> None:
+        com_ready = False
+        if sys.platform == "win32":
+            import ctypes
+            # S_OK or S_FALSE; anything else (negative) leaves COM alone.
+            com_ready = ctypes.windll.ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED) >= 0
+        try:
+            outcome["folder"] = _ask(title, initial)
+        except BaseException as error:  # re-raised in the caller
+            outcome["error"] = error
+        finally:
+            if com_ready:
+                ctypes.windll.ole32.CoUninitialize()
+
+    thread = threading.Thread(target=body, name="folder-picker", daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("folder")
+
+
+def _ask(title: str, initial: str) -> str | None:
     import tkinter
     from tkinter import filedialog
 
