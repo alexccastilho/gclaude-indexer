@@ -146,6 +146,44 @@ def _ocr_environment() -> dict:
     }
 
 
+def _page_ranges(pages: list[int]) -> str:
+    """`[1, 2, 3, 5]` → `"1-3,5"`: o `--pages` do ocrmypdf aceita intervalos."""
+    parts: list[str] = []
+    numbers = sorted(set(pages))
+    start = previous = numbers[0]
+    for number in [*numbers[1:], None]:
+        if number is not None and number == previous + 1:
+            previous = number
+            continue
+        parts.append(str(start) if start == previous else f"{start}-{previous}")
+        if number is not None:
+            start = previous = number
+    return ",".join(parts)
+
+
+# 2.1.3: acima disto o `--pages` vai num arquivo de argumentos (`@arquivo`,
+# que o ocrmypdf lê). A linha de comando do Windows tem até 32.767 caracteres
+# e um livro escaneado de 9 mil páginas alternadas não caberia nela
+# ("[WinError 206] O nome do arquivo ou a extensão é muito grande").
+_PAGES_INLINE_MAX_CHARS = 4000
+
+# 2.1.3: código 4 do ocrmypdf (`ExitCode.invalid_output_pdf`): a saída foi
+# gravada, mas a validação final reclamou dela. Um original com número
+# malformado no conteúdo ("5.68434E") dá isso mesmo com o OCR inteiro feito;
+# com a saída lá e as mesmas páginas da origem, o OCR fica.
+_OCRMYPDF_INVALID_OUTPUT = 4
+
+
+def _same_page_count(source: Path, destination: Path) -> bool:
+    if not destination.exists():
+        return False
+    try:
+        with fitz.open(source) as original, fitz.open(destination) as produced:
+            return original.page_count == produced.page_count > 0
+    except Exception:
+        return False
+
+
 def _run_ocrmypdf(
     source: Path, destination: Path, ocr_language: str, jobs: int = 1, pages: list[int] | None = None,
     rotate: bool = False,
@@ -156,8 +194,16 @@ def _run_ocrmypdf(
     # With `pages`, only those are OCR'd — and forced: `--skip-text` would
     # skip a scanned page carrying a stamp or a "fl. 2" as text. The other
     # pages pass through untouched, native text included.
+    argfile: Path | None = None
     if pages:
-        page_options = ["--force-ocr", "--pages", ",".join(str(number) for number in pages)]
+        page_list = _page_ranges(pages)
+        if len(page_list) > _PAGES_INLINE_MAX_CHARS:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            argfile = destination.with_name(f"{destination.name}.pages.args")
+            argfile.write_text(f"--pages\n{page_list}\n", encoding="utf-8")
+            page_options = ["--force-ocr", f"@{argfile}"]
+        else:
+            page_options = ["--force-ocr", "--pages", page_list]
     else:
         page_options = ["--skip-text"]
 
@@ -204,8 +250,14 @@ def _run_ocrmypdf(
         str(source),
         str(destination),
     ]
-    result = run_hidden(command, env=_ocr_environment())
+    try:
+        result = run_hidden(command, env=_ocr_environment())
+    finally:
+        if argfile is not None:
+            argfile.unlink(missing_ok=True)
 
+    if result.returncode == _OCRMYPDF_INVALID_OUTPUT and _same_page_count(source, destination):
+        return
     if result.returncode != 0:
         raise OcrError(
             f"ocrmypdf falhou (código {result.returncode}): "
@@ -446,6 +498,12 @@ def _reread_weak_pdf_pages(
         return [], False
     if not weak:
         return [], False
+    # 2.1.3: modelo que falta só é pedido para o arquivo quando as páginas
+    # fracas são a maioria das que passaram pelo OCR. Numa página quase vazia
+    # (assinatura, carimbo) o OSD diz "Greek" ou "Arabic" com a mesma
+    # confiança de uma página grega de verdade, e cada uma refazia o arquivo
+    # inteiro com `por+script/Arabic+...`.
+    may_ask = len(weak) * 2 > len(ocr_pages)
 
     groups: dict[str, list[int]] = {}
     missing: list[str] = []
@@ -457,7 +515,7 @@ def _reread_weak_pdf_pages(
             if model is None:
                 continue
             if absent:
-                if model not in missing:
+                if may_ask and model not in missing:
                     missing.append(model)
                 continue
             groups.setdefault(model, []).append(number)
