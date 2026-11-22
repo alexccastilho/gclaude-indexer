@@ -173,6 +173,11 @@ MIN_LETTERS = 40
 MIN_CJK_CHARS = 12
 # Um idioma só entra na lista com pelo menos esta fatia do texto.
 _MIN_SHARE = 0.15
+# 2.1.3: palpite de um trecho abaixo desta probabilidade é ruído. Uma folha
+# de ponto escaneada (só horários e riscos) saía iorubá, lígure ou lingala
+# com 0,02; num acervo inteiro, todo trecho com 0,5 ou mais era o idioma
+# certo e os códigos exóticos ficavam todos abaixo de 0,3.
+MIN_PROBABILITY = 0.5
 _CHUNK_CHARS = 400
 MAX_LANGUAGES = 3
 
@@ -265,9 +270,11 @@ def _chunk_language(chunk: str, counts: Counter) -> str | None:
         ranked = identifier.rank(chunk)
     except Exception:
         return None
-    for code, _score in ranked[:5]:
+    for code, score in ranked[:5]:
         expected = _LANGUAGE_SCRIPT.get(code, "latin")
         if expected == script:
+            if score < MIN_PROBABILITY:
+                return None
             return None if code == "zxx" else code
     return None
 
