@@ -9,6 +9,46 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.3] - 2026-11-22
+
+### Fixed
+
+- **Huge scanned PDFs are OCR'd again.** A file with thousands of scanned
+  pages (8,201 in the case found) failed entirely with "[WinError 206] The
+  filename or extension is too long": the list of pages went past the
+  Windows command-line limit.
+- **Pages with a tiny high-resolution icon no longer blank the whole file.**
+  The court documents carried, on every page, a small icon at 4,500 DPI;
+  the OCR rendered the page at that resolution (1.96 gigapixels), the image
+  was refused and hundreds of pages stayed blank in the index. The OCR now
+  renders pages at 400 DPI at most.
+- **A PDF with a malformed number in its content keeps its OCR.** The OCR
+  was complete, but the final check complained and the result was thrown
+  away.
+- **OCR noise no longer becomes an exotic language.** A scanned timesheet
+  was taken for Yoruba, Ligurian or Lingala, and a Portuguese PDF was read
+  with those models (89 MB downloaded for a worse result). Forms whose
+  text has a space between every letter ("d e s c r i b e") no longer
+  count as a language either.
+- **A few near-empty pages no longer redo a whole volume.** When they were
+  a minority of the scanned pages, pages with only a signature or a stamp
+  still made the script detector ask for Arabic, Greek or
+  Devanagari, and the whole file was marked to be redone with them.
+- **Blank pages no longer go to OCR.** A page with only the footer, a tiny
+  icon, background rectangles or the lines of an empty form has nothing to
+  read; the court files had about 18,000 such pages, hours of OCR for no
+  text.
+- **Photos are no longer read upside down.** The orientation detector
+  turned 3 of 10 phone photos of upright paper by 180°, and the index kept
+  unreadable text. The rotation is now checked by reading both ways.
+- **A Google Drive shared folder as source** gets its output suggested in
+  My Drive: next to the shared folder, Drive does not allow creating
+  folders.
+- **Opening the CPU sensor shortcut again** with the system open no longer
+  starts a second elevated reader.
+- **`servidor.log` no longer grows without limit**: above 5 MB at start it
+  becomes `servidor.log.1` and a new one begins.
+
 ## [2.1.2] - 2026-11-22
 
 ### Fixed

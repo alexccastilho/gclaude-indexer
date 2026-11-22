@@ -15,6 +15,46 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.3] - 2026-11-22
+
+### Corrigido
+
+- **PDF escaneado enorme volta a ter OCR.** Um arquivo com milhares de
+  páginas escaneadas (8.201 no caso encontrado) falhava inteiro com
+  "[WinError 206] O nome do arquivo ou a extensão é muito grande": a lista
+  de páginas passava do limite da linha de comando do Windows.
+- **Página com um ícone minúsculo em alta resolução não deixa mais o
+  arquivo em branco.** Os processos traziam, em toda página, um ícone a
+  4.500 DPI; o OCR desenhava a página nessa resolução (1,96 gigapixel), a
+  imagem era recusada e centenas de páginas ficavam em branco no índice.
+  Agora o OCR desenha a página a no máximo 400 DPI.
+- **PDF com número malformado no conteúdo fica com o OCR.** O OCR estava
+  completo, mas a conferência final reclamava e o resultado era jogado fora.
+- **Ruído de OCR não vira mais idioma exótico.** Uma folha de ponto
+  escaneada era tomada por iorubá, lígure ou lingala, e um PDF em português
+  era lido com esses modelos (89 MB baixados para um resultado pior).
+  Formulário com espaço entre cada letra ("d e s c r e v e r") também não
+  conta mais como idioma.
+- **Poucas páginas quase vazias não refazem mais um volume inteiro.**
+  Mesmo sendo minoria entre as escaneadas, páginas só com assinatura ou
+  carimbo faziam o detector de escrita pedir
+  árabe, grego ou devanágari, e o arquivo todo era marcado para ser refeito
+  com eles.
+- **Página em branco não vai mais para o OCR.** Página só com o rodapé, um
+  ícone minúsculo, retângulos de fundo ou as linhas de um formulário vazio
+  não tem o que ler; os processos tinham cerca de 18 mil páginas assim,
+  horas de OCR sem texto nenhum.
+- **Foto não é mais lida de cabeça para baixo.** O detector de orientação
+  girava 180° 3 de 10 fotos de celular de papel em pé, e o índice guardava
+  texto ilegível. Agora a rotação é conferida lendo dos dois jeitos.
+- **Pasta compartilhada do Google Drive como origem** tem a saída sugerida
+  no Meu Drive: ao lado da pasta compartilhada o Drive não deixa criar
+  pastas.
+- **Abrir de novo o atalho do sensor de CPU** com o sistema aberto não
+  sobe mais um segundo leitor elevado.
+- **O `servidor.log` não cresce mais sem limite**: acima de 5 MB no início
+  ele vira `servidor.log.1` e começa outro.
+
 ## [2.1.2] - 2026-11-22
 
 ### Corrigido

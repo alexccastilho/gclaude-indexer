@@ -15,6 +15,47 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.3] - 2026-11-22
+
+### Corregido
+
+- **Un PDF escaneado enorme vuelve a tener OCR.** Un archivo con miles de
+  páginas escaneadas (8.201 en el caso encontrado) fallaba entero con
+  "[WinError 206] El nombre del archivo o la extensión es demasiado largo":
+  la lista de páginas superaba el límite de la línea de comandos de Windows.
+- **Una página con un ícono diminuto en alta resolución ya no deja el
+  archivo en blanco.** Los procesos traían, en cada página, un ícono a
+  4.500 DPI; el OCR dibujaba la página a esa resolución (1,96 gigapíxeles),
+  la imagen era rechazada y cientos de páginas quedaban en blanco en el
+  índice. Ahora el OCR dibuja la página a 400 DPI como máximo.
+- **Un PDF con un número mal formado en su contenido conserva el OCR.** El
+  OCR estaba completo, pero la verificación final se quejaba y el resultado
+  se descartaba.
+- **El ruido del OCR ya no se convierte en un idioma exótico.** Una hoja de
+  asistencia escaneada se tomaba por yoruba, ligur o lingala, y un PDF en
+  portugués se leía con esos modelos (89 MB descargados para un resultado
+  peor). Un formulario con un espacio entre cada letra ("d e s c r i b i r")
+  tampoco cuenta ya como idioma.
+- **Unas pocas páginas casi vacías ya no rehacen un volumen entero.**
+  Aun siendo minoría entre las escaneadas, páginas solo con firma o sello
+  hacían que el detector de escritura
+  pidiera árabe, griego o devanagari, y el archivo entero quedaba marcado
+  para rehacerse con ellos.
+- **Las páginas en blanco ya no van al OCR.** Una página solo con el pie, un
+  ícono diminuto, rectángulos de fondo o las líneas de un formulario vacío
+  no tiene nada que leer; los procesos tenían unas 18 mil páginas así,
+  horas de OCR sin texto.
+- **Las fotos ya no se leen al revés.** El detector de orientación giraba
+  180° 3 de 10 fotos de celular de papel derecho, y el índice guardaba
+  texto ilegible. Ahora la rotación se comprueba leyendo de las dos formas.
+- **Una carpeta compartida de Google Drive como origen** recibe la salida
+  sugerida en Mi unidad: junto a la carpeta compartida, Drive no permite
+  crear carpetas.
+- **Abrir de nuevo el acceso directo del sensor de CPU** con el sistema
+  abierto ya no inicia un segundo lector elevado.
+- **`servidor.log` ya no crece sin límite**: por encima de 5 MB al iniciar
+  pasa a `servidor.log.1` y empieza otro.
+
 ## [2.1.2] - 2026-11-22
 
 ### Corregido

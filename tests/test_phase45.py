@@ -39,7 +39,7 @@ def _texto(rel: str) -> str:
 def test_versao_do_sistema_e_nome_do_instalador():
     from gclaude_indexer.web.app import SYSTEM_VERSION
 
-    assert SYSTEM_VERSION == "2.1.2"
+    assert SYSTEM_VERSION == "2.1.3"
     instalador = f"GClaude-Indexer-Setup-{SYSTEM_VERSION}.exe"
     for leiame in ("README.md", "docs/README.pt-BR.md", "docs/README.es.md"):
         assert instalador in _texto(leiame), leiame

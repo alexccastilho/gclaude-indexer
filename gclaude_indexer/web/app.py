@@ -45,7 +45,7 @@ from .routes_relocation import _render_relocation
 from .state import _OPERATIONS_IN_PROGRESS, _SLOTS_LOCK, _release_all_projects
 
 
-SYSTEM_VERSION = "2.1.2"
+SYSTEM_VERSION = "2.1.3"
 # The About page shows it (`about.html`); the build reads the line above.
 templates.env.globals["system_version"] = SYSTEM_VERSION
 
