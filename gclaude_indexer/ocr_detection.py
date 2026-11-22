@@ -258,6 +258,41 @@ def osd_image(image) -> tuple[str | None, int] | None:
     return language_detect.script_from_osd(found.get("Script")), rotate
 
 
+def _word_confidence(image, model: str) -> float:
+    """Confiança média (0–100) das palavras que o Tesseract leu; 0 se falhar."""
+    try:
+        import pytesseract
+
+        data = pytesseract.image_to_data(
+            image, lang=model, output_type=pytesseract.Output.DICT, timeout=TESSERACT_TIMEOUT
+        )
+    except Exception:
+        return 0.0
+    confidences = []
+    for text, confidence in zip(data.get("text", []), data.get("conf", [])):
+        try:
+            value = float(confidence)
+        except (TypeError, ValueError):
+            continue
+        if str(text).strip() and value >= 0:
+            confidences.append(value)
+    return sum(confidences) / len(confidences) if confidences else 0.0
+
+
+def confirm_rotation(image, degrees: int, model: str) -> int:
+    """2.1.3: os graus do OSD, conferidos lendo a imagem como está e girada.
+    O OSD errava a orientação de fotos de papel em pé (girava 180° com
+    confiança baixa) e o OCR guardava texto de cabeça para baixo; fica a
+    orientação em que as palavras saem com mais confiança. Sem leitura
+    melhor sem girar (empate, Tesseract falhou), valem os graus do OSD."""
+    if not degrees:
+        return 0
+    as_is = _word_confidence(image, model)
+    if as_is > _word_confidence(image.rotate(-degrees, expand=True, fillcolor=255), model):
+        return 0
+    return degrees
+
+
 def ocr_sample(image, model: str) -> str:
     """O texto da amostra lido com `model`; `""` se o Tesseract falhar."""
     try:
@@ -329,10 +364,11 @@ def scan_pdf(path: Path) -> tuple[list[int], int, str]:
         document.close()
 
 
-def _probe_images(images: dict[int, object], present: frozenset[str]) -> dict:
+def _probe_images(images: dict[int, object], present: frozenset[str], sample: bool = True) -> dict:
     """OSD e amostra de páginas já abertas. Devolve `scripts` (página →
     escrita), `rotate` (página → graus), `samples` (escrita → texto) e
-    `needs` (modelos de escrita a baixar)."""
+    `needs` (modelos de escrita a baixar). `sample=False`: só OSD e rotação
+    (conferida com os modelos presentes), sem amostra."""
     scripts: dict[int, str] = {}
     rotate: dict[int, int] = {}
     for number, image in images.items():
@@ -340,11 +376,17 @@ def _probe_images(images: dict[int, object], present: frozenset[str]) -> dict:
         if found is None:
             continue
         script, degrees = found
+        if degrees and script is not None:
+            model = sample_model(script, present)
+            if model is not None:
+                degrees = confirm_rotation(image, degrees, model)
         rotate[number] = degrees
         if script is not None:
             scripts[number] = script
     samples: dict[str, str] = {}
     needs: list[str] = []
+    if not sample:
+        return {"scripts": scripts, "rotate": rotate, "samples": samples, "needs": needs}
     for script in sorted(set(scripts.values())):
         model = sample_model(script, present)
         if model is None:
@@ -388,14 +430,14 @@ def probe_pdf(path: Path, ocr_pages: list[int], present: frozenset[str]) -> dict
         document.close()
 
 
-def probe_image(path: Path, present: frozenset[str]) -> dict:
+def probe_image(path: Path, present: frozenset[str], sample: bool = True) -> dict:
     from PIL import Image
 
     register_heif()
     with Image.open(path) as image:
         image.load()
         prepared = _prepared(image)
-    return _probe_images({1: prepared}, present)
+    return _probe_images({1: prepared}, present, sample=sample)
 
 
 def group_pages(ocr_pages: list[int], scripts: dict[int, str]) -> dict[str, list[int]]:
@@ -450,8 +492,5 @@ def detect_file(row: dict, source_folder: str, present: frozenset[str], osd_read
     if not osd_ready:
         return result
     # Imagem com plano guardado (refeita): só a rotação, sem amostra.
-    result.update(probe_image(path, present if not stored else frozenset()))
-    if stored:
-        result["needs"] = []
-        result["samples"] = {}
+    result.update(probe_image(path, present, sample=not stored))
     return result

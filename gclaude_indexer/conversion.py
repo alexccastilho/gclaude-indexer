@@ -620,6 +620,8 @@ def _reread_image(
         return text, []
     if absent:
         return text, [model]
+    if not rotate and degrees:
+        degrees = ocr_detection.confirm_rotation(prepared, degrees, model)
     try:
         again = _extract_text_image(path, model, rotate=rotate or degrees)
     except Exception:
