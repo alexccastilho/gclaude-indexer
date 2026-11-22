@@ -204,17 +204,48 @@ def _is_free(path: Path) -> bool:
         return False
 
 
+# O Google Drive para computador mostra cada pasta compartilhada comigo (e
+# alcançada por um atalho) em `<unidade>\.shortcut-targets-by-id\<id>\<pasta>`.
+# A pasta `<id>` só aceita a pasta compartilhada: criar qualquer outra coisa ali
+# falha ("Função incorreta"). A irmã `<pasta>-AI` então vai para o "Meu Drive"
+# da mesma unidade, cujo nome depende do idioma da conta.
+_DRIVE_SHORTCUT_TARGETS = ".shortcut-targets-by-id"
+_MY_DRIVE_NAMES = ("Meu Drive", "My Drive", "Mi unidad", "Mon Drive", "Meine Ablage", "Il mio Drive")
+
+
+def _in_shortcut_container(folder: Path) -> bool:
+    """`folder` fica direto na pasta `<id>` de um atalho do Drive, onde nada
+    além da pasta compartilhada pode ser criado."""
+    return folder.parent.parent.name.lower() == _DRIVE_SHORTCUT_TARGETS
+
+
+def _my_drive_folder(shortcut_target: Path) -> Path | None:
+    drive_root = shortcut_target.parent.parent.parent
+    for name in _MY_DRIVE_NAMES:
+        candidate = drive_root / name
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def suggest_output_folder(source: str) -> str | None:
     """`<pai>/<nome>-AI`, ou `-AI-2`, `-AI-3`... se já existir e não estiver
-    vazia. `None` para origem que não é caminho absoluto ou é raiz."""
+    vazia. Para pasta compartilhada do Google Drive, o pai é o "Meu Drive".
+    `None` para origem que não é caminho absoluto, é raiz ou é pasta
+    compartilhada numa unidade sem "Meu Drive" reconhecível."""
     origin = _normalize_folder(source)
     if origin is None or _is_root(origin):
         return None
+    parent = origin.parent
+    if _in_shortcut_container(origin):
+        parent = _my_drive_folder(origin)
+        if parent is None:
+            return None
     base = f"{origin.name}-{OUTPUT_FOLDER_SUFFIX}"
-    candidate = origin.parent / base
+    candidate = parent / base
     number = 2
     while not _is_free(candidate):
-        candidate = origin.parent / f"{base}-{number}"
+        candidate = parent / f"{base}-{number}"
         number += 1
     return str(candidate)
 
@@ -248,6 +279,14 @@ def check_new_project_folders(source: str, output: str) -> list:
         return [ConfigErrorMessage("config_error.output_inside_source", {"path": str(destination)})]
     if is_inside_folder(origin, destination):
         return [ConfigErrorMessage("config_error.source_inside_output", {"path": str(destination)})]
+
+    if not destination.exists() and _in_shortcut_container(destination):
+        return [
+            ConfigErrorMessage(
+                "config_error.output_in_shortcut_container",
+                {"path": str(destination), "suggestion": suggest_output_folder(str(origin)) or ""},
+            )
+        ]
 
     if destination.exists() and not (destination / PROJECT_DB_NAME).exists():
         if not destination.is_dir():

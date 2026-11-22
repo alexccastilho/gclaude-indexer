@@ -389,3 +389,62 @@ def test_projeto_antigo_com_saida_dentro_da_origem_continua_abrindo(tmp_path, or
     config, conn = load_project(saida)
     assert Path(config.output_folder) == saida
     conn.close()
+
+
+# --- 2.1.3: origem que é pasta compartilhada do Google Drive -----------------
+# O Drive para computador mostra a pasta compartilhada em
+# `<unidade>\.shortcut-targets-by-id\<id>\<pasta>`. A pasta `<id>` só aceita a
+# pasta compartilhada ("Função incorreta" ao criar qualquer outra coisa), então
+# a irmã `<pasta>-AI` não pode ser criada ali.
+
+
+def _drive(tmp_path, meu_drive="Meu Drive"):
+    raiz = tmp_path / "H"
+    origem = raiz / ".shortcut-targets-by-id" / "0AbCdEfGhIjKlMnOpQrStUv1" / "XPTO"
+    origem.mkdir(parents=True)
+    if meu_drive:
+        (raiz / meu_drive).mkdir()
+    return raiz, origem
+
+
+def test_atalho_do_drive_sugere_saida_no_meu_drive(tmp_path):
+    raiz, origem = _drive(tmp_path)
+    assert suggest_output_folder(str(origem)) == str(raiz / "Meu Drive" / "XPTO-AI")
+
+
+@pytest.mark.parametrize("nome", ["My Drive", "Mi unidad"])
+def test_atalho_do_drive_em_outros_idiomas(tmp_path, nome):
+    raiz, origem = _drive(tmp_path, nome)
+    assert suggest_output_folder(str(origem)) == str(raiz / nome / "XPTO-AI")
+
+
+def test_atalho_do_drive_numera_se_ocupada(tmp_path):
+    raiz, origem = _drive(tmp_path)
+    ocupada = raiz / "Meu Drive" / "XPTO-AI"
+    ocupada.mkdir()
+    (ocupada / "x.txt").write_text("x", encoding="utf-8")
+    assert suggest_output_folder(str(origem)) == str(raiz / "Meu Drive" / "XPTO-AI-2")
+
+
+def test_atalho_do_drive_sem_meu_drive_nao_sugere(tmp_path):
+    _, origem = _drive(tmp_path, meu_drive=None)
+    assert suggest_output_folder(str(origem)) is None
+
+
+def test_subpasta_do_atalho_mantem_a_irma(tmp_path):
+    _, origem = _drive(tmp_path)
+    sub = origem / "Processo 1"
+    sub.mkdir()
+    assert suggest_output_folder(str(sub)) == str(origem / "Processo 1-AI")
+
+
+def test_saida_ao_lado_da_pasta_compartilhada_e_recusada(tmp_path):
+    raiz, origem = _drive(tmp_path)
+    erros = check_new_project_folders(str(origem), str(origem.parent / "XPTO-AI"))
+    assert _chaves(erros) == ["config_error.output_in_shortcut_container"]
+    assert erros[0].params["suggestion"] == str(raiz / "Meu Drive" / "XPTO-AI")
+
+
+def test_saida_no_meu_drive_e_aceita(tmp_path):
+    raiz, origem = _drive(tmp_path)
+    assert check_new_project_folders(str(origem), str(raiz / "Meu Drive" / "XPTO-AI")) == []
