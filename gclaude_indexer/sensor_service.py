@@ -327,6 +327,14 @@ def _launch(parent_pid: int | None) -> str:
             return "already_elevated"
     except Exception:
         pass
+    # 2.1.3: um auxiliar vivo já publica leituras (`read_snapshot` só devolve
+    # as recentes). Abrir o atalho de novo com o sistema aberto pedia outro:
+    # dois leitores do mesmo driver e um prompt do UAC à toa.
+    try:
+        if sensors.read_snapshot() is not None:
+            return "already_running"
+    except Exception:
+        pass
 
     program, arguments = helper_command(parent_pid if parent_pid is not None else os.getpid())
     quoted = " ".join(f'"{argument}"' if " " in argument else argument for argument in arguments)

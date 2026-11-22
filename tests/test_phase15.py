@@ -103,7 +103,11 @@ def test_snapshot_velho_e_descartado(pasta_local):
         json.dumps([1, 2, 3]),
         json.dumps({"reading": LEITURA_COMPLETA}),  # sem carimbo de tempo
         json.dumps({"written_at": "agora", "reading": LEITURA_COMPLETA}),
-        json.dumps({"written_at": time.time(), "reading": {"cpu_temp_c": 40.0}}),  # chaves de menos
+        # 2.1.3: "chaves de menos" saiu daqui. Desde a fase 34 um subconjunto
+        # é aceito (`test_phase34::test_snapshot_de_um_auxiliar_antigo_com_menos
+        # _chaves_e_aceito`); o caso só passava na suíte inteira porque o
+        # `time.time()` acima é lido na coleta e, mais de 15 s depois, o
+        # arquivo já chegava velho.
         json.dumps({"written_at": time.time(), "reading": {**LEITURA_COMPLETA, "extra": 1}}),
         json.dumps({"written_at": time.time(), "reading": {**LEITURA_COMPLETA, "cpu_temp_c": "quente"}}),
         json.dumps({"written_at": time.time(), "reading": {**LEITURA_COMPLETA, "cpu_temp_c": True}}),
@@ -831,3 +835,18 @@ def test_o_codigo_de_saida_de_um_instalador_deixou_de_ser_invisivel():
         ("function Start-QuietProcess {", "function Invoke-ElevatedScript {"),
     ):
         assert "try { $null = $process.Handle } catch { }" in _bloco_ps1(nome, fim)
+
+
+def test_atalho_com_auxiliar_ja_vivo_nao_abre_um_segundo(monkeypatch):
+    """2.1.3: abrir o atalho "sensor de CPU" com o sistema já aberto pedia
+    outro auxiliar elevado mesmo com um vivo publicando leituras — dois
+    leitores do mesmo driver, e um prompt do UAC à toa."""
+    from gclaude_indexer import sensor_service
+
+    monkeypatch.setenv(sensor_service.ELEVATION_REQUEST_ENV, "1")
+    monkeypatch.setattr(sensor_service.sensors, "_is_admin", lambda: False)
+    monkeypatch.setattr(sensor_service.sensors, "read_snapshot", lambda: {"cpu_temp_c": 60.0})
+    monkeypatch.setattr(sensor_service, "_shell_execute_runas",
+                        lambda *_a: pytest.fail("já há um auxiliar vivo"))
+
+    assert sensor_service.start_elevated_helper(parent_pid=123) == "already_running"
