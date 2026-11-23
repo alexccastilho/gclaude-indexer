@@ -532,7 +532,9 @@ def test_backend_amd_via_vulkan_sem_hip7_vira_dois_eventos_uma_vez_so(tmp_path, 
     assert (params["device"], params["library"]) == ("AMD Radeon RX 6000 (12 GB)", "Vulkan")
     assert params["note"]["$i18n_key"] == "log.local_engine.backend_parallel_pinned"
     assert params["note"]["$i18n_params"] == {"family": "qwen35"}
-    assert eventos[1][0] == "warning"
+    # 2.1.4: informação, não aviso: não há nada que o usuário possa fazer, e
+    # o aviso aparecia como problema a cada classificação.
+    assert eventos[1][0] == "info"
 
 
 def test_rx_7000_com_driver_antigo_recebe_o_aviso_de_atualizar_e_nao_o_do_hip7(tmp_path, monkeypatch):

@@ -1628,11 +1628,14 @@ def _log_backend(conn: sqlite3.Connection, language: str | None = None) -> None:
     # telling that user "no update changes this" would be false and would
     # contradict the installer (revisão da fase 36).
     if info.amd_driver_old and info.library.lower() == "vulkan":
+        # 2.1.4: sem HIP 7 não há o que fazer, então é informação; o aviso
+        # aparecia como problema a cada classificação. O driver antigo de uma
+        # RX 7000 tem conserto (atualizar) e segue como aviso.
         if ollama_backend.prefers_flash_attention_off(info):
-            key = "log.local_engine.backend_amd_no_hip7"
+            key, level = "log.local_engine.backend_amd_no_hip7", "info"
         else:
-            key = "log.local_engine.backend_amd_driver_old"
-        record_event(conn, "classification", "warning", key, {"device": info.device}, language=language)
+            key, level = "log.local_engine.backend_amd_driver_old", "warning"
+        record_event(conn, "classification", level, key, {"device": info.device}, language=language)
 
 
 MODEL_RETRY_SECONDS = 60.0
