@@ -1428,25 +1428,109 @@ def is_blank_page(page: WindowPage) -> bool:
     return category_of_extension(Path(page.file_name).suffix) in PAGED_CATEGORIES
 
 
-def split_blank_pages(pages: list[WindowPage]) -> tuple[list[ClassifiedItem], list[WindowPage]]:
+# 2.1.4: página que só tem o rodapé (ou cabeçalho) repetido do documento. Os
+# processos do órgão têm milhares de folhas vazias com só "Para verificar as
+# assinaturas... código NNNNNNNN." e um ícone; o modelo lia uma a uma (18.414
+# páginas, ~69 h de classificação). Entra na regra o texto inteiro da página,
+# curto, igual em pelo menos `FOOTER_MIN_SHARE` das páginas de um arquivo de
+# `FOOTER_MIN_PAGES` páginas ou mais. Slides com títulos curtos e diferentes,
+# ou um título igual em poucas páginas, seguem para o modelo.
+FOOTER_MAX_CHARS = 200
+FOOTER_MIN_PAGES = 20
+FOOTER_MIN_SHARE = 0.3
+FOOTER_PAGE_SUMMARY = "Página sem texto próprio: só o rodapé ou cabeçalho que se repete no documento."
+
+# file_id → (textos de rodapé, menor número de imagens de uma página do arquivo)
+FooterTexts = dict[int, tuple[frozenset[str], int]]
+
+
+def _footer_key(text: str) -> str:
+    return " ".join(text.split())
+
+
+def repeated_footer_texts(conn: sqlite3.Connection) -> FooterTexts:
+    """Os textos de rodapé de cada arquivo, uma leitura por classificação.
+    Arquivo com OCR falho fica de fora: a folha escaneada cujo OCR não saiu
+    pode ter conteúdo, e o rodapé nativo seria o único texto dela."""
+    totals: dict[int, tuple[int, int]] = {}
+    for file_id, pages, fewest_images in conn.execute(
+        """
+        SELECT page.file_id, COUNT(*), MIN(page.image_count)
+        FROM page JOIN file ON file.id = page.file_id
+        WHERE COALESCE(file.ocr_failed, 0) = 0
+        GROUP BY page.file_id
+        HAVING COUNT(*) >= ?
+        """,
+        (FOOTER_MIN_PAGES,),
+    ):
+        totals[file_id] = (pages, fewest_images or 0)
+    counts: dict[int, dict[str, int]] = {}
+    for file_id, text in conn.execute(
+        "SELECT file_id, text FROM page WHERE length(text) <= ? AND trim(text) != ''",
+        (FOOTER_MAX_CHARS * 2,),
+    ):
+        if file_id not in totals:
+            continue
+        key = _footer_key(text or "")
+        if key and len(key) <= FOOTER_MAX_CHARS:
+            per_file = counts.setdefault(file_id, {})
+            per_file[key] = per_file.get(key, 0) + 1
+    found: FooterTexts = {}
+    for file_id, per_file in counts.items():
+        pages, fewest_images = totals[file_id]
+        texts = frozenset(key for key, count in per_file.items() if count >= FOOTER_MIN_SHARE * pages)
+        if texts:
+            found[file_id] = (texts, fewest_images)
+    return found
+
+
+def is_footer_only_page(page: WindowPage, footers: FooterTexts | None) -> bool:
+    """Página cujo texto inteiro é o rodapé repetido do arquivo, sem imagem
+    além das que toda página dele tem (o ícone do rodapé)."""
+    if not footers or page.file_id not in footers:
+        return False
+    texts, fewest_images = footers[page.file_id]
+    if page.image_count > fewest_images:
+        return False
+    if category_of_extension(Path(page.file_name).suffix) not in PAGED_CATEGORIES:
+        return False
+    return _footer_key(page.text) in texts
+
+
+def split_blank_pages(
+    pages: list[WindowPage], footers: FooterTexts | None = None,
+) -> tuple[list[ClassifiedItem], list[WindowPage]]:
     """`(peças das páginas em branco, páginas que seguem para o modelo)`.
-    Páginas em branco seguidas do mesmo arquivo são uma peça só."""
-    blank = [page for page in pages if is_blank_page(page)]
+    Páginas em branco seguidas do mesmo arquivo e do mesmo tipo (sem nada;
+    só o rodapé) são uma peça só."""
+    def kind(page: WindowPage) -> str | None:
+        if is_blank_page(page):
+            return BLANK_PAGE_SUMMARY
+        if is_footer_only_page(page, footers):
+            return FOOTER_PAGE_SUMMARY
+        return None
+
+    kinds = [kind(page) for page in pages]
+    blank = [(page, summary) for page, summary in zip(pages, kinds) if summary]
     if not blank:
         return [], pages
-    items: list[ClassifiedItem] = []
-    blocks: list[list[WindowPage]] = [[blank[0]]]
-    for previous, page in zip(blank, blank[1:]):
-        if page.file_name == previous.file_name and page_order(page) == page_order(previous) + 1:
-            blocks[-1].append(page)
+    blocks: list[list[tuple[WindowPage, str]]] = [[blank[0]]]
+    for previous, current in zip(blank, blank[1:]):
+        (before, before_kind), (page, page_kind) = previous, current
+        if (
+            page.file_name == before.file_name and page_kind == before_kind
+            and page_order(page) == page_order(before) + 1
+        ):
+            blocks[-1].append(current)
         else:
-            blocks.append([page])
+            blocks.append([current])
+    items: list[ClassifiedItem] = []
     for block in blocks:
         items.append(item_for_pages(
-            block, engine=ENGINE_LOCAL, confidence="high", type_=BLANK_PAGE_TYPE, summary=BLANK_PAGE_SUMMARY,
-            has_table=False, has_image=False,
+            [page for page, _ in block], engine=ENGINE_LOCAL, confidence="high", type_=BLANK_PAGE_TYPE,
+            summary=block[0][1], has_table=False, has_image=False,
         ))
-    return items, [page for page in pages if not is_blank_page(page)]
+    return items, [page for page, summary in zip(pages, kinds) if not summary]
 
 
 def _coverage_items(pages: list[WindowPage]) -> list[ClassifiedItem]:
@@ -1715,6 +1799,7 @@ def classify_pending(
         )
 
     _prepare_second_attempts(conn, local_engine)
+    footers = repeated_footer_texts(conn)
 
     rules_fallback_engine = RulesEngine(load_rules())
     # 1.5.12, explicit request: with a graphics card the model is the only
@@ -1765,7 +1850,7 @@ def classify_pending(
         # window made only of acts never waits for the model.
         # A página em branco (sem texto e sem imagem) não vai ao modelo:
         # vira "PÁGINA EM BRANCO" com confiança alta.
-        blank_items, pages_to_read = split_blank_pages(pages)
+        blank_items, pages_to_read = split_blank_pages(pages, footers)
         result.blank_pages += sum(item.end_order - item.start_order + 1 for item in blank_items)
         structured_items, model_pages = planalto.split(pages_to_read)
         result.windows_structured += 1 if structured_items else 0

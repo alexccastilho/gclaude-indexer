@@ -51,7 +51,7 @@ def test_janelas_devolvidas_antes_da_queda_nao_ficam_com_linhas_em_dobro(tmp_pat
     from .test_phase8 import TEXTO_LONGO_SEM_MARCADOR, _projeto_pronto_para_classificar
 
     config, conn = _projeto_pronto_para_classificar(
-        tmp_path, [TEXTO_LONGO_SEM_MARCADOR] * 24, pages_per_window=8, overlap=0
+        tmp_path, [f"{TEXTO_LONGO_SEM_MARCADOR} Página {n}." for n in range(1, 24 + 1)], pages_per_window=8, overlap=0
     )
     primeira = _classificar_sem_modelo_nem_placa(conn, config, monkeypatch)
     assert primeira.windows_via_rules_fallback > 0
@@ -76,7 +76,7 @@ def test_sem_modelo_janela_de_queda_ja_concluida_fica_como_esta(tmp_path, monkey
     from .test_phase8 import TEXTO_LONGO_SEM_MARCADOR, _projeto_pronto_para_classificar
 
     config, conn = _projeto_pronto_para_classificar(
-        tmp_path, [TEXTO_LONGO_SEM_MARCADOR] * 16, pages_per_window=8, overlap=0
+        tmp_path, [f"{TEXTO_LONGO_SEM_MARCADOR} Página {n}." for n in range(1, 16 + 1)], pages_per_window=8, overlap=0
     )
     _classificar_sem_modelo_nem_placa(conn, config, monkeypatch)
     caminho = Path(config.output_folder) / RAW_ITEMS_FILE_NAME

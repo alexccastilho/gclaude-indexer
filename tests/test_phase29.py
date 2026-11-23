@@ -480,7 +480,7 @@ def _classificacao_com_motor(tmp_path, monkeypatch, motor, com_placa):
     from .test_phase8 import TEXTO_LONGO_SEM_MARCADOR, _projeto_pronto_para_classificar
 
     config, conn = _projeto_pronto_para_classificar(
-        tmp_path, [TEXTO_LONGO_SEM_MARCADOR] * 40, pages_per_window=8, overlap=0
+        tmp_path, [f"{TEXTO_LONGO_SEM_MARCADOR} Página {n}." for n in range(1, 40 + 1)], pages_per_window=8, overlap=0
     )
     monkeypatch.setattr(engine_local, "_has_dedicated_gpu", lambda: com_placa)
     monkeypatch.setattr(engine_local, "MODEL_RETRY_SECONDS", 0.0)
