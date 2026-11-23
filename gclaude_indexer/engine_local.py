@@ -1981,15 +1981,29 @@ def classify_pending(
     # instead of 2–4 commits per window. The coverage fill is done by the
     # loop, and not inside `classify`, so it also holds when the window
     # failed and fell back to the rules engine.
-    classify_windows(
-        conn, config, classify_window, result,
-        invalid_item_event=lambda item, window_key, errors: (
-            "log.local_engine.invalid_item",
-            {"engine": item.engine, "window": window_key, "errors": "; ".join(errors)},
-        ),
-        coverage=("log.local_engine.coverage_filled", _coverage_items),
-        should_stop=should_stop, language=language,
-    )
+    def run_pass() -> None:
+        classify_windows(
+            conn, config, classify_window, result,
+            invalid_item_event=lambda item, window_key, errors: (
+                "log.local_engine.invalid_item",
+                {"engine": item.engine, "window": window_key, "errors": "; ".join(errors)},
+            ),
+            coverage=("log.local_engine.coverage_filled", _coverage_items),
+            should_stop=should_stop, language=language,
+        )
+
+    run_pass()
+    # 2.1.4: a janela que o modelo deixou de responder 3 vezes seguidas
+    # (Ollama no ar, mas lento por alguns minutos) ganha uma volta extra no
+    # fim, quando ele costuma já ter voltado. Antes ela ficava pendente até
+    # alguém rodar a classificação de novo, e o índice saía com o buraco.
+    skipped = result.windows_skipped
+    if skipped and not (should_stop is not None and should_stop()):
+        record_event(
+            conn, "classification", "info", "log.local_engine.skipped_retry", {"count": skipped},
+            language=language,
+        )
+        run_pass()
 
     if result.windows_context_raised or result.windows_split_for_size:
         # Fase 36: the context story of the step, once — the per-window
