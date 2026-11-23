@@ -448,3 +448,59 @@ def test_saida_ao_lado_da_pasta_compartilhada_e_recusada(tmp_path):
 def test_saida_no_meu_drive_e_aceita(tmp_path):
     raiz, origem = _drive(tmp_path)
     assert check_new_project_folders(str(origem), str(raiz / "Meu Drive" / "XPTO-AI")) == []
+
+
+# --- 2.1.4: Drive em modo espelho --------------------------------------------
+# Com o "Meu Drive" espelhado (pasta local em `%USERPROFILE%\Meu Drive (conta)`),
+# a unidade do Drive não tem a pasta "Meu Drive", só o atalho `Meu Drive.lnk`
+# apontando para o espelho. A 2.1.3 não achava a pasta e não sugeria nada.
+
+
+def _drive_espelhado(tmp_path):
+    raiz, origem = _drive(tmp_path, meu_drive=None)
+    espelho = tmp_path / "perfil" / "Meu Drive (conta@exemplo.org)"
+    espelho.mkdir(parents=True)
+    (raiz / "Meu Drive.lnk").write_bytes(b"atalho")
+    return raiz, origem, espelho
+
+
+def test_drive_espelhado_segue_o_atalho_do_meu_drive(tmp_path, monkeypatch):
+    from gclaude_indexer import paths
+
+    raiz, origem, espelho = _drive_espelhado(tmp_path)
+    monkeypatch.setattr(paths, "_shortcut_target", lambda lnk: str(espelho) if lnk == raiz / "Meu Drive.lnk" else None)
+    assert suggest_output_folder(str(origem)) == str(espelho / "XPTO-AI")
+
+
+def test_atalho_que_nao_abre_nao_sugere(tmp_path, monkeypatch):
+    from gclaude_indexer import paths
+
+    _, origem, _ = _drive_espelhado(tmp_path)
+    monkeypatch.setattr(paths, "_shortcut_target", lambda lnk: None)
+    assert suggest_output_folder(str(origem)) is None
+
+
+def test_atalho_para_pasta_que_sumiu_nao_sugere(tmp_path, monkeypatch):
+    from gclaude_indexer import paths
+
+    _, origem, espelho = _drive_espelhado(tmp_path)
+    monkeypatch.setattr(paths, "_shortcut_target", lambda lnk: str(espelho / "nao-existe"))
+    assert suggest_output_folder(str(origem)) is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="atalho .lnk é do Windows")
+def test_le_o_destino_de_um_atalho_de_verdade(tmp_path):
+    import subprocess
+
+    from gclaude_indexer import paths
+
+    # Com acento: o PowerShell 5.1 escreve a saída na página de código OEM.
+    destino = tmp_path / "João Ação" / "Meu Drive (conta@exemplo.org)"
+    destino.mkdir(parents=True)
+    lnk = tmp_path / "Meu Drive.lnk"
+    script = (
+        f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}'); "
+        f"$s.TargetPath = '{destino}'; $s.Save()"
+    )
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], check=True, timeout=60)
+    assert Path(paths._shortcut_target(lnk)) == destino

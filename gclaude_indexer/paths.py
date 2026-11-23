@@ -219,12 +219,49 @@ def _in_shortcut_container(folder: Path) -> bool:
     return folder.parent.parent.name.lower() == _DRIVE_SHORTCUT_TARGETS
 
 
+def _shortcut_target(lnk: Path) -> str | None:
+    """O destino de um atalho `.lnk` do Windows, pelo próprio Windows. Na
+    unidade virtual do Drive o arquivo do atalho não abre para leitura
+    (`Errno 22`), então ler o formato direto não serve. `None` se falhar."""
+    if os.name != "nt":
+        return None
+    import subprocess
+
+    # O caminho vai por variável de ambiente: nada dele é lido como código. A
+    # saída em UTF-8: o PowerShell 5.1 escreveria na página de código OEM e um
+    # caminho com acento ("C:\Users\João\...") voltaria estragado.
+    script = (
+        "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+        "(New-Object -ComObject WScript.Shell).CreateShortcut($env:GCLAUDE_LNK).TargetPath"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+            env={**os.environ, "GCLAUDE_LNK": str(lnk)},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    target = (result.stdout or "").strip()
+    return target or None
+
+
 def _my_drive_folder(shortcut_target: Path) -> Path | None:
     drive_root = shortcut_target.parent.parent.parent
     for name in _MY_DRIVE_NAMES:
         candidate = drive_root / name
         if candidate.is_dir():
             return candidate
+    # 2.1.4: "Meu Drive" espelhado numa pasta local; na unidade do Drive fica
+    # só o atalho `Meu Drive.lnk` apontando para ela.
+    for name in _MY_DRIVE_NAMES:
+        lnk = drive_root / f"{name}.lnk"
+        if not lnk.exists():
+            continue
+        target = _shortcut_target(lnk)
+        if target and Path(target).is_dir():
+            return Path(target)
     return None
 
 
