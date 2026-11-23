@@ -184,6 +184,10 @@ def _same_page_count(source: Path, destination: Path) -> bool:
         return False
 
 
+# Saída do ocrmypdf quando o Ghostscript falha ao rasterizar uma página.
+_GHOSTSCRIPT_FAILED = "Ghostscript rasterizing failed"
+
+
 def _run_ocrmypdf(
     source: Path, destination: Path, ocr_language: str, jobs: int = 1, pages: list[int] | None = None,
     rotate: bool = False,
@@ -235,7 +239,7 @@ def _run_ocrmypdf(
         # minute or ordinance is refused outright.
         "--invalidate-digital-signatures",
         "--jobs",
-        str(max(1, jobs)),
+        str(max(1, jobs)),  # trocado por 1 na nova tentativa (abaixo)
         # A plain PDF, not PDF/A. The copy is only read for its text,
         # and the PDF/A conversion (Ghostscript) refuses a PDF with an
         # unusual color space (`ColorConversionNeededError`) — which threw
@@ -252,6 +256,18 @@ def _run_ocrmypdf(
     ]
     try:
         result = run_hidden(command, env=_ocr_environment())
+        if pages and result.returncode != 0 and _GHOSTSCRIPT_FAILED in (result.stderr or ""):
+            # 2.1.4: o Ghostscript às vezes cai com vários arquivos rodando
+            # juntos ("Unrecoverable error, exit code 255"); as mesmas páginas,
+            # de novo e num processo só, passam. Sem isto o arquivo seguia sem
+            # elas e ficava marcado para refazer o OCR na próxima conversão.
+            # Só com `pages`: o arquivo inteiro num processo só pode levar o
+            # dobro do tempo, e esse fica mesmo para a próxima conversão.
+            command = list(command)
+            command[command.index("--jobs") + 1] = "1"
+            if destination.exists():
+                destination.unlink()
+            result = run_hidden(command, env=_ocr_environment())
     finally:
         if argfile is not None:
             argfile.unlink(missing_ok=True)
