@@ -15,6 +15,29 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.4] - 2026-11-22
+
+### Corregido
+
+- **Una página con solo el pie repetido del documento ya no va al
+  modelo.** Los procesos tenían 18.385 páginas vacías con solo el pie de
+  autenticación y un ícono, y el modelo las leía una por una. En el acervo
+  probado, 3.033 de 4.951 ventanas dejan de necesitar el modelo, y la
+  estimación de la clasificación bajó de unas 69 h a unas 27 h. Vale para
+  las ventanas pendientes de un proyecto ya en marcha.
+- **Un volumen de texto con algunas diapositivas escaneadas ya no queda
+  marcado para rehacerse con japonés, griego, árabe o cirílico.** Una
+  escritura extranjera solo se pide cuando las páginas débiles son la
+  mayoría del documento entero, no solo de las escaneadas.
+- **Una falla pasajera de Ghostscript ya no deja páginas sin OCR.** Con
+  varios archivos en marcha a la vez Ghostscript a veces caía; ahora las
+  mismas páginas se intentan una vez más, en un solo proceso.
+- **Una carpeta compartida de Google Drive como origen con Mi unidad en
+  modo espejo** vuelve a recibir la salida sugerida (la unidad solo tiene
+  el acceso directo `Mi unidad.lnk` a la carpeta local).
+- El aviso de que la RX 5000/6000 funciona vía Vulkan ahora es
+  información: no hay nada que hacer al respecto.
+
 ## [2.1.3] - 2026-11-22
 
 ### Corregido

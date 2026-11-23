@@ -9,6 +9,29 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.4] - 2026-11-22
+
+### Fixed
+
+- **Pages with only the document's repeated footer no longer go to the
+  model.** The court files had 18,385 empty pages carrying only the
+  authentication footer and an icon; the model read them one by one. In
+  the collection tested, 3,033 of 4,951 windows no longer need the model,
+  and the classification estimate went from about 69 h to about 27 h. It
+  applies to the pending windows of a project already under way.
+- **Text volumes with a few scanned slides are no longer marked to be
+  redone with Japanese, Greek, Arabic or Cyrillic.** A foreign script is
+  only requested when the weak pages are the majority of the whole
+  document, not just of the scanned pages.
+- **A passing Ghostscript failure no longer leaves pages without OCR.**
+  With several files running together Ghostscript sometimes crashed; the
+  same pages are now tried once more, in a single process.
+- **A Google Drive shared folder as source with My Drive in mirror mode**
+  gets its output suggested again (the drive holds only a `My Drive.lnk`
+  shortcut to the local folder).
+- The note that the RX 5000/6000 runs via Vulkan is now information, not a
+  warning: there is nothing to do about it.
+
 ## [2.1.3] - 2026-11-22
 
 ### Fixed

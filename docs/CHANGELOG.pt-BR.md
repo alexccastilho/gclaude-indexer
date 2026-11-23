@@ -15,6 +15,29 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.4] - 2026-11-22
+
+### Corrigido
+
+- **Página só com o rodapé repetido do documento não vai mais ao modelo.**
+  Os processos tinham 18.385 páginas vazias com só o rodapé de
+  autenticação e um ícone, e o modelo lia uma a uma. No acervo testado,
+  3.033 de 4.951 janelas deixam de precisar do modelo, e a estimativa da
+  classificação caiu de cerca de 69 h para cerca de 27 h. Vale para as
+  janelas pendentes de um projeto já em andamento.
+- **Volume de texto com alguns slides escaneados não é mais marcado para
+  ser refeito com japonês, grego, árabe ou cirílico.** Escrita estrangeira
+  só é pedida quando as páginas fracas são a maioria do documento inteiro,
+  não só das páginas escaneadas.
+- **Falha passageira do Ghostscript não deixa mais páginas sem OCR.** Com
+  vários arquivos rodando juntos o Ghostscript às vezes caía; agora as
+  mesmas páginas são tentadas mais uma vez, num processo só.
+- **Pasta compartilhada do Google Drive como origem com o Meu Drive
+  espelhado** volta a ter a saída sugerida (a unidade só tem o atalho
+  `Meu Drive.lnk` para a pasta local).
+- O aviso de que a RX 5000/6000 roda via Vulkan agora é informação: não há
+  nada a fazer quanto a isso.
+
 ## [2.1.3] - 2026-11-22
 
 ### Corrigido
