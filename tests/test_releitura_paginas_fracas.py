@@ -28,14 +28,14 @@ def _pdf(path, weak_pages: set[int], total: int):
     document.close()
 
 
-def _reread(tmp_path, monkeypatch, weak: set[int], total: int) -> list[str]:
+def _reread(tmp_path, monkeypatch, weak: set[int], total: int, ocr_pages: list[int] | None = None) -> list[str]:
     source = tmp_path / "origem.pdf"
     destination = tmp_path / "lido.pdf"
     _pdf(source, weak, total)
     _pdf(destination, weak, total)
     monkeypatch.setattr(conversion, "_reread_model", lambda image, used, usable: ("script/Arabic", 0, True))
     missing, _read = conversion._reread_weak_pdf_pages(
-        "vol.pdf", source, destination, list(range(1, total + 1)), ["por"], ["por", "osd"],
+        "vol.pdf", source, destination, ocr_pages or list(range(1, total + 1)), ["por"], ["por", "osd"],
         1, False, [], {},
     )
     return missing
@@ -47,3 +47,15 @@ def test_poucas_paginas_fracas_nao_pedem_escrita_ausente(tmp_path, monkeypatch):
 
 def test_documento_quase_todo_ilegivel_ainda_pede_a_escrita(tmp_path, monkeypatch):
     assert _reread(tmp_path, monkeypatch, weak=set(range(1, 11)), total=12) == ["script/Arabic"]
+
+
+# 2.1.4: no projeto recriado, 8 volumes do CFO ainda pediam japonês, grego,
+# árabe ou cirílico. Só uma parte pequena do volume é escaneada (17 de 316
+# páginas no Vol 4: slides com um título), e essas páginas são quase todas
+# fracas. A maioria tem de ser do documento, não só das páginas escaneadas.
+
+
+def test_slides_escaneados_num_volume_de_texto_nao_pedem_escrita(tmp_path, monkeypatch):
+    escaneadas = list(range(290, 307))
+    fracas = set(escaneadas[:15])
+    assert _reread(tmp_path, monkeypatch, weak=fracas, total=316, ocr_pages=escaneadas) == []

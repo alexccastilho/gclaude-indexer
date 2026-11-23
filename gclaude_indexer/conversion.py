@@ -508,6 +508,7 @@ def _reread_weak_pdf_pages(
         document = fitz.open(destination)
         try:
             weak = [n for n, size in _ocr_pages_text(document, ocr_pages).items() if size < REREAD_MIN_CHARS]
+            page_count = document.page_count
         finally:
             document.close()
     except Exception:
@@ -519,7 +520,10 @@ def _reread_weak_pdf_pages(
     # (assinatura, carimbo) o OSD diz "Greek" ou "Arabic" com a mesma
     # confiança de uma página grega de verdade, e cada uma refazia o arquivo
     # inteiro com `por+script/Arabic+...`.
-    may_ask = len(weak) * 2 > len(ocr_pages)
+    # 2.1.4: a maioria é do documento inteiro, não só das páginas escaneadas:
+    # num volume de texto com poucos slides escaneados (17 de 316 páginas,
+    # quase todos fracos), o OSD ainda pedia japonês, grego ou cirílico.
+    may_ask = len(weak) * 2 > page_count
 
     groups: dict[str, list[int]] = {}
     missing: list[str] = []
