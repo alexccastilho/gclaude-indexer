@@ -55,7 +55,14 @@ def _plain(text: str) -> str:
     return "".join(kept)
 
 
-def _spellings(values) -> dict[str, str]:
+def _key(text: str) -> str:
+    """The key two spellings of one type share: no accents and, since
+    2.1.4, no hyphens — the model wrote both "E-MAIL" and "EMAIL" in one
+    collection. Spaces still count: "LEI" and "LEI FEDERAL" stay apart."""
+    return _plain(text).replace("-", "")
+
+
+def _spellings(values, key=_key) -> dict[str, str]:
     """For each accent-free key, the spelling every variant becomes.
 
     The most frequent one, except that an accented spelling beats a more
@@ -64,7 +71,7 @@ def _spellings(values) -> dict[str, str]:
     invents one ("TEÓRIA" 30 times against "TEORIA" 91)."""
     counts: dict[str, Counter] = defaultdict(Counter)
     for value in values:
-        counts[_plain(value)][value] += 1
+        counts[key(value)][value] += 1
     return {key: _pick(names, list(names)) for key, names in counts.items()}
 
 
@@ -101,7 +108,7 @@ def normalize_types(items: list[dict]) -> int:
     for item in items:
         kind = item.get("type")
         if isinstance(kind, str) and kind.strip():
-            new = canonical[_plain(" ".join(kind.upper().split()))]
+            new = canonical[_key(" ".join(kind.upper().split()))]
         elif any(marker in str(item.get("summary") or "").lower() for marker in _BLANK_MARKERS):
             new = BLANK_PAGE_TYPE
         else:
@@ -230,7 +237,9 @@ def fill_structured_authors(conn: sqlite3.Connection, items: list[dict]) -> int:
     signed = [item for item in items if item.get("engine") == planalto.ENGINE and item.get("author")]
     for item in signed:
         item["author"] = planalto.person_name(item["author"])
-    chosen = _spellings(item["author"] for item in signed)
+    # Names compare by accent only (`_plain`): "Jean-Paul" and "Jean Paul"
+    # may be two people, unlike two spellings of a type label.
+    chosen = _spellings((item["author"] for item in signed), key=_plain)
     for item in signed:
         item["author"] = chosen[_plain(item["author"])]
     return found
