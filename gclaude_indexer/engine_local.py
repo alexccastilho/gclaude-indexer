@@ -231,6 +231,19 @@ def _response_tokens_for(page_count: int = 0) -> int:
     never below `_RESPONSE_TOKENS`."""
     return max(_RESPONSE_TOKENS, page_count * _RESPONSE_TOKENS_PER_PAGE)
 
+
+# 2.1.4: the most the model may write for one request (`num_predict`), as a
+# multiple of the reserve above. With no cap, a model caught in a repetition
+# loop ("0000000-00.0000.0.00.0000 (ATOrd - Anistia, 25ª Vara);" over and
+# over, measured on the XPTO collection) only stopped at the 300 s timeout,
+# and at temperature 0 every retry looped the same way. Real answers for 8
+# pages measured 998 and 1,470 tokens against a cap of 5,280.
+_ANSWER_CAP_FACTOR = 3
+
+
+def _answer_cap(page_count: int) -> int:
+    return _response_tokens_for(page_count) * _ANSWER_CAP_FACTOR
+
 # Context sizes are rounded up to a multiple of this — a stable value
 # across windows of slightly different lengths means Ollama keeps one
 # loaded model instead of reloading it whenever the prompt grows by a
@@ -303,6 +316,10 @@ class Generation:
     prompt_tokens: int = 0
     response_tokens: int = 0
     context: int = 0
+    # Ollama's `done_reason`: "length" with `response_tokens` at the cap
+    # means the answer was cut by `num_predict` (2.1.4).
+    done_reason: str = ""
+    num_predict: int = 0
 
 
 @dataclass
@@ -718,6 +735,7 @@ class LocalEngine:
             self.base_requests += 1
         try:
             schema = _page_schema(page_count) if self.structured_output else None
+            self._answer_cap = _answer_cap(page_count)
             generation = self._generate(prompt, schema)
         except PromptTooLongError as exc:
             self._last_refused = True
@@ -731,6 +749,16 @@ class LocalEngine:
             return [], min(alvo, teto) if teto else alvo
 
         self._last_refused = False
+        if (
+            generation.done_reason == "length" and generation.num_predict
+            and generation.response_tokens >= generation.num_predict
+        ):
+            # Cut by the answer cap, not by the context: a repetition loop.
+            # The same request would loop again (temperature 0); the caller
+            # splits the window, which changes the prompt.
+            raise ModelAnswerError(
+                f"answer cut at {generation.num_predict} tokens (repetition loop)"
+            )
         estimativa = int(len(prompt) / self._chars_per_token)
         if _looks_truncated(generation, estimativa):
             return [], self._context_needed(generation, page_count)
@@ -786,6 +814,9 @@ class LocalEngine:
             # truncated silently — the model would classify a window whose
             # end it never received.
             options["num_ctx"] = self.num_ctx
+        answer_cap = getattr(self, "_answer_cap", 0)
+        if answer_cap:
+            options["num_predict"] = answer_cap
 
         body = json.dumps(
             {
@@ -842,6 +873,8 @@ class LocalEngine:
             prompt_tokens=int(data.get("prompt_eval_count") or 0),
             response_tokens=int(data.get("eval_count") or 0),
             context=int(options.get("num_ctx") or 0),
+            done_reason=str(data.get("done_reason") or ""),
+            num_predict=int(options.get("num_predict") or 0),
         )
 
 
