@@ -29,6 +29,18 @@ carrying as unreleased.
 - **A Google Drive shared folder as source with My Drive in mirror mode**
   gets its output suggested again (the drive holds only a `My Drive.lnk`
   shortcut to the local folder).
+- **A model answer caught in a repetition loop no longer holds a section
+  for 15 minutes.** The model sometimes repeated a case number without
+  end, and only the 300 s timeout stopped it, three times in a row. The
+  answer now has a cap proportional to the pages; an answer cut at the cap
+  splits the section, which changes the request.
+- **A section that failed on the model is tried again at the end of the
+  same run**, instead of staying pending until classification is run
+  again (two sections timed out while the model was slow for a few
+  minutes, and answered in under a minute afterwards).
+- **"E-MAIL" and "EMAIL" are one type in the index**: spellings that
+  differ only in a hyphen are merged, as those that differ only in an
+  accent already were.
 - The note that the RX 5000/6000 runs via Vulkan is now information, not a
   warning: there is nothing to do about it.
 

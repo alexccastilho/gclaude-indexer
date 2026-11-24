@@ -35,6 +35,19 @@ el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 - **Una carpeta compartida de Google Drive como origen con Mi unidad en
   modo espejo** vuelve a recibir la salida sugerida (la unidad solo tiene
   el acceso directo `Mi unidad.lnk` a la carpeta local).
+- **Una respuesta del modelo atrapada en un bucle de repetición ya no
+  retiene un tramo durante 15 minutos.** El modelo a veces repetía el
+  número de un proceso sin parar, y solo el tiempo límite de 300 s lo
+  detenía, tres veces seguidas. Ahora la respuesta tiene un tope
+  proporcional a las páginas; una respuesta cortada en el tope divide el
+  tramo, lo que cambia el pedido.
+- **Un tramo que falló en el modelo se intenta de nuevo al final de la
+  misma ejecución**, en lugar de quedar pendiente hasta que alguien vuelva
+  a ejecutar la clasificación (dos tramos agotaron el tiempo con el modelo
+  lento por unos minutos y, después, respondieron en menos de un minuto).
+- **"E-MAIL" y "EMAIL" son un solo tipo en el índice**: las grafías que
+  solo difieren en el guion se unen, como ya pasaba con las que solo
+  difieren en el acento.
 - El aviso de que la RX 5000/6000 funciona vía Vulkan ahora es
   información: no hay nada que hacer al respecto.
 

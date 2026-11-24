@@ -35,6 +35,17 @@ não por versão semântica: a versão reportada pelo aplicativo
 - **Pasta compartilhada do Google Drive como origem com o Meu Drive
   espelhado** volta a ter a saída sugerida (a unidade só tem o atalho
   `Meu Drive.lnk` para a pasta local).
+- **Resposta do modelo presa num laço de repetição não segura mais um
+  trecho por 15 minutos.** O modelo às vezes repetia o número de um
+  processo sem parar, e só o tempo limite de 300 s o interrompia, três
+  vezes seguidas. Agora a resposta tem um teto proporcional às páginas; a
+  resposta cortada no teto divide o trecho, o que muda o pedido.
+- **Trecho que falhou no modelo é tentado de novo no fim da mesma
+  execução**, em vez de ficar pendente até alguém rodar a classificação de
+  novo (dois trechos estouraram o tempo com o modelo lento por alguns
+  minutos e, depois, responderam em menos de um minuto).
+- **"E-MAIL" e "EMAIL" são um tipo só no índice**: grafias que só diferem
+  no hífen se juntam, como já acontecia com as que só diferem no acento.
 - O aviso de que a RX 5000/6000 roda via Vulkan agora é informação: não há
   nada a fazer quanto a isso.
 
