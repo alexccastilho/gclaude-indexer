@@ -15,6 +15,30 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.5] - 2026-11-26
+
+### Corregido
+
+- **Una ventana marcada como clasificada cuyas piezas faltan en
+  `raw_items.jsonl` vuelve a la cola, en lugar de convertirse en un hueco
+  sin aviso.** Un proyecto clasificado en dos PC desde la misma carpeta de
+  Google Drive recibía la base de datos con las ventanas del otro PC
+  marcadas como terminadas, pero no las líneas que este había añadido al
+  archivo; la importación grababa el índice solo con el archivo, y el
+  Resultado listaba cientos de hojas como huecos que nada volvería a
+  clasificar. Toda ventana clasificada deja al menos una línea, así que la
+  terminada sin ninguna perdió sus piezas: la importación, el inicio de la
+  clasificación y el nuevo botón de abajo la devuelven como pendiente, con
+  un aviso que dice cuántas ventanas y de qué grupos.
+
+### Añadido
+
+- **Botón "Clasificar las pendencias" en el Resultado**, visible cuando
+  hay ventanas pendientes o huecos. Devuelve a la cola las ventanas que
+  perdieron sus piezas, ejecuta las etapas que faltan desde la primera
+  pendiente y abre la pantalla de ejecución; cuando termina la
+  clasificación, "Importar y generar informes" lleva las piezas al índice.
+
 ## [2.1.4] - 2026-11-22
 
 ### Corregido

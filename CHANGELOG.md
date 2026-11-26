@@ -9,6 +9,30 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.5] - 2026-11-26
+
+### Fixed
+
+- **A window marked as classified whose items are missing from
+  `raw_items.jsonl` goes back to the queue instead of becoming a silent
+  gap.** A project classified on two PCs through the same Google Drive
+  folder received the database with the other PC's windows marked done,
+  but not the lines it had appended to the file; the import then wrote
+  the index from the file alone, and the Result screen listed hundreds
+  of pages as gaps that nothing would ever classify again. Every
+  classified window leaves at least one line, so a done window with none
+  lost its items: the import, the start of classification and the new
+  button below now put it back as pending, with a warning naming how
+  many windows and from which groups.
+
+### Added
+
+- **"Classify the pending items" button on the Result screen**, shown when
+  there are pending windows or gaps. It sends the windows that lost their
+  items back to the queue, runs the missing steps from the first pending
+  one and opens the Execution screen; when classification ends, "Import
+  and generate reports" brings the items into the index.
+
 ## [2.1.4] - 2026-11-22
 
 ### Fixed

@@ -15,6 +15,30 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.5] - 2026-11-26
+
+### Corrigido
+
+- **Janela marcada como classificada cujas peças sumiram do
+  `raw_items.jsonl` volta para a fila, em vez de virar uma lacuna sem
+  aviso.** Um projeto classificado em dois PCs pela mesma pasta do Google
+  Drive recebia o banco com as janelas do outro PC marcadas como
+  concluídas, mas não as linhas que ele tinha acrescentado ao arquivo; a
+  importação gravava o índice só com o arquivo, e o Resultado listava
+  centenas de folhas como lacunas que nada classificaria de novo. Toda
+  janela classificada deixa ao menos uma linha, então a concluída sem
+  nenhuma perdeu as peças: a importação, o começo da classificação e o
+  botão novo abaixo a devolvem como pendente, com um aviso dizendo
+  quantas janelas e de quais grupos.
+
+### Adicionado
+
+- **Botão "Classificar as pendências" no Resultado**, que aparece quando
+  há janelas pendentes ou lacunas. Ele devolve à fila as janelas que
+  perderam as peças, roda as etapas que faltam a partir da primeira
+  pendente e abre a tela de execução; quando a classificação termina,
+  "Importar e gerar relatórios" leva as peças ao índice.
+
 ## [2.1.4] - 2026-11-22
 
 ### Corrigido
