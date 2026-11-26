@@ -225,6 +225,14 @@
   <li>{{ t('result.pending_failure') }} <code>{{ falha.relative_path }}</code>: {{ falha.error }}</li>
   {% endfor %}
 </ul>
+{% if pending.windows_pending > 0 or pending.gaps %}
+<form method="post" action="/projects/{{ project.id }}/process-pending" data-activity>
+  <button type="submit" class="button-primary" {% if step_in_progress %}disabled{% endif %}>
+    {{ m.icon('play') }} {{ t('result.process_pending') }}
+  </button>
+</form>
+<p class="help">{{ t('result.process_pending_help') }}</p>
+{% endif %}
 {% endif %}
 
 <h2>{{ t('result.preview_title') }}</h2>

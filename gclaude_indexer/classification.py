@@ -28,7 +28,7 @@ from .config import ProjectConfig
 from .db import BatchWriter
 from .engine_names import ENGINE_CLAUDE_CODE, ENGINE_LOCAL, ENGINE_RULES, ENGINE_STRUCTURED
 from .events import record_event
-from .file_status import MARK_WINDOW_DONE, WINDOW_PENDING
+from .file_status import MARK_WINDOW_DONE, WINDOW_DONE, WINDOW_PENDING
 from .file_types import is_whole_document_file
 from . import raw_items
 from .windows_prep import pages_for_group
@@ -537,6 +537,69 @@ def coverage_items(pages: list[WindowPage], engine: str) -> list[ClassifiedItem]
     return itens
 
 
+def requeue_windows_without_lines(conn: sqlite3.Connection, jsonl_path) -> dict[str, int]:
+    """Windows marked `done` with no line at all in `raw_items.jsonl` go
+    back to `pending`. Returns how many per group (empty: none).
+
+    Every classified window leaves at least one line: both engines fill
+    the pages no item covers (`coverage`). A `done` window without lines
+    lost its items after the fact, and nothing would ever classify it again;
+    the import would turn its pages into gaps. Real case (XPTO, 2.1.4): the
+    project was classified on two PCs through the same Google Drive folder,
+    and the database reached the second one with the first one's windows
+    done, but not the lines it had appended to the file.
+
+    One pass over the file, holding only window keys. No file at all means
+    no window has lines."""
+    with_lines: set = set()
+    if jsonl_path.exists():
+        for _, text in raw_items.iter_lines(jsonl_path):
+            data = raw_items.parse(text)
+            if data is not None:
+                with_lines.add(data.get(raw_items.WINDOW))
+
+    lost = [
+        (row[0], row[1], row[2])
+        for row in conn.execute("SELECT id, key, group_key FROM window WHERE status = ? ORDER BY id", (WINDOW_DONE,))
+        if row[1] not in with_lines
+    ]
+    if not lost:
+        return {}
+    per_group: dict[str, int] = {}
+    for _, _, group in lost:
+        per_group[group] = per_group.get(group, 0) + 1
+    conn.executemany(
+        "UPDATE window SET status = ? WHERE id = ?", [(WINDOW_PENDING, window_id) for window_id, _, _ in lost]
+    )
+    conn.commit()
+    return per_group
+
+
+# Literal keys, so the event key check (`tests/test_chaves_de_evento.py`)
+# finds them in the code.
+_WINDOWS_WITHOUT_LINES_KEYS = {
+    "import": "log.import.windows_without_items",
+    "classification": "log.classification.windows_without_items",
+}
+
+
+def record_windows_without_lines(
+    conn: sqlite3.Connection, step: str, per_group: dict[str, int], language: str | None = None
+) -> None:
+    """The warning for `requeue_windows_without_lines`, under `step`
+    (`import` or `classification`): how many windows and from which groups."""
+    if not per_group:
+        return
+    record_event(
+        conn, step, "warning", _WINDOWS_WITHOUT_LINES_KEYS[step],
+        {
+            "windows": sum(per_group.values()),
+            "groups": ", ".join(f"{group} ({count})" for group, count in sorted(per_group.items())),
+        },
+        language=language,
+    )
+
+
 def classify_windows(
     conn: sqlite3.Connection,
     config: ProjectConfig,
@@ -572,6 +635,11 @@ def classify_windows(
     window plus one per event: each commit on a Drive-synced database costs
     seconds and locks the screens out."""
     jsonl_path = raw_items.path_in(config.output_folder)
+    # Windows whose items were lost after the fact (a Drive sync that did
+    # not bring the whole file) are classified again in this same pass.
+    record_windows_without_lines(
+        conn, "classification", requeue_windows_without_lines(conn, jsonl_path), language=language
+    )
     pending_windows = conn.execute(
         "SELECT * FROM window WHERE status = ? ORDER BY id", (WINDOW_PENDING,)
     ).fetchall()

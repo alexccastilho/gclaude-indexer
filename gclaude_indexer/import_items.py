@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import raw_items
-from .classification import validate_item
+from .classification import record_windows_without_lines, requeue_windows_without_lines, validate_item
 from .config import ProjectConfig
 from .events import record_event
 from .item_normalize import clean_authors, clean_placeholders, fill_structured_authors, normalize_types
@@ -293,6 +293,13 @@ def import_and_consolidate(
     before it (nothing changed) or not at all."""
     jsonl_path = raw_items.path_in(config.output_folder)
     result = ImportResult()
+
+    # A `done` window with no line lost its items (a Drive sync that did
+    # not bring the whole file): back to the queue, so the Result screen
+    # lists it as pending and offers to classify it, instead of a silent gap.
+    record_windows_without_lines(
+        conn, "import", requeue_windows_without_lines(conn, jsonl_path), language=language
+    )
 
     if not jsonl_path.exists():
         record_event(conn, "import", "warning", "log.import.file_not_found", language=language)

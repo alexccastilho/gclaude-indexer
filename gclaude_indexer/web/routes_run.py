@@ -19,9 +19,11 @@ import threading
 import time
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from .. import raw_items
 from ..artifacts import generate_all_artifacts
+from ..classification import record_windows_without_lines, requeue_windows_without_lines
 from ..config import ProjectConfig
 from ..db import WRITER_TIMEOUT_SECONDS
 from ..events import list_events
@@ -221,6 +223,32 @@ def resume_run(request: Request, project_id: int):
     everything", started at the first pending step — the paused one, which
     is resumable — instead of at the scan."""
     return _start_from_next_step(request, project_id, chain=True)
+
+
+@router.post("/projects/{project_id}/process-pending")
+def process_pending(request: Request, project_id: int):
+    """"Classify the pending items" on the Result screen: the same chain as
+    "Continue", from the first pending step, then the Execution screen,
+    where the progress and, at the end, "Import and generate reports" are.
+    Windows the import sent back to the queue (done but with no line in
+    `raw_items.jsonl`) are classified here.
+
+    The button also shows for gaps with no pending window — the state an
+    import of an incomplete file leaves — so the windows that lost their
+    lines go back to the queue here, before the next step is looked up."""
+    if state._operation_in_progress(project_id):
+        return _operation_busy_response(request, project_id)
+    language = _request_language(request)
+    with _open_project(project_id) as (entry, config, conn):
+        record_windows_without_lines(
+            conn, "classification",
+            requeue_windows_without_lines(conn, raw_items.path_in(config.output_folder)),
+            language=language,
+        )
+        next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
+        if next_step is not None:
+            task_manager.start_all(project_id, entry.output_folder, language=language, first_step=next_step)
+    return RedirectResponse(f"/projects/{project_id}/run", status_code=303)
 
 
 @router.post("/projects/{project_id}/pause", response_class=HTMLResponse)
