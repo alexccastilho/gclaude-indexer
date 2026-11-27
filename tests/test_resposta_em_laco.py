@@ -52,8 +52,11 @@ def test_pedido_leva_teto_de_resposta_proporcional_as_paginas(monkeypatch):
     LocalEngine(model="fake", url_base="http://127.0.0.1:9").classify(_paginas(8))
     teto = ollama.pedidos[0]["options"]["num_predict"]
     # Folga sobre a reserva da resposta (respostas reais de 8 páginas: 998 e
-    # 1.470 tokens), mas longe dos milhares de um laço.
-    assert _response_tokens_for(8) * 2 <= teto <= _response_tokens_for(8) * 4
+    # 1.470 tokens, a reserva é 1.760), mas longe dos milhares de um laço.
+    # 2.1.6: o teto caiu de 3x para 1,8x a reserva — 3.168 tokens, mais que
+    # o dobro da maior resposta medida, e um laço é cortado em metade do
+    # tempo de antes.
+    assert 1_470 * 2 <= teto <= _response_tokens_for(8) * 2
 
 
 def test_resposta_cortada_pelo_teto_e_resposta_invalida(monkeypatch):

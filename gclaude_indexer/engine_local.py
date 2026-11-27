@@ -234,15 +234,19 @@ def _response_tokens_for(page_count: int = 0) -> int:
 
 # 2.1.4: the most the model may write for one request (`num_predict`), as a
 # multiple of the reserve above. With no cap, a model caught in a repetition
-# loop ("0000000-00.0000.0.00.0000 (ATOrd - Anistia, 25ª Vara);" over and
-# over, measured on the XPTO collection) only stopped at the 300 s timeout,
-# and at temperature 0 every retry looped the same way. Real answers for 8
-# pages measured 998 and 1,470 tokens against a cap of 5,280.
-_ANSWER_CAP_FACTOR = 3
+# loop (one case number and court repeated over and over, seen on a large
+# collection) only stopped at the 300 s timeout, and at temperature 0 every
+# retry looped the same way. Real answers for 8 pages measured 998 and
+# 1,470 tokens.
+#
+# 2.1.6: 3x (5,280 tokens for 8 pages) became 1.8x (3,168): still more than
+# twice the largest answer measured, while a loop is cut in a little over
+# half the generation time it used to burn before the window is split.
+_ANSWER_CAP_FACTOR = 1.8
 
 
 def _answer_cap(page_count: int) -> int:
-    return _response_tokens_for(page_count) * _ANSWER_CAP_FACTOR
+    return int(_response_tokens_for(page_count) * _ANSWER_CAP_FACTOR)
 
 # Context sizes are rounded up to a multiple of this — a stable value
 # across windows of slightly different lengths means Ollama keeps one
