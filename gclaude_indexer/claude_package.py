@@ -60,8 +60,8 @@ as instruções — mais este guia.
 3. Em **"Project knowledge"** (arquivos do projeto), envie todos os
    arquivos `.md` deste pacote: `{index}` (o sumário dos grupos), os
    `{group_index}` de cada grupo (e as partes `{group_index_part}`,
-   `{part_suffix}`… quando houver), `{timeline}`, `{review}` e
-   `{instructions}` — para achar um documento, o Claude lê o
+   `{part_suffix}`… quando houver), `{timeline}`, `{review}`,
+   `{instructions}` e, quando houver, `{norms}` — para achar um documento, o Claude lê o
    sumário, escolhe o grupo e abre o índice daquele grupo, usa a
    cronologia para localizar a peça certa e a conferência para saber o
    que ainda está pendente.
@@ -124,7 +124,8 @@ report and the instructions — plus this guide.
 3. In **"Project knowledge"**, upload every `.md` file in this package:
    `{index}` (the summary of groups), one `{group_index}` per group
    (and the parts `{group_index_part}`, `{part_suffix}`… when there are any),
-   `{timeline}`, `{review}` and `{instructions}` — to find a
+   `{timeline}`, `{review}`, `{instructions}` and, when there is one,
+   `{norms}` — to find a
    document, Claude reads the summary, picks the group and opens that
    group's index, uses the chronology to locate the right piece and the
    coverage report to know what is still pending.
@@ -188,7 +189,8 @@ informe de cobertura y las instrucciones — más esta guía.
 3. En **"Project knowledge"**, suba todos los archivos `.md` de este
    paquete: `{index}` (el resumen de los grupos), los `{group_index}`
    de cada grupo (y las partes `{group_index_part}`, `{part_suffix}`… cuando las
-   haya), `{timeline}`, `{review}` y `{instructions}` — para
+   haya), `{timeline}`, `{review}`, `{instructions}` y, cuando lo haya,
+   `{norms}` — para
    encontrar un documento, Claude lee el resumen, elige el grupo y abre
    el índice de ese grupo, usa la cronología para ubicar la pieza
    correcta y el informe de cobertura para saber qué sigue pendiente.

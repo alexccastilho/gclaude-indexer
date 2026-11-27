@@ -189,3 +189,12 @@ def test_diagnostico_nao_manda_instalar_o_ghostscript_pelo_winget(monkeypatch, i
     assert "winget" not in comando
     assert trecho in comando
     assert "ghostscript.com" in comando
+
+
+def test_guia_do_pacote_lista_as_normas_citadas_no_passo_dos_arquivos():
+    from gclaude_indexer.claude_package import _GUIDE, _guide_names
+
+    for idioma, guia in _GUIDE.items():
+        texto = guia.format(name="XPTO", **_guide_names(idioma))
+        passo_3 = texto.split("\n3. ", 1)[1].split("\n4. ", 1)[0]
+        assert _guide_names(idioma)["norms"] in passo_3, idioma
