@@ -37,7 +37,7 @@ import fitz  # PyMuPDF
 
 from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
-from .workdir import category_to_read, converted_artifact_path
+from .workdir import category_to_read, converted_artifact_path, read_table_flag
 from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
 from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter, isolated_write
 from .events import record_event
@@ -191,7 +191,10 @@ def _extract_file_pages(config: ProjectConfig, row) -> "list[tuple[str, int, boo
     ):
         return [(text, 0, True)]
     if category == DOCX_CATEGORY:
-        has_table = _docx_has_table(Path(config.source_folder) / relative_path)
+        has_table = read_table_flag(intermediate) if intermediate is not None else None
+        if has_table is None:
+            # Converted before 2.1.6: there is no mark, ask the original.
+            has_table = _docx_has_table(Path(config.source_folder) / relative_path)
         return [(text, 0, has_table)]
     return [(text, 0, False)]  # pptx, texto, email
 

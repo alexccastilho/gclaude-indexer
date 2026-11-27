@@ -296,6 +296,36 @@ def converted_artifact_path(
     return _converted_intermediate(output_folder, relative_path, text_suffix(extension))
 
 
+# --- Marca de tabela de um `.docx` (2.1.6) -----------------------------------
+# A conversão já abre o `.docx` para tirar o texto; a extração o reabria na
+# pasta de origem (no Drive, ~200 ms por arquivo) só para saber se havia
+# tabela. A resposta fica ao lado do intermediário, com o tamanho dele: um
+# intermediário regravado por outra versão não casa e a extração volta a
+# perguntar ao original.
+
+TABLE_FLAG_SUFFIX = ".tables"
+
+
+def table_flag_path(intermediate: Path) -> Path:
+    return intermediate.with_name(intermediate.name + TABLE_FLAG_SUFFIX)
+
+
+def write_table_flag(intermediate: Path, has_table: bool) -> None:
+    table_flag_path(intermediate).write_text(f"{int(has_table)} {intermediate.stat().st_size}", encoding="ascii")
+
+
+def read_table_flag(intermediate: Path) -> bool | None:
+    """`True`/`False` as the conversion recorded, or `None` when there is no
+    mark (converted before 2.1.6) or it belongs to another intermediate."""
+    try:
+        flag, size = table_flag_path(intermediate).read_text(encoding="ascii").split()
+        if int(size) != intermediate.stat().st_size or flag not in ("0", "1"):
+            return None
+    except (OSError, ValueError):
+        return None
+    return flag == "1"
+
+
 # --- Reconhecer o que está em `converted/` ----------------------------------
 
 
@@ -315,6 +345,8 @@ def converted_names(relative_path: str) -> tuple[str, ...]:
             names.append(_named(relative_path, suffix).as_posix())
         except ValueError:
             continue
+    # A marca de tabela de cada intermediário de texto (2.1.6).
+    names += [name + TABLE_FLAG_SUFFIX for name in names if name.endswith(".txt")]
     return tuple(names)
 
 

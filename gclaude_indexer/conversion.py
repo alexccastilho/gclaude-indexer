@@ -294,6 +294,12 @@ def _docx_paragraph_text(paragraph) -> str:
 
 
 def _extract_text_docx(path: Path) -> str:
+    return _extract_docx(path)[0]
+
+
+def _extract_docx(path: Path) -> tuple[str, bool]:
+    """The text of a `.docx` and whether it has a table — one opening for
+    both, so extraction does not reopen the original (2.1.6)."""
     document = light_formats.open_docx(path)
     parts = [text for text in map(_docx_paragraph_text, document.paragraphs) if text.strip()]
     for table in document.tables:
@@ -301,7 +307,7 @@ def _extract_text_docx(path: Path) -> str:
             parts.append("\t".join(
                 "\n".join(_docx_paragraph_text(p) for p in cell.paragraphs) for cell in row.cells
             ))
-    return "\n".join(parts)
+    return "\n".join(parts), len(document.tables) > 0
 
 
 def _extract_text_xlsx(path: Path) -> str:
@@ -1138,9 +1144,15 @@ def _convert_light_file(job: _FileJob) -> dict:
     row = job.row
     category = category_of_extension("." + row["extension"])
     extension = row["extension"].lower()
-    text = _extract_light_text(category, extension, job.source_path)
+    has_table = None
+    if category == DOCX_CATEGORY:
+        text, has_table = _extract_docx(job.source_path)
+    else:
+        text = _extract_light_text(category, extension, job.source_path)
     destination = workdir.converted_destination(job.output_dir, row["relative_path"], text_suffix(extension))
     destination.write_text(text, encoding="utf-8")
+    if has_table is not None:
+        workdir.write_table_flag(destination, has_table)
     # A caixa `.mbox` tem uma página por mensagem.
     pages = text.count(workdir.PAGE_SEPARATOR) + 1 if category == MBOX_CATEGORY else 1
     return {"sql": file_status.MARK_CONVERTED_TEXT_KEEP_OCR_FLAG, "params": (pages, row["id"]), "ocr_applied": False}
