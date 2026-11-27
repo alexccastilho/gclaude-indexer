@@ -250,7 +250,7 @@ def load_window_pages(
         WindowPage(
             reference=row["reference"],
             file_name=row["file_name"],
-            text=row["text"],
+            text=readable_text(row["text"]),
             has_table=bool(row["has_table"]),
             image_count=row["image_count"],
             order=start + offset,

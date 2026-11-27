@@ -452,8 +452,10 @@ class LocalEngine:
         sobre o prompt inteiro sairia otimista — exatamente o erro que se
         quer corrigir.
         """
-        estimativa = int(len(prompt) / self._chars_per_token)
-        if not generation.prompt_tokens or _looks_truncated(generation, estimativa):
+        # Sem a estimativa, de propósito: num servidor antigo que corta, a
+        # estimativa de um conteúdo tabular sai otimista e não reconheceria o
+        # corte — e a razão aprendida do pedaço lido seria a errada.
+        if not generation.prompt_tokens or _looks_truncated(generation):
             return
         observada = len(prompt) / generation.prompt_tokens
         self._recent_ratios.append(max(_CHARS_PER_TOKEN_FLOOR, observada))
@@ -793,6 +795,9 @@ class LocalEngine:
         contexto é o passo que cobre a maior janela deste acervo numa
         tentativa só: 4096 vira 8192, e a janela de 5091 tokens cabe.
         """
+        # Sem a estimativa, de propósito (2.1.6): faltaram linhas, e dobrar
+        # um contexto que talvez bastasse custa uma recarga; não dobrar um
+        # que foi cortado deixa a janela sem resposta.
         if _looks_truncated(generation):
             alvo = generation.context * 2
         else:
@@ -1339,7 +1344,9 @@ def _group_pages_into_items(pages: list[WindowPage], rows: list[dict]) -> list[C
             # modelo e seriam juntadas. Uma página que ficou de fora do
             # pedido (a página em branco, que não vai ao modelo) também
             # separa: a peça não pode cobrir a página que ela não tem.
+            # 2.1.6: o assunto da peça anterior não vale para a nova.
             continua = False
+            anterior_assunto = None
         elif assunto and anterior_assunto:
             # 2.1.0: `continues` também junta quando o TIPO é o mesmo da
             # página anterior, no mesmo arquivo. Medido num processo real
@@ -1719,15 +1726,32 @@ def _classify_in_parts(engine: "LocalEngine", pages: list[WindowPage]) -> list[C
     model; the coverage guarantee in `classify_pending` indexes it by file
     name. Connection errors are not caught here: an outage in the middle is
     handled by the caller like any other."""
+    # 2.1.6: os avisos e as notas de cada metade são somados e ficam no
+    # motor como se fossem da janela inteira, para o chamador gravá-los.
+    warnings: list[tuple[str, dict]] = []
+    notes: list[tuple[str, dict]] = []
+    items = _classify_halves(engine, pages, warnings, notes)
+    engine.last_window_warnings = warnings
+    engine.last_window_notes = notes
+    return items
+
+
+def _classify_halves(engine, pages, warnings, notes) -> list[ClassifiedItem]:
     if not pages:
         return []
     try:
-        return engine.classify(pages)
+        items = engine.classify(pages)
     except ModelAnswerError:
         if len(pages) == 1:
             return []
         middle = len(pages) // 2
-        return _classify_in_parts(engine, pages[:middle]) + _classify_in_parts(engine, pages[middle:])
+        return (
+            _classify_halves(engine, pages[:middle], warnings, notes)
+            + _classify_halves(engine, pages[middle:], warnings, notes)
+        )
+    warnings.extend(getattr(engine, "last_window_warnings", None) or [])
+    notes.extend(getattr(engine, "last_window_notes", None) or [])
+    return items
 
 
 MODEL_MAX_OUTAGES = 10
@@ -1984,6 +2008,14 @@ def classify_pending(
                         {"window": window["key"], "error": str(exc)}, language=language,
                     )
                     items = _classify_in_parts(local_engine, model_pages)
+                    _log_rejection_warnings(
+                        conn, local_engine, window["key"], language=language, writer=writer
+                    )
+                    raised, split = _log_window_notes(
+                        conn, local_engine, window["key"], language=language, writer=writer
+                    )
+                    result.windows_context_raised += raised
+                    result.windows_split_for_size += split
                     break
                 except OllamaConnectionError as exc:
                     writer.flush()  # these events commit on their own

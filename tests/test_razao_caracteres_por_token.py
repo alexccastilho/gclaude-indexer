@@ -54,15 +54,3 @@ def test_nunca_acima_da_semente_nem_abaixo_do_piso():
 
     _janela(motor, 500, 1000)           # 0,5: telemetria absurda
     assert motor._chars_per_token == _CHARS_PER_TOKEN_FLOOR
-
-
-def test_prompt_honesto_perto_da_metade_do_contexto_calibra():
-    """A assinatura do corte (lido = metade do contexto) só vale quando a
-    estimativa do prompt é bem maior que o lido. Um prompt íntegro que cai
-    perto de `num_ctx / 2` ensina a razão como qualquer outro."""
-    motor = _motor()
-    # 6150 caracteres lidos como 4100 tokens num contexto de 8192: 1,5.
-    # A estimativa (6150 / 3,0 = 2050) é menor que o lido — não é corte.
-    _janela(motor, 6150, 4100, contexto=8192)
-
-    assert motor._chars_per_token == 1.5
