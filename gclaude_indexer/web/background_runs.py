@@ -394,6 +394,10 @@ class TaskManager:
 
         def body():
             run = None
+            # `run.ok` keeps meaning "ended without an error": a paused run
+            # still counts in the engine comparison (`quality.compare_runs`),
+            # which adds up the time of every stretch of a long collection.
+            returned = False
             try:
                 files = self._measure(task, entry_output_folder, step, language)
                 if task.stop_signal.should_stop():
@@ -420,7 +424,12 @@ class TaskManager:
                             should_stop=task.stop_signal.should_stop, language=language,
                             files=files, on_progress=scanned, run_state=task.stop_signal.run_state,
                         )
-                    task.finished_ok = True
+                    returned = True
+                    # 2.1.6: the steps answer a pause by leaving their loop
+                    # and returning normally, so "returned" is not "done".
+                    # It used to set `finished_ok` unconditionally, and the
+                    # box said "Done, 100%" right after a Pause.
+                    task.finished_ok = not task.stop_signal.should_stop()
                 finally:
                     work_conn.close()
             except SourceFolderMissing as exc:
@@ -450,7 +459,7 @@ class TaskManager:
                         try:
                             _, end_conn = load_project(entry_output_folder)
                             try:
-                                finish_step(end_conn, run, ok=task.finished_ok)
+                                finish_step(end_conn, run, ok=returned)
                             finally:
                                 end_conn.close()
                         except Exception:
