@@ -39,7 +39,7 @@ from .step_state import next_pending_step, step_status
 from .background_runs import compute_progress, task_manager
 from .i18n import translate
 from . import project_access, state
-from .caches import _cached_quality_summary, _idle_fragment
+from .caches import _cached_quality_summary, _idle_fragment, forget_project_summaries
 from .formatting import _format_time
 from .notices import _dedup_notice, _reports_to_regenerate, _stale_context
 from .operations import (
@@ -513,7 +513,10 @@ def import_and_generate(request: Request, project_id: int):
 
     def work(should_stop):
         with _open_project(project_id) as (_entry, config, conn):
-            import_and_consolidate(conn, config, language=language, should_stop=should_stop)
+            try:
+                import_and_consolidate(conn, config, language=language, should_stop=should_stop)
+            finally:
+                forget_project_summaries(project_id)
             generate_all_artifacts(conn, config, language, should_stop=should_stop)
             # Sobras do motor manual do Claude Code (removido na 2.0.0): aqui,
             # em segundo plano e com Parar, e não ao abrir o projeto, porque

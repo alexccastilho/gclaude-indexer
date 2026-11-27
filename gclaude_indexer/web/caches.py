@@ -98,6 +98,16 @@ def forget_screen_caches() -> None:
     _about_cache.clear()
 
 
+def forget_project_summaries(project_id: int) -> None:
+    """Drops the cached summaries of one project. Called after an import:
+    `item.id` has no AUTOINCREMENT, so re-importing the same number of
+    pieces leaves `MAX(id)` and `COUNT` where they were, and the signature
+    alone would keep serving the summary of the previous import (2.1.6)."""
+    with _quality_cache_lock:
+        for key in [key for key in _quality_cache if key[0] == project_id]:
+            del _quality_cache[key]
+
+
 def _quality_signature(conn, config: ProjectConfig) -> tuple:
     """Cites every table the cached summaries read: `quality_summary` and
     `pending_items` (item, window, page, file) and `compare_runs` (run). A
