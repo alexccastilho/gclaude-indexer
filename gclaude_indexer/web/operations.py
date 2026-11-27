@@ -210,6 +210,16 @@ def _operation_busy_response(request: Request, project_id: int) -> HTMLResponse:
     )
 
 
+def _step_busy_response(request: Request, project_id: int, message_key: str) -> HTMLResponse:
+    """409 for an action refused because a step of the project is running
+    (2.1.6). Points to the Execution screen, where the Pause button is."""
+    return render(
+        request, "step_busy.html",
+        {"project": find_project(project_id), "project_id": project_id, "message_key": message_key},
+        status_code=409,
+    )
+
+
 def _back_to_project(request: Request, project_id: int) -> str:
     """The screen of the project the click came from, to show the waiting
     panel on; the Execution screen when the referrer is not one of them."""

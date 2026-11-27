@@ -64,7 +64,36 @@ _SLOT_CHANGES: dict[int, int] = {}
 
 def _step_in_progress(project_id: int) -> bool:
     task = task_manager.latest_for_project(project_id)
-    return task is not None and task.running
+    if task is not None and task.running:
+        return True
+    # 2.1.6: a "run all" chain counts too — between two of its steps no
+    # task runs, but the chain is about to start the next one. The gap
+    # lasts a moment (the chain notices the end of a step at once and
+    # starts the next one, or ends after the last): wait for it to resolve
+    # instead of calling "busy" a chain that is about to end.
+    deadline = time.monotonic() + _CHAIN_GAP_WAIT_S
+    while task_manager.has_chain(project_id):
+        task = task_manager.latest_for_project(project_id)
+        if task is not None and task.running:
+            return True
+        if time.monotonic() >= deadline:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+_CHAIN_GAP_WAIT_S = 1.0
+
+
+# How long deleting the project or clearing its intermediates waits for the
+# running step to stop before refusing. A classification answers a pause
+# between windows, and a window can take minutes; the request does not wait
+# that long. The pause stays requested, so the next click finds it stopped.
+RELEASE_WAIT_S = 30.0
+
+
+class StepStillRunning(Exception):
+    """The step asked to stop has not stopped yet: nothing may be deleted."""
 
 
 def _operation_in_progress(project_id: int) -> bool:
@@ -105,8 +134,10 @@ def _release_project(output_folder, project_id: int | None = None, *, keep_lock_
     `keep_lock_file`: stop looking after the lock without deleting
     `project.lock` (`LockManager.forget`): a folder move carries the file
     along, and a take-over writes a new one over it."""
-    if project_id is not None:
-        task_manager.pause(project_id)
+    if project_id is not None and not task_manager.pause_and_wait(project_id, RELEASE_WAIT_S):
+        # 2.1.6: it used to only ask and go on deleting with the step
+        # still writing to the folder.
+        raise StepStillRunning(project_id)
     reader_pool.close(output_folder)
     if keep_lock_file:
         lock_manager.forget(output_folder)

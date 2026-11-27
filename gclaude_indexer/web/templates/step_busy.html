@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ t('run.step_busy.title') }} · {{ t('app.name') }}{% endblock %}
+{% block content %}
+<h1>{{ t('run.step_busy.title') }}</h1>
+<div class="errors">
+  <p>{{ t(message_key) }}</p>
+</div>
+{# The Pause button lives on the Execution screen, with the progress box. #}
+<p><a href="/projects/{{ project_id }}/run" class="button">&larr; {{ t('run.step_busy.back') }}</a></p>
+{% endblock %}

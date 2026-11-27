@@ -152,3 +152,21 @@ def _mudanca_de_pasta_isolada(monkeypatch):
     from gclaude_indexer.web import project_access
 
     monkeypatch.setattr(project_access, "_relocation_due", lambda config: False)
+
+
+@pytest.fixture(autouse=True)
+def _etapas_de_outros_testes_nao_contam():
+    """2.1.6: os botões de etapa recusam começar outra com uma rodando no
+    mesmo projeto. Os testes reusam o id 1 a cada catálogo novo, e uma
+    etapa ou cadeia que um teste anterior deixou viva em segundo plano
+    passava a contar como "rodando" no teste seguinte. Cada teste começa
+    com as de antes pausadas e esquecidas."""
+    from gclaude_indexer.web.background_runs import task_manager
+
+    with task_manager._lock:
+        projetos = {pid for pid, _step in task_manager._tasks} | set(task_manager._chains)
+    for pid in projetos:
+        task_manager.pause(pid)
+    with task_manager._lock:
+        task_manager._tasks.clear()
+        task_manager._chains.clear()

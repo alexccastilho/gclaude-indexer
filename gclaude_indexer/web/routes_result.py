@@ -42,10 +42,10 @@ from .i18n import translate
 from .caches import _cached_by_signature
 from .formatting import _format_time
 from .notices import _dedup_notice, _stale_context
-from .operations import _operation_busy_response
+from .operations import _operation_busy_response, _step_busy_response
 from .project_access import _open_project, _read_project
 from .rendering import _request_language, _zip_response, render
-from .state import _generation_slot, _release_project, _step_in_progress
+from .state import StepStillRunning, _generation_slot, _release_project, _step_in_progress
 
 
 router = APIRouter()
@@ -136,10 +136,10 @@ def clear_intermediates_route(request: Request, project_id: int):
     with _generation_slot(project_id, "result.cleanup_button") as claimed:
         if not claimed:
             return _operation_busy_response(request, project_id)
-        return _clear_intermediates_unlocked(project_id)
+        return _clear_intermediates_unlocked(request, project_id)
 
 
-def _clear_intermediates_unlocked(project_id: int):
+def _clear_intermediates_unlocked(request: Request, project_id: int):
     """Frees the space used by `converted/` and `blocks/` without deleting
     the result. The removal is permanent for this project: `convert()` only
     processes files with status `'discovered'`, and nothing here returns
@@ -154,7 +154,10 @@ def _clear_intermediates_unlocked(project_id: int):
     with _open_project(project_id) as (entry, _config, _conn):
         output_folder = entry.output_folder
 
-    _release_project(output_folder, project_id)
+    try:
+        _release_project(output_folder, project_id)
+    except StepStillRunning:
+        return _step_busy_response(request, project_id, "run.step_busy.stopping")
     clear_intermediates(output_folder)
 
     return RedirectResponse(f"/projects/{project_id}/result", status_code=303)

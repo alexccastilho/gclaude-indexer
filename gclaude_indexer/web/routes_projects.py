@@ -36,10 +36,10 @@ from ..local_models import LOCAL_MODEL_PROFILES, default_local_profile
 from ..engine_names import ENGINE_AUTOMATIC, ENGINE_LOCAL, ENGINE_RULES
 from ..ollama_models import list_installed_models
 from .folder_picker import choose_folder
-from .operations import _operation_busy_response
+from .operations import _operation_busy_response, _step_busy_response
 from .project_access import _project_or_404
 from .rendering import _request_language, _side_bar_cache, render
-from .state import _generation_slot, _release_project
+from .state import StepStillRunning, _generation_slot, _release_project
 
 
 router = APIRouter()
@@ -426,7 +426,10 @@ def _delete_project_unlocked(request: Request, project_id: int, form):
 
     # Releases the lock and closes this session's connection before touching
     # the folder — Windows won't let you delete a file that's open.
-    _release_project(entry.output_folder, project_id)
+    try:
+        _release_project(entry.output_folder, project_id)
+    except StepStillRunning:
+        return _step_busy_response(request, project_id, "run.step_busy.stopping")
     delete_project(entry, delete_files)
     _side_bar_cache.clear()  # The side bar shows it at once
 

@@ -85,6 +85,9 @@ class StepTask:
     # for its whole run, looking frozen.
     scanned: int = 0
     scanned_bytes: int = 0
+    # Set right after `running` turns False, so a "run all" chain moves on
+    # (or ends) at once instead of on its next 0.3 s poll (2.1.6).
+    ended: threading.Event = field(default_factory=threading.Event)
 
 
 def _scan_totals(
@@ -466,6 +469,7 @@ class TaskManager:
                             pass  # timing record never brings down the step itself
                 finally:
                     task.running = False
+                    task.ended.set()
 
         threading.Thread(target=body, daemon=True).start()
         return task
@@ -534,7 +538,7 @@ class TaskManager:
                         project_id, entry_output_folder, step, stop_signal=stop_signal, language=language
                     )
                     while task.running:
-                        time.sleep(0.3)
+                        task.ended.wait(0.3)
                     if task.error or stop_signal.should_stop():
                         break
             finally:
@@ -547,6 +551,33 @@ class TaskManager:
 
         threading.Thread(target=body, daemon=True).start()
         return stop_signal
+
+    def has_chain(self, project_id: int) -> bool:
+        """A "run all" chain of this project is alive (2.1.6)."""
+        with self._lock:
+            return bool(self._chains.get(project_id))
+
+    def busy(self, project_id: int) -> bool:
+        """A step of this project running, or a "run all" chain alive —
+        between two of its steps no task runs, but the chain is about to
+        start the next one (2.1.6)."""
+        with self._lock:
+            if self._chains.get(project_id):
+                return True
+            return any(task.running for (pid, _key), task in self._tasks.items() if pid == project_id)
+
+    def pause_and_wait(self, project_id: int, timeout_s: float) -> bool:
+        """Asks every step of the project to stop and waits, up to
+        `timeout_s`, for them to really stop. `True` when nothing runs any
+        more. Deleting or clearing files used to follow `pause` at once,
+        with the step still writing (2.1.6)."""
+        self.pause(project_id)
+        deadline = time.monotonic() + timeout_s
+        while self.busy(project_id):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
+        return True
 
     def pause(self, project_id: int) -> bool:
         """Pauses every step currently running for this project (the single

@@ -160,3 +160,123 @@ def test_excecao_inesperada_numa_batida_nao_encerra_o_laco(monkeypatch):
     monkeypatch.setattr(gerente, "heartbeat", batida)
     gerente._heartbeat_loop()  # volta quando `_stop` é ligado
     assert len(batidas) >= 3
+
+
+# --- Item 1: uma etapa por projeto de cada vez -----------------------------------------
+#
+# `next_pending_step` pula a etapa "running" e devolve a seguinte: um 2º
+# clique em "Rodar próxima etapa" durante a conversão começava a extração ao
+# mesmo tempo; "Rodar tudo" no meio de uma etapa começava outra varredura, e
+# "Importar e gerar" rodava durante a classificação. Excluir o projeto e
+# limpar os intermediários pediam a parada e apagavam os arquivos sem
+# esperar a etapa parar de fato.
+
+import pytest
+
+from gclaude_indexer.i18n import translate
+from gclaude_indexer.web.background_runs import StepTask, task_manager
+from tests.test_phase31 import _app_com_projeto
+
+
+def _rodando(**campos) -> StepTask:
+    base = dict(step="conversion", total=10, baseline=0)
+    base.update(campos)
+    return StepTask(**base)
+
+
+@pytest.fixture
+def com_etapa_rodando(tmp_path, monkeypatch):
+    cliente, pid, conn, config = _app_com_projeto(tmp_path, monkeypatch)
+    monkeypatch.setitem(task_manager._tasks, (pid, "conversion"), _rodando())
+    iniciadas: list = []
+    monkeypatch.setattr(task_manager, "start_step", lambda *a, **k: iniciadas.append(("step", a, k)))
+    monkeypatch.setattr(task_manager, "start_all", lambda *a, **k: iniciadas.append(("all", a, k)))
+    yield cliente, pid, iniciadas
+    conn.close()
+
+
+@pytest.mark.parametrize("rota", ["run-next", "run-all", "resume"])
+def test_botoes_de_etapa_nao_comecam_outra_com_uma_rodando(com_etapa_rodando, rota):
+    cliente, pid, iniciadas = com_etapa_rodando
+    resposta = cliente.post(f"/projects/{pid}/{rota}", cookies={"language": "pt"})
+    assert resposta.status_code == 200, "a resposta é a tabela de etapas, como sempre"
+    assert iniciadas == [], "nenhuma etapa nova começou"
+
+
+def test_classificar_pendencias_nao_comeca_cadeia_com_etapa_rodando(com_etapa_rodando):
+    cliente, pid, iniciadas = com_etapa_rodando
+    resposta = cliente.post(f"/projects/{pid}/process-pending", follow_redirects=False)
+    assert resposta.status_code == 303
+    assert iniciadas == []
+
+
+def test_importar_e_gerar_recusa_com_etapa_rodando(com_etapa_rodando, monkeypatch):
+    from gclaude_indexer.web import routes_run
+
+    cliente, pid, _iniciadas = com_etapa_rodando
+    chamado: list = []
+    monkeypatch.setattr(routes_run, "_start_operation", lambda *a, **k: chamado.append(a))
+    resposta = cliente.post(f"/projects/{pid}/import-and-generate", cookies={"language": "pt"})
+    assert resposta.status_code == 409
+    assert chamado == []
+    from markupsafe import escape
+
+    assert str(escape(translate("pt", "run.step_busy.message"))) in resposta.text
+
+
+def test_cadeia_entre_duas_etapas_conta_como_rodando(tmp_path, monkeypatch):
+    """No intervalo de 0,3 s entre etapas do "Rodar tudo" nenhuma tarefa
+    roda, mas a cadeia está prestes a começar a próxima."""
+    cliente, pid, conn, _config = _app_com_projeto(tmp_path, monkeypatch)
+    from gclaude_indexer.run_control import StopSignal
+
+    monkeypatch.setitem(task_manager._chains, pid, [StopSignal()])
+    iniciadas: list = []
+    monkeypatch.setattr(task_manager, "start_step", lambda *a, **k: iniciadas.append(a))
+    monkeypatch.setattr(task_manager, "start_all", lambda *a, **k: iniciadas.append(a))
+    cliente.post(f"/projects/{pid}/run-next")
+    assert iniciadas == []
+    conn.close()
+
+
+def test_pausar_e_esperar_devolve_quando_a_tarefa_para(monkeypatch):
+    import threading
+
+    gerente = TaskManager()
+    tarefa = _rodando()
+    gerente._tasks[(7, "conversion")] = tarefa
+
+    def parar_depois():
+        time.sleep(0.2)
+        tarefa.running = False
+
+    threading.Thread(target=parar_depois).start()
+    assert gerente.pause_and_wait(7, timeout_s=5) is True
+    assert tarefa.stop_signal.should_stop()
+
+
+def test_pausar_e_esperar_desiste_no_prazo():
+    gerente = TaskManager()
+    gerente._tasks[(7, "conversion")] = _rodando()
+    inicio = time.monotonic()
+    assert gerente.pause_and_wait(7, timeout_s=0.3) is False
+    assert time.monotonic() - inicio < 2
+
+
+@pytest.mark.parametrize("rota,dados", [("clear-intermediates", None), ("delete", {"delete_files": "keep"})])
+def test_excluir_e_limpar_nao_apagam_com_a_etapa_ainda_rodando(com_etapa_rodando, monkeypatch, rota, dados):
+    from gclaude_indexer.web import routes_projects, routes_result, state
+
+    cliente, pid, _iniciadas = com_etapa_rodando
+    monkeypatch.setattr(state, "RELEASE_WAIT_S", 0.2)
+    apagou: list = []
+    monkeypatch.setattr(routes_result, "clear_intermediates", lambda pasta: apagou.append(pasta))
+    monkeypatch.setattr(routes_projects, "delete_project", lambda *a: apagou.append(a))
+
+    resposta = cliente.post(f"/projects/{pid}/{rota}", data=dados, cookies={"language": "pt"}, follow_redirects=False)
+
+    assert apagou == [], "nada é apagado enquanto a etapa não para"
+    assert resposta.status_code == 409
+    from markupsafe import escape
+
+    assert str(escape(translate("pt", "run.step_busy.stopping"))) in resposta.text

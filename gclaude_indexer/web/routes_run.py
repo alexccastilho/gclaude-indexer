@@ -44,7 +44,7 @@ from .formatting import _format_time
 from .notices import _dedup_notice, _reports_to_regenerate, _stale_context
 from .operations import (
     OPERATION_FINISHED_TTL_SECONDS, _OPERATIONS, _back_to_project, _operation_busy_response, _operation_response,
-    _operation_view, _slot_view, _start_operation,
+    _operation_view, _slot_view, _start_operation, _step_busy_response,
 )
 from .project_access import _open_project, _project_or_404, _read_project
 from .rendering import _request_language, render
@@ -184,7 +184,11 @@ def _start_from_next_step(request: Request, project_id: int, *, chain: bool):
     language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         next_step = next_pending_step(step_status(conn, lambda key: _step_running(project_id, key)))
-        if next_step is not None:
+        # 2.1.6: `next_pending_step` skips the running step and returns the
+        # one after it — a second click during the conversion started the
+        # extraction alongside it. With a step running, the click only
+        # redraws the table, where the running step already shows.
+        if next_step is not None and not state._step_in_progress(project_id):
             if chain:
                 task_manager.start_all(project_id, entry.output_folder, language=language, first_step=next_step)
             else:
@@ -211,7 +215,10 @@ def run_all(request: Request, project_id: int):
         return _operation_busy_response(request, project_id)
     language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
-        task_manager.start_all(project_id, entry.output_folder, language=language)
+        # 2.1.6: in the middle of a step this used to start a second chain,
+        # beginning with a new scan of the same database.
+        if not state._step_in_progress(project_id):
+            task_manager.start_all(project_id, entry.output_folder, language=language)
         context = _steps_context(project_id, entry, config, conn, language)
 
     return render(request, "_steps.html", context)
@@ -238,6 +245,9 @@ def process_pending(request: Request, project_id: int):
     lines go back to the queue here, before the next step is looked up."""
     if state._operation_in_progress(project_id):
         return _operation_busy_response(request, project_id)
+    if state._step_in_progress(project_id):
+        # The Execution screen already shows the step that is running.
+        return RedirectResponse(f"/projects/{project_id}/run", status_code=303)
     language = _request_language(request)
     with _open_project(project_id) as (entry, config, conn):
         record_windows_without_lines(
@@ -496,6 +506,10 @@ def import_and_generate(request: Request, project_id: int):
     A second click while one is running gets the busy page, as before."""
     language = _request_language(request)
     _project_or_404(project_id)
+    if state._step_in_progress(project_id):
+        # 2.1.6: the import rewrites `item` and the reports while the
+        # classification may still be appending to `raw_items.jsonl`.
+        return _step_busy_response(request, project_id, "run.step_busy.message")
 
     def work(should_stop):
         with _open_project(project_id) as (_entry, config, conn):

@@ -40,10 +40,10 @@
 {% endif %}
 
 <div class="actions">
-  <button hx-post="/projects/{{ project.id }}/run-next" hx-target="#steps" hx-swap="innerHTML">
+  <button hx-post="/projects/{{ project.id }}/run-next" hx-target="#steps" hx-swap="innerHTML" hx-disabled-elt="this">
     {{ m.icon('play') }} {{ t('run.run_next') }}
   </button>
-  <button hx-post="/projects/{{ project.id }}/run-all" hx-target="#steps" hx-swap="innerHTML"
+  <button hx-post="/projects/{{ project.id }}/run-all" hx-target="#steps" hx-swap="innerHTML" hx-disabled-elt="this"
           class="button-primary">
     {{ m.icon('play-all') }} {{ t('run.run_all') }}
   </button>
