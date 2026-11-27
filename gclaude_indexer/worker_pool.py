@@ -312,6 +312,7 @@ class ResilientPool:
         # in the tests) simply has nothing to kill.
         processes = getattr(executor, "_processes", None) or {}
         for process in list(processes.values()):
+            _kill_children(process)
             try:
                 process.kill()
             except Exception:
@@ -322,3 +323,28 @@ class ResilientPool:
                 shutdown(wait=False, cancel_futures=True)
             except Exception:
                 pass
+
+
+def _kill_children(process: Any) -> None:
+    """Kills every descendant of a worker before the worker itself (2.1.6).
+
+    A conversion worker runs Tesseract, Ghostscript or LibreOffice as
+    subprocesses. Killing only the Python worker left them alive, holding
+    the output PDF (the next try met `PermissionError`) and the memory. The
+    descendants are listed while the worker still lives: once it is gone
+    they no longer hang under it. psutil, not `taskkill /T`, so the same
+    code runs on every system."""
+    pid = getattr(process, "pid", None)
+    if not pid:
+        return
+    try:
+        import psutil
+
+        children = psutil.Process(pid).children(recursive=True)
+    except Exception:
+        return
+    for child in children:
+        try:
+            child.kill()
+        except Exception:
+            pass
