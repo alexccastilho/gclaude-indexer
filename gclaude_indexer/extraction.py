@@ -39,7 +39,7 @@ from .auto_settings import CJK_CHARS_PER_PAGE
 from .config import ProjectConfig
 from .workdir import category_to_read, converted_artifact_path
 from .language_detect import CJK_SCRIPTS, dominant_script, has_unspaced
-from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter
+from .db import ERROR_MESSAGE_CHAR_LIMIT, BatchWriter, isolated_write
 from .events import record_event
 from .i18n import DEFAULT_LANGUAGE, translate
 from .worker_pool import (
@@ -292,7 +292,9 @@ def _queue_reconversion(writer: BatchWriter, row, result: ExtractionResult, lang
     result.reconversion += 1
 
 
-def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_sheet: int, result) -> int:
+def _queue_pages(
+    writer: BatchWriter, config: ProjectConfig, row, pages, start_sheet: int, result, language=None,
+) -> int:
     """Writes a file's pages through the batch and returns the group's next
     sheet. The sheet is computed here, not read back from the database, so
     a batch replayed after a locked database numbers exactly as before."""
@@ -301,12 +303,25 @@ def _queue_pages(writer: BatchWriter, config: ProjectConfig, row, pages, start_s
     # (`MessagePages`) só se sabe contando enquanto são gravadas. A operação
     # roda na hora (`BatchWriter.add`), então a contagem está pronta ao voltar.
     written = [0]
+    failure: list[Exception | None] = [None]
 
     def op(conn) -> None:
-        written[0] = _write_pages(conn, config, row, pages, start_sheet) - start_sheet
-        conn.execute(MARK_EXTRACTED, (row["id"],))
+        # 2.1.6: a mailbox read fails in the middle of the write (the
+        # intermediate vanished). Before, the half-written pages stayed in
+        # the batch without `MARK_EXTRACTED`, were committed, and the next
+        # run hit `UNIQUE(file_id, number)` on them.
+        def write(c) -> int:
+            count = _write_pages(c, config, row, pages, start_sheet) - start_sheet
+            c.execute(MARK_EXTRACTED, (row["id"],))
+            return count
+
+        count, failure[0] = isolated_write(conn, "extraction_file", write)
+        written[0] = count or 0
 
     writer.add(op)
+    if failure[0] is not None:
+        _queue_failure(writer, row, str(failure[0]), result, language)
+        return start_sheet
     result.files_processed += 1
     result.pages_written += written[0]
     return start_sheet + written[0]
@@ -375,7 +390,7 @@ def _extract_guarded(
                 _queue_failure(writer, row, str(value), result, language)
             else:
                 current_sheet[group_key] = _queue_pages(
-                    writer, config, row, value, current_sheet[group_key], result
+                    writer, config, row, value, current_sheet[group_key], result, language
                 )
 
             current_position[group_key] += 1

@@ -25,6 +25,7 @@ nothing for the sync to carry.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Callable
@@ -203,6 +204,45 @@ def connect(db_path: Path, timeout: float = WRITER_TIMEOUT_SECONDS) -> sqlite3.C
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+_SAVEPOINT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_BEGIN_STATEMENTS = frozenset({"BEGIN", "BEGIN IMMEDIATE"})
+
+
+def isolated_write(conn: sqlite3.Connection, name: str, fn, *, begin: str = "BEGIN"):
+    """Runs `fn(conn)` inside a SAVEPOINT of the current transaction and
+    returns `(value, None)`, or `(None, exc)` when `fn` raised something
+    that is not an SQLite error — with only `fn`'s writes undone, and the
+    rest of the batch intact.
+
+    For operations that read a file while they write (`MessagePages`,
+    `MessagePassages` open the intermediate only when iterated): a file
+    that vanishes in the middle must cost that file, not the batch. SQLite
+    errors go on to the caller, whose `BatchWriter` replays or discards
+    the whole transaction. The transaction is opened first (`begin`)
+    because releasing an outermost savepoint would commit (2.1.6).
+
+    `name` goes into the SQL text (SAVEPOINT takes no parameter), so it
+    must be a plain identifier; `begin` is one of the two statements the
+    callers use."""
+    if not _SAVEPOINT_NAME.fullmatch(name):
+        raise ValueError(f"savepoint name must be a plain identifier: {name!r}")
+    if begin not in _BEGIN_STATEMENTS:
+        raise ValueError(f"unexpected transaction statement: {begin!r}")
+    if not conn.in_transaction:
+        conn.execute(begin)
+    conn.execute(f"SAVEPOINT {name}")
+    try:
+        value = fn(conn)
+    except sqlite3.Error:
+        raise
+    except Exception as exc:  # noqa: BLE001 - handed back to the caller
+        conn.execute(f"ROLLBACK TO {name}")
+        conn.execute(f"RELEASE {name}")
+        return None, exc
+    conn.execute(f"RELEASE {name}")
+    return value, None
 
 
 def is_lock_error(exc: BaseException) -> bool:

@@ -57,7 +57,7 @@ from pathlib import Path
 
 from . import language_detect, light_formats
 from .config import ProjectConfig
-from .db import trigram_available
+from .db import isolated_write, trigram_available
 from .events import record_event
 from .file_status import EXTRACTED
 from .file_types import (
@@ -449,13 +449,30 @@ def index_pending(
                         writer.flush_if_due()
                         continue
                     stored = [0]
+                    failure: list[Exception | None] = [None]
 
-                    def store(c, row=row, passages=passages, stored=stored) -> None:
-                        stored[0] = _store_passages(c, row, passages)
+                    def store(c, row=row, passages=passages, stored=stored, failure=failure) -> None:
+                        # 2.1.6: a mailbox (`MessagePassages`) is only read
+                        # here, inside the batch, and an `OSError` in the
+                        # middle used to abort the whole indexing, on every
+                        # run. Now it costs that file alone, as above.
+                        count, failure[0] = isolated_write(
+                            c, "fulltext_file", lambda c2: _store_passages(c2, row, passages),
+                            begin="BEGIN IMMEDIATE",
+                        )
+                        if failure[0] is not None:
+                            count = _store_passages(c, row, [])
+                            record_event(
+                                c, "extraction", "warning", "log.fulltext.file_failed",
+                                {"name": row["name"], "error": str(failure[0])[:300]},
+                                language=language, commit=False,
+                            )
+                        stored[0] = count
 
                     writer.add(store)
-                    result.passages += stored[0]
-                    result.files += 1
+                    if failure[0] is None:
+                        result.passages += stored[0]
+                        result.files += 1
                     writer.flush_if_due()
         writer.flush()
     except BaseException:
