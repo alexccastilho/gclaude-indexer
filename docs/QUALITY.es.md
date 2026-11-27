@@ -4,14 +4,14 @@
 
 Este documento publica el acierto del índice que produce GClaude Indexer,
 medido contra una clave de respuestas revisada a mano, y dice qué significa y
-qué no significa cada número. La pantalla "Calidad" del programa resume la
+qué no significa cada número. El cuadro de calidad de la pantalla "Resultado" resume la
 **autoconfianza** que declara el motor; el número de aquí es otro: **si la
 pieza está bien**.
 
-Se actualiza a mano en cada versión que toque el clasificador. Última
-medición: **2 de noviembre de 2026, versión 1.7.5** (el clasificador, el
-prompt y las reglas son los mismos de la 1.7.4; la fase 37 solo agregó la
-medición).
+Se actualiza a mano en cada versión que toque el clasificador. Cada
+medición tiene su sección, con la versión y la fecha: la primera, justo
+abajo, es de la **versión 1.7.5 (2 de noviembre de 2026)**; las siguientes
+(2.0.0, 2.1.0 y posteriores) vienen después de "Cómo leerlo".
 
 ## Qué se midió
 

@@ -4,13 +4,14 @@
 
 This document publishes the accuracy of the index GClaude Indexer produces,
 measured against a hand-checked answer key, and says what each number means
-and does not mean. The program's "Quality" screen summarises the
+and does not mean. The quality panel of the "Result" screen summarises the
 **confidence** the engine declares; the number here is a different one:
 **whether the piece is right**.
 
-Updated by hand on every version that touches the classifier. Last
-measurement: **2 November 2026, version 1.7.5** (classifier, prompt and
-rules are the same as in 1.7.4; phase 37 only added the measurement).
+Updated by hand on every version that touches the classifier. Each
+measurement has its own section, with the version and the date: the first,
+right below, is from **version 1.7.5 (2 November 2026)**; the later ones
+(2.0.0, 2.1.0 and after) come after "How to read it".
 
 ## What was measured
 

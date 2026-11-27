@@ -55,7 +55,7 @@ Where the numbers come from:
 - **The `local` engine** checks, before each run, that the graphics card's memory plus the computer's total RAM hold the model with 20% to spare: about 3.9 GB for the Fastest profile (`qwen3.5:4b`, 3.2 GB) and about 7.6 GB for the Best quality profile (`ornith-1.5:9b`, 6.6 GB). Below that it switches to the `rules` engine on its own and says why. The check passes with 4 GB of RAM and no card, but Windows itself uses part of that and the run is very slow: 8 GB is the realistic floor.
 - **8 GB of VRAM** is where the Best quality model fits whole on the card (the program counts a card from 7.5 GB, because 8 GB cards report a little less). That is the profile it picks by default on such a card; on smaller cards it picks Fastest. NVIDIA cards run on CUDA; AMD cards run on Vulkan (an AMD card counts as a graphics card from 2 GB of VRAM).
 - **Disk:** downloading a model requires twice its size free (6.5 GB for Fastest, 13 GB for Best quality). The optional components add up to about 2.5 GB if all are used (LibreOffice 370 MB, FFmpeg 80 MB, whisper models up to 1.5 GB). The work folder (`%LOCALAPPDATA%\GClaudeIndexer\work\`) grows with the collection, gigabytes for a large one. An SSD makes reading, OCR and the search index noticeably faster.
-- **16 GB of RAM** leaves room for Ollama, which keeps a prompt cache and maps the model in memory besides what goes to the card, while the conversion and the browser keep running.
+- **16 GB of RAM** leaves room for Ollama, which maps the model in memory besides what goes to the card (and keeps there the part that did not fit; the prompt cache in RAM stays off, see `LLAMA_ARG_CACHE_RAM` below), while the conversion and the browser keep running.
 
 ## Installing without the installer
 

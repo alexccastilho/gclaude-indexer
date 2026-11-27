@@ -4,12 +4,13 @@
 
 Este documento publica o acerto do índice que o GClaude Indexer produz, medido
 contra um gabarito conferido à mão, e diz o que cada número significa e o que
-não significa. A tela "Qualidade" do programa resume a **autoconfiança** que
+não significa. O quadro de qualidade da tela "Resultado" resume a **autoconfiança** que
 o motor declara; o número daqui é outro: **se a peça está certa**.
 
-Atualizado à mão a cada versão que mexa no classificador. Última medição:
-**02/11/2026, versão 1.7.5** (o classificador, o prompt e as regras são os
-mesmos da 1.7.4; a fase 37 só acrescentou a medida).
+Atualizado à mão a cada versão que mexa no classificador. Cada medição fica
+na sua seção, com a versão e a data: a primeira, logo abaixo, é da
+**versão 1.7.5 (02/11/2026)**; as seguintes (2.0.0, 2.1.0 e posteriores)
+vêm depois de "Como ler".
 
 ## O que foi medido
 

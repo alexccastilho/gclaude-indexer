@@ -136,7 +136,7 @@ CREATE TABLE file (
     name          TEXT NOT NULL,
     extension     TEXT NOT NULL,
     size          INTEGER NOT NULL,
-    sha256_hash   TEXT NOT NULL,
+    sha256        TEXT NOT NULL,
     mtime         REAL,             -- modification time, for the update's fast path (section 5.0)
     group_key     TEXT,             -- volume, subfolder or subject, per config.group_mode
     page_count    INTEGER,
@@ -474,8 +474,8 @@ The `claude_code` engine (an external Claude Code session) existed until
 
 **`rules` engine, the zero-dependency default.** Purely deterministic:
 - Date by regular expression, covering `15/05/2024`, `15.05.2024` and
-  `15 de maio de 2024` (and their English/Spanish equivalents), with
-  calendar validation.
+  `15 de maio de 2024` (Portuguese month names only), ISO `2024-05-15`,
+  `15-05-2024` and the CJK `2024年5月15日`, with calendar validation.
 - Type by a dictionary of markers at the start of the page (document-type
   words such as memorandum, opinion, order, minutes, certificate, term,
   notice, invoice, appeal, decision, ordinance, resolution). The dictionary
@@ -485,7 +485,7 @@ The `claude_code` engine (an external Claude Code session) existed until
   stamp, or a change in a repeated header.
 - Item end on the page before the next detected start.
 - Author by footer and signature-block patterns.
-- Summary by extraction: a line starting with "Subject:"/"Re:" or, failing
+- Summary by extraction: a line starting with "Assunto:"/"Ementa:" or, failing
   that, the first sentence longer than 40 characters.
 - A page with no marker at all joins the previous item and is marked
   `confidence = "low"`.
@@ -596,7 +596,7 @@ user entered in the New Project form.
 
 ## 6. Interface
 
-Seven screens plus a "Manual" and an "About" page, served on
+Nine screens plus a "Manual" and an "About" page, served on
 `http://127.0.0.1:8000`.
 
 | Screen | Route |
@@ -687,8 +687,8 @@ also the HTTP form field names, so the two never drift apart.
 | `chars_per_page` | — (automatic) | 2000 | not a form field since 2.0.0: 75th percentile of the text of the PDF pages sampled, rounded to 500, between 1500 and 4000; applies to PDF and image pages (`extraction.chars_limit_for`) — whole documents (DOCX, PPTX, XLSX, HTML, TXT, e-mail) are cut at 4000 |
 | `ocr_language` | — (automatic) | `por` | not a form field since 2.0.0: language detected in the sampled text; Tesseract language code |
 | `classification_engine` | choice, with a name and description per engine | `automatic` | see section 5.6 |
-| `local_model` | selector with the two profiles (`fast`, `quality`) and the models from `GET /api/tags` against local Ollama, with a free-text fallback when Ollama doesn't respond | `automatic` (resolves to `quality`, `ornith-1.5:9b`, on a card with 8 GB of VRAM or more, otherwise `fast`, `qwen3.5:4b`) | the choice is saved and does take effect (`local_models.py:model_to_use`) |
-| `processing_mode` | choice | `automatic` | `gpu` behaves exactly like `automatic` (the screen says so): both use `num_gpu=-1` in Ollama (as much GPU as fits, rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
+| `local_model` | selector with the two profiles (`fast`, `quality`) and, below them, the other models from `GET /api/tags` against local Ollama; when Ollama doesn't respond only the two profiles are offered, with a notice (a `<select>` always, no free-text field) | `automatic` (resolves to `quality`, `ornith-1.5:9b`, on a card with 8 GB of VRAM or more, otherwise `fast`, `qwen3.5:4b`) | the choice is saved and does take effect (`local_models.py:model_to_use`) |
+| `processing_mode` | choice | `automatic` | `gpu` behaves exactly like `automatic` (the screen says so): both use `num_gpu=-1` in Ollama until the first window, which replaces it with a measured layer count (`engine_local.plan_gpu_use` → `gpu_budget.plan`: `layer_count + 1` when the whole model and its context fit on the card, fewer layers otherwise, the rest in RAM); `cpu` forces `num_gpu=0` — only affects the `local` engine |
 | `parallelism` | choice | `automatic` | `economy` (1 worker), `automatic` (physical cores minus one), `maximum` (all physical cores) — see section 5.2 |
 | `role_instructions` | long text | a default template | who Claude is, in the generated instructions; not shown to the classifying model since 2.1.0 |
 | `extra_rules` | long text, edited on the Instructions screen (not in the form since 2.0.0) | empty | appended to the generated instructions; not shown to the classifying model since 2.1.0 (the screen says so) |
@@ -743,11 +743,11 @@ the **last** import, because `import_and_consolidate` recreates the whole
 `None` score, never a number computed over items that no longer belong to
 that engine/model.
 
-A language selector and a theme selector (14 color themes, among them light, dark,
-sepia, high-contrast, Studio, Glass and Apple) sit in the header of every screen, in a `<select>`
+A language selector and a theme selector (15 color themes, among them light, dark,
+sepia, high-contrast, Studio, Glass, Apple and Aqua) sit in the header of every screen, in a `<select>`
 each, persisted in a cookie. A separate layout selector (five layouts:
 workspace, standard, technical, editorial, compact — `web/layout.py` +
-`static/layouts.css`) is orthogonal to the theme: 5 layouts × 14 palettes,
+`static/layouts.css`) is orthogonal to the theme: 5 layouts × 15 palettes,
 same Jinja2 templates for all of them, varying only via `data-layout` and
 CSS rules. All fonts used across every layout (Segoe UI, Cascadia Mono,
 Constantia, Corbel and equivalents) ship with Windows itself — never Google
@@ -860,9 +860,11 @@ The `local` engine's model comes from the project's profile
 (`qwen3.5:4b`, `ollama_models.DEFAULT_LOCAL_MODEL`) otherwise, unless the
 project's "Local model" field names a different, already-installed model
 (see section 6) — in which case that model is what actually runs, and what
-the hardware check below evaluates. Ollama is always asked to use
-`num_gpu: -1` (as much GPU as fits, the rest spilling into RAM
-automatically), regardless of which model runs.
+the hardware check below evaluates. Outside "cpu" mode the first
+request goes with `num_gpu: -1` (as much GPU as fits, the rest spilling
+into RAM); from the first window on, `engine_local.plan_gpu_use` sends
+the measured layer count instead (`layer_count + 1` when everything fits),
+regardless of which model runs.
 
 `hardware.py:choose_model` decides whether the machine can run the model
 that will actually be used:
@@ -1034,7 +1036,7 @@ machine, one at a time.
 | Goes to the synced folder | Stays local, per machine |
 |---|---|
 | source code, text templates, dictionaries | the Python virtual environment |
-| `requirements.txt` and its installed-hash marker | `__pycache__` and temporary files |
+| `requirements.txt` | `__pycache__` and temporary files; the installed-hash marker `requirements.sha256`, in `%LOCALAPPDATA%\GClaudeIndexer` next to the venv it describes |
 | each project's configuration (inside `project.db`'s `config_json` column, in its output folder) | the project catalog, `projects.json` — per machine unless the user points it at a Drive folder (see section 4) |
 | the shared project catalog, when configured (a Drive folder of the user's choosing) | `settings.json`, which names that folder — it is the pointer *into* the synced world and so cannot itself be synced |
 | — | `tools.json`: the absolute path of each installed program, recorded by `install.ps1` so a fresh install does not depend on `PATH` having reached the running processes |
