@@ -1,9 +1,9 @@
 """2.1.3: página em branco com um ícone não vai para o OCR.
 
-Os processos do órgão têm milhares de páginas vazias, só com o rodapé "Para
+Processos digitalizados podem ter milhares de páginas vazias, só com o rodapé "Para
 verificar as assinaturas..." (texto nativo de 99 caracteres) e um ícone de
 11×10 pontos. Pouco texto e uma imagem bastavam para a página ir ao OCR:
-três arquivos somavam 18 mil páginas assim, horas de OCR para texto nenhum.
+poucos arquivos somavam milhares de páginas assim, horas de OCR para texto nenhum.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def test_assinatura_escaneada_conta_como_conteudo(tmp_path):
 
 
 def test_retangulo_branco_de_fundo_nao_conta(tmp_path):
-    # As páginas vazias do órgão também têm retângulos brancos preenchidos, sem
+    # As páginas vazias desses processos também têm retângulos brancos preenchidos, sem
     # contorno: invisíveis no papel branco, nada para o OCR.
     document, page = _pagina(tmp_path, fitz.Rect(117, 829, 128, 839))
     page.draw_rect(fitz.Rect(37, 57, 316, 783), color=None, fill=(1, 1, 1))
@@ -55,7 +55,7 @@ def test_retangulo_branco_de_fundo_nao_conta(tmp_path):
 
 
 def test_formulario_vazio_com_barras_e_linhas_nao_conta(tmp_path):
-    # Folha de formulário em branco do órgão: barras cinza e linhas de tabela.
+    # Folha de formulário em branco: barras cinza e linhas de tabela.
     # Retângulo e linha reta não são texto; o OCR não teria o que ler.
     document, page = _pagina(tmp_path, fitz.Rect(117, 829, 128, 839))
     page.draw_rect(fitz.Rect(37, 57, 537, 80), color=None, fill=(0.88, 0.88, 0.88))

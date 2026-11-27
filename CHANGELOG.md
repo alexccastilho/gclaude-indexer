@@ -38,10 +38,10 @@ carrying as unreleased.
 ### Fixed
 
 - **Pages with only the document's repeated footer no longer go to the
-  model.** The court files had 18,385 empty pages carrying only the
-  authentication footer and an icon; the model read them one by one. In
-  the collection tested, 3,033 of 4,951 windows no longer need the model,
-  and the classification estimate went from about 69 h to about 27 h. It
+  model.** Scanned case files can have thousands of empty pages carrying
+  only the authentication footer and an icon; the model read them one by
+  one. In a large collection, more than half of the windows no longer need
+  the model, and the classification estimate dropped by more than half. It
   applies to the pending windows of a project already under way.
 - **Text volumes with a few scanned slides are no longer marked to be
   redone with Japanese, Greek, Arabic or Cyrillic.** A foreign script is
@@ -95,8 +95,8 @@ carrying as unreleased.
   Devanagari, and the whole file was marked to be redone with them.
 - **Blank pages no longer go to OCR.** A page with only the footer, a tiny
   icon, background rectangles or the lines of an empty form has nothing to
-  read; the court files had about 18,000 such pages, hours of OCR for no
-  text.
+  read; scanned case files can have thousands of such pages, hours of OCR
+  for no text.
 - **Photos are no longer read upside down.** The orientation detector
   turned 3 of 10 phone photos of upright paper by 180°, and the index kept
   unreadable text. The rotation is now checked by reading both ways.

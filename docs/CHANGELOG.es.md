@@ -44,10 +44,11 @@ el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 ### Corregido
 
 - **Una página con solo el pie repetido del documento ya no va al
-  modelo.** Los procesos tenían 18.385 páginas vacías con solo el pie de
-  autenticación y un ícono, y el modelo las leía una por una. En el acervo
-  probado, 3.033 de 4.951 ventanas dejan de necesitar el modelo, y la
-  estimación de la clasificación bajó de unas 69 h a unas 27 h. Vale para
+  modelo.** Los procesos digitalizados pueden tener miles de páginas
+  vacías con solo el pie de autenticación y un ícono, y el modelo las leía
+  una por una. En un acervo grande, más de la mitad de las ventanas deja
+  de necesitar el modelo, y la estimación de la clasificación bajó a menos
+  de la mitad. Vale para
   las ventanas pendientes de un proyecto ya en marcha.
 - **Un volumen de texto con algunas diapositivas escaneadas ya no queda
   marcado para rehacerse con japonés, griego, árabe o cirílico.** Una
@@ -103,7 +104,7 @@ el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
   para rehacerse con ellos.
 - **Las páginas en blanco ya no van al OCR.** Una página solo con el pie, un
   ícono diminuto, rectángulos de fondo o las líneas de un formulario vacío
-  no tiene nada que leer; los procesos tenían unas 18 mil páginas así,
+  no tiene nada que leer; los procesos digitalizados pueden tener miles de páginas así,
   horas de OCR sin texto.
 - **Las fotos ya no se leen al revés.** El detector de orientación giraba
   180° 3 de 10 fotos de celular de papel derecho, y el índice guardaba

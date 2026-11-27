@@ -36,7 +36,7 @@ sys.dont_write_bytecode = True
 
 # 2.1.3: teto da resolução em que o ocrmypdf rasteriza uma página. Ele usa a
 # maior resolução das imagens dela, e um ícone de 700×600 px desenhado em
-# 11×10 pontos (toda página dos processos do órgão) dá 4.500 DPI: a folha A4
+# 11×10 pontos (toda página de certos processos digitalizados) dá 4.500 DPI: a folha A4
 # virava 1,96 gigapixel, o Pillow recusava como "decompression bomb" e o OCR
 # do arquivo inteiro falhava. O Tesseract lê bem a partir de 300 DPI.
 MAX_RASTER_DPI = 400.0

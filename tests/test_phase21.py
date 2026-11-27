@@ -430,7 +430,7 @@ def test_janela_de_uma_pagina_nao_entra_em_recursao(monkeypatch):
 
 def test_indice_sabe_a_pagina_fisica_do_pdf():
     """f. 417 é a página 145 do Vol 2.pdf. Sem isso, quem consulta o índice
-    sabe o arquivo e não sabe onde abrir — o grupo Região Sul tem 21 PDFs."""
+    sabe o arquivo e não sabe onde abrir — um grupo pode ter dezenas de PDFs."""
     conn = _banco_com_duas_familias()
 
     mapa = _physical_pages(conn)

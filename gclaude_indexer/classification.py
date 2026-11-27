@@ -544,7 +544,7 @@ def requeue_windows_without_lines(conn: sqlite3.Connection, jsonl_path) -> dict[
     Every classified window leaves at least one line: both engines fill
     the pages no item covers (`coverage`). A `done` window without lines
     lost its items after the fact, and nothing would ever classify it again;
-    the import would turn its pages into gaps. Real case (XPTO, 2.1.4): the
+    the import would turn its pages into gaps. Real case (2.1.4): the
     project was classified on two PCs through the same Google Drive folder,
     and the database reached the second one with the first one's windows
     done, but not the lines it had appended to the file.

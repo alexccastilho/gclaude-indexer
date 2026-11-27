@@ -1,7 +1,7 @@
 """2.1.4: janela que estourou o tempo 3 vezes é tentada de novo no fim.
 
-No projeto XPTO, duas janelas do grupo Região Sul estouraram o tempo do modelo
-três vezes seguidas (08:47 e 10:21), com o Ollama no ar mas lento por alguns
+Num acervo grande, duas janelas de um mesmo grupo estouraram o tempo do
+modelo três vezes seguidas, com o Ollama no ar mas lento por alguns
 minutos. Ficavam pendentes "para a próxima execução": se ninguém rodasse a
 classificação de novo, o índice terminava com esses buracos. Refeitas depois,
 as mesmas janelas responderam em menos de um minuto.

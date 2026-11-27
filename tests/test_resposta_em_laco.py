@@ -1,8 +1,7 @@
 """2.1.4: resposta que entra em laço é cortada e o trecho é dividido.
 
-No XPTO o trecho 010135-010142 (8 páginas, 1.278 tokens de prompt) fez o
-modelo repetir "0000000-00.0000.0.00.0000 (ATOrd - Anistia, 25ª Vara);" sem
-parar: sem teto de resposta, o pedido só acabava no tempo limite de 300 s.
+Num acervo grande, um trecho de 8 páginas (1.278 tokens de prompt) fez o
+modelo repetir o número de um processo e a vara sem parar: sem teto de resposta, o pedido só acabava no tempo limite de 300 s.
 Com temperatura 0 a resposta é sempre a mesma, então as 3 tentativas iguais
 falhavam igual e o trecho ficava pendente. Medido: com teto de 8.000 tokens
 a resposta volta com `done_reason: length` em vez de travar.

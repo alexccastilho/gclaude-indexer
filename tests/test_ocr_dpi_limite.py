@@ -1,6 +1,6 @@
 """2.1.3: página com um ícone minúsculo em alta resolução.
 
-Os processos do órgão trazem em toda página um ícone de 700×600 px desenhado
+Certos processos digitalizados trazem em toda página um ícone de 700×600 px desenhado
 num espaço de 11×10 pontos: 4.500 DPI. O ocrmypdf rasteriza a página inteira
 na maior resolução das imagens dela, e a folha A4 virava uma imagem de
 1,96 gigapixel. O Pillow recusava (`DecompressionBombError`) e o OCR do
@@ -64,7 +64,7 @@ def _pdf_com_icone_minusculo(path):
     not (tools.find("tesseract") and tools.find_ghostscript()), reason="sem Tesseract ou Ghostscript"
 )
 def test_ocr_de_pagina_com_icone_em_4500_dpi_nao_falha(tmp_path):
-    source = tmp_path / "orgao.pdf"
+    source = tmp_path / "processo.pdf"
     _pdf_com_icone_minusculo(source)
     destination = tmp_path / "saida.pdf"
     conversion._run_ocrmypdf(source, destination, "eng", pages=[1])
@@ -77,7 +77,7 @@ def test_ocr_de_pagina_com_icone_em_4500_dpi_nao_falha(tmp_path):
 def test_paginas_por_arquivo_de_argumentos_no_ocrmypdf_de_verdade(tmp_path, monkeypatch):
     # O ramo `@arquivo` do `--pages` (2.1.3), passando pelo ocrmypdf real.
     monkeypatch.setattr(conversion, "_PAGES_INLINE_MAX_CHARS", 0)
-    source = tmp_path / "orgao.pdf"
+    source = tmp_path / "processo.pdf"
     _pdf_com_icone_minusculo(source)
     destination = tmp_path / "saida.pdf"
     conversion._run_ocrmypdf(source, destination, "eng", pages=[1])

@@ -1,6 +1,6 @@
 """2.1.4: "E-MAIL" e "EMAIL" são o mesmo tipo.
 
-No XPTO o modelo escreveu 154 vezes "E-MAIL" e 61 vezes "EMAIL", e o índice
+Num acervo de e-mails o modelo escreveu ora "E-MAIL", ora "EMAIL", e o índice
 listava os dois como tipos diferentes. O hífen, como o acento, é grafia.
 """
 

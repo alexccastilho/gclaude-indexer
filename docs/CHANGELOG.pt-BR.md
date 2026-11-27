@@ -44,10 +44,10 @@ não por versão semântica: a versão reportada pelo aplicativo
 ### Corrigido
 
 - **Página só com o rodapé repetido do documento não vai mais ao modelo.**
-  Os processos tinham 18.385 páginas vazias com só o rodapé de
-  autenticação e um ícone, e o modelo lia uma a uma. No acervo testado,
-  3.033 de 4.951 janelas deixam de precisar do modelo, e a estimativa da
-  classificação caiu de cerca de 69 h para cerca de 27 h. Vale para as
+  Processos digitalizados podem ter milhares de páginas vazias com só o
+  rodapé de autenticação e um ícone, e o modelo lia uma a uma. Num acervo
+  grande, mais da metade das janelas deixa de precisar do modelo, e a
+  estimativa da classificação caiu para menos da metade. Vale para as
   janelas pendentes de um projeto já em andamento.
 - **Volume de texto com alguns slides escaneados não é mais marcado para
   ser refeito com japonês, grego, árabe ou cirílico.** Escrita estrangeira
@@ -100,7 +100,7 @@ não por versão semântica: a versão reportada pelo aplicativo
   com eles.
 - **Página em branco não vai mais para o OCR.** Página só com o rodapé, um
   ícone minúsculo, retângulos de fundo ou as linhas de um formulário vazio
-  não tem o que ler; os processos tinham cerca de 18 mil páginas assim,
+  não tem o que ler; processos digitalizados podem ter milhares de páginas assim,
   horas de OCR sem texto nenhum.
 - **Foto não é mais lida de cabeça para baixo.** O detector de orientação
   girava 180° 3 de 10 fotos de celular de papel em pé, e o índice guardava

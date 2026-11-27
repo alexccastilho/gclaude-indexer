@@ -1,10 +1,10 @@
 """Janela `done` sem nenhuma linha no `raw_items.jsonl`.
 
-Caso real (XPTO, 25/11/2026): o projeto foi classificado em dois PCs pela
+Caso real (2.1.5): o projeto foi classificado em dois PCs pela
 mesma pasta do Google Drive. O banco chegou ao segundo PC com as janelas
 do primeiro marcadas `done`, mas as linhas que o primeiro acrescentou ao
 `raw_items.jsonl` não chegaram. A importação gravou o índice só com o que
-havia no arquivo, e 515 janelas viraram "lacunas" no Resultado sem nenhum
+havia no arquivo, e centenas de janelas viraram "lacunas" no Resultado sem nenhum
 aviso. Como estavam `done`, nada as classificaria de novo.
 
 Toda janela classificada deixa ao menos uma linha (a garantia de
@@ -177,7 +177,7 @@ def test_rota_de_pendencias_roda_a_cadeia_da_etapa_pendente_e_vai_para_a_execuca
 
 
 def _app_com_projeto_que_perdeu_linhas(tmp_path):
-    """O estado do XPTO: classificado, importado e só depois com as linhas de
+    """O estado do caso real: classificado, importado e só depois com as linhas de
     uma janela sumidas do arquivo. Nenhuma janela pendente; o Resultado
     mostra a lacuna."""
     from fastapi.testclient import TestClient

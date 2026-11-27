@@ -400,7 +400,7 @@ def test_projeto_antigo_com_saida_dentro_da_origem_continua_abrindo(tmp_path, or
 
 def _drive(tmp_path, meu_drive="Meu Drive"):
     raiz = tmp_path / "H"
-    origem = raiz / ".shortcut-targets-by-id" / "0AbCdEfGhIjKlMnOpQrStUv1" / "XPTO"
+    origem = raiz / ".shortcut-targets-by-id" / "1AbCdEfGhIjKlMnOpQrStUvW" / "XPTO"
     origem.mkdir(parents=True)
     if meu_drive:
         (raiz / meu_drive).mkdir()

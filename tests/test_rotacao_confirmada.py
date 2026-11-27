@@ -1,6 +1,6 @@
 """2.1.3: foto girada ao contrário pelo OSD.
 
-Nas fotos de ofícios do órgão (celular, papel em pé), o OSD do Tesseract
+Nas fotos de ofícios (celular, papel em pé), o OSD do Tesseract
 mandava girar 180° três de dez fotos, com confiança baixa (0,4 a 3,3). O
 OCR lia a página de cabeça para baixo e o índice guardava texto ilegível
 ("ODIO O GLUIONUI © APBPIONUAINGIQ"). Ler as duas orientações e ficar com a
