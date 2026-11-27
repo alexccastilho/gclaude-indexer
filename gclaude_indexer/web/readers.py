@@ -50,6 +50,8 @@ from ..project import load_project
 # over a hundred thousand files (128, 256 and 512 MB gave the same times).
 CACHE_KIB = 65536
 IDLE_CLOSE_SECONDS = 120.0
+# `_acquire_once` found its reader closed by someone else in between.
+_GONE = object()
 
 
 def _signature(db_path: Path) -> tuple[int, int] | None:
@@ -78,7 +80,19 @@ class ReaderPool:
 
     def acquire(self, output_folder) -> Reader | None:
         """The project's reader, locked for this request; `None` when it
-        cannot be had (the caller falls back to a normal connection)."""
+        cannot be had (the caller falls back to a normal connection).
+
+        2.1.6: between finding the reader and taking its lock, `close()` or
+        `close_idle()` may take it out of the map and close its connection.
+        So, once locked, the reader must still be the one in the map; if it
+        is not, try once more, and then fall back."""
+        for _attempt in range(2):
+            reader = self._acquire_once(output_folder)
+            if reader is not _GONE:
+                return reader
+        return None
+
+    def _acquire_once(self, output_folder):
         key = LockManager._key(output_folder)
         db_path = Path(output_folder) / PROJECT_DB_NAME
         signature = _signature(db_path)
@@ -104,10 +118,22 @@ class ReaderPool:
                 if existing is not None and existing.signature == signature:
                     reader.conn.close()
                     reader = existing
+                    replaced = None
                 else:
                     self._readers[key] = reader
+                    replaced = existing
+            if replaced is not None:
+                # A reader of an older signature put in by another request:
+                # out of the map, so nobody else would ever close it.
+                with replaced.lock:
+                    replaced.conn.close()
             self._start_sweeper()
         reader.lock.acquire()
+        with self._lock:
+            current = self._readers.get(key) is reader
+        if not current:
+            reader.lock.release()
+            return _GONE
         reader.last_used = time.monotonic()
         return reader
 
