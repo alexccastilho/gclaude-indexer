@@ -41,7 +41,7 @@ from .file_types import (
     needs_head,
 )
 from .i18n import DEFAULT_LANGUAGE, translate
-from .invalidation import discard_changed_file
+from .invalidation import discard_changed_file, discard_entering_file
 from . import source_folder
 from .source_folder import (
     MAX_CONSECUTIVE_TIMEOUTS,
@@ -360,6 +360,10 @@ def _is_waiting_component(row) -> bool:
         return False
 
 
+def _group_has_windows(conn: sqlite3.Connection, group_key: str) -> bool:
+    return conn.execute("SELECT 1 FROM window WHERE group_key = ? LIMIT 1", (group_key,)).fetchone() is not None
+
+
 def _holds_old_data(conn: sqlite3.Connection, relative_path: str) -> bool:
     """O índice ainda guarda o que o arquivo era: ele não foi devolvido à
     fila (`discovered`) pela atualização, ou foi mas ficou com páginas (o
@@ -620,6 +624,14 @@ def _record_scanned_file(
                 writer.run_own_transaction(
                     lambda c: discard_changed_file(c, config, relative_path, name, size, language)
                 )
+        elif group_key is not None and _group_has_windows(writer.conn, group_key):
+            # 2.1.6: an ignored file, or a copy, that now enters the group
+            # as a document of its own. Its pages land in the middle of the
+            # group; the windows after them, already classified, used to
+            # stay `done` over sheets that now belong to other files.
+            writer.run_own_transaction(
+                lambda c: discard_entering_file(c, config, relative_path, name, size, mtime, language)
+            )
 
         old_hash = existing_row["sha256"]
 

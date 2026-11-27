@@ -487,6 +487,41 @@ def discard_changed_file(
     return result
 
 
+def discard_entering_file(
+    conn: sqlite3.Connection,
+    config: ProjectConfig,
+    relative_path: str,
+    name: str,
+    size: int,
+    mtime: float | None,
+    language: str | None = None,
+) -> InvalidationResult:
+    """The scan's net for a file that joins a group it was not in — an
+    ignored file edited into an indexable one, or a copy edited into
+    content of its own (2.1.6). Its pages will land in the middle of the
+    group, so the group's windows from it on go, and the files after it are
+    renumbered: the plan of a new file, built from the index alone. When
+    the update before the scan already did this, nothing is left to
+    discard and nothing is logged.
+
+    The caller must have committed its own pending writes: `_apply` runs in
+    a transaction of its own."""
+    plan = plan_from_changes(
+        conn, config, [FileChange(relative_path, "new", name, size, mtime)], 0, "", language=language,
+        record_warnings=False,
+    )
+    result = _apply(conn, config, plan, language)
+    if result.windows_deleted:
+        try:
+            record_event(
+                conn, "scan", "warning", "log.scan.discarded_without_update",
+                {"name": name, "windows": result.windows_deleted}, language=language,
+            )
+        except (sqlite3.Error, OSError):
+            pass
+    return result
+
+
 def _apply(
     conn: sqlite3.Connection,
     config: ProjectConfig,

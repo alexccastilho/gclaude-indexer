@@ -51,16 +51,16 @@ from pathlib import Path
 
 from .config import ProjectConfig
 from .events import record_event
-from .file_status import DUPLICATE, OUT_OF_INDEX, STALE_PAGES_EXEMPT, in_params, is_waiting_component
+from .file_status import DUPLICATE, OUT_OF_INDEX, SKIPPED, STALE_PAGES_EXEMPT, in_params, is_waiting_component
 from .file_types import (
-    MESSAGE_PAGE_CATEGORIES, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, category_of_extension, is_extension_allowed,
-    name_decision,
+    HEAD_BYTES, MESSAGE_PAGE_CATEGORIES, READ_AS_PDF_CATEGORIES, SIGNED_CATEGORY, category_of_extension,
+    index_decision, is_extension_allowed, name_decision, needs_head,
 )
 from .paths import natural_sort_key
 from .run_control import checkpoint
 from .source_folder import SourceFolderStalled, compute_hash, derive_group_key, relative_text, walk_source_stats
 from .windows_prep import sanitize_group_name, window_key, window_spans
-from .worker_pool import CallTimedOut, DaemonThreadExecutor, deadline_for_size
+from .worker_pool import CallTimedOut, DaemonThreadExecutor, call_with_deadline, deadline_for_size
 
 
 class SourceFolderUnavailable(RuntimeError):
@@ -372,6 +372,19 @@ def detect_changes(
         # Ignorado não tem hash (nunca foi lido): não há o que recalcular, e
         # a varredura reavalia o arquivo sozinha.
         if not row["sha256"]:
+            # 2.1.6: mas, se a edição o tornou indexável (a chave privada
+            # saiu de um `.txt`), a varredura o põe no grupo, e as páginas
+            # dele caíam por baixo das janelas seguintes, já classificadas.
+            # Ele entra no plano como novo, que é o que ele passa a ser.
+            if row["status"] == SKIPPED:
+                verdict = _now_indexable(path, config)
+                if verdict is None:
+                    unverified.append(relative_path)
+                    continue
+                if verdict:
+                    changes.append(FileChange(relative_path, "new", path.name, size, mtime))
+                    read_changed.append(relative_path)
+                    continue
             unchanged += 1
             continue
 
@@ -388,7 +401,11 @@ def detect_changes(
             unchanged += 1
             continue
 
-        changes.append(FileChange(relative_path, "changed", path.name, size))
+        # 2.1.6: uma cópia (`duplicate`) não tem grupo nem páginas; com o
+        # conteúdo próprio, ela entra no grupo como documento novo. Como
+        # "alterada", nenhum grupo a continha e nada era descartado.
+        kind = "new" if row["status"] == DUPLICATE else "changed"
+        changes.append(FileChange(relative_path, kind, path.name, size, mtime if kind == "new" else None))
         read_changed.append(relative_path)
 
     for relative_path in sorted(generated):
@@ -401,6 +418,33 @@ def detect_changes(
             )
 
     return changes, unchanged, _fingerprint(entries, read_changed)
+
+
+def _now_indexable(path: Path, config: ProjectConfig) -> bool | None:
+    """Would the scan index this file now? The scan's own rules
+    (`scanning._ignore_reason`): by name, then the first bytes of a
+    text-like candidate. `None` when those bytes could not be read."""
+    name = path.name
+    if name_decision(name, config.extensions) is not None:
+        return False
+    if not is_extension_allowed(path.suffix.lower(), config.extensions):
+        return False
+    if not needs_head(name, config.extensions):
+        return True
+
+    def read() -> bytes:
+        with open(path, "rb") as file:
+            return file.read(HEAD_BYTES)
+
+    try:
+        head = call_with_deadline(read, deadline=_HEAD_DEADLINE_SECONDS)
+    except (OSError, CallTimedOut):
+        return None
+    return index_decision(name, head, config.extensions) is None
+
+
+# The first bytes of one file: a block, even through Google Drive.
+_HEAD_DEADLINE_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
