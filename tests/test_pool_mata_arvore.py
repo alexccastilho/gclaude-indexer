@@ -62,3 +62,51 @@ def test_descartar_o_pool_mata_os_filhos_do_trabalhador():
             psutil.Process(pid_filho).kill()
         except Exception:
             pass
+
+
+# --- 2.1.6: o último arquivo preso não derruba a etapa a cada execução -------
+
+import threading  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+
+from gclaude_indexer.worker_pool import OK, TIMED_OUT, PoolStalledError  # noqa: E402,F401
+
+
+def test_ultimo_arquivo_preso_vira_tempo_esgotado_em_vez_de_travar_a_etapa():
+    """O arquivo preso estoura o prazo uma vez com os outros terminando (o
+    sistema está são) e volta para o fim da fila. Os outros acabam, e ele
+    passa a rodar sozinho: antes, cada novo estouro contava como "disco
+    travado" e a etapa caía com `PoolStalledError` em toda execução."""
+    solta = threading.Event()
+
+    def trabalho(item):
+        if item == "preso":
+            solta.wait()
+            return "nunca"
+        time.sleep(0.02)
+        return item
+
+    try:
+        with ResilientPool(
+            lambda: ThreadPoolExecutor(max_workers=2), 2,
+            deadline_for=lambda item: 0.3, poll_seconds=0.02,
+        ) as pool:
+            resultados = {o.item: o.kind for o in pool.run(["preso", "a", "b", "c"], lambda ex, i: ex.submit(trabalho, i))}
+    finally:
+        solta.set()
+    assert resultados == {"preso": TIMED_OUT, "a": OK, "b": OK, "c": OK}
+
+
+def test_arquivo_sozinho_desde_o_inicio_continua_sem_ser_condenado():
+    """Sem nenhuma prova de que o sistema está são (nada terminou nunca), o
+    pool segue desistindo sem condenar ninguém: pode ser o disco."""
+    solta = threading.Event()
+    try:
+        with __import__("pytest").raises(PoolStalledError):
+            with ResilientPool(
+                lambda: ThreadPoolExecutor(max_workers=1), 1,
+                deadline_for=lambda item: 0.1, poll_seconds=0.02,
+            ) as pool:
+                list(pool.run(["preso"], lambda ex, i: ex.submit(solta.wait)))
+    finally:
+        solta.set()

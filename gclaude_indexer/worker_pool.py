@@ -22,7 +22,9 @@ This pool keeps four promises the plain executor does not:
   rebuilt; the others in flight go back to the queue, unpenalised.
 * **A file is not condemned for one stall.** It is tried again in the new
   pool. Only a second stall, while other files are completing (so the
-  system is healthy and the file is the problem), marks it timed out.
+  system is healthy and the file is the problem), marks it timed out. So
+  does a second stall alone, once an earlier stall of that same file came
+  while others completed (the last file of the step).
 * **A sick system stops the step instead of failing the collection.** When
   restarts keep coming with nothing completing in between (the drive is
   gone, not the file), the pool raises `PoolStalledError` and leaves every
@@ -183,6 +185,7 @@ class ResilientPool:
         `(executor, item) -> Future`."""
         queue: deque[tuple[int, Any]] = deque(enumerate(items))
         stalls: dict[int, int] = {}
+        healthy_stalls: set[int] = set()
         crashes: dict[int, int] = {}
         in_flight: dict[Future, tuple[int, Any, float]] = {}
         completed_since_restart = 0
@@ -281,7 +284,17 @@ class ResilientPool:
                 for future, (index, item, _started) in victims:
                     if future in expired:
                         stalls[index] = stalls.get(index, 0) + 1
-                        if healthy and stalls[index] >= self._max_attempts:
+                        # A file that already stalled once while others were
+                        # completing has shown it is the problem. Stalling
+                        # again, alone (the last file of the step), is that
+                        # same file, not a stuck drive: before 2.1.6 it ended
+                        # every run in `PoolStalledError`. Only when it is the
+                        # sole file past its deadline, so a drive that dies
+                        # with several files in flight still condemns none.
+                        proven = healthy or (index in healthy_stalls and len(expired) == 1)
+                        if healthy:
+                            healthy_stalls.add(index)
+                        if proven and stalls[index] >= self._max_attempts:
                             yield Outcome(item, TIMED_OUT, self._deadline_for(item))
                         else:
                             # To the back of the queue: the others run first,
