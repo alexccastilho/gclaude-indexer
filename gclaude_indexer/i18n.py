@@ -481,6 +481,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         # O próprio programa instala o idioma do OCR na pasta desta
         # máquina, sem elevação (`ocr_languages.py`); a cópia manual fica
         # só como último recurso, sem internet.
+        "diagnostics.command.ghostscript": (
+            "rode de novo o instalador do GClaude Indexer, que baixa a versão oficial da Artifex; "
+            "à mão: https://ghostscript.com/releases/gsdnld.html (Ghostscript para Windows, 64 bits)"
+        ),
         "diagnostics.command.tessdata_pt": (
             "o GClaude Indexer baixa o idioma do OCR sozinho, sem precisar de administrador, "
             "quando está conectado à internet: verifique a conexão e abra esta tela de novo. À mão: "
@@ -1761,6 +1765,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "diagnostics.gpu_runtime.driver_sufficient": "{name}: a recent driver is enough",
         "diagnostics.gpu_runtime.driver_installed": "{name}: driver {version}, released {date}",
         "diagnostics.gpu_runtime.driver_installed_no_date": "{name}: driver {version}",
+        "diagnostics.command.ghostscript": (
+            "run the GClaude Indexer installer again, which downloads the official Artifex build; "
+            "by hand: https://ghostscript.com/releases/gsdnld.html (Ghostscript for Windows, 64-bit)"
+        ),
         "diagnostics.command.tessdata_pt": (
             "GClaude Indexer downloads the OCR language by itself, with no administrator rights, "
             "when it is connected to the internet: check the connection and open this screen again. "
@@ -3039,6 +3047,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "diagnostics.gpu_runtime.driver_sufficient": "{name}: un controlador reciente es suficiente",
         "diagnostics.gpu_runtime.driver_installed": "{name}: controlador {version}, publicado el {date}",
         "diagnostics.gpu_runtime.driver_installed_no_date": "{name}: controlador {version}",
+        "diagnostics.command.ghostscript": (
+            "ejecute de nuevo el instalador de GClaude Indexer, que descarga la versión oficial de "
+            "Artifex; a mano: https://ghostscript.com/releases/gsdnld.html (Ghostscript para Windows, 64 bits)"
+        ),
         "diagnostics.command.tessdata_pt": (
             "GClaude Indexer descarga el idioma del OCR por sí solo, sin derechos de administrador, "
             "cuando está conectado a internet: revise la conexión y abra esta pantalla de nuevo. A "

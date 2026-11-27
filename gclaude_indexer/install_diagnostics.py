@@ -39,10 +39,6 @@ _TESSERACT_COMMAND = (
     "winget install --id UB-Mannheim.TesseractOCR -e --silent "
     "--accept-package-agreements --accept-source-agreements"
 )
-_GHOSTSCRIPT_COMMAND = (
-    "winget install --id ArtifexSoftware.GhostScript -e --silent "
-    "--accept-package-agreements --accept-source-agreements"
-)
 _OLLAMA_COMMAND = (
     "winget install --id Ollama.Ollama -e --silent "
     "--accept-package-agreements --accept-source-agreements"
@@ -51,7 +47,7 @@ _OLLAMA_COMMAND = (
 # Portuguese sentences, always shown as-is regardless of the interface's
 # language — the "About" screen's "How to resolve" column (Task 18, Phase
 # 14). They are prose instructions, not a literal command to paste into a
-# terminal like the three `winget install ...` above (which stay
+# terminal like the two `winget install ...` above (which stay
 # untranslated on purpose: a command is not prose, and "winget" itself is
 # not a word to translate) — so each is now a thin wrapper around a
 # `translate()` call, resolved per request in `_diagnose_tesseract`/
@@ -60,6 +56,12 @@ _OLLAMA_COMMAND = (
 
 def _tessdata_pt_command(language: str) -> str:
     return translate(language, "diagnostics.command.tessdata_pt")
+
+
+def _ghostscript_command(language: str) -> str:
+    # 2.1.6: no winget command — the index no longer carries Ghostscript
+    # (see install.ps1); the installer fetches the official Artifex build.
+    return translate(language, "diagnostics.command.ghostscript")
 
 
 def _hardware_sensor_dlls_command(language: str) -> str:
@@ -157,14 +159,14 @@ def _diagnose_tesseract(language: str) -> tuple[dict, dict]:
     return tesseract_item, tessdata_item
 
 
-def _diagnose_ghostscript() -> dict:
+def _diagnose_ghostscript(language: str | None = None) -> dict:
     try:
         path = find_ghostscript()
     except Exception:
         path = None
     present = bool(path)
     version = _version_via_flag(path, "--version") if present else None
-    return _entry("ghostscript", present, version, True, _GHOSTSCRIPT_COMMAND)
+    return _entry("ghostscript", present, version, True, _ghostscript_command(language))
 
 
 def _diagnose_ollama() -> tuple[dict, dict]:
@@ -329,9 +331,9 @@ def check_installation(language: str | None = None) -> list[dict]:
         items.append(_entry("tessdata_pt", False, None, True, _tessdata_pt_command(language)))
 
     try:
-        items.append(_diagnose_ghostscript())
+        items.append(_diagnose_ghostscript(language))
     except Exception:
-        items.append(_entry("ghostscript", False, None, True, _GHOSTSCRIPT_COMMAND))
+        items.append(_entry("ghostscript", False, None, True, _ghostscript_command(language)))
 
     try:
         ollama_item, model_item = _diagnose_ollama()

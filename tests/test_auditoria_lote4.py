@@ -166,3 +166,26 @@ def test_docx_convertido_por_versao_anterior_ainda_reabre_o_original(tmp_path):
 
     assert _tem_tabela(conn, "com.docx") == 1
     conn.close()
+
+
+# --- Diagnóstico: o Ghostscript não está mais no winget -------------------------
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("idioma, trecho", [
+    ("pt-BR", "instalador do GClaude Indexer"),
+    ("en", "GClaude Indexer installer"),
+    ("es", "instalador de GClaude Indexer"),
+])
+def test_diagnostico_nao_manda_instalar_o_ghostscript_pelo_winget(monkeypatch, idioma, trecho):
+    import gclaude_indexer.install_diagnostics as dm
+
+    monkeypatch.setattr(dm, "find_ghostscript", lambda: None)
+    itens = {i["key"]: i for i in dm.check_installation(idioma)}
+
+    comando = itens["ghostscript"]["install_command"]
+    assert "winget" not in comando
+    assert trecho in comando
+    assert "ghostscript.com" in comando
