@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import socket
 import threading
 import time
@@ -29,6 +30,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .paths import folder_key, resolved_folder
+
+_log = logging.getLogger(__name__)
 
 LOCK_FILE_NAME = "project.lock"
 MINUTES_UNTIL_ABANDONED = 10
@@ -332,10 +335,23 @@ class LockManager:
             with self._internal_lock:
                 if self._locks.get(folder) is not lock or self._in_use.get(folder, 0) > 0:
                     continue
-                remove_lock(folder)
+                try:
+                    remove_lock(folder)
+                except OSError:
+                    # 2.1.6: o Drive prendeu o arquivo. A exceção saía daqui e
+                    # matava a thread, e nenhuma trava era renovada depois —
+                    # outra máquina via o projeto como abandonado. A entrada
+                    # fica: a próxima batida tenta soltar de novo.
+                    _log.warning("could not release the lock of %s; retrying on the next beat", folder)
+                    continue
                 del self._locks[folder]
                 self._last_use.pop(folder, None)
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.wait(self._interval):
-            self.heartbeat()
+            try:
+                self.heartbeat()
+            except Exception:
+                # Uma batida que falha não pode encerrar o laço: sem ele, as
+                # travas de todos os projetos deixam de ser renovadas.
+                _log.exception("lock heartbeat failed; trying again on the next beat")

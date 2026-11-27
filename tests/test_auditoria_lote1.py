@@ -105,3 +105,58 @@ class _ThreadAdiada:
     def rodar_todas(cls):
         while cls.pendentes:
             cls.pendentes.pop(0)()
+
+
+# --- Item 2: o heartbeat do lock sobrevive a um erro do Drive -------------------------
+#
+# `remove_lock` ficava fora de `try`: um `PermissionError` (arquivo preso
+# pelo Drive) ao soltar a trava de um projeto ocioso matava a thread, e
+# nenhuma trava era renovada dali em diante — outra máquina passava a ver o
+# projeto como abandonado.
+
+from gclaude_indexer import lock as lock_mod
+
+
+def test_erro_ao_remover_trava_ociosa_nao_derruba_o_heartbeat(tmp_path, monkeypatch):
+    ocioso, ativo = tmp_path / "ocioso", tmp_path / "ativo"
+    ocioso.mkdir()
+    ativo.mkdir()
+    gerente = lock_mod.LockManager(heartbeat_interval_s=3600, idle_release_s=0)
+    gerente.open(ocioso)
+    gerente.open(ativo)
+    gerente.begin_use(ativo)
+
+    def remocao_presa(pasta):
+        raise PermissionError("arquivo em uso")
+
+    monkeypatch.setattr(lock_mod, "remove_lock", remocao_presa)
+    renovadas: list = []
+    original = lock_mod.refresh_lock
+    monkeypatch.setattr(
+        lock_mod, "refresh_lock", lambda pasta, trava: renovadas.append(pasta) or original(pasta, trava)
+    )
+
+    gerente.heartbeat()  # não pode levantar
+    assert renovadas, "a trava em uso foi renovada mesmo com a outra presa"
+    # A trava que não saiu continua sob cuidado: a próxima batida tenta de novo.
+    assert gerente.is_open(ocioso)
+
+    monkeypatch.setattr(lock_mod, "remove_lock", lambda pasta: None)
+    gerente.heartbeat()
+    assert not gerente.is_open(ocioso)
+
+
+def test_excecao_inesperada_numa_batida_nao_encerra_o_laco(monkeypatch):
+    gerente = lock_mod.LockManager(heartbeat_interval_s=0.01)
+    batidas: list[int] = []
+
+    def batida():
+        batidas.append(1)
+        if len(batidas) == 1:
+            raise RuntimeError("falha qualquer")
+        if len(batidas) >= 3:
+            gerente._stop.set()
+
+    monkeypatch.setattr(gerente, "heartbeat", batida)
+    gerente._heartbeat_loop()  # volta quando `_stop` é ligado
+    assert len(batidas) >= 3
