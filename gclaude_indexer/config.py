@@ -182,6 +182,18 @@ def _validate(config: ProjectConfig, *, check_source: bool) -> list[ConfigErrorM
 
     if config.group_mode == "name_pattern" and not config.group_pattern.strip():
         errors.append(ConfigErrorMessage("config_error.group_pattern_required"))
+    elif config.group_mode == "name_pattern" and check_source:
+        # Only on creation: the field cannot be edited afterwards, and a typo
+        # used to surface only in the scan. A saved project keeps loading.
+        try:
+            re.compile(config.group_pattern)
+        except re.error as exc:
+            errors.append(
+                ConfigErrorMessage(
+                    "config_error.group_pattern_invalid",
+                    {"value": config.group_pattern, "detail": str(exc)},
+                )
+            )
 
     if config.pages_per_window <= 0:
         errors.append(ConfigErrorMessage("config_error.pages_per_window_positive"))

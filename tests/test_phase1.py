@@ -368,3 +368,27 @@ def test_um_formato_para_toda_gravacao_da_config(tmp_path):
     save_project_config(conn, config)
     assert gravado() == config_to_json(config)
     conn.close()
+
+
+def test_padrao_de_grupo_invalido_e_recusado_na_criacao(tmp_path):
+    """2.1.6: uma expressão regular com erro de digitação só aparecia na
+    varredura, e o campo não pode ser editado depois. Agora a criação recusa,
+    com a mensagem nos três idiomas; uma configuração já gravada continua
+    carregando."""
+    from gclaude_indexer.i18n import translate
+
+    entrada = {
+        "name": "X", "source_folder": str(tmp_path), "output_folder": str(tmp_path / "saida"),
+        "group_mode": "name_pattern", "group_pattern": r"^(\d+",
+    }
+    with pytest.raises(ConfigError) as info:
+        config_from_input(entrada)
+    erro = next(e for e in info.value.errors if e.key == "config_error.group_pattern_invalid")
+    for idioma in ("pt", "en", "es"):
+        texto = translate(idioma, erro.key, **erro.params)
+        assert r"^(\d+" in texto and texto != erro.key
+
+    assert load_config(entrada).group_pattern == r"^(\d+"
+
+    entrada["group_pattern"] = r"^(\d+)"
+    assert config_from_input(entrada).group_pattern == r"^(\d+)"
