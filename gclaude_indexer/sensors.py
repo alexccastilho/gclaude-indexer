@@ -466,6 +466,25 @@ def _memory_pair(memory: dict[str, float]) -> tuple[int, int] | None:
     return (used if used is not None else 0, total)
 
 
+_GPU_KEYS = ("gpu_temp_c", "gpu_hotspot_c", "gpu_potencia_w", "clock_gpu_mhz", "gpu_fan_rpm")
+
+
+def _chosen_gpu(gpus: list[tuple[dict, tuple[int, int] | None]]) -> dict:
+    """The readings of one card: the one with the most memory (the model
+    runs there, see the final review note below) or, with no memory pair
+    anywhere, the first card that reported something."""
+    with_memory = [(gpu, pair) for gpu, pair in gpus if pair is not None]
+    if with_memory:
+        gpu, pair = max(with_memory, key=lambda item: item[1][1])
+        chosen = {key: value for key, value in gpu.items() if value is not None}
+        chosen["gpu_vram_usada_mb"], chosen["gpu_vram_total_mb"] = pair
+        return chosen
+    for gpu, _pair in gpus:
+        if any(value is not None for value in gpu.values()):
+            return {key: value for key, value in gpu.items() if value is not None}
+    return {}
+
+
 def _read_library_sensors() -> dict:
     try:
         computer, reason = _state()
@@ -479,7 +498,12 @@ def _read_library_sensors() -> dict:
     # with the largest total wins — the library lists an AMD integrated GPU
     # before an NVIDIA dedicated one, and "first GPU wins" showed 300 / 512
     # MB while the model held 6 GB of the dedicated card.
-    memory_pairs: list[tuple[int, int]] = []
+    # 2.1.6: every GPU reading (temperature, power, fan, clock) comes from
+    # the same card as the memory. Temperature used to come from the first
+    # GPU listed and the clock from the last, so with an integrated AMD GPU
+    # listed first the temperature watchdog looked at the integrated card
+    # while the model heated the dedicated one.
+    gpus: list[tuple[dict, tuple[int, int] | None]] = []
     try:
         for component in computer.Hardware:
             # Per component, not around the whole loop (fase 32): a
@@ -519,6 +543,7 @@ def _read_library_sensors() -> dict:
                         continue
                 continue
             memory: dict[str, float] = {}
+            gpu = {key: None for key in _GPU_KEYS}
             for sensor in component.Sensors:
                 if sensor.Value is None:
                     continue
@@ -535,30 +560,28 @@ def _read_library_sensors() -> dict:
                         # Casado pelo nome, não pela ordem: a placa expõe
                         # várias temperaturas (núcleo, memória, VRM, ponto
                         # quente) e só o nome as distingue.
-                        if reading["gpu_hotspot_c"] is None:
-                            reading["gpu_hotspot_c"] = round(value, 1)
-                    elif "Gpu" in kind and "Core" in nome and reading["gpu_temp_c"] is None:
-                        reading["gpu_temp_c"] = round(value, 1)
-                    elif "Gpu" in kind and reading["gpu_temp_c"] is None:
-                        reading["gpu_temp_c"] = round(value, 1)
+                        if gpu["gpu_hotspot_c"] is None:
+                            gpu["gpu_hotspot_c"] = round(value, 1)
+                    elif "Gpu" in kind and "Core" in nome and gpu["gpu_temp_c"] is None:
+                        gpu["gpu_temp_c"] = round(value, 1)
+                    elif "Gpu" in kind and gpu["gpu_temp_c"] is None:
+                        gpu["gpu_temp_c"] = round(value, 1)
                 elif sensor_type == "Power":
                     if "Cpu" in kind and reading["cpu_potencia_w"] is None:
                         reading["cpu_potencia_w"] = round(value, 1)
-                    elif "Gpu" in kind and reading["gpu_potencia_w"] is None:
-                        reading["gpu_potencia_w"] = round(value, 1)
+                    elif "Gpu" in kind and gpu["gpu_potencia_w"] is None:
+                        gpu["gpu_potencia_w"] = round(value, 1)
                 elif sensor_type == "Clock" and "Gpu" in kind and "Core" in str(sensor.Name):
-                    reading["clock_gpu_mhz"] = int(value)
-                elif sensor_type == "Fan" and "Gpu" in kind and reading["gpu_fan_rpm"] is None:
+                    if gpu["clock_gpu_mhz"] is None:
+                        gpu["clock_gpu_mhz"] = int(value)
+                elif sensor_type == "Fan" and "Gpu" in kind and gpu["gpu_fan_rpm"] is None:
                     # 0 stays 0: an RX 6000 (12 GB) has read 0 RPM
                     # with fan control at 0 % at 54 °C — zero-RPM mode, a
                     # measurement. The screen labels it "stopped".
-                    reading["gpu_fan_rpm"] = int(value)
-            if memory:
-                pair = _memory_pair(memory)
-                if pair is not None:
-                    memory_pairs.append(pair)
-        if memory_pairs:
-            reading["gpu_vram_usada_mb"], reading["gpu_vram_total_mb"] = max(memory_pairs, key=lambda p: p[1])
+                    gpu["gpu_fan_rpm"] = int(value)
+            if "Gpu" in kind:
+                gpus.append((gpu, _memory_pair(memory) if memory else None))
+        reading.update(_chosen_gpu(gpus))
     except Exception:
         return dict(_EMPTY)
 
