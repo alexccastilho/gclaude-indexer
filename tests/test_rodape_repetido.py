@@ -1,9 +1,10 @@
 """2.1.4: página que só tem o rodapé repetido do documento não vai ao modelo.
 
-Nos processos do órgão, os arquivos 33, 51 e 38 têm 18.414 páginas vazias com
-só o rodapé "Para verificar as assinaturas, acesse ... código NNNNNNNN." e um
-ícone. Elas escapavam da regra da página em branco (sem texto e sem imagem),
-e o modelo lia uma a uma: 4.951 janelas, umas 69 horas de classificação.
+Processos administrativos digitalizados podem ter milhares de páginas vazias
+com só o rodapé "Para verificar as assinaturas, acesse ... código NNNNNNNN."
+e um ícone. Elas escapavam da regra da página em branco (sem texto e sem
+imagem), e o modelo lia uma a uma: dias de classificação gastos em folhas
+sem conteúdo.
 
 A página entra na regra quando o texto inteiro dela, curto, se repete igual
 em boa parte das páginas do mesmo arquivo. Slides com títulos curtos e
@@ -98,7 +99,7 @@ def _pagina(numero, texto=RODAPE, imagens=1):
 def test_pagina_com_mais_imagens_que_o_resto_do_arquivo_vai_ao_modelo():
     # O ícone do rodapé está em toda página (1 imagem); uma foto a mais na
     # folha é conteúdo, mesmo que o único texto seja o rodapé.
-    rodapes = {7: (frozenset({RODAPE}), 1)}
+    rodapes = {7: {RODAPE: 1}}
     pecas, restantes = split_blank_pages([_pagina(1), _pagina(2, imagens=2), _pagina(3)], rodapes)
     assert [p.reference for p in restantes] == ["f. 2"]
     assert [(p.start_order, p.end_order) for p in pecas] == [(1, 1), (3, 3)]
@@ -107,5 +108,37 @@ def test_pagina_com_mais_imagens_que_o_resto_do_arquivo_vai_ao_modelo():
 def test_rodapes_do_banco(tmp_path):
     config, conn = _projeto_pronto_para_classificar(tmp_path, [TEXTO.format(n=1)] + [RODAPE] * 28 + [TEXTO.format(n=2)])
     rodapes = repeated_footer_texts(conn)
-    assert list(rodapes.values()) == [(frozenset({RODAPE}), 0)]
+    assert list(rodapes.values()) == [{RODAPE: 0}]
     conn.close()
+
+
+def _rodapes_de(conn_paginas, tmp_path):
+    textos = [texto for texto, _ in conn_paginas]
+    config, conn = _projeto_pronto_para_classificar(tmp_path, textos)
+    for numero, (_, imagens) in enumerate(conn_paginas, start=1):
+        conn.execute(
+            "UPDATE page SET image_count = ? WHERE id = (SELECT id FROM page ORDER BY id LIMIT 1 OFFSET ?)",
+            (imagens, numero - 1),
+        )
+    conn.commit()
+    return config, conn
+
+
+def test_uma_folha_sem_icone_nao_desliga_a_regra_do_arquivo(tmp_path):
+    """2.1.6: o número de imagens aceito era o MENOR do arquivo inteiro. Num
+    PDF longo em que todas as folhas têm o ícone do rodapé e uma só não tem
+    (uma folha em branco de verdade), o mínimo virava 0 e nenhuma folha com
+    o ícone era reconhecida. Vale o número típico das páginas daquele rodapé."""
+    paginas = [(TEXTO.format(n=1), 1)] + [(RODAPE, 1)] * 27 + [("", 0)] + [(TEXTO.format(n=2), 1)]
+    config, conn = _rodapes_de(paginas, tmp_path)
+    rodapes = repeated_footer_texts(conn)
+    assert list(rodapes.values()) == [{RODAPE: 1}]
+    conn.close()
+
+
+def test_textos_que_so_diferem_no_numero_continuam_indo_ao_modelo(tmp_path):
+    """Cartas-modelo e recibos curtos que só mudam no número são conteúdo:
+    o rodapé é comparado com os números, e nenhum deles vira "só rodapé"."""
+    textos = [f"Recibo número {n}: recebemos a importância referente à parcela {n} do contrato." for n in range(1, 31)]
+    vistas, _ = _classificar(tmp_path, textos)
+    assert len(vistas) == 30

@@ -1478,20 +1478,25 @@ def is_blank_page(page: WindowPage) -> bool:
     return category_of_extension(Path(page.file_name).suffix) in PAGED_CATEGORIES
 
 
-# 2.1.4: página que só tem o rodapé (ou cabeçalho) repetido do documento. Os
-# processos do órgão têm milhares de folhas vazias com só "Para verificar as
-# assinaturas... código NNNNNNNN." e um ícone; o modelo lia uma a uma (18.414
-# páginas, ~69 h de classificação). Entra na regra o texto inteiro da página,
-# curto, igual em pelo menos `FOOTER_MIN_SHARE` das páginas de um arquivo de
-# `FOOTER_MIN_PAGES` páginas ou mais. Slides com títulos curtos e diferentes,
-# ou um título igual em poucas páginas, seguem para o modelo.
+# 2.1.4: página que só tem o rodapé (ou cabeçalho) repetido do documento.
+# Processos digitalizados podem ter milhares de folhas vazias com só "Para
+# verificar as assinaturas... código NNNNNNNN." e um ícone, e o modelo lia
+# uma a uma. Entra na regra o texto inteiro da página, curto, igual em pelo
+# menos `FOOTER_MIN_SHARE` das páginas de um arquivo de `FOOTER_MIN_PAGES`
+# páginas ou mais. Slides com títulos curtos e diferentes, ou um título
+# igual em poucas páginas, seguem para o modelo.
 FOOTER_MAX_CHARS = 200
 FOOTER_MIN_PAGES = 20
 FOOTER_MIN_SHARE = 0.3
 FOOTER_PAGE_SUMMARY = "Página sem texto próprio: só o rodapé ou cabeçalho que se repete no documento."
 
-# file_id → (textos de rodapé, menor número de imagens de uma página do arquivo)
-FooterTexts = dict[int, tuple[frozenset[str], int]]
+# 2.1.6: o texto é comparado exato, com os números. Trocar os números por
+# "#" pegaria o rodapé "folha N de M", mas também faria cartas-modelo,
+# recibos e ofícios que só diferem no número parecerem o mesmo rodapé — e
+# eles iriam embora sem chegar ao modelo. Perder conteúdo é pior que gastar
+# um pedido numa folha de rodapé.
+# file_id → {texto de rodapé: número típico de imagens das páginas com ele}
+FooterTexts = dict[int, dict[str, int]]
 
 
 def _footer_key(text: str) -> str:
@@ -1501,11 +1506,15 @@ def _footer_key(text: str) -> str:
 def repeated_footer_texts(conn: sqlite3.Connection) -> FooterTexts:
     """Os textos de rodapé de cada arquivo, uma leitura por classificação.
     Arquivo com OCR falho fica de fora: a folha escaneada cujo OCR não saiu
-    pode ter conteúdo, e o rodapé nativo seria o único texto dela."""
-    totals: dict[int, tuple[int, int]] = {}
-    for file_id, pages, fewest_images in conn.execute(
+    pode ter conteúdo, e o rodapé nativo seria o único texto dela.
+
+    2.1.6: com cada rodapé vai o número de imagens mais comum das páginas
+    que o têm (o ícone do rodapé). Antes valia o menor número do arquivo
+    inteiro, e uma única folha sem ícone desligava a regra para todas."""
+    totals: dict[int, int] = {}
+    for file_id, pages in conn.execute(
         """
-        SELECT page.file_id, COUNT(*), MIN(page.image_count)
+        SELECT page.file_id, COUNT(*)
         FROM page JOIN file ON file.id = page.file_id
         WHERE COALESCE(file.ocr_failed, 0) = 0
         GROUP BY page.file_id
@@ -1513,38 +1522,40 @@ def repeated_footer_texts(conn: sqlite3.Connection) -> FooterTexts:
         """,
         (FOOTER_MIN_PAGES,),
     ):
-        totals[file_id] = (pages, fewest_images or 0)
-    counts: dict[int, dict[str, int]] = {}
-    for file_id, text in conn.execute(
-        "SELECT file_id, text FROM page WHERE length(text) <= ? AND trim(text) != ''",
+        totals[file_id] = pages
+    counts: dict[int, dict[str, dict[int, int]]] = {}
+    for file_id, text, images in conn.execute(
+        "SELECT file_id, text, image_count FROM page WHERE length(text) <= ? AND trim(text) != ''",
         (FOOTER_MAX_CHARS * 2,),
     ):
         if file_id not in totals:
             continue
         key = _footer_key(text or "")
         if key and len(key) <= FOOTER_MAX_CHARS:
-            per_file = counts.setdefault(file_id, {})
-            per_file[key] = per_file.get(key, 0) + 1
+            per_key = counts.setdefault(file_id, {}).setdefault(key, {})
+            per_key[images or 0] = per_key.get(images or 0, 0) + 1
     found: FooterTexts = {}
     for file_id, per_file in counts.items():
-        pages, fewest_images = totals[file_id]
-        texts = frozenset(key for key, count in per_file.items() if count >= FOOTER_MIN_SHARE * pages)
+        pages = totals[file_id]
+        texts = {}
+        for key, by_images in per_file.items():
+            if sum(by_images.values()) >= FOOTER_MIN_SHARE * pages:
+                # Empate: o menor número, para uma foto a mais nunca passar.
+                texts[key] = max(by_images, key=lambda n: (by_images[n], -n))
         if texts:
-            found[file_id] = (texts, fewest_images)
+            found[file_id] = texts
     return found
 
 
 def is_footer_only_page(page: WindowPage, footers: FooterTexts | None) -> bool:
     """Página cujo texto inteiro é o rodapé repetido do arquivo, sem imagem
-    além das que toda página dele tem (o ícone do rodapé)."""
+    além das que as páginas com esse rodapé costumam ter (o ícone)."""
     if not footers or page.file_id not in footers:
         return False
-    texts, fewest_images = footers[page.file_id]
-    if page.image_count > fewest_images:
+    typical = footers[page.file_id].get(_footer_key(page.text))
+    if typical is None or page.image_count > typical:
         return False
-    if category_of_extension(Path(page.file_name).suffix) not in PAGED_CATEGORIES:
-        return False
-    return _footer_key(page.text) in texts
+    return category_of_extension(Path(page.file_name).suffix) in PAGED_CATEGORIES
 
 
 def split_blank_pages(
