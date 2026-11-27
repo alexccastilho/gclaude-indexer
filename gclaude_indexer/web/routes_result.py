@@ -183,7 +183,9 @@ def _snippet_html(snippet: str) -> Markup:
 @router.get("/projects/{project_id}/search", response_class=HTMLResponse)
 def search_screen(request: Request, project_id: int, q: str = "", p: int = 1, lexml: int = 0):
     page = max(1, p)
-    with _open_project(project_id) as (entry, config, conn):
+    # 2.1.6: only reads, so the project's read-only connection that stays
+    # open (`readers.py`) instead of a writing one opened per search.
+    with _read_project(project_id) as (entry, config, conn):
         indexed, extracted = fulltext_coverage(conn)
         hits, total = fulltext_search(conn, q, SEARCH_PAGE_SIZE, (page - 1) * SEARCH_PAGE_SIZE) if q.strip() else ([], 0)
     results = [{"hit": hit, "snippet": _snippet_html(hit.snippet)} for hit in hits]

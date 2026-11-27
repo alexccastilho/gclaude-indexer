@@ -312,3 +312,20 @@ def test_projeto_de_versao_anterior_ganha_a_busca_ao_reabrir(tmp_path):
     index_pending(conn, config)
     assert search(conn, "mandacaru*")[1] == 1
     conn.close()
+
+
+def test_busca_usa_a_conexao_de_leitura_do_projeto(cliente, tmp_path, monkeypatch):
+    # 2.1.6: a busca só lê; não abre mais uma conexão de escrita (nem roda
+    # `load_project`) a cada consulta, depois que o projeto já foi aberto.
+    from gclaude_indexer.web import project_access
+
+    projeto_id = _projeto_web(cliente, tmp_path)
+    assert cliente.get(f"/projects/{projeto_id}/search", params={"q": "drones"}).status_code == 200
+
+    def nao_abrir(*_args, **_kwargs):
+        raise AssertionError("a busca abriu o projeto para escrita")
+
+    monkeypatch.setattr(project_access, "load_project", nao_abrir)
+    resposta = cliente.get(f"/projects/{projeto_id}/search", params={"q": "drones"})
+    assert resposta.status_code == 200
+    assert "drones" in resposta.text.lower()
