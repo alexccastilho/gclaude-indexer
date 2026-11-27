@@ -79,6 +79,29 @@ def window_counts(conn) -> tuple[int, int]:
     return total, done
 
 
+def groups_without_windows(conn) -> int:
+    """Groups with an extracted file and pages that have no window yet —
+    what "Create windows" still has to do. `total_windows > 0` alone said
+    "done" after an update brought a new group (2.1.6). Groups with no page
+    are skipped, as `prepare_windows` skips them. The first query is cheap
+    (two indexes) and almost always empty; pages are only looked at for
+    the groups it returns."""
+    candidates = [
+        row[0] for row in conn.execute(
+            "SELECT DISTINCT file.group_key FROM file"
+            " WHERE file.group_key IS NOT NULL AND file.status = ?"
+            " AND NOT EXISTS (SELECT 1 FROM window WHERE window.group_key = file.group_key)",
+            (EXTRACTED,),
+        )
+    ]
+    return sum(
+        1 for group in candidates
+        if conn.execute(
+            "SELECT 1 FROM page JOIN file ON file.id = page.file_id WHERE file.group_key = ? LIMIT 1", (group,),
+        ).fetchone()
+    )
+
+
 def classification_pending(conn) -> int:
     """Windows not classified yet: every window that is not `done`."""
     total, done = window_counts(conn)
@@ -140,7 +163,7 @@ def step_status(conn, is_running: Callable[[str], bool]) -> list[dict]:
         ("extraction",
          done_or(converted > 0 and converted == extracted and fulltext_pending == 0, converted > 0),
          {"pages": total_pages}),
-        ("windows", done_or(total_windows > 0 and extracted > 0, total_windows > 0),
+        ("windows", done_or(total_windows > 0 and extracted > 0 and groups_without_windows(conn) == 0, total_windows > 0),
          {"windows": total_windows}),
         ("classification", done_or(total_windows > 0 and windows_pending == 0, total_windows > 0),
          {"done": windows_done, "pending": windows_pending}),
