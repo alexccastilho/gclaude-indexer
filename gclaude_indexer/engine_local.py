@@ -21,6 +21,7 @@ import sqlite3
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -184,6 +185,14 @@ _CHARS_PER_TOKEN = 3.0
 # é resposta corrompida ou telemetria absurda — e aceitá-la infla o
 # contexto de todas as janelas seguintes, já que ele só cresce.
 _CHARS_PER_TOKEN_FLOOR = 1.2
+
+# 2.1.6: quantas janelas íntegras a calibração lembra. O valor usado é o
+# mínimo delas — conservador dentro do trecho, mas uma página de códigos
+# numéricos no começo da corrida deixa de inflar o contexto de todas as
+# janelas seguintes. Subestimar depois disso custa, no pior caso, uma
+# tentativa: o Ollama recusa o prompt grande (`truncate: false`) e diz o
+# tamanho exato.
+_CALIBRATION_MEMORY = 8
 
 # Folga para reconhecer a assinatura do truncamento. O Ollama 0.34 corta o
 # prompt em exatamente metade do `num_ctx`, medido em 1026/2048,
@@ -374,8 +383,12 @@ class LocalEngine:
     # `_CHARS_PER_TOKEN` é só a semente da primeira janela, quando ainda não
     # há medição. Guardamos o MÍNIMO observado, e não a média, pela mesma
     # assimetria que justificava a constante: superestimar custa um pouco de
-    # VRAM, subestimar custa a janela inteira.
+    # VRAM, subestimar custa uma tentativa. 2.1.6: o mínimo das últimas
+    # `_CALIBRATION_MEMORY` janelas, e não o da corrida inteira.
     _chars_per_token: float = field(default=_CHARS_PER_TOKEN, repr=False)
+    _recent_ratios: deque = field(
+        default_factory=lambda: deque(maxlen=_CALIBRATION_MEMORY), repr=False
+    )
     # Maior `num_ctx` que a placa (ou a RAM, sem placa) comporta com o
     # modelo inteiro. Medido uma vez por corrida (`gpu_budget.
     # measure_context_ceiling`); `ceiling_details` é o que entrou na conta,
@@ -439,12 +452,12 @@ class LocalEngine:
         sobre o prompt inteiro sairia otimista — exatamente o erro que se
         quer corrigir.
         """
-        if not generation.prompt_tokens or _looks_truncated(generation):
+        estimativa = int(len(prompt) / self._chars_per_token)
+        if not generation.prompt_tokens or _looks_truncated(generation, estimativa):
             return
         observada = len(prompt) / generation.prompt_tokens
-        self._chars_per_token = max(
-            _CHARS_PER_TOKEN_FLOOR, min(self._chars_per_token, observada)
-        )
+        self._recent_ratios.append(max(_CHARS_PER_TOKEN_FLOOR, observada))
+        self._chars_per_token = min(_CHARS_PER_TOKEN, min(self._recent_ratios))
 
     def plan_gpu_use(self, prompt: str, page_count: int = 0, minimum: int = 0) -> dict | None:
         """Replaces `num_gpu = -1` with a measured layer count.
