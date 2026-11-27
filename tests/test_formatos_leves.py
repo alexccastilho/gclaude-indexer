@@ -1353,3 +1353,19 @@ def test_wav_e_avi_nao_sao_farejados_como_imagem():
     assert light_formats.sniff_content_type(wav) != "image"
     assert light_formats.sniff_content_type(avi) != "image"
     assert light_formats.sniff_content_type(webp) == "image"
+
+
+def test_assinatura_destacada_ignorada_nao_conta_como_convertida(tmp_path):
+    # 2.1.6: `_apply_result` somava em `converted` também os arquivos que
+    # saem do índice (`MARK_SKIPPED`), e o log dizia "3 convertidos" para
+    # um acervo com um só documento.
+    origem, saida, config, conn = _projeto(tmp_path, [CATEGORY_ALL])
+    pdf = _pdf("Termo de posse")
+    (origem / "termo.pdf").write_bytes(pdf)
+    (origem / "termo.pdf.p7s").write_bytes(_assinar(pdf, destacada=True))
+    (origem / "sozinha.p7s").write_bytes(_assinar("sem irmão".encode(), destacada=True))
+
+    resultado = _processar(conn, config)
+
+    assert resultado.converted == 1
+    conn.close()

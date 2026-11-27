@@ -1318,8 +1318,14 @@ def _apply_result(writer: BatchWriter, result: ConversionResult, info: dict, lan
             record_event(conn, step, level, key, params, language=language, commit=False)
 
     writer.add(op)
-    result.converted += 1
+    # A file that leaves the index (detached signature, unreadable mailbox)
+    # was not converted: counting it made the log overstate the work (2.1.6).
+    if info["sql"] not in _SKIPPED_SQL:
+        result.converted += 1
     result.ocr_applied += int(info["ocr_applied"])
+
+
+_SKIPPED_SQL = frozenset({file_status.MARK_SKIPPED, file_status.MARK_SKIPPED_FOR_RETRY})
 
 
 def _record_failure(
@@ -2057,8 +2063,16 @@ def _convert_legacy(conn, config: ProjectConfig, rows, should_stop, result, lang
             conn, "conversion", "warning", "log.conversion.component_unavailable",
             {"component": _CATEGORY_COMPONENTS[LEGACY_CATEGORY].display_name, "count": len(rows)}, language=language,
         )
-    jobs = max(1, _physical_cores() // 2)
-    _convert_sequential(conn, config, rows, jobs, should_stop, result, language=language)
+    _convert_sequential(conn, config, rows, _legacy_ocr_jobs(config), should_stop, result, language=language)
+
+
+def _legacy_ocr_jobs(config: ProjectConfig) -> int:
+    """`--jobs` for the OCR of a legacy file. The files go one at a time, so
+    half the cores is safe — except in "economy" mode, which promises one
+    core, as the rest of the conversion does (2.1.6)."""
+    if workers_for(config.parallelism) <= 1:
+        return 1
+    return max(1, _physical_cores() // 2)
 
 
 # --- idioma do OCR por arquivo (2.0.0) ---------------------------------------------
