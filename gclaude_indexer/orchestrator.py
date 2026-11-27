@@ -92,7 +92,9 @@ def run_classification(
         # project. Built here, it used to lose `config` (no Subject, Collection
         # type, Role or Extra rules ever reached the prompt of a run started
         # from the interface) and `processing_mode` ("cpu" still loaded the
-        # whole model on the card).
+        # whole model on the card). Since 2.1.0 the prompt itself no longer
+        # carries the project block (`engine_local` drops it); `config`
+        # still drives everything else.
         result = classify_pending_local(
             conn, config, should_stop=should_stop, language=language, model=decision.model
         )

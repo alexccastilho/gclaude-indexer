@@ -133,7 +133,8 @@ def run(
 
     info = {
         "engine": motor_usado,
-        "model": model if engine == "local" else "",
+        # O modelo de fato usado, e não o nome do perfil ("automatic").
+        "model": decisao.model if engine == "local" else "",
         "version": _versao(),
         "machine": platform.node(),
         "started_at": iniciado_em,

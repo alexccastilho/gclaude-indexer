@@ -2664,13 +2664,13 @@ if ($SkipGpuCheck) {
         foreach ($line in $InstalledModels) {
             $name = (("$line" -split '\s+') | Where-Object { $_ })[0]
             if (-not $name -or $name -eq "NAME") { continue }
-            if ($name -eq $DefaultModel) { $GpuTestModel = $name; break }
+            if ($ProfileModels -contains $name) { $GpuTestModel = $name; break }
             if (-not $GpuTestModel) { $GpuTestModel = $name }
         }
     }
 
     if (-not $GpuTestModel) {
-        $SuggestedModel = $DefaultModel
+        $SuggestedModel = $ProfileModels | Select-Object -First 1
         if (-not $SuggestedModel) { $SuggestedModel = "<a model>" }
         Write-Host "No model is downloaded yet, so there is nothing to load." -ForegroundColor Yellow
         Write-Host "  Run 'ollama pull $SuggestedModel' and then this installer again." -ForegroundColor Yellow
