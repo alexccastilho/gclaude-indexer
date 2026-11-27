@@ -232,16 +232,16 @@ def isolated_write(conn: sqlite3.Connection, name: str, fn, *, begin: str = "BEG
         raise ValueError(f"unexpected transaction statement: {begin!r}")
     if not conn.in_transaction:
         conn.execute(begin)
-    conn.execute(f"SAVEPOINT {name}")
+    conn.execute(f"SAVEPOINT {name}")  # nosemgrep: name validated by _SAVEPOINT_NAME above
     try:
         value = fn(conn)
     except sqlite3.Error:
         raise
     except Exception as exc:  # noqa: BLE001 - handed back to the caller
-        conn.execute(f"ROLLBACK TO {name}")
-        conn.execute(f"RELEASE {name}")
+        conn.execute(f"ROLLBACK TO {name}")  # nosemgrep: name validated by _SAVEPOINT_NAME above
+        conn.execute(f"RELEASE {name}")  # nosemgrep: name validated by _SAVEPOINT_NAME above
         return None, exc
-    conn.execute(f"RELEASE {name}")
+    conn.execute(f"RELEASE {name}")  # nosemgrep: name validated by _SAVEPOINT_NAME above
     return value, None
 
 
