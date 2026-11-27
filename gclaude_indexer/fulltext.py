@@ -457,8 +457,7 @@ def index_pending(
                         # middle used to abort the whole indexing, on every
                         # run. Now it costs that file alone, as above.
                         count, failure[0] = isolated_write(
-                            c, "fulltext_file", lambda c2: _store_passages(c2, row, passages),
-                            begin="BEGIN IMMEDIATE",
+                            c, lambda c2: _store_passages(c2, row, passages), immediate=True,
                         )
                         if failure[0] is not None:
                             count = _store_passages(c, row, [])

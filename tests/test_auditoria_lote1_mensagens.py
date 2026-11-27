@@ -88,13 +88,30 @@ def test_extracao_nao_deixa_paginas_orfas_quando_a_leitura_falha_no_meio(tmp_pat
     conn.close()
 
 
-@pytest.mark.parametrize("nome", ["", "1abc", "x; DROP TABLE page", "a b", "ponto.e"])
-def test_savepoint_so_aceita_identificador_simples(tmp_path, nome):
+def test_isolated_write_aninhado_e_sucessivo_desfaz_so_o_proprio_trecho(tmp_path):
+    # O nome do savepoint é fixo; o SQLite usa o mais interno do mesmo nome,
+    # então chamadas aninhadas e seguidas continuam corretas (2.1.6).
     from gclaude_indexer.db import connect, isolated_write
 
     conn = connect(tmp_path / "x.db")
-    with pytest.raises(ValueError):
-        isolated_write(conn, nome, lambda c: None)
-    with pytest.raises(ValueError):
-        isolated_write(conn, "valido", lambda c: None, begin="COMMIT")
+    conn.execute("CREATE TABLE t (v TEXT)")
+    conn.commit()
+
+    def falha(c):
+        c.execute("INSERT INTO t VALUES ('interno')")
+        raise OSError("sumiu")
+
+    def externo(c):
+        c.execute("INSERT INTO t VALUES ('externo')")
+        valor, erro = isolated_write(c, falha)
+        assert valor is None and isinstance(erro, OSError)
+        return "ok"
+
+    assert isolated_write(conn, externo) == ("ok", None)
+    assert isolated_write(conn, lambda c: c.execute("INSERT INTO t VALUES ('seguinte')"))[1] is None
+    valor, erro = isolated_write(conn, falha, immediate=True)
+    assert isinstance(erro, OSError)
+    conn.commit()
+
+    assert [r[0] for r in conn.execute("SELECT v FROM t ORDER BY rowid")] == ["externo", "seguinte"]
     conn.close()

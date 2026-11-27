@@ -318,7 +318,7 @@ def _queue_pages(
             c.execute(MARK_EXTRACTED, (row["id"],))
             return count
 
-        count, failure[0] = isolated_write(conn, "extraction_file", write)
+        count, failure[0] = isolated_write(conn, write)
         written[0] = count or 0
 
     writer.add(op)
