@@ -9,6 +9,30 @@ semantic version: the reported application version (`SYSTEM_VERSION` in
 first bump, and it releases everything the phase 16 block below had been
 carrying as unreleased.
 
+## [2.1.6] - 2026-11-27
+
+### Fixed
+
+- **One step per project at a time.** A second click on "Run next step", "Run all" or "Import and generate reports" while a step runs no longer starts another one in parallel on the same database. Deleting the project or clearing the intermediates waits for the step to stop (up to 30 s) and deletes nothing if it does not.
+- **A paused step no longer shows as "Done 100%".**
+- **A Google Drive error while releasing a lock no longer kills the renewal** of the other locks, which used to make the project look abandoned to another machine.
+- **A file that enters the middle of a group discards the following windows** (a skipped file that becomes indexable, a duplicate that gains its own content), instead of leaving sheets and windows misaligned.
+- **A mailbox that becomes unreadable mid-write costs only that file**, in search and in extraction, with no half-written pages.
+- **Discarding the process pool also kills the Tesseract, Ghostscript and LibreOffice** processes it had started.
+- **The last stuck file of a step becomes "timed out"** instead of failing the step on every run.
+- **A group pattern with a typo is rejected when the project is created.**
+- **The LexML lookup uses the system proxy again**; only local addresses (Ollama) bypass it.
+- **With more than one graphics card**, temperature, power and clock come from the same card as the VRAM.
+- "Create windows" becomes pending again when an update brings a new group; search uses the project's read connection; the shared reader never hands out a closed connection; re-importing the same number of items no longer shows the old quality summary.
+- `.docx` extraction no longer reopens the original on Drive just to learn whether it has tables; skipped files are not counted as converted; OCR of legacy formats honors economy mode.
+- The installer's GPU check looks for the profile's models; the About screen no longer suggests installing Ghostscript through winget; the package guide lists `normas-citadas.md`.
+- Classification: the subject no longer leaks from one document into the next; a single sheet without the icon no longer disables the repeated-footer rule for the whole file; the characters-per-token ratio follows the latest windows rather than the whole run.
+
+### Changed
+
+- **Model answer cap lowered from 3× to 1.8× the per-page budget**: a window that loops is cut much sooner. In the demo collection measurement no answer was cut. Window overlap stays at 2 (overlap 1 was faster but had a lower F1); details in `docs/QUALITY.md`.
+- Technical documentation, specification and quality docs aligned with the code.
+
 ## [2.1.5] - 2026-11-26
 
 ### Fixed

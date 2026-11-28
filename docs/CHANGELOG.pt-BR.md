@@ -15,6 +15,30 @@ não por versão semântica: a versão reportada pelo aplicativo
 16. A `1.0.1` é o primeiro incremento, e publica tudo o que o bloco da fase
 16, mais abaixo, vinha carregando como não lançado.
 
+## [2.1.6] - 2026-11-27
+
+### Corrigido
+
+- **Uma etapa por projeto de cada vez.** Um segundo clique em "Rodar próxima etapa", "Rodar tudo" ou "Importar e gerar relatórios" com uma etapa em andamento não inicia outra em paralelo no mesmo banco. Excluir o projeto ou limpar os intermediários espera a etapa parar (até 30 s) e não apaga nada se ela não parar.
+- **Etapa pausada não aparece mais como "Concluído 100%".**
+- **Erro do Google Drive ao soltar uma trava não mata mais a renovação** das demais travas, que antes deixava o projeto parecer abandonado para outra máquina.
+- **Arquivo que entra no meio de um grupo descarta as janelas seguintes** (um ignorado que passa a ser indexável, uma cópia que ganha conteúdo próprio), em vez de deixar folhas e janelas desalinhadas.
+- **Caixa de mensagens ilegível no meio da gravação custa só o próprio arquivo**, na busca e na extração, sem páginas pela metade.
+- **Descartar o pool de processos mata também o Tesseract, o Ghostscript e o LibreOffice** que ele tinha aberto.
+- **O último arquivo preso da etapa vira "tempo esgotado"** em vez de derrubar a etapa a cada execução.
+- **Padrão de grupo com erro de digitação é recusado na criação do projeto.**
+- **A consulta ao LexML volta a usar o proxy do sistema**; só os endereços locais (Ollama) vão sem proxy.
+- **Com mais de uma placa de vídeo**, temperatura, potência e clock vêm da mesma placa da VRAM.
+- "Criar janelas" volta a ficar pendente quando uma atualização traz um grupo novo; a busca usa a conexão de leitura do projeto; o leitor compartilhado não entrega conexão fechada; reimportar o mesmo número de peças não mostra o resumo de qualidade antigo.
+- A extração do `.docx` não reabre o original no Drive só para saber se há tabela; arquivos ignorados não contam como convertidos; o OCR dos formatos legados respeita o modo economia.
+- O teste de GPU do instalador procura os modelos do perfil; a tela Sobre não manda instalar o Ghostscript pelo winget; o guia do pacote lista `normas-citadas.md`.
+- Classificação: o assunto não vaza de um documento para o seguinte; uma folha sem ícone não desliga a regra do rodapé repetido do arquivo inteiro; a razão caracteres/token vale para as últimas janelas, e não para a corrida inteira.
+
+### Alterado
+
+- **Teto da resposta do modelo de 3× para 1,8× a reserva por página**: uma janela que entra em laço é cortada bem antes. Na medição do acervo de demonstração nenhuma resposta foi cortada. A sobreposição entre janelas continua 2 (a sobreposição 1 foi mais rápida, mas com F1 menor); detalhes em `docs/QUALITY.pt-BR.md`.
+- Documentação técnica, especificação e qualidade alinhadas ao código.
+
 ## [2.1.5] - 2026-11-26
 
 ### Corrigido

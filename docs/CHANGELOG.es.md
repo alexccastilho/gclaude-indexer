@@ -15,6 +15,30 @@ por versión semántica: la versión que informa la aplicación
 hasta la fase 16. La `1.0.1` es el primer incremento, y publica todo lo que
 el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 
+## [2.1.6] - 2026-11-27
+
+### Corregido
+
+- **Una etapa por proyecto a la vez.** Un segundo clic en "Ejecutar siguiente etapa", "Ejecutar todo" o "Importar y generar informes" con una etapa en curso ya no inicia otra en paralelo sobre la misma base. Eliminar el proyecto o limpiar los intermedios espera a que la etapa se detenga (hasta 30 s) y no borra nada si no se detiene.
+- **Una etapa en pausa ya no aparece como "Concluido 100%".**
+- **Un error de Google Drive al soltar un bloqueo ya no detiene la renovación** de los demás bloqueos, que antes hacía parecer el proyecto abandonado para otra máquina.
+- **Un archivo que entra en medio de un grupo descarta las ventanas siguientes** (un ignorado que pasa a ser indexable, una copia que gana contenido propio), en lugar de dejar folios y ventanas desalineados.
+- **Un buzón ilegible a mitad de la grabación solo afecta a ese archivo**, en la búsqueda y en la extracción, sin páginas a medias.
+- **Descartar el pool de procesos también termina el Tesseract, el Ghostscript y el LibreOffice** que había abierto.
+- **El último archivo atascado de la etapa pasa a "tiempo agotado"** en vez de tumbar la etapa en cada ejecución.
+- **Un patrón de grupo con error de escritura se rechaza al crear el proyecto.**
+- **La consulta a LexML vuelve a usar el proxy del sistema**; solo las direcciones locales (Ollama) van sin proxy.
+- **Con más de una tarjeta de video**, temperatura, potencia y reloj vienen de la misma tarjeta que la VRAM.
+- "Crear ventanas" vuelve a quedar pendiente cuando una actualización trae un grupo nuevo; la búsqueda usa la conexión de lectura del proyecto; el lector compartido no entrega una conexión cerrada; reimportar el mismo número de piezas no muestra el resumen de calidad antiguo.
+- La extracción del `.docx` no reabre el original en Drive solo para saber si hay tablas; los archivos ignorados no cuentan como convertidos; el OCR de los formatos antiguos respeta el modo economía.
+- La prueba de GPU del instalador busca los modelos del perfil; la pantalla Acerca de no sugiere instalar Ghostscript por winget; la guía del paquete incluye `normas-citadas.md`.
+- Clasificación: el asunto no pasa de un documento al siguiente; una hoja sin ícono no desactiva la regla del pie de página repetido de todo el archivo; la razón caracteres/token vale para las últimas ventanas y no para toda la ejecución.
+
+### Cambiado
+
+- **Límite de la respuesta del modelo de 3× a 1,8× la reserva por página**: una ventana que entra en bucle se corta mucho antes. En la medición del acervo de demostración ninguna respuesta se cortó. La superposición entre ventanas sigue en 2 (la superposición 1 fue más rápida, pero con F1 menor); detalles en `docs/QUALITY.es.md`.
+- Documentación técnica, especificación y calidad alineadas con el código.
+
 ## [2.1.5] - 2026-11-26
 
 ### Corregido
