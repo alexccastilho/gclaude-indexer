@@ -25,7 +25,7 @@ el bloque de la fase 16, más abajo, venía arrastrando como no publicado.
 - **Un archivo que entra en medio de un grupo descarta las ventanas siguientes** (un ignorado que pasa a ser indexable, una copia que gana contenido propio), en lugar de dejar folios y ventanas desalineados.
 - **Un buzón ilegible a mitad de la grabación solo afecta a ese archivo**, en la búsqueda y en la extracción, sin páginas a medias.
 - **Descartar el pool de procesos también termina el Tesseract, el Ghostscript y el LibreOffice** que había abierto.
-- **El último archivo atascado de la etapa pasa a "tiempo agotado"** en vez de tumbar la etapa en cada ejecución.
+- **El último archivo atascado de la etapa pasa a "tiempo agotado"** en vez de tumbar la etapa en cada ejecución, cuando ya había agotado el plazo antes con otros archivos avanzando (un archivo atascado solo desde el inicio aún detiene la etapa, porque no se distingue de un Drive bloqueado).
 - **Un patrón de grupo con error de escritura se rechaza al crear el proyecto.**
 - **La consulta a LexML vuelve a usar el proxy del sistema**; solo las direcciones locales (Ollama) van sin proxy.
 - **Con más de una tarjeta de video**, temperatura, potencia y reloj vienen de la misma tarjeta que la VRAM.

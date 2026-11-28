@@ -25,7 +25,7 @@ não por versão semântica: a versão reportada pelo aplicativo
 - **Arquivo que entra no meio de um grupo descarta as janelas seguintes** (um ignorado que passa a ser indexável, uma cópia que ganha conteúdo próprio), em vez de deixar folhas e janelas desalinhadas.
 - **Caixa de mensagens ilegível no meio da gravação custa só o próprio arquivo**, na busca e na extração, sem páginas pela metade.
 - **Descartar o pool de processos mata também o Tesseract, o Ghostscript e o LibreOffice** que ele tinha aberto.
-- **O último arquivo preso da etapa vira "tempo esgotado"** em vez de derrubar a etapa a cada execução.
+- **O último arquivo preso da etapa vira "tempo esgotado"** em vez de derrubar a etapa a cada execução, quando já tinha estourado o prazo antes com outros arquivos andando (um arquivo preso sozinho desde o início ainda para a etapa, porque não dá para distingui-lo de um Drive travado).
 - **Padrão de grupo com erro de digitação é recusado na criação do projeto.**
 - **A consulta ao LexML volta a usar o proxy do sistema**; só os endereços locais (Ollama) vão sem proxy.
 - **Com mais de uma placa de vídeo**, temperatura, potência e clock vêm da mesma placa da VRAM.

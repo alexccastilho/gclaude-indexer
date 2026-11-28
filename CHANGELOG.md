@@ -19,7 +19,7 @@ carrying as unreleased.
 - **A file that enters the middle of a group discards the following windows** (a skipped file that becomes indexable, a duplicate that gains its own content), instead of leaving sheets and windows misaligned.
 - **A mailbox that becomes unreadable mid-write costs only that file**, in search and in extraction, with no half-written pages.
 - **Discarding the process pool also kills the Tesseract, Ghostscript and LibreOffice** processes it had started.
-- **The last stuck file of a step becomes "timed out"** instead of failing the step on every run.
+- **The last stuck file of a step becomes "timed out"** instead of failing the step on every run, when it had already timed out before while other files progressed (a file stuck alone from the start still stops the step, since it cannot be told apart from a stalled Drive).
 - **A group pattern with a typo is rejected when the project is created.**
 - **The LexML lookup uses the system proxy again**; only local addresses (Ollama) bypass it.
 - **With more than one graphics card**, temperature, power and clock come from the same card as the VRAM.
