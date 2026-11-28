@@ -71,6 +71,36 @@ forma exacta; el autor vale por el apellido o la sigla.
   fases (la fecha en el motor de reglas y la fragmentación en el modelo son
   las dos mayores ganancias a la vista).
 
+## Superposición y tope de respuesta (2.1.6, 27 de noviembre de 2026)
+
+La 2.1.6 bajó el tope de la respuesta del modelo (de 3 a 1,8 veces la
+reserva por página; 3.168 tokens en una ventana de 8 páginas) y volvió a
+medir la superposición entre ventanas con Mejor calidad (`ornith-1.5:9b`),
+con la salida estructurada. Máquina distinta de las secciones anteriores:
+un portátil con tarjeta de video de 6 GB, en el que parte del modelo corre
+en la CPU (Ollama 0.40.16), por eso los tiempos son mayores y solo sirven
+para comparar las filas entre sí. Una ronda por fila (temperatura 0: las
+rondas repetidas de la 2.0.0 salieron idénticas).
+
+| Ventana / superposición | Ventanas | Piezas (41) | F1 | Tipo | Fecha | Autor | Clasificación |
+|---|---|---|---|---|---|---|---|
+| **8 / 2** (predeterminada) | 13 | 47 | **93,2 %** | 41,5 % | 87,8 % | 89,5 % | 28 min 27 s |
+| 8 / 1 | 11 | 49 | 88,9 % | 50,0 % | 80,0 % | 81,1 % | 23 min 57 s |
+| 10 / 1 | 8 | 41 | 100 % | 41,5 % | 85,4 % | 92,1 % | 25 min 26 s |
+| 8 / 2, código de la 2.1.5 | 13 | 47 | 93,2 % | 41,5 % | 87,8 % | 89,5 % | 29 min 39 s |
+
+- **La predeterminada sigue siendo 8 / 2.** La superposición 1 ahorra un
+  16 % del tiempo, pero el F1 bajó 4,3 puntos (dos piezas partidas de más y
+  una pieza perdida), como en la medición de la 2.0.0. La regla era cambiar
+  solo si el F1 no bajaba.
+- **10 / 1 acertó todas las piezas y fue un 11 % más rápida**, con el mismo
+  tipo que la predeterminada. Es una ronda en un acervo de 72 páginas: queda
+  como candidata a medir en un proceso real antes de volverse predeterminada.
+- **El tope menor no cortó ninguna respuesta**: ninguna ventana dividida,
+  ninguna página sin respuesta, en los cuatro casos. La última fila (el
+  código anterior a los cambios del clasificador de la 2.1.6, misma máquina)
+  dio las mismas piezas y los mismos campos.
+
 ## Perfiles, salida estructurada y agrupamiento (2.1.0, 18 de noviembre de 2026)
 
 La versión 2.1.0 ofrece dos perfiles para el modelo local, restringe la

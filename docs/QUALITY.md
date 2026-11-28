@@ -70,6 +70,34 @@ author matches by surname or acronym.
   phases can start (dates in the rules engine and fragmentation in the
   model are the two largest gains in sight).
 
+## Overlap and answer cap (2.1.6, 27 November 2026)
+
+Version 2.1.6 lowered the cap on the model's answer (from 3 to 1.8 times
+the per-page reserve; 3,168 tokens for an 8-page window) and measured the
+overlap between windows again with Best quality (`ornith-1.5:9b`), with
+structured output. A different machine from the sections above: a laptop
+with a 6 GB graphics card, on which part of the model runs on the CPU
+(Ollama 0.40.16), so the times are longer and only compare the rows with
+each other. One run per row (temperature 0: the repeated runs of 2.0.0
+came out identical).
+
+| Window / overlap | Windows | Pieces (41) | F1 | Type | Date | Author | Classification |
+|---|---|---|---|---|---|---|---|
+| **8 / 2** (default) | 13 | 47 | **93.2%** | 41.5% | 87.8% | 89.5% | 28 min 27 s |
+| 8 / 1 | 11 | 49 | 88.9% | 50.0% | 80.0% | 81.1% | 23 min 57 s |
+| 10 / 1 | 8 | 41 | 100% | 41.5% | 85.4% | 92.1% | 25 min 26 s |
+| 8 / 2, 2.1.5 code | 13 | 47 | 93.2% | 41.5% | 87.8% | 89.5% | 29 min 39 s |
+
+- **The default stays 8 / 2.** Overlap 1 saves 16% of the time, but F1
+  dropped 4.3 points (two more split pieces and one piece lost), as in the
+  2.0.0 measurement. The rule was to switch only if F1 did not drop.
+- **10 / 1 found every piece and was 11% faster**, with the same type
+  score as the default. It is one run on a 72-page collection: it stays a
+  candidate to measure on a real case file before becoming the default.
+- **The lower cap cut no answer**: no window split, no page left without
+  an answer, in all four cases. The last row (the code before the 2.1.6
+  classifier changes, same machine) gave the same pieces and fields.
+
 ## Profiles, structured output and grouping (2.1.0, 18 November 2026)
 
 Version 2.1.0 offers two profiles for the local model, constrains the

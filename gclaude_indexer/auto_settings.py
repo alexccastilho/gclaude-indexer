@@ -60,6 +60,9 @@ SCOPE_WINDOWS = "windows"
 # 8/2), mas com acerto de tipo menor (33,3% contra 44,4%); a regra era trocar
 # a 8 pela 12 só se ela ficasse a menos de 1 p.p. do melhor F1 E acertasse o
 # tipo com menos pedidos. A 16 tem o pior F1 (62,5%).
+# 2.1.6: remedido com ornith-1.5:9b e saída estruturada. 8/1 economiza 16%
+# do tempo mas o F1 cai de 93,2% para 88,9%, então a sobreposição continua 2.
+# 10/1 deu F1 100% e 11% menos tempo numa rodada só: candidata, não padrão.
 WINDOW_LOCAL = 8
 WINDOW_RULES = 16
 MIN_CHARS = 1500

@@ -67,6 +67,35 @@ acento, exatamente; o autor vale pelo sobrenome ou pela sigla.
   podem começar (a data pelo motor de regras e a fragmentação pelo modelo são
   os dois maiores ganhos à vista).
 
+## Sobreposição e teto de resposta (2.1.6, 27/11/2026)
+
+A 2.1.6 baixou o teto da resposta do modelo (de 3 para 1,8 vez a reserva
+por página; 3.168 tokens numa janela de 8 páginas) e remediu a sobreposição
+entre janelas com o Melhor qualidade (`ornith-1.5:9b`), com a saída
+estruturada. Máquina diferente das seções anteriores: um notebook com placa
+de vídeo de 6 GB, em que o modelo roda parte na CPU (Ollama 0.40.16), por
+isso os tempos são maiores e só valem para comparar as linhas entre si.
+Uma rodada por linha (temperatura 0: as rodadas repetidas da 2.0.0 saíram
+idênticas).
+
+| Janela / sobreposição | Janelas | Peças (41) | F1 | Tipo | Data | Autor | Classificação |
+|---|---|---|---|---|---|---|---|
+| **8 / 2** (padrão) | 13 | 47 | **93,2 %** | 41,5 % | 87,8 % | 89,5 % | 28 min 27 s |
+| 8 / 1 | 11 | 49 | 88,9 % | 50,0 % | 80,0 % | 81,1 % | 23 min 57 s |
+| 10 / 1 | 8 | 41 | 100 % | 41,5 % | 85,4 % | 92,1 % | 25 min 26 s |
+| 8 / 2, código da 2.1.5 | 13 | 47 | 93,2 % | 41,5 % | 87,8 % | 89,5 % | 29 min 39 s |
+
+- **O padrão continua 8 / 2.** A sobreposição 1 economiza 16 % do tempo,
+  mas o F1 caiu 4,3 pontos (duas peças fatiadas a mais e uma peça perdida),
+  como na medição da 2.0.0. A regra era só trocar se o F1 não caísse.
+- **10 / 1 acertou todas as peças e foi 11 % mais rápida**, com o mesmo tipo
+  do padrão. É uma rodada num acervo de 72 páginas: fica como candidata a
+  medir num processo real antes de virar padrão.
+- **O teto menor não cortou nenhuma resposta**: nenhuma janela dividida,
+  nenhuma página sem resposta, nos quatro casos. A última linha (o código
+  anterior às mudanças do classificador da 2.1.6, mesma máquina) deu as
+  mesmas peças e os mesmos campos.
+
 ## Perfis, saída estruturada e agrupamento (2.1.0, 18/11/2026)
 
 A versão 2.1.0 oferece dois perfis para o modelo local, restringe a
